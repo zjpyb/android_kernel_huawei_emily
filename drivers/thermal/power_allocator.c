@@ -114,7 +114,6 @@ static u32 estimate_sustainable_power(struct thermal_zone_device *tz)
 		if (!instance || !instance->trip || !instance->cdev) {
 			continue;
 		}
-
 		if (instance->trip != params->trip_max_desired_temperature)
 			continue;
 
@@ -425,7 +424,7 @@ static inline int power_actor_set_powers(struct thermal_zone_device *tz,
 	if (ret)
 		return ret;
 
-	if(!strncmp(instance->cdev->type, "thermal-devfreq-0", 17)){
+	if (!strncmp(instance->cdev->type, "thermal-devfreq-0", 17)) {
 		actor_id = ipa_get_actor_id("gpu");
 	} else if (!strncmp(instance->cdev->type, "thermal-cpufreq-0", 17)) {
 		actor_id = ipa_get_actor_id("cluster0");
@@ -436,14 +435,14 @@ static inline int power_actor_set_powers(struct thermal_zone_device *tz,
 	} else
 		actor_id = -1;
 
-	if (actor_id < 0){
+	if (actor_id < 0) {
 		instance->target = state;
 	} else if (tz->is_board_thermal) {
 		g_ipa_board_state[actor_id] = state;
-		instance->target = max(g_ipa_board_state[actor_id],g_ipa_soc_state[actor_id]);/*lint !e1058*/
+		instance->target = max(g_ipa_board_state[actor_id], g_ipa_soc_state[actor_id]);/*lint !e1058*/
 	} else {
 		g_ipa_soc_state[actor_id] = state;
-		instance->target = max(g_ipa_board_state[actor_id],g_ipa_soc_state[actor_id]);/*lint !e1058*/
+		instance->target = max(g_ipa_board_state[actor_id], g_ipa_soc_state[actor_id]);/*lint !e1058*/
 	}
 
 	instance->cdev->updated = false;
@@ -488,7 +487,6 @@ int thermal_zone_cdev_get_power(const char *thermal_zone_name, const char *cdev_
 	return ret;
 }
 EXPORT_SYMBOL(thermal_zone_cdev_get_power);
-
 #endif
 
 static int allocate_power(struct thermal_zone_device *tz,
@@ -521,7 +519,9 @@ static int allocate_power(struct thermal_zone_device *tz,
 		    cdev_is_power_actor(instance->cdev)) {
 			num_actors++;
 			total_weight += instance->weight;
+#ifdef CONFIG_HISI_IPA_THERMAL
 			instance->cdev->ipa_enabled = true;
+#endif
 		}
 	}
 
@@ -561,7 +561,9 @@ static int allocate_power(struct thermal_zone_device *tz,
 	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
 		int weight;
 		struct thermal_cooling_device *cdev = instance->cdev;
+#ifdef CONFIG_HISI_IPA_THERMAL
 		instance->cdev->ipa_enabled = true;
+#endif
 
 		if (instance->trip != trip_max_desired_temperature)
 			continue;
@@ -798,36 +800,46 @@ static void power_allocator_unbind(struct thermal_zone_device *tz)
 	tz->governor_data = NULL;
 }
 
+#ifdef CONFIG_HISI_IPA_THERMAL
 static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 {
 	int ret;
 	int switch_on_temp, control_temp;
-	struct power_allocator_params *params = tz->governor_data;
-#ifdef CONFIG_HISI_IPA_THERMAL
+	struct power_allocator_params *params;
+	struct power_allocator_params bak;
 	enum thermal_device_mode mode;
 
 	ret = tz->ops->get_mode(tz, &mode);
 	if (ret || THERMAL_DEVICE_DISABLED == mode) {
 		return ret;
 	}
-#endif
+	mutex_lock(&tz->lock);
+	params = tz->governor_data;
+	if (params == NULL) {
+		mutex_unlock(&tz->lock);
+		return 0;
+	}
+	memcpy(&bak, params, sizeof(struct power_allocator_params));
+	mutex_unlock(&tz->lock);
+
 	/*
 	 * We get called for every trip point but we only need to do
 	 * our calculations once
 	 */
-	if (trip != params->trip_max_desired_temperature)
+	if (trip != bak.trip_max_desired_temperature)
 		return 0;
 
-	ret = tz->ops->get_trip_temp(tz, params->trip_switch_on,
+
+	ret = tz->ops->get_trip_temp(tz, bak.trip_switch_on,
 				     &switch_on_temp);
+
 	if (!ret && (tz->temperature < switch_on_temp)) {
 		tz->passive = 0;
-#ifdef CONFIG_HISI_IPA_THERMAL
 		mutex_lock(&tz->lock);
 		ipa_freq_limit_reset(tz);
+		if (tz->governor_data != NULL)
+			reset_pid_controller(tz->governor_data);
 		mutex_unlock(&tz->lock);
-#endif
-		reset_pid_controller(params);
 		allow_maximum_power(tz);
 		get_cur_power(tz);
 		return 0;
@@ -835,7 +847,7 @@ static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 
 	tz->passive = 1;
 
-	ret = tz->ops->get_trip_temp(tz, params->trip_max_desired_temperature,
+	ret = tz->ops->get_trip_temp(tz, bak.trip_max_desired_temperature,
 				&control_temp);
 	if (ret) {
 		dev_warn(&tz->device,
@@ -844,16 +856,53 @@ static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 		return ret;
 	}
 
-#ifdef CONFIG_HISI_IPA_THERMAL
 	if (!ret && (tz->temperature <= (control_temp - BOARDIPA_PID_RESET_TEMP)) && tz->is_board_thermal) {
-		reset_pid_controller(params);
+		mutex_lock(&tz->lock);
+		if (tz->governor_data != NULL)
+			reset_pid_controller(tz->governor_data);
+		mutex_unlock(&tz->lock);
 	}
 
 	return allocate_power(tz, control_temp, switch_on_temp);
-#else
-	return allocate_power(tz, control_temp);
-#endif
 }
+#else
+static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
+{
+	int ret;
+	int switch_on_temp, control_temp;
+	struct power_allocator_params *params = tz->governor_data;
+
+	/*
+	 * We get called for every trip point but we only need to do
+	 * our calculations once
+	 */
+	if (trip != params.trip_max_desired_temperature)
+		return 0;
+
+	ret = tz->ops->get_trip_temp(tz, params.trip_switch_on,
+				     &switch_on_temp);
+
+	if (!ret && (tz->temperature < switch_on_temp)) {
+		tz->passive = 0;
+		reset_pid_controller(params);
+		allow_maximum_power(tz);
+		return 0;
+	}
+
+	tz->passive = 1;
+
+	ret = tz->ops->get_trip_temp(tz, params.trip_max_desired_temperature,
+				&control_temp);
+	if (ret) {
+		dev_warn(&tz->device,
+			 "Failed to get the maximum desired temperature: %d\n",
+			 ret);
+		return ret;
+	}
+
+	return allocate_power(tz, control_temp);
+}
+#endif
 
 #ifdef CONFIG_HISI_IPA_THERMAL
 void update_pid_value(struct thermal_zone_device *tz)
@@ -864,7 +913,7 @@ void update_pid_value(struct thermal_zone_device *tz)
 	struct power_allocator_params *params = tz->governor_data;
 
 	mutex_lock(&tz->lock);
-	if(!strncmp(tz->governor->name,"power_allocator",strlen("power_allocator"))) {
+	if (!strncmp(tz->governor->name, "power_allocator", strlen("power_allocator"))) {
 		ret = tz->ops->get_trip_temp(tz, params->trip_max_desired_temperature,
 								&control_temp);
 		if (ret) {	/*lint -e774 */

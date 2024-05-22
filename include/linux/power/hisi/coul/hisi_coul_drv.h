@@ -26,12 +26,15 @@
 #define COUL_IC_BAD   1
 
 #define COMPENSATION_PARA_LEVEL   6
+#define COMPENSATION_THRESHOLD    200 /* 20c */
 
 #define INVALID_TEMP_VAL                (-999)
 #define INVALID_VOLTAGE_VAL             (-999)
 #define BATTERY_NORMAL_CUTOFF_VOL 3150
 #define DEFAULT_RPCB 10000 /*uohm*/
 #define POLAR_CALC_INTERVAL (200) /*ms*/
+#define TEMP_POLAR_REPORT     (5)
+#define CURR_AVG_DEFAULT      (19999)//MA
  /* ma = ua/1000 = uas/s/1000 = uah*3600/s/1000 = uah*18/(s*5) */
 #define CC_UAS2MA(cc,time) (((cc) * 18) / ((time) * 5))
 enum HISI_COULOMETER_TYPE {
@@ -179,6 +182,20 @@ struct hisi_coul_ops {
 #ifdef CONFIG_HISI_ASW
 	int (*asw_refresh_fcc)(void);
 #endif /* CONFIG_HISI_ASW */
+	int (*get_ocv_by_soc)(int temp, int soc);
+	int (*get_soc_by_ocv)(int temp, int ocv);
+	int (*get_ocv)(void);
+    int (*get_polar_avg)(void);
+    int (*get_polar_peak)(void);
+	int (*update_basp_policy)(unsigned int level,
+		unsigned int nondc_volt_dec);
+	int (*get_record_fcc)(unsigned int size, unsigned int *records);
+	int (*get_last_powerdown_soc)(void);
+	bool (*ntc_fit_supported_iqr)(void);
+	int (*ntc_fitted_dc_ilim)(void);
+	struct chrg_para_lut *(*get_fitted_temp_data)(void);
+	bool (*ntc_fitted_iqr)(void);
+	int (*ntc_fit_case_iqr)(void);
 };
 
 
@@ -236,6 +253,12 @@ extern int hisi_coul_chip_temperature(void);
 extern int hisi_battery_cc_uah(void);
 extern int hisi_battery_removed_before_boot(void);
 extern int hisi_battery_get_qmax(void);
+extern bool hisi_coul_ntc_fit_supported(void);
+extern int hisi_coul_ntc_fitted_dc_ilim(void);
+extern struct chrg_para_lut *hisi_coul_ntc_fit_temp_data(void);
+extern bool hisi_coul_ntc_fitted_iqr(void);
+extern int hisi_coul_ntc_fit_case(void);
+
 #ifdef CONFIG_HISI_ASW
 extern int hisi_asw_refresh_fcc(void);
 #else
@@ -244,5 +267,15 @@ static inline int hisi_asw_refresh_fcc(void)
 	return 0;
 }
 #endif /* CONFIG_HISI_ASW */
+extern int hisi_coul_get_ocv_by_soc(int temp, int soc);
+extern int hisi_coul_get_soc_by_ocv(int temp, int ocv);
+extern int hisi_coul_get_ocv(void);
 
+extern int hisi_get_polar_avg(void);
+extern int hisi_get_polar_peak(void);
+extern int hisi_battery_update_basp_policy(unsigned int level,
+	unsigned int nondc_volt_dec);
+extern int hisi_battery_get_recrod_fcc(unsigned int size,
+	unsigned int *records);
+extern int hisi_coul_get_last_powerdown_soc(void);
 #endif

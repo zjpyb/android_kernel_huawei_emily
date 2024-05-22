@@ -1,22 +1,13 @@
-/*
- * slowpath_count.c
- *
- * count front and visible app into slow path page_alloc times.
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
- *
- * Chenjun <chenjun@hisilicon.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
+ * FileName: slowpath_count.c
+ * Description: count front and visible app into slow path page_alloc times.
+ * This program is free software; you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation;
+ * either version 2 of the License,
+ * or (at your option) any later version.
+ * Author: Chenjun
+ * Create: 2019-06-20
  */
 
 #include <linux/cred.h>
@@ -28,19 +19,17 @@
 #include <linux/seq_file.h>
 #include <slowpath_count.h>
 #include <linux/version.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
 #include <linux/sched/signal.h>
-#endif
 
 #define FIRST_APP_UID KUIDT_INIT(10000)
 #define LAST_APP_UID  KUIDT_INIT(19999)
 
-#define VISIBLE_APP_ADJ    (1)
-#define FOREGROUND_APP_ADJ (0)
+#define VISIBLE_APP_ADJ    1
+#define FOREGROUND_APP_ADJ 0
 
 static u64 last_jiffs;
 static pid_t prev_pid;
-static bool enable = false;
+static bool enable;
 atomic_long_t pgalloc_count = ATOMIC_LONG_INIT(0);
 atomic_long_t slowpath_pgalloc_count[ORDER_LIMIT] = {ATOMIC_LONG_INIT(0)};
 EXPORT_SYMBOL(slowpath_pgalloc_count);
@@ -51,11 +40,11 @@ static int is_background(void)
 {
 	kuid_t uid;
 	int adj;
-	struct mm_struct *mm;
+	struct mm_struct *mm = NULL;
 
 	adj = current->signal->oom_score_adj;
 	mm = current->mm;
-	uid = current_uid();/*lint !e666*/
+	uid = current_uid();
 
 	if (!mm || uid_lt(uid, FIRST_APP_UID) || uid_gt(uid, LAST_APP_UID))
 		return 1;
@@ -127,7 +116,9 @@ static const struct file_operations fops = {
 
 static int __init slowpath_count_init(void)
 {
-	debugfs_create_file("slowpath_count", 0444, NULL, NULL, &fops);
+#ifdef CONFIG_HISI_DEBUG_FS
+	debugfs_create_file("slowpath_count", 0440, NULL, NULL, &fops);
+#endif
 	return 0;
 }
 

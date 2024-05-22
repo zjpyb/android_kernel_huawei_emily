@@ -37,7 +37,7 @@
 #include <linux/unistd.h>
 #include <linux/bug.h>
 #include <linux/mutex.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/of_device.h>

@@ -18,7 +18,7 @@
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/mfd/hisi_6423_pmic.h>
 #include <linux/irq.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/hisi-spmi.h>
 #include <linux/of_hisi_spmi.h>
 #include <linux/jiffies.h>
@@ -38,7 +38,7 @@ static struct hvdev *limit_gpufreq_hvdev = NULL;
 extern void enable_irq(unsigned int irq);
 extern void disable_irq_nosync(unsigned int irq);
 
-static struct wake_lock vbatt_check_lock;
+static struct wakeup_source vbatt_check_lock;
 int battery_check_count = 0;
 int vbatt_limit = 3250;
 
@@ -147,8 +147,7 @@ void vbatt_limit_ctrl(int val)
 
 static void hisi_6423_vbatt_check(struct work_struct *work)
 {
-	int vbatt, ret;
-	unsigned int val;
+	int vbatt, ret, val;
 	struct hisi_6423_pmic *subpmic = container_of(work, struct hisi_6423_pmic, check_6423_vbatt_work.work);
 
 	pr_err("Enter in schedule_delayed_work!\n");
@@ -185,7 +184,7 @@ static void hisi_6423_vbatt_check(struct work_struct *work)
 
 		battery_check_count = 0;
 		enable_irq(subpmic->irq);
-		wake_unlock(&vbatt_check_lock);/*lint !e455*/
+		__pm_relax(&vbatt_check_lock);/*lint !e455*/
 	} else {
 		schedule_delayed_work(&subpmic->check_6423_vbatt_work, msecs_to_jiffies(2000));
 	}
@@ -199,7 +198,7 @@ static irqreturn_t hisi_6423_irq_handler(int irq, void *data)
 	unsigned char val;
 	int ret;
 
-	wake_lock(&vbatt_check_lock);
+	__pm_stay_awake(&vbatt_check_lock);
 
 	pr_err("Hisi_6423_irq_handler started!");
 	val = hisi_subpmic_read(subpmic, subpmic->irq_np_record);
@@ -352,7 +351,7 @@ static int hisi_6423_pmic_probe(struct spmi_device *pdev)
 #endif
 
 	INIT_DELAYED_WORK(&subpmic->check_6423_vbatt_work, hisi_6423_vbatt_check);
-	wake_lock_init(&vbatt_check_lock, WAKE_LOCK_SUSPEND, "6423_vbatt_check_wake");
+	wakeup_source_init(&vbatt_check_lock, "6423_vbatt_check_wake");
 
 	ret = devm_request_irq(dev, subpmic->irq, hisi_6423_irq_handler, IRQF_TRIGGER_FALLING, "sub_6423_pmic", subpmic);
 	if (ret < 0) {
@@ -404,7 +403,7 @@ static int hisi_6423_pmic_remove(struct spmi_device *pdev)
 	gpio_free(subpmic->gpio);
 	devm_pinctrl_put(subpmic->pctrl);
 	cancel_delayed_work(&subpmic->check_6423_vbatt_work);
-	wake_lock_destroy(&vbatt_check_lock);
+	wakeup_source_trash(&vbatt_check_lock);
 	devm_kfree(&pdev->dev, subpmic);
 	return 0;
 }
@@ -412,7 +411,7 @@ static int hisi_6423_pmic_remove(struct spmi_device *pdev)
 static int hisi_6423_pmic_suspend(struct spmi_device *pdev, pm_message_t state)
 {
 	struct hisi_6423_pmic *subpmic = dev_get_drvdata(&pdev->dev);
-	unsigned int val;
+	int val;
 
 	if (NULL == subpmic) {
 		pr_err("%s:6423_pmic is NULL\n", __func__);

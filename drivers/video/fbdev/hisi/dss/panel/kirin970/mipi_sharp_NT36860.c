@@ -429,7 +429,6 @@ static int mipi_sharp_NT36860_panel_on(struct platform_device *pdev)
 		while (status & 0x10) {
 			udelay(50);
 			if (++try_times > 100) {
-				try_times = 0;
 				HISI_FB_ERR("Read lcd power status timeout!\n");
 				break;
 			}
@@ -591,7 +590,7 @@ static struct dsi_cmd_desc set_display_address[] = {
 	{DTYPE_DCS_LWRITE, 0, 5, WAIT_TYPE_US,
 		sizeof(lcd_disp_y), lcd_disp_y},
 };
-
+/*lint -e574*/
 static int mipi_sharp_NT36860_panel_set_display_region(struct platform_device *pdev,
 	struct dss_rect *dirty)
 {
@@ -612,21 +611,21 @@ static int mipi_sharp_NT36860_panel_set_display_region(struct platform_device *p
 			dirty->x, dirty->y, dirty->w, dirty->h);
 	}
 
-	lcd_disp_x[1] = (dirty->x >> 8) & 0xff;
-	lcd_disp_x[2] = dirty->x & 0xff;
-	lcd_disp_x[3] = ((dirty->x + dirty->w - 1) >> 8) & 0xff;
-	lcd_disp_x[4] = (dirty->x + dirty->w - 1) & 0xff;
-	lcd_disp_y[1] = (dirty->y >> 8) & 0xff;
-	lcd_disp_y[2] = dirty->y & 0xff;
-	lcd_disp_y[3] = ((dirty->y + dirty->h - 1) >> 8) & 0xff;
-	lcd_disp_y[4] = (dirty->y + dirty->h - 1) & 0xff;
+	lcd_disp_x[1] = ((unsigned)dirty->x >> 8) & 0xff;
+	lcd_disp_x[2] = (unsigned)dirty->x & 0xff;
+	lcd_disp_x[3] = ((unsigned)(dirty->x + dirty->w - 1) >> 8) & 0xff;
+	lcd_disp_x[4] = (unsigned)(dirty->x + dirty->w - 1) & 0xff;
+	lcd_disp_y[1] = ((unsigned)dirty->y >> 8) & 0xff;
+	lcd_disp_y[2] = (unsigned)dirty->y & 0xff;
+	lcd_disp_y[3] = ((unsigned)(dirty->y + dirty->h - 1) >> 8) & 0xff;
+	lcd_disp_y[4] = (unsigned)(dirty->y + dirty->h - 1) & 0xff;
 
 	mipi_dsi_cmds_tx(set_display_address, \
 		ARRAY_SIZE(set_display_address), hisifd->mipi_dsi0_base);
 
 	return 0;
 }
-
+/*lint +e574*/
 static ssize_t mipi_sharp_NT36860_lcd_model_show(struct platform_device *pdev,
 	char *buf)
 {
@@ -1085,7 +1084,7 @@ err_return:
 err_probe_defer:
 	return -EPROBE_DEFER;
 
-	return ret;
+	return ret; //lint !e527
 
 }
 /*lint +e747 +e846 +e516 +e514 +e866 +e30 +e84 +e778 +e845 +e572*/

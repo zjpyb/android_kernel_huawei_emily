@@ -8,36 +8,6 @@ config HISI_FB_FAKE
 	help
 	  This framebuffer driver supports HISI FB Fake.
 
-config HISI_FB_3650
-	tristate "HISI FB 3650 Framebuffer support"
-	depends on FB
-	select FB_CFB_FILLRECT
-	select FB_CFB_COPYAREA
-	select FB_CFB_IMAGEBLIT
-	select REGMAP
-	help
-	  This framebuffer driver supports HISI3650 FB.
-
-config HISI_FB_6250
-	tristate "HISI FB 6250 Framebuffer support"
-	depends on FB
-	select FB_CFB_FILLRECT
-	select FB_CFB_COPYAREA
-	select FB_CFB_IMAGEBLIT
-	select REGMAP
-	help
-	  This framebuffer driver supports HISI6250 FB.
-
-config HISI_FB_3660
-	tristate "HISI FB 3660 Framebuffer support"
-	depends on FB
-	select FB_CFB_FILLRECT
-	select FB_CFB_COPYAREA
-	select FB_CFB_IMAGEBLIT
-	select REGMAP
-	help
-	  This framebuffer driver supports HISI3660 FB.
-
 config HISI_FB_970
 	tristate "HISI FB 970 Framebuffer support"
 	depends on FB
@@ -68,6 +38,17 @@ config HISI_FB_V510
 	help
 	  This framebuffer driver supports HISI V510 FB.
 
+config HISI_FB_V600
+	tristate "HISI FB V600 Framebuffer support"
+	depends on FB
+	depends on DMA_CMA
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select REGMAP
+	help
+	  This framebuffer driver supports HISI V600 FB.
+
 config HISI_FB_V320
 	tristate "HISI FB V320 Framebuffer support"
 	depends on FB
@@ -77,7 +58,7 @@ config HISI_FB_V320
 	select REGMAP
 	help
 	  This framebuffer driver supports HISI V320 FB.
-  
+
 config HISI_FB_V330
 	tristate "HISI FB V330 Framebuffer support"
 	depends on FB
@@ -88,6 +69,15 @@ config HISI_FB_V330
 	help
 	  This framebuffer driver supports HISI V330 FB.
 
+config HISI_FB_V350
+	tristate "HISI FB V350 Framebuffer support"
+	depends on FB
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	select REGMAP
+	help
+	  This framebuffer driver supports HISI V350 FB.
 
 config HISI_FB_ENG_DBG
 	tristate "HISI FB ENG DEBUG support"

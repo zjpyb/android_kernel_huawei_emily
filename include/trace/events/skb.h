@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM skb
 
@@ -179,7 +180,6 @@ TRACE_EVENT(skb_latency,
 );
 
 #endif /*CONFIG_WIFI_DELAY_STATISTIC*/
-
 #endif /* _TRACE_SKB_H */
 
 /* This part must be outside protection */

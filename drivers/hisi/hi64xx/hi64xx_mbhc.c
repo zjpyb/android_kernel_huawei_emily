@@ -27,7 +27,10 @@
 #include <sound/jack.h>
 #include <linux/switch.h>
 #include <linux/version.h>
+#include <linux/types.h>
+#ifdef CONFIG_HUAWEI_DSM
 #include <dsm_audio/dsm_audio.h>
+#endif
 #include <linux/hisi/hi64xx/hi64xx_utils.h>
 #include <linux/hisi/hi64xx/hi64xx_mbhc.h>
 #include <linux/hisi/hi64xx/hi64xx_regs.h>
@@ -47,7 +50,7 @@
 #define EXTERN_CABLE_MBHC_VREF_DAFULT_VALUE  (0x9E)
 #define HI64xx_POWERON_MICBIAS_SLEEP_30_MS (30)
 #define INVALID_VOLTAGE (0xFFFFFFFF)
-
+#define HI64XX_HEADSET_PLUGIN_WAKE_DELAY_TIME_MS 15
 
 static int hi64xx_btn_bits[] = {
 	IRQ_BTNUP_COMP1,
@@ -65,8 +68,9 @@ struct hi64xx_mbhc_priv {
 	struct hi64xx_resmgr *resmgr;
 	struct hi64xx_irq *irqmgr;
 	struct miscdevice miscdev;
-	struct wake_lock wake_lock;
-	struct wake_lock micbias_wake_lock;
+	struct wakeup_source wake_lock;
+	struct wakeup_source micbias_wake_lock;
+	struct wakeup_source timeout_wake_lock;
 	struct mutex plug_mutex;
 	struct mutex status_mutex;
 	struct mutex saradc_mutex;
@@ -80,19 +84,23 @@ struct hi64xx_mbhc_priv {
 	int btn_report;
 	int need_match_micbias;
 
+#ifdef CONFIG_SWITCH
 	struct switch_dev sdev;
+#endif
 	/* board defination */
 	struct hi64xx_mbhc_config mbhc_config;
 	struct hi64xx_hs_cfg hs_cfg;
 };
 
+#ifdef CONFIG_HUAWEI_DSM
 #define MBHC_TYPE_FAIL_MAX_TIMES             (5)
 #define MBHC_TYPE_REPORT_MAX_TIMES           (20)
 
 static unsigned int mbhc_type_fail_times = 0;
 static unsigned int mbhc_type_report_times = MBHC_TYPE_REPORT_MAX_TIMES;
+#endif
 
-
+#ifdef CONFIG_HUAWEI_DSM
 static void hi64xx_mbhc_dmd_fail_report(int adc)
 {
 	mbhc_type_fail_times ++;
@@ -106,6 +114,7 @@ static void hi64xx_mbhc_dmd_fail_report(int adc)
 	}
 	return;
 }
+#endif
 
 static struct snd_soc_jack hs_jack;
 void hi64xx_soc_jack_report(int report, int mask)
@@ -160,7 +169,7 @@ static void hi64xx_hs_micbias_enable(struct hi64xx_mbhc_priv *priv, bool enable)
 		hi64xx_resmgr_request_micbias(priv->resmgr);
 	} else {
 		/* hs micbias pd */
-		wake_lock_timeout(&priv->micbias_wake_lock, msecs_to_jiffies(3500));
+		__pm_wakeup_event(&priv->micbias_wake_lock, 3500);
 		ret = mod_delayed_work(priv->micbias_delay_wq,
 			&priv->micbias_delay_work,
 			msecs_to_jiffies(3000));
@@ -193,7 +202,9 @@ void hi64xx_micbias_enable_for_usb_ana_hs(struct hi64xx_mbhc_priv *priv, bool en
 
 void hi64xx_jack_report(struct hi64xx_mbhc_priv *priv)
 {
+#ifdef CONFIG_SWITCH
 	enum hisi_jack_states jack_status = priv->hs_status;
+#endif
 	int jack_report = 0;
 
 	switch(priv->hs_status) {
@@ -227,17 +238,17 @@ void hi64xx_jack_report(struct hi64xx_mbhc_priv *priv)
 	/* btn_report jack status */
 	hi64xx_soc_jack_report(jack_report, SND_JACK_HEADSET);
 
+#ifdef CONFIG_SWITCH
 	switch_set_state(&priv->sdev, jack_status);
+#endif
 }
 
 static inline bool check_headset_pluged_in(struct hi64xx_mbhc_priv *priv)
 {
-	int ret = 0;
 	unsigned int irq_source_reg = priv->hs_cfg.mbhc_reg->irq_source_reg;
 
 	if(check_usb_analog_hs_support()) {
-		ret = usb_analog_hs_check_headset_pluged_in();
-		if(ret == USB_ANA_HS_PLUG_IN) {
+		if(usb_analog_hs_check_headset_pluged_in() == USB_ANA_HS_PLUG_IN) {
 			pr_info("usb ananlog hs is PLUG_IN\n");
 			return true;
 		} else {
@@ -245,7 +256,8 @@ static inline bool check_headset_pluged_in(struct hi64xx_mbhc_priv *priv)
 			return false;
 		}
 	} else {
-		ret = anc_hs_interface_check_headset_pluged_in();
+#ifdef CONFIG_ANC_HS_INTERFACE
+		int ret = anc_hs_interface_check_headset_pluged_in();
 
 		if(ret == NO_MAX14744) {
 			/*
@@ -261,6 +273,9 @@ static inline bool check_headset_pluged_in(struct hi64xx_mbhc_priv *priv)
 			pr_info("max14744 HANDSET_PLUG_OUT");
 			return false;
 		}
+#else
+		return (0 != (snd_soc_read(priv->codec, irq_source_reg) & (1 << HI64xx_PLUGIN_IRQ_BIT)));
+#endif
 	}
 }
 
@@ -329,10 +344,12 @@ void hi64xx_hstype_identify(struct hi64xx_mbhc_priv *priv,
 		priv->hs_status = HISI_JACK_INVERT;
 		*anc_type = ANC_HS_REVERT_4POLE;
 
+#ifdef CONFIG_INVERT_HS
 		/* real invert headset */
 		if(priv->mbhc_config.hs_4_pole_min_voltage > voltage_value) {
 			invert_hs_control(INVERT_HS_MIC_GND_CONNECT);
 		}
+#endif
 	}
 }
 
@@ -396,18 +413,22 @@ void hi64xx_plug_in_detect(struct hi64xx_mbhc_priv *priv)
 	if (!check_headset_pluged_in(priv))
 		return;
 
-	wake_lock(&priv->wake_lock);
+	__pm_stay_awake(&priv->wake_lock);
 	mutex_lock(&priv->plug_mutex);
 
 	pr_debug("%s(%u) : in", __FUNCTION__,__LINE__);
 
+#ifdef CONFIG_INVERT_HS
 	invert_hs_control(INVERT_HS_MIC_GND_DISCONNECT);
+#endif
 
+#ifdef CONFIG_ANC_HS_INTERFACE
 	if(check_anc_hs_interface_support()) {
 		//mask btn irqs while control boost
 		hi64xx_irq_mask_btn_irqs(&priv->mbhc_pub);
 		anc_hs_interface_start_charge();
 	}
+#endif
 
 	/* micbias on */
 	hi64xx_hs_micbias_enable(priv, true);
@@ -424,6 +445,7 @@ void hi64xx_plug_in_detect(struct hi64xx_mbhc_priv *priv)
 
 	mutex_unlock(&priv->status_mutex);
 
+#ifdef CONFIG_ANC_HS_INTERFACE
 	if(check_anc_hs_interface_support()  && priv->hs_status == HISI_JACK_HEADSET) {
 		//mask btn irqs while control boost
 		hi64xx_irq_mask_btn_irqs(&priv->mbhc_pub);
@@ -436,16 +458,17 @@ void hi64xx_plug_in_detect(struct hi64xx_mbhc_priv *priv)
 	if((priv->mbhc_config.hs_4_pole_min_voltage > voltage_value) && (priv->hs_status == HISI_JACK_INVERT)) {
 		anc_hs_interface_invert_hs_control(ANC_HS_MIC_GND_CONNECT);
 	}
+#endif
 
 	if(check_usb_analog_hs_support() && (priv->hs_status == HISI_JACK_INVERT ||priv->hs_status == HISI_JACK_HEADPHONE)) {
-		hi64xx_irq_mask_btn_irqs(&priv->mbhc_pub);
 		//before change the mic/gnd, power down the MICBIAS, to avoid pop sound in hs.
 		hi64xx_micbias_enable_for_usb_ana_hs(priv, false);
-		usb_ana_hs_mic_swtich_change_state();
+		hi64xx_irq_mask_btn_irqs(&priv->mbhc_pub);
+		usb_ana_hs_mic_switch_change_state();
+		hi64xx_irq_unmask_btn_irqs(&priv->mbhc_pub);
 		//after change the mic/gnd, power on the MICBIAS, to identify the hs type.
 		hi64xx_micbias_enable_for_usb_ana_hs(priv, true);
 		msleep(HI64xx_POWERON_MICBIAS_SLEEP_30_MS);
-		hi64xx_irq_unmask_btn_irqs(&priv->mbhc_pub);
 		voltage_value = hi64xx_get_voltage_value(priv);
 		mutex_lock(&priv->status_mutex);
 		hi64xx_hstype_identify(priv, &anc_type, voltage_value);
@@ -482,13 +505,16 @@ void hi64xx_plug_in_detect(struct hi64xx_mbhc_priv *priv)
 			hi64xx_jack_report(priv);
 		} else {
 			priv->need_match_micbias = 1;
+			#ifdef CONFIG_HUAWEI_DSM
 			hi64xx_mbhc_dmd_fail_report(voltage_value);
+			#endif
 		}
 	}
 
 exit:
 	mutex_unlock(&priv->plug_mutex);
-	wake_unlock(&priv->wake_lock);
+	__pm_wakeup_event(&priv->timeout_wake_lock, HI64XX_HEADSET_PLUGIN_WAKE_DELAY_TIME_MS);
+	__pm_relax(&priv->wake_lock);
 	return;
 }
 
@@ -501,7 +527,7 @@ void hi64xx_btn_down(struct hi64xx_mbhc_priv *priv)
 		return;
 	}
 
-	wake_lock(&priv->wake_lock);
+	__pm_stay_awake(&priv->wake_lock);
 
 	if (HISI_JACK_HEADSET == priv->hs_status) {
 		/* micbias on */
@@ -567,7 +593,7 @@ VOICE_ASSISTANT_KEY:
 	}
 
 end:
-	wake_unlock(&priv->wake_lock);
+	__pm_relax(&priv->wake_lock);
 
 	return;
 }
@@ -588,7 +614,10 @@ static irqreturn_t hi64xx_plugin_handler(int irq, void *data)
 
 void hi64xx_plug_out_detect(struct hi64xx_mbhc_priv *priv)
 {
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s : priv is null\n", __FUNCTION__);
+		return;
+	}
 
 	if (!priv->hs_cfg.mbhc_func->hs_mbhc_off) {
 		pr_err("%s : mbhc off func is not exit\n", __FUNCTION__);
@@ -608,10 +637,14 @@ void hi64xx_plug_out_detect(struct hi64xx_mbhc_priv *priv)
 
 	hi64xx_irq_mask_btn_irqs(&priv->mbhc_pub);
 
+#ifdef CONFIG_INVERT_HS
 	invert_hs_control(INVERT_HS_MIC_GND_CONNECT);
+#endif
 
 	//stop charge first
+#ifdef CONFIG_ANC_HS_INTERFACE
 	anc_hs_interface_stop_charge();
+#endif
 
 	hi64xx_resmgr_force_release_micbias(priv->resmgr);
 	priv->need_match_micbias = 0;
@@ -647,8 +680,6 @@ static irqreturn_t hi64xx_btnup_handler(int irq, void *data)
 {
 	struct hi64xx_mbhc_priv *priv =
 			(struct hi64xx_mbhc_priv *)data;
-
-	WARN_ON(NULL == priv);
 
 	if (!check_headset_pluged_in(priv))
 		return IRQ_HANDLED;
@@ -687,8 +718,6 @@ static irqreturn_t hi64xx_btndown_handler(int irq, void *data)
 	struct hi64xx_mbhc_priv *priv =
 			(struct hi64xx_mbhc_priv *)data;
 
-	WARN_ON(NULL == priv);
-
 	pr_err("%s: btn down \n", __FUNCTION__);
 
 	hi64xx_btn_down(priv);
@@ -703,11 +732,7 @@ static irqreturn_t hi64xx_btnup_comp2_handler(int irq, void *data)
 			(struct hi64xx_mbhc_priv *)data;
 	struct snd_soc_codec *codec = NULL;
 
-	WARN_ON(NULL == priv);
-
 	codec = priv->codec;
-	WARN_ON(NULL == codec);
-
 	pr_info("%s: btn up comp2 \n", __FUNCTION__);
 
 	if(priv->hs_status == HISI_JACK_HEADSET) {
@@ -733,11 +758,7 @@ static irqreturn_t hi64xx_btndown_comp2_handler(int irq, void *data)
 			(struct hi64xx_mbhc_priv *)data;
 	struct snd_soc_codec *codec = NULL;
 
-	WARN_ON(NULL == priv);
-
 	codec = priv->codec;
-	WARN_ON(NULL == codec);
-
 	pr_info("%s: btn down comp2 \n", __FUNCTION__);
 
 	if(priv->hs_status == HISI_JACK_INVERT) {
@@ -763,8 +784,6 @@ static irqreturn_t hi64xx_btnup_eco_handler(int irq, void *data)
 	struct hi64xx_mbhc_priv *priv =
 			(struct hi64xx_mbhc_priv *)data;
 
-	WARN_ON(NULL == priv);
-
 	if (!check_headset_pluged_in(priv))
 		return IRQ_HANDLED;
 
@@ -774,7 +793,7 @@ static irqreturn_t hi64xx_btnup_eco_handler(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
-	wake_lock_timeout(&priv->wake_lock, 100);
+	__pm_wakeup_event(&priv->wake_lock, jiffies_to_msecs(100));
 
 	if (HISI_JACK_INVERT == priv->hs_status) {
 		pr_err("%s: further detect\n", __FUNCTION__);
@@ -804,8 +823,6 @@ static irqreturn_t hi64xx_btndown_eco_handler(int irq, void *data)
 	struct hi64xx_mbhc_priv *priv =
 			(struct hi64xx_mbhc_priv *)data;
 
-	WARN_ON(NULL == priv);
-
 	pr_err("%s: btn down \n", __FUNCTION__);
 
 	hi64xx_btn_down(priv);
@@ -822,13 +839,16 @@ void hi64xx_check_axi_bus_reg_value(struct snd_soc_codec *codec, unsigned int re
 	if((reg_value&mask) != except_val)
 	{
 		pr_err("%s : AXI bus error, reg_value(%pK): %d \n",
-			__FUNCTION__, (void *)(unsigned long)reg, reg_value);
+			__FUNCTION__, (void *)(uintptr_t)reg, reg_value);
 	}
 }
 
 void hi64xx_check_bus_status(struct hi64xx_mbhc_priv *priv)
 {
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s : priv is null\n", __FUNCTION__);
+		return;
+	}
 
 	/* check the write register's status */
 	hi64xx_check_axi_bus_reg_value(priv->codec, HI64XX_REG_WRITE_DSP_STATUS,HI64xx_WRITE_DSP_STATUS_BIT_MUSK, 0);
@@ -845,11 +865,13 @@ static bool hi64xx_check_headset_in(void *priv)
 	return check_headset_pluged_in((struct hi64xx_mbhc_priv *)priv);
 }
 
+#ifdef CONFIG_ANC_HS_INTERFACE
 /* ToDo: this interface will be omitted */
 static void hi64xx_resume_lock(void *priv, bool lock)
 {
 
 }
+#endif
 
 static void plug_in_detect(void *priv)
 {
@@ -867,10 +889,12 @@ static void plug_out_detect(void *priv)
 	hi64xx_plug_out_detect(di);
 }
 
+#ifdef CONFIG_ANC_HS_INTERFACE
 static void check_bus_status(void *priv)
 {
 	hi64xx_check_bus_status((struct hi64xx_mbhc_priv *)priv);
 }
+#endif
 
 static int get_hi64xx_headset_type(void *priv)
 {
@@ -890,6 +914,7 @@ static void hi64xx_hs_high_resistence_enable(void *priv, bool enable)
 	return;
 }
 
+#ifdef CONFIG_ANC_HS_INTERFACE
 static struct anc_hs_dev anc_dev = {
 	.name = "anc_hs",
 	.ops = {
@@ -901,6 +926,7 @@ static struct anc_hs_dev anc_dev = {
 		.check_bus_status = check_bus_status,
 	},
 };
+#endif
 
 static struct usb_analog_hs_dev usb_analog_dev = {
 	.name = "usb_analog_hs",
@@ -1055,7 +1081,6 @@ static void hi64xx_mbhc_config_set(struct device_node *node, struct hi64xx_mbhc_
 	hi64xx_mbhc_hs_extern_cable_config(node, mbhc_config);
 }
 
-
 int hi64xx_register_hs_jack_btn(struct snd_soc_codec *codec)
 {
 	int ret = 0;
@@ -1141,7 +1166,7 @@ int hi64xx_mbhc_init(struct snd_soc_codec *codec,
 		struct hi64xx_mbhc **mbhc)
 {
 	int ret = 0;
-	struct hs_mbhc_func* mbhc_func;
+	struct hs_mbhc_func* mbhc_func = NULL;
 	struct hi64xx_mbhc_priv *priv = NULL;
 
 	if (hi64xx_mbhc_init_para_check(hs_cfg)) {
@@ -1166,15 +1191,17 @@ int hi64xx_mbhc_init(struct snd_soc_codec *codec,
 
 	priv->need_match_micbias = 0;
 
-
+#ifdef CONFIG_SWITCH
 	priv->sdev.name = "h2w";
 	ret = switch_dev_register(&priv->sdev);
 	if (ret) {
 		pr_err("%s : error registering switch device %d\n", __FUNCTION__, ret);
 		goto err_exit;
 	}
-	wake_lock_init(&priv->wake_lock, WAKE_LOCK_SUSPEND, "hisi-64xx-mbhc");
-	wake_lock_init(&priv->micbias_wake_lock, WAKE_LOCK_SUSPEND, "hisi-64xx-mbhc-micbias");
+#endif
+	wakeup_source_init(&priv->wake_lock, "hisi-64xx-mbhc");
+	wakeup_source_init(&priv->micbias_wake_lock, "hisi-64xx-mbhc-micbias");
+	wakeup_source_init(&priv->timeout_wake_lock, "hisi-64xx-mbhc-timeout");
 	mutex_init(&priv->plug_mutex);
 	mutex_init(&priv->status_mutex);
 	mutex_init(&priv->saradc_mutex);
@@ -1188,7 +1215,9 @@ int hi64xx_mbhc_init(struct snd_soc_codec *codec,
 	priv->mbhc_micbias_work = false;
 
 	/* register anc hs first */
+#ifdef CONFIG_ANC_HS_INTERFACE
 	anc_hs_interface_dev_register(&anc_dev, priv);
+#endif
 
 	usb_analog_hs_dev_register(&usb_analog_dev, priv);
 
@@ -1264,7 +1293,6 @@ int hi64xx_mbhc_init(struct snd_soc_codec *codec,
 	hi64xx_mbhc_first_detect(priv);
 
 
-
 	return ret;
 
 irq_btnupcomp2_exit:
@@ -1290,12 +1318,15 @@ jack_exit:
 		priv->micbias_delay_wq = NULL;
 	}
 mic_delay_wq_exit:
-	wake_lock_destroy(&priv->wake_lock);
-	wake_lock_destroy(&priv->micbias_wake_lock);
+	wakeup_source_trash(&priv->wake_lock);
+	wakeup_source_trash(&priv->micbias_wake_lock);
+	wakeup_source_trash(&priv->timeout_wake_lock);
 	mutex_destroy(&priv->plug_mutex);
 	mutex_destroy(&priv->status_mutex);
 	mutex_destroy(&priv->saradc_mutex);
+#ifdef CONFIG_SWITCH
 err_exit:
+#endif
 	kfree(priv);
 	return ret;
 }
@@ -1317,8 +1348,9 @@ void hi64xx_mbhc_deinit(struct hi64xx_mbhc *mbhc)
 		hi64xx_irq_free_irq(priv->irqmgr, IRQ_BTNUP_COMP1, priv);
 	}
 
-	wake_lock_destroy(&priv->wake_lock);
-	wake_lock_destroy(&priv->micbias_wake_lock);
+	wakeup_source_trash(&priv->wake_lock);
+	wakeup_source_trash(&priv->micbias_wake_lock);
+	wakeup_source_trash(&priv->timeout_wake_lock);
 	mutex_destroy(&priv->plug_mutex);
 	mutex_destroy(&priv->status_mutex);
 	mutex_destroy(&priv->saradc_mutex);
@@ -1329,7 +1361,6 @@ void hi64xx_mbhc_deinit(struct hi64xx_mbhc *mbhc)
 		destroy_workqueue(priv->micbias_delay_wq);
 		priv->micbias_delay_wq = NULL;
 	}
-
 
 
 	kfree(priv);

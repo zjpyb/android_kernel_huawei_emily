@@ -44,6 +44,9 @@
 #include <asm/unaligned.h>
 #include <crypto/hash.h>
 #include <net/tcp.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/siphash.h>
+#endif
 
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 	#define ntohll(x)  be64_to_cpu(x)
@@ -60,7 +63,6 @@
 #define FALSE (0)
 #endif
 
-
 #define MPTCP_SCHED_NAME_HANDOVER "handover"
 #define MPTCP_SCHED_NAME_REDUNDANT "redundant"
 
@@ -68,7 +70,9 @@
 
 #define MPTCP_HW_EXT_PORT_KEY_MAX_LEN 200
 
+#ifdef CONFIG_MPTCP_EPC
 #define HAG_MAX_BLACK_APP_NUM 50
+#endif
 
 enum mptcp_hw_cmd {
 	MPTCP_HW_EXT_UID_CONF_MPTCP = 0x00000000, /* conf_value.i_val.mp_capability:
@@ -197,7 +201,7 @@ struct mptcp_hw_ext_first_path {
 	uint32_t timeout;
 	char if_name[IFNAMSIZ];
 };
-
+#ifdef CONFIG_MPTCP_EPC
 struct mptcp_hw_ext_hag_gw_info {
 	uint32_t lte_ip;
 	uint32_t wifi_ip;
@@ -214,7 +218,7 @@ struct mptcp_hw_ext_hag_config {
 	uint8_t  black_list_num;
 	uint32_t black_app_list[HAG_MAX_BLACK_APP_NUM];
 };
-
+#endif
 struct mptcp_hw_ext_subflow_prio {
 	char if_name[IFNAMSIZ];
 	u8 low_prio;
@@ -268,8 +272,10 @@ struct mptcp_hw_ext {
 		struct mptcp_hw_pid_fd pid_fd;
 		struct mptcp_hw_dip_dport dip_dport;
 		struct mptcp_hw_carrier_info carrier_info;
+#ifdef CONFIG_MPTCP_EPC
 		struct mptcp_hw_ext_hag_gw_info hag_gw_info;
 		struct mptcp_hw_ext_hag_config hag_config;
+#endif
 	} conf;
 
 	union mptcp_hw_ext_value conf_value;
@@ -601,8 +607,9 @@ struct mptcp_cb {
 	u8 next_path_index;
 
 	__u8	mptcp_ver;
+#ifdef CONFIG_MPTCP_EPC
 	u8	socks_sate;/*for socks proxy*/
-
+#endif
 	/* Original snd/rcvbuf of the initial subflow.
 	 * Used for the new subflows on the server-side to allow correct
 	 * autotuning
@@ -691,12 +698,6 @@ struct mptcp_cb {
 #define MPTCP_SUB_FCLOSE	7
 #define MPTCP_SUB_LEN_FCLOSE	12
 #define MPTCP_SUB_LEN_FCLOSE_ALIGN	12
-
-/* option teid for MP-GW */
-#define MPTCP_SUB_TEID         11
-#define MPTCP_SUB_LEN_TEID     7
-#define MPTCP_SUB_LEN_TEID_ALIGN     8
-
 
 /* proxy for CDN WANGSU */
 #define PROXY_MPTCP_OP_LEN_OPT_SERVER_ADDR4 8
@@ -931,22 +932,6 @@ struct mp_prio {
 	__u8	addr_id;
 } __attribute__((__packed__));
 
-/* teid for MP-GW */
-struct mp_option_teid {
-	__u8	kind;
-	__u8	len;
-#if defined(__LITTLE_ENDIAN_BITFIELD)
-	__u8	rsv:4,
-		sub:4;
-#elif defined(__BIG_ENDIAN_BITFIELD)
-	__u8	sub:4,
-		rsv:4;
-#else
-#error	"Adjust your <asm/byteorder.h> defines"
-#endif
-	__u32 teid;
-} __attribute__((packed));
-
 static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 {
 	return 4 + m->A * (4 + m->a * 4) + m->M * (10 + m->m * 4 + csum * 2);
@@ -1056,9 +1041,13 @@ extern char *meta_key_name;
 extern struct lock_class_key meta_slock_key;
 extern char *meta_slock_key_name;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+extern siphash_key_t mptcp_secret;
+#else
 extern u32 mptcp_secret[MD5_MESSAGE_BYTES / 4];
+#endif
 
-/* This is needed to ensure that two subsequent key/nonce-generation result in
+/* This is needed to ensure that two subsequent key/non#ce-generation result in
  * different keys/nonces if the IPs and ports are the same.
  */
 extern u32 mptcp_seed;
@@ -1078,6 +1067,8 @@ extern struct hlist_nulls_head tk_hashtable[MPTCP_HASH_SIZE];
 void mptcp_data_ready(struct sock *sk);
 void mptcp_write_space(struct sock *sk);
 
+void mptcp_add_meta_ofo_queue(const struct sock *meta_sk, struct sk_buff *skb,
+			      struct sock *sk);
 void mptcp_cleanup_rbuf(struct sock *meta_sk, int copied);
 int mptcp_add_sock(struct sock *meta_sk, struct sock *sk, u8 loc_id, u8 rem_id,
 		   gfp_t flags);
@@ -1237,7 +1228,7 @@ extern struct mptcp_sched_ops mptcp_sched_default_adv;
 #define MPTCP_HW_CONF_KEY_HAG_ALL_APP           (0x00000008)
 
 #define MPTCP_HW_EXT_MAX_VALUE_TYPE 24
-#define mptcp_hw_ext_get_cmd_type(cmd_type) ((cmd_type) >> MPTCP_HW_EXT_MAX_VALUE_TYPE)
+#define mptcp_hw_ext_get_cmd_type(cmd_type) (((uint32_t)cmd_type) >> MPTCP_HW_EXT_MAX_VALUE_TYPE)
 
 /* VALUE Type */
 #define MPTCP_HW_CONF_VALUE_MPTCP               (1 << 0)
@@ -1250,7 +1241,7 @@ extern struct mptcp_sched_ops mptcp_sched_default_adv;
 
 #define mptcp_hw_ext_get_conf_type(cmd_input, conf_type)\
 {\
-	(conf_type) = (1 << ((cmd_input) & 0xFFFFFF));\
+	(conf_type) = (1 << (((uint32_t)cmd_input) & 0xFFFFFF));\
 }
 
 struct mptcp_hw_ext_conf_value {
@@ -1269,6 +1260,8 @@ bool mptcp_hw_ext_get_switch_by_uid(int32_t uid);
 void mptcp_init_tcp_sock(struct sock *sk,struct sockaddr_in *daddr, int addr_len);
 void mptcp_init_sub_sock(struct sock *sk, bool master_sk);
 char *anonymousIPv4addr(__be32 ip, char *buf, size_t size);
+bool check_ip_addrss_for_mptcp_available(struct sockaddr *addr);
+bool check_ip_addrss_public_available(struct sockaddr *addr);
 
 #define mptcp_is_primary_subflow(sk) (tcp_sk(sk)->mptcp_sched_prim_intf)
 int mptcp_proxy_fallback(struct sock *sk, int reason, bool is_add);
@@ -1693,11 +1686,6 @@ void mptcp_hw_add_options_write(__be32 *ptr, struct tcp_sock *tp,
                          struct sk_buff *skb);
 void mptcp_hw_add_rewrite_dst_addr(struct sock *sk, struct sockaddr *uaddr);
 
-/* EPC MPTCP proxy functions */
-void mptcp_hw_socks4_send(struct sock *sk);
-int mptcp_hw_socks_recv(struct sock *sk, struct sk_buff *skb);
-
-
 /* TCP and MPTCP mpc flag-depending functions */
 u16 mptcp_select_window(struct sock *sk);
 void mptcp_init_buffer_space(struct sock *sk);
@@ -1709,176 +1697,6 @@ void fput_by_pid(pid_t pid, struct file *file);
 void mptcp_path_array_check(struct sock *meta_sk);
 void mptcp_add_rem_addr_for_sk(struct sock *meta_sk);
 u8	fullmesh_get_rem_locid(const struct mptcp_cb *mpcb);
-#else /* CONFIG_MPTCP */
-#define mptcp_debug(fmt, args...)	\
-	do {				\
-	} while (0)
-
-/* Without MPTCP, we just do one iteration
- * over the only socket available. This assumes that
- * the sk/tp arg is the socket in that case.
- */
-#define mptcp_for_each_sk(mpcb, sk)
-#define mptcp_for_each_sk_safe(__mpcb, __sk, __temp)
-
-#define MPTCP_INC_STATS(net, field)	\
-	do {				\
-	} while(0)
-
-static inline bool mptcp_is_data_fin(const struct sk_buff *skb)
-{
-	return false;
-}
-static inline bool mptcp_is_data_seq(const struct sk_buff *skb)
-{
-	return false;
-}
-static inline struct sock *mptcp_meta_sk(const struct sock *sk)
-{
-	return NULL;
-}
-static inline struct tcp_sock *mptcp_meta_tp(const struct tcp_sock *tp)
-{
-	return NULL;
-}
-static inline int is_meta_sk(const struct sock *sk)
-{
-	return 0;
-}
-static inline int is_master_tp(const struct tcp_sock *tp)
-{
-	return 0;
-}
-static inline void mptcp_del_sock(const struct sock *sk) {}
-static inline void mptcp_update_metasocket(const struct sock *meta_sk) {}
-static inline void mptcp_reinject_data(struct sock *orig_sk, int clone_it) {}
-static inline void mptcp_update_sndbuf(const struct tcp_sock *tp) {}
-static inline void mptcp_clean_rtx_infinite(const struct sk_buff *skb,
-					    const struct sock *sk) {}
-static inline void mptcp_sub_close(struct sock *sk, unsigned long delay) {}
-static inline void mptcp_set_rto(const struct sock *sk) {}
-static inline void mptcp_send_fin(const struct sock *meta_sk) {}
-static inline void mptcp_parse_options(const uint8_t *ptr, const int opsize,
-				       struct mptcp_options_received *mopt,
-				       const struct sk_buff *skb,
-				       const struct tcp_sock *tp) {}
-static inline void mptcp_syn_options(const struct sock *sk,
-				     struct tcp_out_options *opts,
-				     unsigned *remaining) {}
-static inline void mptcp_synack_options(struct request_sock *req,
-					struct tcp_out_options *opts,
-					unsigned *remaining) {}
-
-static inline void mptcp_established_options(struct sock *sk,
-					     struct sk_buff *skb,
-					     struct tcp_out_options *opts,
-					     unsigned *size) {}
-static inline void mptcp_options_write(__be32 *ptr, struct tcp_sock *tp,
-				       const struct tcp_out_options *opts,
-				       struct sk_buff *skb) {}
-static inline void mptcp_close(struct sock *meta_sk, long timeout) {}
-static inline int mptcp_doit(struct sock *sk)
-{
-	return 0;
-}
-static inline int mptcp_check_req_fastopen(struct sock *child,
-					   struct request_sock *req)
-{
-	return 1;
-}
-static inline int mptcp_check_req_master(const struct sock *sk,
-					 const struct sock *child,
-					 const struct request_sock *req,
-					 const struct sk_buff *skb,
-					 int drop)
-{
-	return 1;
-}
-static inline struct sock *mptcp_check_req_child(const struct sock *meta_sk,
-						 const struct sock *child,
-						 const struct request_sock *req,
-						 struct sk_buff *skb,
-						 const struct mptcp_options_received *mopt)
-{
-	return NULL;
-}
-static inline unsigned int mptcp_current_mss(struct sock *meta_sk)
-{
-	return 0;
-}
-static inline void mptcp_sub_close_passive(struct sock *sk) {}
-static inline bool mptcp_fallback_infinite(const struct sock *sk, int flag)
-{
-	return false;
-}
-static inline void mptcp_init_mp_opt(const struct mptcp_options_received *mopt) {}
-static inline void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb) {}
-static inline bool mptcp_check_rtt(const struct tcp_sock *tp, int time)
-{
-	return false;
-}
-static inline int mptcp_check_snd_buf(const struct tcp_sock *tp)
-{
-	return 0;
-}
-static inline void mptcp_send_reset(const struct sock *sk) {}
-static inline bool mptcp_handle_options(struct sock *sk,
-					const struct tcphdr *th,
-					struct sk_buff *skb)
-{
-	return false;
-}
-static inline void mptcp_reset_mopt(struct tcp_sock *tp) {}
-static inline void  __init mptcp_init(void) {}
-static inline bool mptcp_sk_can_gso(const struct sock *sk)
-{
-	return false;
-}
-static inline bool mptcp_can_sg(const struct sock *meta_sk)
-{
-	return false;
-}
-static inline unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk,
-						u32 mss_now, int large_allowed)
-{
-	return 0;
-}
-static inline void mptcp_destroy_sock(struct sock *sk) {}
-static inline int mptcp_rcv_synsent_state_process(struct sock *sk,
-						  struct sock **skptr,
-						  struct sk_buff *skb,
-						  const struct mptcp_options_received *mopt)
-{
-	return 0;
-}
-static inline bool mptcp_can_sendpage(struct sock *sk)
-{
-	return false;
-}
-static inline int mptcp_init_tw_sock(struct sock *sk,
-				     struct tcp_timewait_sock *tw)
-{
-	return 0;
-}
-static inline void mptcp_twsk_destructor(struct tcp_timewait_sock *tw) {}
-static inline void mptcp_disconnect(struct sock *sk) {}
-static inline void mptcp_tsq_flags(struct sock *sk) {}
-static inline void mptcp_tsq_sub_deferred(struct sock *meta_sk) {}
-static inline void mptcp_hash_remove_bh(struct tcp_sock *meta_tp) {}
-static inline void mptcp_remove_shortcuts(const struct mptcp_cb *mpcb,
-					  const struct sk_buff *skb) {}
-static inline void mptcp_init_sub_sock(struct sock *sk, bool master_sk) {}
-static inline void mptcp_init_tcp_sock(struct sock *sk,
-				       struct sockaddr_in *daddr, int addr_len) {}
-static inline void mptcp_disable_static_key(void) {}
-static inline void mptcp_cookies_reqsk_init(struct request_sock *req,
-					    struct mptcp_options_received *mopt,
-					    struct sk_buff *skb) {}
-static inline void mptcp_fin(struct sock *meta_sk) {}
-static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
-{
-	return false;
-}
 
 #endif /* CONFIG_MPTCP */
 

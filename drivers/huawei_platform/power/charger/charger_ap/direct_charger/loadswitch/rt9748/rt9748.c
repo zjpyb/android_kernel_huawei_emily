@@ -3,7 +3,7 @@
  *
  * rt9748 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -57,7 +57,7 @@ struct mutex loadswitch_i2c_mutex_lock;
 static int rt9748_init_finish_flag;
 static int rt9748_interrupt_notify_enable_flag;
 
-#define MSG_LEN                      (2)
+#define MSG_LEN                      2
 
 void ls_i2c_mutex_lock(void)
 {
@@ -73,10 +73,10 @@ static int rt9748_write_block(struct rt9748_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[1];
-	int ret = 0;
+	int ret;
 
-	if (di == NULL || value == NULL) {
-		hwlog_err("di is null or value is null\n");
+	if (!di || !di->client || !value) {
+		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
 
@@ -110,11 +110,11 @@ static int rt9748_read_block(struct rt9748_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[MSG_LEN];
-	u8 buf = 0;
-	int ret = 0;
+	u8 buf;
+	int ret;
 
-	if (di == NULL || value == NULL) {
-		hwlog_err("di is null or value is null\n");
+	if (!di || !di->client || !value) {
+		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
 
@@ -169,7 +169,7 @@ static int rt9748_read_byte(u8 reg, u8 *value)
 
 static int rt9748_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = rt9748_read_byte(reg, &val);
@@ -179,10 +179,9 @@ static int rt9748_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 	val &= ~mask;
 	val |= ((value << shift) & mask);
 
-	ret = rt9748_write_byte(reg, val);
-
-	return ret;
+	return rt9748_write_byte(reg, val);
 }
+
 static int rt9748_watchdog_config(int time)
 {
 	u8 val;
@@ -240,7 +239,6 @@ static int rt9748_reg_init(void)
 			hwlog_err("rt9748 write 0x26 fail\n");
 
 		break;
-
 	case loadswitch_bq25870:
 		ret = rt9748_write_byte(BQ25870_EVENT_1_MASK,
 			BQ25870_EVENT_1_MASK_INIT);
@@ -264,7 +262,6 @@ static int rt9748_reg_init(void)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		ret = rt9748_write_byte(FAN54161_EVENT_1_MASK,
 			FAN54161_EVENT_1_MASK_INIT);
@@ -285,7 +282,6 @@ static int rt9748_reg_init(void)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		ret = rt9748_write_byte(PCA9498UK_EVENT_1_MASK,
 			PCA9498UK_EVENT_1_MASK_INIT);
@@ -306,7 +302,6 @@ static int rt9748_reg_init(void)
 			return -1;
 
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -372,7 +367,7 @@ static int rt9748_discharge(int enable)
 static int rt9748_config_ioc_ocp_threshold_ma(int ocp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -393,7 +388,6 @@ static int rt9748_config_ioc_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (ocp_threshold < BQ25870_IOC_OCP_MIN_0_MA)
 			ocp_threshold = BQ25870_IOC_OCP_MIN_0_MA;
@@ -413,7 +407,6 @@ static int rt9748_config_ioc_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (ocp_threshold < FAN54161_IOC_OCP_MIN_0_MA)
 			ocp_threshold = FAN54161_IOC_OCP_MIN_0_MA;
@@ -433,7 +426,6 @@ static int rt9748_config_ioc_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (ocp_threshold < PCA9498UK_IOC_OCP_MIN_0_MA)
 			ocp_threshold = PCA9498UK_IOC_OCP_MIN_0_MA;
@@ -453,7 +445,6 @@ static int rt9748_config_ioc_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -465,7 +456,7 @@ static int rt9748_config_ioc_ocp_threshold_ma(int ocp_threshold)
 static int rt9748_config_vbus_ovp_threshold_mv(int ovp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -487,7 +478,6 @@ static int rt9748_config_vbus_ovp_threshold_mv(int ovp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (ovp_threshold < BQ25870_VBUS_OVP_MIN_4200_MV)
 			ovp_threshold = BQ25870_VBUS_OVP_MIN_4200_MV;
@@ -507,7 +497,6 @@ static int rt9748_config_vbus_ovp_threshold_mv(int ovp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (ovp_threshold < FAN54161_VBUS_OVP_MIN_4200_MV)
 			ovp_threshold = FAN54161_VBUS_OVP_MIN_4200_MV;
@@ -527,7 +516,6 @@ static int rt9748_config_vbus_ovp_threshold_mv(int ovp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (ovp_threshold < PCA9498UK_VBUS_OVP_MIN_4200_MV)
 			ovp_threshold = PCA9498UK_VBUS_OVP_MIN_4200_MV;
@@ -547,7 +535,6 @@ static int rt9748_config_vbus_ovp_threshold_mv(int ovp_threshold)
 			return -1;
 
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -559,7 +546,7 @@ static int rt9748_config_vbus_ovp_threshold_mv(int ovp_threshold)
 static int rt9748_config_vout_reg_threshold_mv(int vout_reg_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -581,7 +568,6 @@ static int rt9748_config_vout_reg_threshold_mv(int vout_reg_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (vout_reg_threshold < BQ25870_VOUT_REG_MIN_4200_MV)
 			vout_reg_threshold = BQ25870_VOUT_REG_MIN_4200_MV;
@@ -601,7 +587,6 @@ static int rt9748_config_vout_reg_threshold_mv(int vout_reg_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (vout_reg_threshold < FAN54161_VOUT_REG_MIN_4200_MV)
 			vout_reg_threshold = FAN54161_VOUT_REG_MIN_4200_MV;
@@ -621,7 +606,6 @@ static int rt9748_config_vout_reg_threshold_mv(int vout_reg_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (vout_reg_threshold < PCA9498UK_VOUT_REG_MIN_4200_MV)
 			vout_reg_threshold = PCA9498UK_VOUT_REG_MIN_4200_MV;
@@ -641,7 +625,6 @@ static int rt9748_config_vout_reg_threshold_mv(int vout_reg_threshold)
 			return -1;
 
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -653,7 +636,7 @@ static int rt9748_config_vout_reg_threshold_mv(int vout_reg_threshold)
 static int rt9748_config_vdrop_ovp_reg_threshold_mv(int vdrop_ovp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -675,7 +658,6 @@ static int rt9748_config_vdrop_ovp_reg_threshold_mv(int vdrop_ovp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (vdrop_ovp_threshold < BQ25870_VDROP_OVP_MIN_0_MV)
 			vdrop_ovp_threshold = BQ25870_VDROP_OVP_MIN_0_MV;
@@ -695,7 +677,6 @@ static int rt9748_config_vdrop_ovp_reg_threshold_mv(int vdrop_ovp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (vdrop_ovp_threshold < FAN54161_VDROP_OVP_MIN_0_MV)
 			vdrop_ovp_threshold = FAN54161_VDROP_OVP_MIN_0_MV;
@@ -715,7 +696,6 @@ static int rt9748_config_vdrop_ovp_reg_threshold_mv(int vdrop_ovp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (vdrop_ovp_threshold < PCA9498UK_VDROP_OVP_MIN_0_MV)
 			vdrop_ovp_threshold = PCA9498UK_VDROP_OVP_MIN_0_MV;
@@ -735,7 +715,6 @@ static int rt9748_config_vdrop_ovp_reg_threshold_mv(int vdrop_ovp_threshold)
 			return -1;
 
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -747,7 +726,7 @@ static int rt9748_config_vdrop_ovp_reg_threshold_mv(int vdrop_ovp_threshold)
 static int rt9748_config_vdrop_alm_reg_threshold_mv(int vdrop_alm_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -769,7 +748,6 @@ static int rt9748_config_vdrop_alm_reg_threshold_mv(int vdrop_alm_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (vdrop_alm_threshold < BQ25870_VDROP_ALM_MIN_0_MV)
 			vdrop_alm_threshold = BQ25870_VDROP_ALM_MIN_0_MV;
@@ -789,7 +767,6 @@ static int rt9748_config_vdrop_alm_reg_threshold_mv(int vdrop_alm_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (vdrop_alm_threshold < FAN54161_VDROP_ALM_MIN_0_MV)
 			vdrop_alm_threshold = FAN54161_VDROP_ALM_MIN_0_MV;
@@ -809,7 +786,6 @@ static int rt9748_config_vdrop_alm_reg_threshold_mv(int vdrop_alm_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (vdrop_alm_threshold < PCA9498UK_VDROP_ALM_MIN_0_MV)
 			vdrop_alm_threshold = PCA9498UK_VDROP_ALM_MIN_0_MV;
@@ -828,7 +804,6 @@ static int rt9748_config_vdrop_alm_reg_threshold_mv(int vdrop_alm_threshold)
 		if (ret)
 			return -1;
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -840,7 +815,7 @@ static int rt9748_config_vdrop_alm_reg_threshold_mv(int vdrop_alm_threshold)
 static int rt9748_config_vbat_reg_threshold_mv(int vbat_reg_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -862,7 +837,6 @@ static int rt9748_config_vbat_reg_threshold_mv(int vbat_reg_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (vbat_reg_threshold < BQ25870_VBAT_REG_MIN_4200_MV)
 			vbat_reg_threshold = BQ25870_VBAT_REG_MIN_4200_MV;
@@ -882,7 +856,6 @@ static int rt9748_config_vbat_reg_threshold_mv(int vbat_reg_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (vbat_reg_threshold < FAN54161_VBAT_REG_MIN_4200_MV)
 			vbat_reg_threshold = FAN54161_VBAT_REG_MIN_4200_MV;
@@ -902,7 +875,6 @@ static int rt9748_config_vbat_reg_threshold_mv(int vbat_reg_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (vbat_reg_threshold < PCA9498UK_VBAT_REG_MIN_4200_MV)
 			vbat_reg_threshold = PCA9498UK_VBAT_REG_MIN_4200_MV;
@@ -922,7 +894,6 @@ static int rt9748_config_vbat_reg_threshold_mv(int vbat_reg_threshold)
 			return -1;
 
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -934,7 +905,7 @@ static int rt9748_config_vbat_reg_threshold_mv(int vbat_reg_threshold)
 static int rt9748_config_ibat_ocp_threshold_ma(int ocp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -955,7 +926,6 @@ static int rt9748_config_ibat_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (ocp_threshold < BQ25870_IBAT_OCP_MIN_0_MA)
 			ocp_threshold = BQ25870_IBAT_OCP_MIN_0_MA;
@@ -974,7 +944,6 @@ static int rt9748_config_ibat_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (ocp_threshold < FAN54161_IBAT_OCP_MIN_100_MA)
 			ocp_threshold = FAN54161_IBAT_OCP_MIN_100_MA;
@@ -994,7 +963,6 @@ static int rt9748_config_ibat_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (ocp_threshold < PCA9498UK_IBAT_OCP_MIN_400_MA)
 			ocp_threshold = PCA9498UK_IBAT_OCP_MIN_400_MA;
@@ -1013,7 +981,6 @@ static int rt9748_config_ibat_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -1025,7 +992,7 @@ static int rt9748_config_ibat_ocp_threshold_ma(int ocp_threshold)
 static int rt9748_config_ibus_ocp_threshold_ma(int ocp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -1046,7 +1013,6 @@ static int rt9748_config_ibus_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_bq25870:
 		if (ocp_threshold < BQ25870_IBUS_OCP_MIN_0_MA)
 			ocp_threshold = BQ25870_IBUS_OCP_MIN_0_MA;
@@ -1065,7 +1031,6 @@ static int rt9748_config_ibus_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_fair_child:
 		if (ocp_threshold < FAN54161_IBUS_OCP_MIN_100_MA)
 			ocp_threshold = FAN54161_IBUS_OCP_MIN_100_MA;
@@ -1085,7 +1050,6 @@ static int rt9748_config_ibus_ocp_threshold_ma(int ocp_threshold)
 			return -1;
 
 		break;
-
 	case loadswitch_nxp:
 		if (ocp_threshold < PCA9498UK_IBUS_OCP_MIN_400_MA)
 			ocp_threshold = PCA9498UK_IBUS_OCP_MIN_400_MA;
@@ -1104,7 +1068,6 @@ static int rt9748_config_ibus_ocp_threshold_ma(int ocp_threshold)
 		if (ret)
 			return -1;
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -1115,10 +1078,13 @@ static int rt9748_config_ibus_ocp_threshold_ma(int ocp_threshold)
 
 static int rt9748_get_vbus_voltage_mv(int *vbus)
 {
-	int ret = 0;
+	int ret;
 	u8 reg_high = 0;
 	u8 reg_low = 0;
-	int polarity = 0;
+	int polarity;
+
+	if (!vbus)
+		return -1;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -1135,7 +1101,6 @@ static int rt9748_get_vbus_voltage_mv(int *vbus)
 		if (polarity == 1)
 			*vbus *= -1;
 		break;
-
 	case loadswitch_bq25870:
 		ret = rt9748_read_byte(BQ25870_VBUS_ADC2, &reg_high);
 		ret |= rt9748_read_byte(BQ25870_VBUS_ADC1, &reg_low);
@@ -1150,7 +1115,6 @@ static int rt9748_get_vbus_voltage_mv(int *vbus)
 		if (polarity == 1)
 			*vbus *= -1;
 		break;
-
 	case loadswitch_fair_child:
 		ret = rt9748_read_byte(FAN54161_VBUS_ADC2, &reg_high);
 		ret |= rt9748_read_byte(FAN54161_VBUS_ADC1, &reg_low);
@@ -1165,7 +1129,6 @@ static int rt9748_get_vbus_voltage_mv(int *vbus)
 		if (polarity == 1)
 			*vbus *= -1;
 		break;
-
 	case loadswitch_nxp:
 		ret = rt9748_read_byte(PCA9498UK_VBUS_ADC2, &reg_high);
 		ret |= rt9748_read_byte(PCA9498UK_VBUS_ADC1, &reg_low);
@@ -1180,7 +1143,6 @@ static int rt9748_get_vbus_voltage_mv(int *vbus)
 		if (polarity == 1)
 			*vbus *= -1;
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -1191,8 +1153,8 @@ static int rt9748_get_vbus_voltage_mv(int *vbus)
 
 static int rt9748_get_bat_voltage_mv(void)
 {
-	int ret = 0;
-	int polarity = 0;
+	int ret;
+	int polarity;
 	u8 reg_high = 0;
 	u8 reg_low = 0;
 	int vbat = 0;
@@ -1212,7 +1174,6 @@ static int rt9748_get_bat_voltage_mv(void)
 		if (polarity == 1)
 			vbat *= -1;
 		break;
-
 	case loadswitch_bq25870:
 		ret = rt9748_read_byte(BQ25870_VBAT_ADC2, &reg_high);
 		ret |= rt9748_read_byte(BQ25870_VBAT_ADC1, &reg_low);
@@ -1229,7 +1190,6 @@ static int rt9748_get_bat_voltage_mv(void)
 		if (polarity == 1)
 			vbat *= -1;
 		break;
-
 	case loadswitch_fair_child:
 		ret = rt9748_read_byte(FAN54161_VBAT_ADC2, &reg_high);
 		ret |= rt9748_read_byte(FAN54161_VBAT_ADC1, &reg_low);
@@ -1244,7 +1204,6 @@ static int rt9748_get_bat_voltage_mv(void)
 		if (polarity == 1)
 			vbat *= -1;
 		break;
-
 	case loadswitch_nxp:
 		ret = rt9748_read_byte(PCA9498UK_VBAT_ADC2, &reg_high);
 		ret |= rt9748_read_byte(PCA9498UK_VBAT_ADC1, &reg_low);
@@ -1259,7 +1218,6 @@ static int rt9748_get_bat_voltage_mv(void)
 		if (polarity == 1)
 			vbat *= -1;
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -1270,10 +1228,13 @@ static int rt9748_get_bat_voltage_mv(void)
 
 static int rt9748_get_bat_current_ma(int *ibat)
 {
-	int ret = 0;
+	int ret;
 	u8 reg_high = 0;
 	u8 reg_low = 0;
-	int polarity = 0;
+	int polarity;
+
+	if (!ibat)
+		return -1;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -1294,7 +1255,6 @@ static int rt9748_get_bat_current_ma(int *ibat)
 		if (polarity == 1)
 			*ibat *= -1;
 		break;
-
 	case loadswitch_bq25870:
 		ret = rt9748_read_byte(BQ25870_IBAT_ADC2, &reg_high);
 		ret |= rt9748_read_byte(BQ25870_IBAT_ADC1, &reg_low);
@@ -1313,7 +1273,6 @@ static int rt9748_get_bat_current_ma(int *ibat)
 		if (polarity == 1)
 			*ibat *= -1;
 		break;
-
 	case loadswitch_fair_child:
 		ret = rt9748_read_byte(FAN54161_IBAT_ADC2, &reg_high);
 		ret |= rt9748_read_byte(FAN54161_IBAT_ADC1, &reg_low);
@@ -1332,7 +1291,6 @@ static int rt9748_get_bat_current_ma(int *ibat)
 		if (polarity == 1)
 			*ibat *= -1;
 		break;
-
 	case loadswitch_nxp:
 		ret = rt9748_read_byte(PCA9498UK_IBAT_ADC2, &reg_high);
 		ret |= rt9748_read_byte(PCA9498UK_IBAT_ADC1, &reg_low);
@@ -1351,7 +1309,6 @@ static int rt9748_get_bat_current_ma(int *ibat)
 		if (polarity == 1)
 			*ibat *= -1;
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -1365,6 +1322,9 @@ static int rt9748_get_ls_temp(int *temp)
 	u8 reg;
 	int ret;
 
+	if (!temp)
+		return -1;
+
 	ret = rt9748_read_byte(RT9748_TDIE_ADC1, &reg);
 	if (ret)
 		return -1;
@@ -1377,8 +1337,11 @@ static int rt9748_get_ls_ibus(int *ibus)
 {
 	u8 reg_high = 0;
 	u8 reg_low = 0;
-	int polarity = 0;
+	int polarity;
 	int ret;
+
+	if (!ibus)
+		return -1;
 
 	switch (g_rt9748_dev->device_id) {
 	case loadswitch_rt9748:
@@ -1397,7 +1360,6 @@ static int rt9748_get_ls_ibus(int *ibus)
 		if (polarity == 1)
 			*ibus *= -1;
 		break;
-
 	case loadswitch_bq25870:
 		ret = rt9748_read_byte(BQ25870_IBUS_ADC2, &reg_high);
 		ret |= rt9748_read_byte(BQ25870_IBUS_ADC1, &reg_low);
@@ -1414,7 +1376,6 @@ static int rt9748_get_ls_ibus(int *ibus)
 		if (polarity == 1)
 			*ibus *= -1;
 		break;
-
 	case loadswitch_fair_child:
 		ret = rt9748_read_byte(FAN54161_IBUS_ADC2, &reg_high);
 		ret |= rt9748_read_byte(FAN54161_IBUS_ADC1, &reg_low);
@@ -1431,7 +1392,6 @@ static int rt9748_get_ls_ibus(int *ibus)
 		if (polarity == 1)
 			*ibus *= -1;
 		break;
-
 	case loadswitch_nxp:
 		ret = rt9748_read_byte(PCA9498UK_IBUS_ADC2, &reg_high);
 		ret |= rt9748_read_byte(PCA9498UK_IBUS_ADC1, &reg_low);
@@ -1448,7 +1408,6 @@ static int rt9748_get_ls_ibus(int *ibus)
 		if (polarity == 1)
 			*ibus *= -1;
 		break;
-
 	default:
 		hwlog_err("device_id is not found\n");
 		return -1;
@@ -1460,7 +1419,7 @@ static int rt9748_get_ls_ibus(int *ibus)
 static int loadswitch_get_device_id(void)
 {
 	u8 reg = 0;
-	int ret = 0;
+	int ret;
 	int bit3;
 	int dev_id = DEVICE_ID_GET_FAIL;
 	struct rt9748_device_info *di = g_rt9748_dev;
@@ -1491,21 +1450,16 @@ static int loadswitch_get_device_id(void)
 		case DEVICE_ID_RICHTEK:
 			dev_id = loadswitch_rt9748;
 			break;
-
 		case DEVICE_ID_TI:
 			dev_id = loadswitch_bq25870;
 			break;
-
 		case DEVICE_ID_FSA:
 			dev_id = loadswitch_fair_child;
 			break;
-
-		/* fall through: nxp id1 & id2 */
 		case DEVICE_ID1_NXP:
 		case DEVICE_ID2_NXP:
 			dev_id = loadswitch_nxp;
 			break;
-
 		default:
 			dev_id = DEVICE_ID_GET_FAIL;
 			break;
@@ -1523,7 +1477,7 @@ static int rt9748_charge_status(void)
 {
 	struct rt9748_device_info *di = g_rt9748_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -1537,10 +1491,10 @@ static int rt9748_charge_status(void)
 
 static int chip_init(void)
 {
-	int ret = 0;
+	int ret;
 	struct rt9748_device_info *di = g_rt9748_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -1551,7 +1505,7 @@ static int chip_init(void)
 	ls_i2c_mutex_lock();
 	ret = gpio_direction_output(di->gpio_en, 1);
 	if (ret) {
-		hwlog_err("gpio_en fail\n");
+		hwlog_err("gpio set output fail\n");
 		ls_i2c_mutex_unlock();
 		return -1;
 	}
@@ -1566,10 +1520,10 @@ static int chip_init(void)
 
 static int rt9748_charge_init(void)
 {
-	int ret = 0;
+	int ret;
 	struct rt9748_device_info *di = g_rt9748_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -1599,7 +1553,7 @@ static int rt9748_charge_init(void)
 
 static int batinfo_init(void)
 {
-	int ret = 0;
+	int ret;
 
 	ret = chip_init();
 	ret |= rt9748_adc_enable(1);
@@ -1613,10 +1567,10 @@ static int batinfo_init(void)
 
 static int rt9748_charge_exit(void)
 {
-	int ret = 0;
+	int ret;
 	struct rt9748_device_info *di = g_rt9748_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -1654,7 +1608,7 @@ static int rt9748_batinfo_exit(void)
 static int rt9748_is_ls_close(void)
 {
 	u8 reg = 0;
-	int ret = 0;
+	int ret;
 
 	ret = rt9748_read_byte(RT9748_CONTROL, &reg);
 	if (ret)
@@ -1690,22 +1644,33 @@ static struct batinfo_ops rt9748_batinfo_ops = {
 
 static void rt9748_irq_work(struct work_struct *work)
 {
-	struct rt9748_device_info *di;
-	struct nty_data *data;
-	u8 event1;
-	u8 event2;
-	u8 status;
-	struct atomic_notifier_head *direct_charge_fault_notifier_list;
+	struct rt9748_device_info *di = NULL;
+	struct nty_data *data = NULL;
+	struct atomic_notifier_head *fault_notifier_list = NULL;
+	u8 event1 = 0;
+	u8 event2 = 0;
+	u8 status = 0;
+	int ret;
+
+	if (!work) {
+		hwlog_err("work is null\n");
+		return;
+	}
 
 	di = container_of(work, struct rt9748_device_info, irq_work);
+	if (!di || !di->client) {
+		hwlog_err("di is null\n");
+		return;
+	}
+
 	data = &(di->nty_data);
+	lvc_get_fault_notifier(&fault_notifier_list);
 
-	direct_charge_lvc_get_fault_notifier(
-		&direct_charge_fault_notifier_list);
-
-	rt9748_read_byte(RT9748_EVENT_1, &event1);
-	rt9748_read_byte(RT9748_EVENT_2, &event2);
-	rt9748_read_byte(RT9748_EVENT_STATUS, &status);
+	ret = rt9748_read_byte(RT9748_EVENT_1, &event1);
+	ret |= rt9748_read_byte(RT9748_EVENT_2, &event2);
+	ret |= rt9748_read_byte(RT9748_EVENT_STATUS, &status);
+	if (ret)
+		hwlog_err("irq_work read fail\n");
 
 	data->event1 = event1;
 	data->event2 = event2;
@@ -1716,35 +1681,28 @@ static void rt9748_irq_work(struct work_struct *work)
 		if (event1 & RT9748_VBUS_OVP_FLT) {
 			hwlog_err("vbus ovp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_VBUS_OVP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_VBUS_OVP, data);
 		} else if (event1 & RT9748_IBUS_REVERSE_OCP_FLT) {
 			hwlog_err("ibus reverse ocp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_REVERSE_OCP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_REVERSE_OCP, data);
 		} else if (event2 & RT9748_OTP_FLT) {
 			hwlog_err("otp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_OTP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_OTP, data);
 		} else if (event2 & RT9748_INPUT_OCP_FLT) {
 			hwlog_err("input ocp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_INPUT_OCP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_INPUT_OCP, data);
 		} else if (event2 & RT9748_VDROP_OVP_FLT) {
 			hwlog_err("vdrop ovp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_VDROP_OVP, data);
-		} else {
-			/* do nothing */
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_VDROP_OVP, data);
 		}
 	}
 
@@ -1760,7 +1718,7 @@ static irqreturn_t rt9748_interrupt(int irq, void *_di)
 {
 	struct rt9748_device_info *di = _di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -1780,7 +1738,7 @@ static irqreturn_t rt9748_interrupt(int irq, void *_di)
 static void rt9748_parse_dts(struct device_node *np,
 	struct rt9748_device_info *di)
 {
-	int ret = 0;
+	int ret;
 
 	ret = of_property_read_u32(np, "sense_r_mohm",
 		(u32 *)&(di->sense_r_mohm));
@@ -1794,23 +1752,20 @@ static void rt9748_parse_dts(struct device_node *np,
 static int rt9748_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret = 0;
+	int ret;
 	struct rt9748_device_info *di = NULL;
 	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
-	if (client == NULL || id == NULL) {
-		hwlog_err("client or id is null\n");
-		return -ENOMEM;
-	}
+	if (!client || !client->dev.of_node || !id)
+		return -ENODEV;
 
 	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_rt9748_dev = di;
-
 	di->chip_already_init = 0;
 	di->dev = &client->dev;
 	np = di->dev->of_node;
@@ -1824,7 +1779,7 @@ static int rt9748_probe(struct i2c_client *client,
 	hwlog_info("gpio_int=%d\n", di->gpio_int);
 
 	if (!gpio_is_valid(di->gpio_int)) {
-		hwlog_err("gpio(gpio_int) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto rt9748_fail_0;
 	}
@@ -1833,38 +1788,38 @@ static int rt9748_probe(struct i2c_client *client,
 	hwlog_err("gpio_en=%d\n", di->gpio_en);
 
 	if (!gpio_is_valid(di->gpio_en)) {
-		hwlog_err("gpio(gpio_en) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto rt9748_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_int, "loadswitch_int");
 	if (ret) {
-		hwlog_err("gpio(gpio_int) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto rt9748_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_en, "loadswitch_en");
 	if (ret) {
-		hwlog_err("gpio(gpio_en) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto rt9748_fail_1;
 	}
 
 	ret = gpio_direction_output(di->gpio_en, 0);
 	if (ret) {
-		hwlog_err("gpio(gpio_en) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto rt9748_fail_2;
 	}
 
 	ret = gpio_direction_input(di->gpio_int);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) set input fail\n");
+		hwlog_err("gpio set input fail\n");
 		goto rt9748_fail_2;
 	}
 
 	di->irq_int = gpio_to_irq(di->gpio_int);
 	if (di->irq_int < 0) {
-		hwlog_err("gpio(gpio_int) map to irq fail\n");
+		hwlog_err("gpio map to irq fail\n");
 		ret = -EINVAL;
 		goto rt9748_fail_2;
 	}
@@ -1872,18 +1827,18 @@ static int rt9748_probe(struct i2c_client *client,
 	ret = request_irq(di->irq_int, rt9748_interrupt,
 		IRQF_TRIGGER_FALLING, "loadswitch_int_irq", di);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) irq request fail\n");
+		hwlog_err("gpio irq request fail\n");
 		di->irq_int = -1;
 		goto rt9748_fail_2;
 	}
 
-	ret = loadswitch_ops_register(&rt9748_sysinfo_ops);
+	ret = lvc_ops_register(&rt9748_sysinfo_ops);
 	if (ret) {
 		hwlog_err("rt9748 sysinfo ops register fail\n");
 		goto rt9748_fail_3;
 	}
 
-	ret = batinfo_lvc_ops_register(&rt9748_batinfo_ops);
+	ret = lvc_batinfo_ops_register(&rt9748_batinfo_ops);
 	if (ret) {
 		hwlog_err("rt9748 batinfo ops register fail\n");
 		goto rt9748_fail_3;
@@ -1901,7 +1856,7 @@ rt9748_fail_1:
 rt9748_fail_0:
 	devm_kfree(&client->dev, di);
 	g_rt9748_dev = NULL;
-	np = NULL;
+
 	return ret;
 }
 
@@ -1910,6 +1865,9 @@ static int rt9748_remove(struct i2c_client *client)
 	struct rt9748_device_info *di = i2c_get_clientdata(client);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	/* reset rt9748 */
 	gpio_set_value(di->gpio_en, 0);
@@ -1937,7 +1895,7 @@ static const struct of_device_id rt9748_of_match[] = {
 };
 
 static const struct i2c_device_id rt9748_i2c_id[] = {
-	{"rt9748", 0}, {}
+	{ "rt9748", 0 }, {}
 };
 
 static struct i2c_driver rt9748_driver = {
@@ -1953,13 +1911,7 @@ static struct i2c_driver rt9748_driver = {
 
 static int __init rt9748_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&rt9748_driver);
-	if (ret)
-		hwlog_err("i2c_add_driver error\n");
-
-	return ret;
+	return i2c_add_driver(&rt9748_driver);
 }
 
 static void __exit rt9748_exit(void)

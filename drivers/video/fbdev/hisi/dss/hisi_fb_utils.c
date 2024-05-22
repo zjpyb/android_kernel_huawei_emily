@@ -10,14 +10,22 @@
 * GNU General Public License for more details.
 *
 */
+/*lint -e559*/
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
 
 #include "hisi_fb.h"
 #include "hisi_overlay_utils.h"
 #include "hisi_display_effect.h"
+#include "hisi_dpe_utils.h"
 
+#if defined (CONFIG_HISI_PERIDVFS)
 #include "peri_volt_poll.h"
+#endif
 
+#if defined(CONFIG_LCDKIT_DRIVER)
 #include "lcdkit_fb_util.h"
+#endif
 
 
 #define MAX_BUF 60
@@ -86,7 +94,7 @@ uint32_t get_panel_yres(struct hisi_fb_data_type *hisifd)
 
 uint32_t hisifb_line_length(int index, uint32_t xres, int bpp)
 {
-	return ALIGN_UP(xres * bpp, DMA_STRIDE_ALIGN);
+	return ALIGN_UP(xres * (uint32_t)bpp, DMA_STRIDE_ALIGN);
 }
 
 void hisifb_get_timestamp(struct timeval *tv)
@@ -127,7 +135,7 @@ int hisifb_sbl_pow_i(int base, int exp)
 	return result;
 }
 
-void hisifb_save_file(char *filename, char *buf, uint32_t buf_len)
+void hisifb_save_file(char *filename, const char *buf, uint32_t buf_len)
 {
 	ssize_t write_len = 0;
 	struct file *fd = NULL;
@@ -191,6 +199,44 @@ int hisifb_ctrl_fastboot(struct hisi_fb_data_type *hisifd)
 	return ret;
 }
 
+int hisifb_get_other_fb_votelevel(struct hisi_fb_data_type *hisifd, uint32_t *max_vote_level)
+{
+	struct hisi_fb_data_type *targetfd1 = NULL;
+	struct hisi_fb_data_type *targetfd2 = NULL;
+	uint32_t target_dss_voltage_level;
+
+	if (NULL == hisifd) {
+		HISI_FB_ERR("hisifd is NULL");
+		return -EINVAL;
+	}
+
+	if (hisifd->index == PRIMARY_PANEL_IDX) {
+		targetfd1 = hisifd_list[EXTERNAL_PANEL_IDX];
+		targetfd2 = hisifd_list[AUXILIARY_PANEL_IDX];
+	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
+		targetfd1 = hisifd_list[PRIMARY_PANEL_IDX];
+		targetfd2 = hisifd_list[AUXILIARY_PANEL_IDX];
+	} else {
+		targetfd1 = hisifd_list[PRIMARY_PANEL_IDX];
+		targetfd2 = hisifd_list[EXTERNAL_PANEL_IDX];
+	}
+
+	if ((targetfd1 == NULL) && (targetfd2 == NULL)) {
+		target_dss_voltage_level = PERI_VOLTAGE_LEVEL0;
+	} else if (targetfd1 == NULL) {
+		target_dss_voltage_level = targetfd2->dss_vote_cmd.dss_voltage_level;
+	} else if (targetfd2 == NULL) {
+		target_dss_voltage_level = targetfd1->dss_vote_cmd.dss_voltage_level;
+	} else {
+		target_dss_voltage_level = ((targetfd1->dss_vote_cmd.dss_voltage_level > targetfd2->dss_vote_cmd.dss_voltage_level) ?
+			targetfd1->dss_vote_cmd.dss_voltage_level : targetfd2->dss_vote_cmd.dss_voltage_level);
+	}
+
+	*max_vote_level = target_dss_voltage_level;
+
+	return 0;
+}
+
 int hisifb_ctrl_on(struct hisi_fb_data_type *hisifd)
 {
 	struct hisi_fb_panel_data *pdata = NULL;
@@ -208,7 +254,7 @@ int hisifb_ctrl_on(struct hisi_fb_data_type *hisifd)
 		return -EINVAL;
 	}
 
-	if (pdata->on) {
+	if (pdata->on != NULL) {
 		ret = pdata->on(hisifd->pdev);
 		if (ret < 0) {
 			HISI_FB_ERR("regulator/clk on fail.\n");
@@ -252,7 +298,7 @@ int hisifb_ctrl_off(struct hisi_fb_data_type *hisifd)
 	hisi_overlay_off(hisifd);
 
 
-	if (pdata->off) {
+	if (pdata->off != NULL) {
 		ret = pdata->off(hisifd->pdev);
 	}
 
@@ -286,11 +332,11 @@ int hisifb_ctrl_lp(struct hisi_fb_data_type *hisifd, bool lp_enter)
 	if (lp_enter) {
 		hisi_overlay_off_lp(hisifd);
 
-		if (pdata->lp_ctrl) {
+		if (pdata->lp_ctrl != NULL) {
 			ret = pdata->lp_ctrl(hisifd->pdev, lp_enter);
 		}
 	} else {
-		if (pdata->lp_ctrl) {
+		if (pdata->lp_ctrl != NULL) {
 			ret = pdata->lp_ctrl(hisifd->pdev, lp_enter);
 		}
 
@@ -322,7 +368,7 @@ int hisifb_ctrl_esd(struct hisi_fb_data_type *hisifd)
 		goto err_out;
 	}
 
-	if (pdata->esd_handle) {
+	if (pdata->esd_handle != NULL) {
 		hisifb_vsync_disable_enter_idle(hisifd, true);
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->esd_handle(hisifd->pdev);
@@ -336,7 +382,7 @@ err_out:
 	return ret;
 }
 
-int hisifb_ctrl_sbl(struct fb_info *info, int value)
+int hisifb_ctrl_sbl(struct fb_info *info, uint32_t value)
 {
 	int ret = 0;
 	struct hisi_fb_data_type *hisifd = NULL;
@@ -367,7 +413,7 @@ int hisifb_ctrl_sbl(struct fb_info *info, int value)
 	}
 
 	if (hisifd->panel_info.sre_support) {
-		if (pdata->sbl_ctrl) {
+		if (pdata->sbl_ctrl != NULL) {
 			hisifb_activate_vsync(hisifd);
 			hisifd->sre_enable = (value >> 24) & 0x1;
 			pdata->sbl_ctrl(hisifd->pdev, hisifd->sre_enable);
@@ -413,7 +459,7 @@ int hisifb_ctrl_sbl(struct fb_info *info, int value)
 	tmp = hisifd->sbl_enable;
 	hisifd->sbl.sbl_enable = set_bits32(hisifd->sbl.sbl_enable, tmp, 1, 0);
 
-	if (pdata->sbl_ctrl) {
+	if (pdata->sbl_ctrl != NULL) {
 		hisifb_activate_vsync(hisifd);
 		hisifd->sbl_enable = (hisifd->sbl_enable > 0) ? 1 : 0;
 		pdata->sbl_ctrl(hisifd->pdev, hisifd->sbl_enable);
@@ -446,20 +492,72 @@ int hisifb_fps_upt_isr_handler(struct hisi_fb_data_type *hisifd)
 		goto err_out;
 	}
 
-	if (pdata->lcd_fps_updt_handle) {
+	if (pdata->lcd_fps_updt_handle != NULL) {
 		ret = pdata->lcd_fps_updt_handle(hisifd->pdev);
 	}
 
 err_out:
 	return ret;
 }
+
 /*lint -e644 -e540*/
+int dss_get_peri_volt(int *curr_volt)
+{
+#if defined (CONFIG_HISI_PERIDVFS)
+	struct peri_volt_poll *pvp = NULL;
+
+	pvp = peri_volt_poll_get(DEV_DSS_VOLTAGE_ID, NULL);
+	if (!pvp) {
+		HISI_FB_ERR("pvp get failed!\n");
+		return -EINVAL;
+	}
+	*curr_volt = peri_get_volt(pvp);
+#endif
+
+	return 0;
+}
+
+static int dss_set_peri_volt(int volt_to_set, int *curr_volt)
+{
+	int ret = 0;
+
+#if defined (CONFIG_HISI_PERIDVFS)
+	struct peri_volt_poll *pvp = NULL;
+	bool is_lowtemp = false;
+
+	pvp = peri_volt_poll_get(DEV_DSS_VOLTAGE_ID, NULL);
+	if (!pvp) {
+		HISI_FB_ERR("get pvp failed!\n");
+		return -EINVAL;
+	}
+
+	if (peri_get_temperature(pvp)) {
+		is_lowtemp = true;
+	}
+
+	if (!is_vote_needed_for_low_temp(is_lowtemp, volt_to_set)) {
+		HISI_FB_DEBUG("is_lowtemp, return\n");
+		return -EINVAL;
+	}
+
+	ret = peri_set_volt(pvp, volt_to_set);
+	if (ret) {
+		HISI_FB_ERR("set votage_value=%d failed, ret=%d", volt_to_set, ret);
+		return -EINVAL;
+	}
+	HISI_FB_DEBUG("set votage_value=%d\n", volt_to_set);
+
+	*curr_volt = peri_get_volt(pvp);
+#endif
+
+	return ret;
+}
+
 int hisifb_ctrl_dss_voltage_get(struct fb_info *info, void __user *argp)
 {
 	int voltage_value = 0;
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 	dss_vote_cmd_t dss_vote_cmd;
-	struct peri_volt_poll *pvp = NULL;
 
 	if (NULL == info) {
 		HISI_FB_ERR("dss voltage get info NULL Pointer!\n");
@@ -489,18 +587,16 @@ int hisifb_ctrl_dss_voltage_get(struct fb_info *info, void __user *argp)
 		}
 	}
 	memset(&dss_vote_cmd, 0, sizeof(dss_vote_cmd_t));
-	pvp = peri_volt_poll_get(DEV_DSS_VOLTAGE_ID, NULL);
-	if (!pvp) {
-		HISI_FB_ERR("pvp get failed!\n");
-		return -EINVAL;
-	}
-	voltage_value = peri_get_volt(pvp);
+
+	dss_get_peri_volt(&voltage_value);
+
 	dss_vote_cmd.dss_voltage_level = dpe_get_voltage_level(voltage_value);
+
 	if (copy_to_user(argp, &dss_vote_cmd, sizeof(dss_vote_cmd_t))) {
 		HISI_FB_ERR("copy to user fail\n");
 		return -EFAULT;
 	}
-	HISI_FB_DEBUG("fb%d, dss_voltage_level = %d!\n", hisifd->index, dss_vote_cmd.dss_voltage_level);
+	HISI_FB_DEBUG("fb%d, current_peri_voltage_level = %d\n", hisifd->index, dss_vote_cmd.dss_voltage_level);
 
 	return 0;
 }
@@ -508,27 +604,30 @@ int hisifb_ctrl_dss_voltage_get(struct fb_info *info, void __user *argp)
 int hisifb_ctrl_dss_voltage_set(struct fb_info *info, void __user *argp)
 {
 	int ret = 0;
-	int voltage_value = 0;
-	bool need_vote_vol = false;
-	bool is_normal_temperature = true;
-	struct hisi_fb_data_type *hisifd;
-	struct hisi_fb_data_type *targetfd = NULL;
+	int volt_to_set;
+	uint32_t volt_level_to_set;
+	struct hisi_fb_data_type *hisifd = NULL;
 	dss_vote_cmd_t dss_vote_cmd;
+	int current_peri_voltage = 0;
+	uint32_t current_dss_voltage_level;
 
-	struct peri_volt_poll *pvp = NULL;
+	struct hisi_fb_data_type *fb0 = hisifd_list[PRIMARY_PANEL_IDX];
+	struct hisi_fb_data_type *fb1 = hisifd_list[EXTERNAL_PANEL_IDX];
+	struct hisi_fb_data_type *fb2 = hisifd_list[AUXILIARY_PANEL_IDX];
+	struct hisi_fb_data_type *fb3 = hisifd_list[MEDIACOMMON_PANEL_IDX];
 
-	if (NULL == info) {
+	if (info == NULL) {
 		HISI_FB_ERR("dss voltage set info NULL Pointer!\n");
 		return -EINVAL;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)info->par;
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("dss voltage set hisifd NULL Pointer!\n");
 		return -EINVAL;
 	}
 
-	if (NULL == argp) {
+	if (argp == NULL) {
 		HISI_FB_ERR("dss voltage set argp NULL Pointer!\n");
 		return -EINVAL;
 	}
@@ -538,71 +637,77 @@ int hisifb_ctrl_dss_voltage_set(struct fb_info *info, void __user *argp)
 		return -EINVAL;
 	}
 
-	if (hisifd->index == PRIMARY_PANEL_IDX) {
-		if (hisifd->core_clk_upt_support == 0) {
-			HISI_FB_DEBUG("no support core_clk_upt\n");
-			return ret;
+	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
+		HISI_FB_ERR("fb%d, dss voltage get not supported!\n", hisifd->index);
+		return -EINVAL;
+	}
+
+	if ((hisifd->index == PRIMARY_PANEL_IDX) && (hisifd->core_clk_upt_support == 0)) {
+		HISI_FB_DEBUG("no support core_clk_upt\n");
+		return ret;
+	}
+
+	if (fb1 && !fb1->dp.dptx_vr) {
+		if ((hisifd->index == AUXILIARY_PANEL_IDX) && (!hisifd_list[PRIMARY_PANEL_IDX]->panel_power_on)) {
+			HISI_FB_INFO("fb%d, primary_pane is power off!\n", hisifd->index);
+			return -EINVAL;
 		}
 	}
 
-	if ((hisifd->index == AUXILIARY_PANEL_IDX) && (!hisifd_list[PRIMARY_PANEL_IDX]->panel_power_on)) {
-		HISI_FB_INFO("fb%d, primary_pane is power off!\n", hisifd->index);
-		return -EINVAL;
-	}
+	down(&g_hisifb_dss_clk_vote_sem);
 
 	ret = copy_from_user(&dss_vote_cmd, argp, sizeof(dss_vote_cmd_t));//lint !e509
 	if (ret) {
 		HISI_FB_ERR("copy_from_user failed!ret=%d!\n", ret);
-		return ret;
+		goto volt_vote_out;
 	}
-	voltage_value = dpe_get_voltage_value(&dss_vote_cmd);
-	if (voltage_value < 0) {
+
+	if (dss_vote_cmd.dss_voltage_level == hisifd->dss_vote_cmd.dss_voltage_level) {
+		HISI_FB_DEBUG("fb%d same voltage level %d\n", hisifd->index, dss_vote_cmd.dss_voltage_level);
+		goto volt_vote_out;
+	}
+
+	ret = hisifb_get_other_fb_votelevel(hisifd, &current_dss_voltage_level);
+	if (ret) {
+		HISI_FB_ERR("set max votage_value=%d failed,", ret);
+		ret = -EINVAL;
+		goto volt_vote_out;
+	}
+
+	volt_level_to_set = (dss_vote_cmd.dss_voltage_level > current_dss_voltage_level) ?
+		dss_vote_cmd.dss_voltage_level : current_dss_voltage_level;
+
+	volt_to_set = dpe_get_voltage_value(volt_level_to_set);
+	if (volt_to_set < 0) {
 		HISI_FB_ERR("get votage_value failed!\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto volt_vote_out;
 	}
 
-	pvp = peri_volt_poll_get(DEV_DSS_VOLTAGE_ID, NULL);
-	if (!pvp) {
-		HISI_FB_ERR("get pvp failed!\n");
-		return -EINVAL;
+	if (dss_set_peri_volt(volt_to_set, &current_peri_voltage)) {
+		ret = -EINVAL;
+		goto volt_vote_out;
 	}
 
-	if ((dss_vote_cmd.dss_voltage_level == hisifd->dss_vote_cmd.dss_voltage_level)
-		&& (voltage_value == peri_get_volt(pvp))) {
-		return ret;
-	}
+	HISI_FB_DEBUG("fb%d->level %d,[%d, %d, %d, %d], set %d, current %d\n", hisifd->index,
+		dss_vote_cmd.dss_voltage_level,
+		(fb0 != NULL) ? fb0->dss_vote_cmd.dss_voltage_level : 0,
+		(fb1 != NULL) ? fb1->dss_vote_cmd.dss_voltage_level : 0,
+		(fb2 != NULL) ? fb2->dss_vote_cmd.dss_voltage_level : 0,
+		(fb3 != NULL) ? fb3->dss_vote_cmd.dss_voltage_level : 0,
+		volt_level_to_set, current_peri_voltage);
 
-	if (hisifd->index == PRIMARY_PANEL_IDX) {
-		targetfd = hisifd_list[AUXILIARY_PANEL_IDX];
-	} else if (hisifd->index == AUXILIARY_PANEL_IDX ) {
-		targetfd = hisifd_list[PRIMARY_PANEL_IDX];
-	}
-
-	if (targetfd) {
-		if ((dss_vote_cmd.dss_voltage_level >= targetfd->dss_vote_cmd.dss_voltage_level)
-			&& (is_normal_temperature)){
-			need_vote_vol = true;
-		}
-	}
-
-	if (need_vote_vol) {
-		ret = peri_set_volt(pvp, voltage_value);
-		if (ret) {
-			HISI_FB_ERR("set votage_value=%d failed,", voltage_value);
-			return -EINVAL;
-		}
-		HISI_FB_DEBUG("set votage_value=%d .\n", voltage_value);
-	}
 	hisifd->dss_vote_cmd.dss_voltage_level = dss_vote_cmd.dss_voltage_level;
+	dss_vote_cmd.dss_voltage_level = dpe_get_voltage_level(current_peri_voltage);
 
-	voltage_value = peri_get_volt(pvp);
-
-	dss_vote_cmd.dss_voltage_level = dpe_get_voltage_level(voltage_value);
 	if (copy_to_user(argp, &dss_vote_cmd, sizeof(dss_vote_cmd_t))) {
 		HISI_FB_ERR("copy to user fail\n");
-		return -EFAULT;
+		ret = -EFAULT;
+		goto volt_vote_out;
 	}
-	HISI_FB_DEBUG("get dss_voltage_level = %d.\n", dss_vote_cmd.dss_voltage_level);
+
+volt_vote_out:
+	up(&g_hisifb_dss_clk_vote_sem);
 	return ret;
 }
 /*lint +e644 +e540*/
@@ -610,7 +715,7 @@ int hisifb_ctrl_dss_voltage_set(struct fb_info *info, void __user *argp)
 int hisifb_ctrl_dss_vote_cmd_set(struct fb_info *info, const void __user *argp)
 {
 	int ret = 0;
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 	dss_vote_cmd_t vote_cmd;
 
 	if (NULL == info) {
@@ -643,6 +748,9 @@ int hisifb_ctrl_dss_vote_cmd_set(struct fb_info *info, const void __user *argp)
 	}
 
 	down(&hisifd->blank_sem);
+
+	down(&g_hisifb_dss_clk_vote_sem);
+
 	if (hisifd->index != AUXILIARY_PANEL_IDX) {
 		if (!hisifd->panel_power_on) {
 			HISI_FB_DEBUG("fb%d, panel power off!\n", hisifd->index);
@@ -653,6 +761,8 @@ int hisifb_ctrl_dss_vote_cmd_set(struct fb_info *info, const void __user *argp)
 	ret = set_dss_vote_cmd(hisifd, vote_cmd);
 
 err_out:
+	up(&g_hisifb_dss_clk_vote_sem);
+
 	up(&hisifd->blank_sem);
 
 	return ret;
@@ -795,7 +905,7 @@ static ssize_t hisifb_lcd_model_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_model_show) {
+	if (pdata->lcd_model_show != NULL) {
 		ret = pdata->lcd_model_show(hisifd->pdev, buf);
 	}
 
@@ -838,7 +948,7 @@ static ssize_t hisifb_lcd_cabc_mode_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_cabc_mode_show) {
+	if (pdata->lcd_cabc_mode_show != NULL) {
 		ret = pdata->lcd_cabc_mode_show(hisifd->pdev, buf);
 	}
 
@@ -888,7 +998,7 @@ static ssize_t hisifb_lcd_cabc_mode_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_cabc_mode_store) {
+	if (pdata->lcd_cabc_mode_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_cabc_mode_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -936,7 +1046,7 @@ static ssize_t hisifb_lcd_ce_mode_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_ce_mode_show) {
+	if (pdata->lcd_ce_mode_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_ce_mode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -955,30 +1065,30 @@ static ssize_t hisifb_lcd_ce_mode_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd ce mode store dev NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd ce mode store fbi NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd ce mode store hisifd NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd ce mode store pdata NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd ce mode store buf NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -988,13 +1098,16 @@ static ssize_t hisifb_lcd_ce_mode_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_ce_mode_store) {
+	if (pdata->lcd_ce_mode_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_ce_mode_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd ce mode store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -1044,7 +1157,7 @@ static ssize_t hisifb_lcd_check_reg_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata && pdata->lcd_check_reg) {
+	if (pdata != NULL && pdata->lcd_check_reg) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_check_reg(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1132,7 +1245,7 @@ static ssize_t hisifb_lcd_mipi_detect_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata && pdata->lcd_mipi_detect) {
+	if (pdata != NULL && pdata->lcd_mipi_detect) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_mipi_detect(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1189,7 +1302,7 @@ static ssize_t hisifb_mipi_dsi_bit_clk_upt_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->mipi_dsi_bit_clk_upt_show) {
+	if (pdata->mipi_dsi_bit_clk_upt_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->mipi_dsi_bit_clk_upt_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1211,30 +1324,30 @@ static ssize_t hisifb_mipi_dsi_bit_clk_upt_store(struct device *dev, struct devi
 
 	if (NULL == dev) {
 		HISI_FB_ERR("mipi dsi bit clk upt store dev NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("mipi dsi bit clk upt store fbi NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("mipi dsi bit clk upt store hisifd NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -1244,13 +1357,16 @@ static ssize_t hisifb_mipi_dsi_bit_clk_upt_store(struct device *dev, struct devi
 		goto err_out;
 	}
 
-	if (pdata->mipi_dsi_bit_clk_upt_store) {
+	if (pdata->mipi_dsi_bit_clk_upt_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->mipi_dsi_bit_clk_upt_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("mipi dsi bit clk upt store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -1265,27 +1381,29 @@ static ssize_t hisifb_panel_mode_switch_store(struct device *dev, struct device_
 
 	if (NULL == dev) {
 		HISI_FB_ERR("dev NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("fbi NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 	ret = panel_mode_switch_store(hisifd, buf, count);
-
+	if (ret < 0) {
+		HISI_FB_INFO("panel_mode_switch_store ret is %d\n", ret);
+	}
 	return count;
 }
 
@@ -1334,41 +1452,44 @@ static ssize_t hisifb_lcd_fps_scence_store(struct device *dev, struct device_att
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd fps scence store dev NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd fps scence store fbi NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd fps scence store hisifd NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata ) {
 		HISI_FB_ERR("lcd fps scence store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd fps scence store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	if (!hisifd->panel_power_on) {
 		HISI_FB_DEBUG("fb%d, panel power off!\n", hisifd->index);
-		return -1;
+		return ret;
 	}
 
 	val = (uint32_t)simple_strtoul(buf, NULL, 0);
 
-	if (pdata->lcd_fps_scence_handle) {
+	if (pdata->lcd_fps_scence_handle != NULL) {
 		ret = pdata->lcd_fps_scence_handle(hisifd->pdev, val);
+		if (ret < 0) {
+			HISI_FB_INFO("lcd fps scence store ret is %d\n", ret);
+		}
 	}
 
 	return count;
@@ -1410,7 +1531,7 @@ static ssize_t hisifb_lcd_hkadc_debug_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_hkadc_debug_show) {
+	if (pdata->lcd_hkadc_debug_show != NULL) {
 		ret = pdata->lcd_hkadc_debug_show(hisifd->pdev, buf);
 	}
 
@@ -1453,7 +1574,7 @@ static ssize_t hisifb_lcd_hkadc_debug_store(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_hkadc_debug_store) {
+	if (pdata->lcd_hkadc_debug_store != NULL) {
 		ret = pdata->lcd_hkadc_debug_store(hisifd->pdev, buf, count);
 	}
 
@@ -1502,7 +1623,7 @@ static ssize_t hisifb_lcd_gram_check_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_gram_check_show) {
+	if (pdata->lcd_gram_check_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_gram_check_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1524,29 +1645,29 @@ static ssize_t hisifb_lcd_gram_check_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd gram check store dev  NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd gram check store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd gram check store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd gram check store  pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd gram check store  buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -1557,13 +1678,16 @@ static ssize_t hisifb_lcd_gram_check_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_gram_check_store) {
+	if (pdata->lcd_gram_check_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_gram_check_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd gram check store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -1611,7 +1735,7 @@ static ssize_t hisifb_lcd_dynamic_sram_check_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_dynamic_sram_checksum_show) {
+	if (pdata->lcd_dynamic_sram_checksum_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_dynamic_sram_checksum_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1633,29 +1757,29 @@ static ssize_t hisifb_lcd_dynamic_sram_check_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd dynamic sram check store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd dynamic sram check store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd dynamic sram check store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd dynamic sram check store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd dynamic sram check store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -1666,13 +1790,16 @@ static ssize_t hisifb_lcd_dynamic_sram_check_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_dynamic_sram_checksum_store) {
+	if (pdata->lcd_dynamic_sram_checksum_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_dynamic_sram_checksum_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd dynamic sram check store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -1722,7 +1849,7 @@ static ssize_t hisifb_lcd_color_temperature_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_color_temperature_show) {
+	if (pdata->lcd_color_temperature_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_color_temperature_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1778,7 +1905,7 @@ static ssize_t hisifb_lcd_color_temperature_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_color_temperature_store) {
+	if (pdata->lcd_color_temperature_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_color_temperature_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -1833,7 +1960,7 @@ static ssize_t hisifb_lcd_ic_color_enhancement_mode_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_ic_color_enhancement_mode_show) {
+	if (pdata->lcd_ic_color_enhancement_mode_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_ic_color_enhancement_mode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1889,7 +2016,7 @@ static ssize_t hisifb_lcd_ic_color_enhancement_mode_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_ic_color_enhancement_mode_store) {
+	if (pdata->lcd_ic_color_enhancement_mode_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_ic_color_enhancement_mode_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -1945,7 +2072,7 @@ static ssize_t hisifb_led_rg_lcd_color_temperature_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->led_rg_lcd_color_temperature_show) {
+	if (pdata->led_rg_lcd_color_temperature_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->led_rg_lcd_color_temperature_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -1967,29 +2094,29 @@ static ssize_t hisifb_led_rg_lcd_color_temperature_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("led rg lcd color temperature store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("led rg lcd color temperature store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("led rg lcd color temperature store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("led rg lcd color temperature store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 	if (NULL == buf) {
 		HISI_FB_ERR("led rg lcd color temperature store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -2000,13 +2127,16 @@ static ssize_t hisifb_led_rg_lcd_color_temperature_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->led_rg_lcd_color_temperature_store) {
+	if (pdata->led_rg_lcd_color_temperature_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->led_rg_lcd_color_temperature_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("led rg lcd color temperature store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -2053,7 +2183,7 @@ static ssize_t hisifb_lcd_support_mode_show(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_support_mode_show) {
+	if (pdata->lcd_support_mode_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_support_mode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -2082,29 +2212,29 @@ static ssize_t hisifb_lcd_support_mode_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd support mode store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd support mode store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd support mode store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd support mode store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd support mode store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -2113,12 +2243,15 @@ static ssize_t hisifb_lcd_support_mode_store(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_support_mode_store) {
+	if (pdata->lcd_support_mode_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_support_mode_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd support mode store dev ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 	return count;
 }
@@ -2164,7 +2297,7 @@ static ssize_t hisifb_lcd_comform_mode_show(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_comform_mode_show) {
+	if (pdata->lcd_comform_mode_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_comform_mode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -2186,29 +2319,29 @@ static ssize_t hisifb_lcd_comform_mode_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd comform mode store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd comform mode store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd comform mode store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd comform mode store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd comform mode store bufNULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -2218,13 +2351,16 @@ static ssize_t hisifb_lcd_comform_mode_store(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_comform_mode_store) {
+	if (pdata->lcd_comform_mode_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_comform_mode_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd comform mode store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 	return count;
 }
@@ -2270,7 +2406,7 @@ static ssize_t hisifb_lcd_cinema_mode_show(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_cinema_mode_show) {
+	if (pdata->lcd_cinema_mode_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_cinema_mode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -2324,7 +2460,7 @@ static ssize_t hisifb_lcd_cinema_mode_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_cinema_mode_store) {
+	if (pdata->lcd_cinema_mode_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_cinema_mode_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -2345,38 +2481,41 @@ static ssize_t hisifb_lcd_voltage_enable_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd voltage enable store dev NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd voltage enable store fbi NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd voltage enable store hisifd NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("NULL Pointer\n");
-		return -1;
+		return ret;
 	}
 
 
 	down(&hisifd->blank_sem);
 
-	if (pdata->lcd_voltage_enable_store) {
+	if (pdata->lcd_voltage_enable_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_voltage_enable_store(hisifd->pdev, buf, count);
+		if (ret < 0) {
+			HISI_FB_INFO("lcd voltage enable store ret is %d\n", ret);
+		}
 		hisifb_deactivate_vsync(hisifd);
 	}
 
@@ -2424,7 +2563,7 @@ static ssize_t hisifb_sbl_ctrl_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	ssize_t ret = -1;
-	int val = 0;
+	uint32_t val = 0;
 	struct fb_info *fbi = NULL;
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_fb_panel_data *pdata = NULL;
@@ -2456,8 +2595,8 @@ static ssize_t hisifb_sbl_ctrl_store(struct device *dev,
 		return -1;
 	}
 
-	val = (int)simple_strtoul(buf, NULL, 0);
-	if (hisifd->sbl_ctrl_fnc) {
+	val = (uint32_t)simple_strtoul(buf, NULL, 0);
+	if (hisifd->sbl_ctrl_fnc != NULL) {
 		ret = hisifd->sbl_ctrl_fnc(fbi, val);
 	}
 
@@ -2507,7 +2646,7 @@ static ssize_t hisifb_lcd_bist_check(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_bist_check) {
+	if (pdata->lcd_bist_check != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_bist_check(hisifd->pdev, lcd_bist_check_result);
 		hisifb_deactivate_vsync(hisifd);
@@ -2622,7 +2761,7 @@ static void hisifb_lcd_func_switch_store_sbl_xcc_support(struct hisi_panel_info 
 	if (!strncmp("xcc_support:", command, strlen("xcc_support:"))) {
 		if('0' == command[strlen("xcc_support:")]) {
 			pinfo->xcc_support = 0;
-			if(pinfo->xcc_table) {
+			if(pinfo->xcc_table != NULL) {
 				pinfo->xcc_table[1] = 0x8000;
 				pinfo->xcc_table[6] = 0x8000;
 				pinfo->xcc_table[11] = 0x8000;
@@ -2740,7 +2879,7 @@ static void hisifb_lcd_func_switch_store_esd_fps(struct hisi_panel_info *pinfo, 
 	}
 }
 
-static void hisifb_lcd_func_switch_store_lcd_info(struct hisi_panel_info *pinfo, char *command)
+static void hisifb_lcd_func_switch_store_lcd_info(struct hisi_panel_info *pinfo, const char *command)
 {
 	if (NULL == pinfo) {
 		HISI_FB_ERR("lcd func switch store pinfo NULL Pointer!\n");
@@ -2929,7 +3068,7 @@ static ssize_t hisifb_lcd_sleep_ctrl_show(struct device *dev,
 
 	down(&hisifd->blank_sem);
 
-	if (pdata->lcd_sleep_ctrl_show) {
+	if (pdata->lcd_sleep_ctrl_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_sleep_ctrl_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -2950,29 +3089,29 @@ static ssize_t hisifb_lcd_sleep_ctrl_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd sleep ctrl store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd sleep ctrl store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd sleep ctrl store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd sleep ctrl store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd sleep ctrl store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -2983,13 +3122,16 @@ static ssize_t hisifb_lcd_sleep_ctrl_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_sleep_ctrl_store) {
+	if (pdata->lcd_sleep_ctrl_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_sleep_ctrl_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd sleep ctrl store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -3304,7 +3446,7 @@ static ssize_t hisifb_lcd_test_config_show(struct device *dev,
 
 	down(&hisifd->blank_sem);
 
-	if (pdata->lcd_test_config_show) {
+	if (pdata->lcd_test_config_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_test_config_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -3350,7 +3492,7 @@ static ssize_t hisifb_lcd_support_checkmode_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_support_checkmode_show) {
+	if (pdata->lcd_support_checkmode_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_support_checkmode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -3396,7 +3538,7 @@ static ssize_t hisifb_lcd_test_config_store(struct device *dev,
 
 	down(&hisifd->blank_sem);
 
-	if (pdata->lcd_test_config_store) {
+	if (pdata->lcd_test_config_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_test_config_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -3449,7 +3591,7 @@ static ssize_t hisifb_lcd_reg_read_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_reg_read_show) {
+	if (pdata->lcd_reg_read_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_reg_read_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -3503,7 +3645,7 @@ static ssize_t hisifb_lcd_reg_read_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_reg_read_store) {
+	if (pdata->lcd_reg_read_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_reg_read_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -3552,7 +3694,7 @@ static ssize_t hisifb_lcd_lp2hs_mipi_check_show(struct device *dev,
 
 	down(&hisifd->blank_sem);
 
-	if (pdata->lcd_lp2hs_mipi_check_show) {
+	if (pdata->lcd_lp2hs_mipi_check_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_lp2hs_mipi_check_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -3573,36 +3715,39 @@ static ssize_t hisifb_lcd_lp2hs_mipi_check_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd lp2hs mipi check store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd lp2hs mipi check store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd lp2hs mipi check store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd lp2hs mipi check store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd lp2hs mipi check store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
 
-	if (pdata->lcd_lp2hs_mipi_check_store) {
+	if (pdata->lcd_lp2hs_mipi_check_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_lp2hs_mipi_check_store(hisifd->pdev, buf, count);
+		if (ret < 0) {
+			HISI_FB_INFO("lcd lp2hs mipi check store ret is %d\n", ret);
+		}
 		hisifb_deactivate_vsync(hisifd);
 	}
 
@@ -3654,7 +3799,7 @@ static ssize_t hisifb_lcd_inversion_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_inversion_store) {
+	if (pdata->lcd_inversion_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_inversion_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -3702,7 +3847,7 @@ static ssize_t hisifb_lcd_inversion_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_inversion_show) {
+	if (pdata->lcd_inversion_show != NULL) {
 		ret = pdata->lcd_inversion_show(hisifd->pdev, buf);
 	}
 
@@ -3719,30 +3864,30 @@ static ssize_t hisifb_lcd_scan_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd scan store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd scan store  fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd scan store  hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd scan store  pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd scan store  buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -3752,7 +3897,7 @@ static ssize_t hisifb_lcd_scan_store(struct device *dev,
 		goto err_out;
 	}
 	if((saved_command_line != NULL) && (strstr(saved_command_line, "androidboot.swtype=factory") != NULL)) {
-		if (pdata->lcd_scan_store) {
+		if (pdata->lcd_scan_store != NULL) {
 			hisifb_activate_vsync(hisifd);
 			ret = pdata->lcd_scan_store(hisifd->pdev, buf, count);
 			hisifb_deactivate_vsync(hisifd);
@@ -3760,6 +3905,9 @@ static ssize_t hisifb_lcd_scan_store(struct device *dev,
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd scan store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -3801,7 +3949,7 @@ static ssize_t hisifb_lcd_scan_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_scan_show) {
+	if (pdata->lcd_scan_show != NULL) {
 		ret = pdata->lcd_scan_show(hisifd->pdev, buf);
 	}
 
@@ -3843,7 +3991,7 @@ static ssize_t hisifb_lcd_hbm_ctrl_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->lcd_hbm_ctrl_show) {
+	if (pdata->lcd_hbm_ctrl_show != NULL) {
 		ret = pdata->lcd_hbm_ctrl_show(hisifd->pdev, buf);
 	}
 
@@ -3860,36 +4008,39 @@ static ssize_t hisifb_lcd_hbm_ctrl_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd hbm ctrl store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd hbm ctrl store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd hbm ctrl store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("lcd hbm ctrl store pdata NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd hbm ctrl store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
-	if (pdata->lcd_hbm_ctrl_store) {
+	if (pdata->lcd_hbm_ctrl_store != NULL) {
 		ret = pdata->lcd_hbm_ctrl_store(hisifd->pdev, buf, count);
 	}
 
+	if (ret < 0) {
+		HISI_FB_INFO("lcd hbm ctrl store ret is %d\n", ret);
+	}
 	return count;
 }
 
@@ -3936,7 +4087,7 @@ static ssize_t hisifb_lcd_amoled_vr_mode_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_amoled_vr_mode_show) {
+	if (pdata->lcd_amoled_vr_mode_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_amoled_vr_mode_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -3992,7 +4143,7 @@ static ssize_t hisifb_lcd_amoled_vr_mode_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_amoled_vr_mode_store) {
+	if (pdata->lcd_amoled_vr_mode_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_amoled_vr_mode_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -4048,7 +4199,7 @@ static ssize_t hisifb_lcd_acl_ctrl_show(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_acl_ctrl_show) {
+	if (pdata->lcd_acl_ctrl_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_acl_ctrl_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -4104,7 +4255,7 @@ static ssize_t hisifb_lcd_acl_ctrl_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->lcd_acl_ctrl_store) {
+	if (pdata->lcd_acl_ctrl_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_acl_ctrl_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -4153,7 +4304,7 @@ static ssize_t hisifb_amoled_pcd_errflag_check(struct device* dev,
 		return -1;
 	}
 
-	if (pdata->amoled_pcd_errflag_check) {
+	if (pdata->amoled_pcd_errflag_check != NULL) {
 	 ret = pdata->amoled_pcd_errflag_check(hisifd->pdev, buf);
 	}
 
@@ -4196,7 +4347,7 @@ static ssize_t hisifb_panel_info_show(struct device *dev,
 		return -1;
 	}
 
-	if (pdata->panel_info_show) {
+	if (pdata->panel_info_show != NULL) {
 		ret = pdata->panel_info_show(hisifd->pdev, buf);
 	}
 
@@ -4245,7 +4396,7 @@ static ssize_t hisifb_lcd_acm_state_show(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_acm_state_show) {
+	if (pdata->lcd_acm_state_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_acm_state_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -4267,30 +4418,30 @@ static ssize_t hisifb_lcd_acm_state_store(struct device *dev,
 
 	if (NULL == dev) {
 		HISI_FB_ERR("lcd acm state store dev NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	if (NULL == buf) {
 		HISI_FB_ERR("lcd acm state store buf NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	fbi = dev_get_drvdata(dev);
 	if (NULL == fbi) {
 		HISI_FB_ERR("lcd acm state store fbi NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
 	if (NULL == hisifd) {
 		HISI_FB_ERR("lcd acm state store hisifd NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
 	if (NULL == pdata) {
 		HISI_FB_ERR("NULL Pointer!\n");
-		return -1;
+		return ret;
 	}
 
 	down(&hisifd->blank_sem);
@@ -4299,13 +4450,16 @@ static ssize_t hisifb_lcd_acm_state_store(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_acm_state_store) {
+	if (pdata->lcd_acm_state_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_acm_state_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
 	}
 
 err_out:
+	if (ret < 0) {
+		HISI_FB_INFO("lcd acm state store ret is %d\n", ret);
+	}
 	up(&hisifd->blank_sem);
 
 	return count;
@@ -4353,7 +4507,7 @@ static ssize_t hisifb_lcd_gmp_state_show(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_gmp_state_show) {
+	if (pdata->lcd_gmp_state_show != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_gmp_state_show(hisifd->pdev, buf);
 		hisifb_deactivate_vsync(hisifd);
@@ -4407,7 +4561,7 @@ static ssize_t hisifb_lcd_gmp_state_store(struct device *dev,
 		ret = -EINVAL;
 		goto err_out;
 	}
-	if (pdata->lcd_gmp_state_store) {
+	if (pdata->lcd_gmp_state_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->lcd_gmp_state_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -4457,24 +4611,24 @@ static ssize_t hisi_alpm_function_store(struct device *dev,
 	struct hisi_fb_data_type *hisifd = NULL;
 	ssize_t ret = 0;
 
-	if (!dev) {
+	if (dev == NULL) {
 		HISI_FB_ERR("alpm function store NULL dev Pointer!\n");
 		return -1;
 	}
 
-	if (!buf) {
+	if (buf == NULL) {
 		HISI_FB_ERR("alpm function store NULL buf Pointer!\n");
 		return -1;
 	}
 
 	fbi = dev_get_drvdata(dev);
-	if (!fbi) {
+	if (fbi == NULL) {
 		HISI_FB_ERR("alpm function store NULL fbi Pointer!\n");
 		return -1;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("alpm function storeNULL hisifd Pointer!\n");
 		return -1;
 	}
@@ -4505,24 +4659,24 @@ static ssize_t hisi_alpm_function_show(struct device *dev,
 	struct fb_info *fbi = NULL;
 	struct hisi_fb_data_type *hisifd = NULL;
 
-	if (!dev) {
+	if (dev == NULL) {
 		HISI_FB_ERR("alpm function show NULL dev Pointer!\n");
 		return -1;
 	}
 
-	if (!buf) {
+	if (buf == NULL) {
 		HISI_FB_ERR("alpm function show NULL buf Pointer!\n");
 		return -1;
 	}
 
 	fbi = dev_get_drvdata(dev);
-	if (!fbi) {
+	if (fbi == NULL) {
 		HISI_FB_ERR("alpm function show NULL fbi Pointer!\n");
 		return -1;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("alpm function show NULL hisifd Pointer!\n");
 		return -1;
 	}
@@ -4541,24 +4695,24 @@ static ssize_t hisi_alpm_setting_store(struct device *dev,
 	struct hisi_fb_panel_data *pdata = NULL;
 	ssize_t ret = 0;
 
-	if (!dev) {
+	if (dev == NULL) {
 		HISI_FB_ERR("alpm setting store NULL dev Pointer!\n");
 		return -1;
 	}
 
-	if (!buf) {
+	if (buf == NULL) {
 		HISI_FB_ERR("alpm setting store NULL buf Pointer!\n");
 		return -1;
 	}
 
 	fbi = dev_get_drvdata(dev);
-	if (!fbi) {
+	if (fbi == NULL) {
 		HISI_FB_ERR("alpm setting store NULL fbi Pointer!\n");
 		return -1;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)fbi->par;
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("alpm setting store NULL hisifd Pointer!\n");
 		return -1;
 	}
@@ -4569,7 +4723,7 @@ static ssize_t hisi_alpm_setting_store(struct device *dev,
 	}
 
 	pdata = dev_get_platdata(&hisifd->pdev->dev);
-	if (!pdata) {
+	if (pdata == NULL) {
 		HISI_FB_ERR("NULL pdata Pointer!\n");
 		return -1;
 	}
@@ -4581,7 +4735,7 @@ static ssize_t hisi_alpm_setting_store(struct device *dev,
 		goto err_out;
 	}
 
-	if (pdata->amoled_alpm_setting_store) {
+	if (pdata->amoled_alpm_setting_store != NULL) {
 		hisifb_activate_vsync(hisifd);
 		ret = pdata->amoled_alpm_setting_store(hisifd->pdev, buf, count);
 		hisifb_deactivate_vsync(hisifd);
@@ -4597,7 +4751,7 @@ static DEVICE_ATTR(frame_update, S_IRUGO|S_IWUSR, hisifb_frame_update_show, hisi
 static DEVICE_ATTR(lcd_model, 0644, hisifb_lcd_model_show, NULL);
 static DEVICE_ATTR(lcd_cabc_mode, S_IRUGO|S_IWUSR, hisifb_lcd_cabc_mode_show, hisifb_lcd_cabc_mode_store);
 static DEVICE_ATTR(lcd_ce_mode, S_IRUGO|S_IWUSR, hisifb_lcd_ce_mode_show, hisifb_lcd_ce_mode_store);
-static DEVICE_ATTR(lcd_check_reg, S_IRUGO, hisifb_lcd_check_reg_show, NULL);
+static DEVICE_ATTR(check_lcd_status, S_IRUGO, hisifb_lcd_check_reg_show, NULL);
 static DEVICE_ATTR(lcd_mipi_detect, S_IRUGO, hisifb_lcd_mipi_detect_show, NULL);
 static DEVICE_ATTR(frame_count, S_IRUGO, hisifb_frame_count_show, NULL);
 static DEVICE_ATTR(mipi_dsi_bit_clk_upt, S_IRUGO|S_IWUSR, hisifb_mipi_dsi_bit_clk_upt_show, hisifb_mipi_dsi_bit_clk_upt_store);
@@ -4641,11 +4795,10 @@ static DEVICE_ATTR(amoled_vr_mode, 0644, hisifb_lcd_amoled_vr_mode_show, hisifb_
 static DEVICE_ATTR(lcd_fps_scence, (S_IRUGO|S_IWUSR), hisifb_lcd_fps_scence_show, hisifb_lcd_fps_scence_store);
 static DEVICE_ATTR(alpm_function, 0644, hisi_alpm_function_show, hisi_alpm_function_store);
 static DEVICE_ATTR(alpm_setting, 0644, NULL, hisi_alpm_setting_store);
-/*lint +e665, +e514, +e84, +866, +e886, +e846, +e778*/
+/*lint +e665, +e514, +e84, +e866, +e886, +e846, +e778*/
 
 void hisifb_sysfs_attrs_add(struct hisi_fb_data_type *hisifd)
 {
-
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
@@ -4654,62 +4807,15 @@ void hisifb_sysfs_attrs_add(struct hisi_fb_data_type *hisifd)
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
-		if (hisifd->sysfs_attrs_append_fnc) {
-
-			if(!get_lcdkit_support())
-			{
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_frame_update.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_model.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_cabc_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_ce_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_check_reg.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_mipi_detect.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_frame_count.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_mipi_dsi_bit_clk_upt.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_panel_mode_switch.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_hkadc.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_checksum.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_dynamic_checksum.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_color_temperature.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_led_rg_lcd_color_temperature.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_comform_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_cinema_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_support_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_voltage_enable.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_sbl_ctrl.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_bist_check.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_func_switch.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_sleep_ctrl.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_al.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_ce.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_hdr_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_bl.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_bl_enable.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_sre.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_metadata.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_effect_available.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_test_config.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_support_checkmode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_lp2hs_mipi_check.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_inversion_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_scan_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_amoled_pcd_errflag_check.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_amoled_hbm.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_gamma_dynamic.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_panel_info.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_acm_state.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_amoled_acl.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_gmp_state.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_ic_color_enhancement_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_amoled_vr_mode.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_fps_scence.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_alpm_function.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_alpm_setting.attr);
-				hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_lcd_reg_read.attr);
-			}
+		if (hisifd->sysfs_attrs_append_fnc != NULL) {
+#if !defined(CONFIG_LCDKIT_DRIVER) && !defined (CONFIG_LCD_KIT_DRIVER)
+			hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_panel_mode_switch.attr);
+#endif
+			hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_check_lcd_status.attr);
 		}
 	}
 
 	HISI_FB_DEBUG("fb%d, -.\n", hisifd->index);
 }
+/*lint +e559*/
 #pragma GCC diagnostic pop

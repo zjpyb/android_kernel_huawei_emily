@@ -258,6 +258,7 @@ bool nv_get_upgrade_flag(void)
 
 u32 nv_modify_upgrade_flag(bool flag)
 {
+#if (FEATURE_NV_PARTRION_MULTIPLEX == FEATURE_OFF)
     nv_file_map_s nvctrl_info = {0};
     s32 ret;
     u32 old_magic;
@@ -285,6 +286,7 @@ u32 nv_modify_upgrade_flag(bool flag)
     {
         return (u32)ret;
     }
+#endif
     return 0;
 
 }

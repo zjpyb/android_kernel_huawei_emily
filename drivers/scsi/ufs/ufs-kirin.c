@@ -35,6 +35,7 @@
 #include <teek_client_constants.h>
 #endif
 #include <linux/mfd/hisi_pmic.h>
+#include <linux/hisi/rpmb.h>
 #include <pmic_interface.h>
 
 #include "ufshcd.h"
@@ -42,6 +43,7 @@
 #include "ufs-kirin.h"
 #include "ufshci.h"
 #include "dsm_ufs.h"
+#include "ufs-hisi.h"
 #ifdef CONFIG_HISI_UFS_MANUAL_BKOPS
 #include "hisi_ufs_bkops.h"
 #endif
@@ -69,7 +71,7 @@ static char ufs_product_name[32] = {0};
 static int __init early_parse_ufs_product_name_cmdline(char *arg)
 {
 	if (arg) {
-		strncpy(ufs_product_name, arg,
+		strncpy(ufs_product_name, arg, /* unsafe_function_ignore: strncpy */
 			strnlen(arg, sizeof(ufs_product_name)));
 #ifdef CONFIG_HISI_DEBUG_FS
 		pr_info("cmdline ufs_product_name=%s\n", ufs_product_name);
@@ -239,7 +241,7 @@ noinline int atfd_hisi_uie_smc(u64 _function_id, u64 _arg0, u64 _arg1, u64 _arg2
 #endif
 #endif
 
-static u64 kirin_ufs_dma_mask = DMA_BIT_MASK(64);/*lint !e598 !e648*/
+static u64 kirin_ufs_dma_mask = ~0ULL;/*lint !e598 !e648*/
 
 /*lint -e648 -e845*/
 uint16_t ufs_kirin_mphy_read(struct ufs_hba *hba, uint16_t addr)
@@ -568,7 +570,7 @@ int ufs_kirin_uie_config_init(struct ufs_hba *hba)
 	if (ufshcd_eh_in_progress(hba)) {
 		err = ufs_kirin_set_key();
 		if (err)
-			BUG();
+			BUG(); /*lint !e146*/
 	}
 #else
 	/* Here UFS driver, which set SECURITY reg 0x1 in BL31,
@@ -584,7 +586,6 @@ int ufs_kirin_uie_config_init(struct ufs_hba *hba)
 	}
 #endif
 #endif
-
 	return err;
 }
 
@@ -624,7 +625,10 @@ void ufs_kirin_uie_utrd_prepare(struct ufs_hba *hba,
 		struct ufshcd_lrb *lrbp)
 {
 	struct utp_transfer_req_desc *req_desc = lrbp->utr_descriptor_ptr;
+	struct hisi_utp_transfer_req_desc *hisi_req_desc =
+		lrbp->hisi_utr_descriptor_ptr;
 	u32 dword_0, dword_1, dword_3;
+	u32 dword_8, dword_9, dword_10, dword_11;
 	u64 dun;
 	u32 crypto_enable;
 	u32 crypto_cci;
@@ -656,7 +660,7 @@ void ufs_kirin_uie_utrd_prepare(struct ufs_hba *hba,
 #ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
 		if ((lrbp->cmd->request->hisi_req.ci_key_index < 0) || (lrbp->cmd->request->hisi_req.ci_key_index > 31)) {
 			dev_err(hba->dev, "%s: ci_key index err is 0x%x\n", __func__, lrbp->cmd->request->hisi_req.ci_key_index);
-			BUG();
+			BUG(); /*lint !e146*/
 		}
 
 		crypto_cci = lrbp->cmd->request->hisi_req.ci_key_index;
@@ -671,7 +675,8 @@ void ufs_kirin_uie_utrd_prepare(struct ufs_hba *hba,
 #else
 		crypto_cci = lrbp->task_tag;
 		spin_lock_irqsave(hba->host->host_lock, flags);
-		ufs_kirin_uie_key_prepare(hba, crypto_cci, lrbp->cmd->request->hisi_req.ci_key);
+		ufs_kirin_uie_key_prepare(
+			hba, crypto_cci, lrbp->cmd->request->hisi_req.ci_key);
 		spin_unlock_irqrestore(hba->host->host_lock, flags);
 #endif
 	} else {
@@ -690,6 +695,17 @@ void ufs_kirin_uie_utrd_prepare(struct ufs_hba *hba,
 		crypto_enable = 0x0;
 	}
 #endif
+#ifdef CONFIG_FS_PER_FILE_PER_KEY
+	dword_8 = lrbp->cmd->request->hisi_req.meta_data_random_factor_0_31;
+	dword_9 = lrbp->cmd->request->hisi_req.meta_data_random_factor_32_63;
+	dword_10 = lrbp->cmd->request->hisi_req.meta_data_random_factor_64_95;
+	dword_11 = lrbp->cmd->request->hisi_req.meta_data_random_factor_96_127;
+#else
+	dword_8 = 0;
+	dword_9 = 0;
+	dword_10 = 0;
+	dword_11 = 0;
+#endif
 
 	dword_0 = crypto_enable | crypto_cci;
 	dword_1 = (u32)(dun & 0xffffffff);
@@ -698,10 +714,26 @@ void ufs_kirin_uie_utrd_prepare(struct ufs_hba *hba,
 #else
 	dword_3 = (u32)((dun >> 32) & 0xffffffff);
 #endif
+	if (ufshcd_is_hisi_ufs_hc_used(hba)) {
+		hisi_req_desc->header.dword_0 |= cpu_to_le32(dword_0);
+		hisi_req_desc->header.dword_1 = cpu_to_le32(dword_1);
+		hisi_req_desc->header.dword_3 = cpu_to_le32(dword_3);
+	} else {
+		req_desc->header.dword_0 |= cpu_to_le32(dword_0);
+		req_desc->header.dword_1 = cpu_to_le32(dword_1);
+		req_desc->header.dword_3 = cpu_to_le32(dword_3);
+	}
 
-	req_desc->header.dword_0 |= cpu_to_le32(dword_0);
-	req_desc->header.dword_1 = cpu_to_le32(dword_1);
-	req_desc->header.dword_3 = cpu_to_le32(dword_3);
+#ifdef CONFIG_SCSI_UFS_UTRD_EXTENSION
+	if (ufshcd_is_hisi_ufs_hc_used(hba)) {
+		hisi_req_desc->meta_data_random_factor_0 = cpu_to_le32(dword_8);
+		hisi_req_desc->meta_data_random_factor_1 = cpu_to_le32(dword_9);
+		hisi_req_desc->meta_data_random_factor_2 =
+			cpu_to_le32(dword_10);
+		hisi_req_desc->meta_data_random_factor_3 =
+			cpu_to_le32(dword_11);
+	}
+#endif
 }
 #endif
 
@@ -944,9 +976,13 @@ int ufs_kirin_pwr_change_notify(struct ufs_hba *hba,
 			}
 		}
 
-		ufs_kirin_pwr_change_pre_change(hba);
-	} else if (status == POST_CHANGE) {
+		if (ufshcd_is_hisi_ufs_hc_used(hba))
+			ufs_hisi_kirin_pwr_change_pre_change(
+				hba, dev_req_params);
+		else
+			ufs_kirin_pwr_change_pre_change(hba, dev_req_params);
 
+	} else if (status == POST_CHANGE) {
 	}
 out:
 	return ret;
@@ -1021,6 +1057,32 @@ int ufs_kirin_get_resource(struct ufs_kirin_host *host)
 		return -ENOMEM;
 	}
 
+	if (ufshcd_is_hisi_ufs_hc_used(host->hba)) {
+		np = of_find_compatible_node(NULL, NULL, "hisilicon,actrl");
+		if (!np) {
+			dev_err(host->hba->dev,
+				"can't find device node \"hisilicon,actrl\"\n");
+			return -ENXIO;
+		}
+		host->actrl = of_iomap(np, 0);
+		if (!host->actrl) {
+			dev_err(host->hba->dev, "actrl iomap error!\n");
+			return -ENOMEM;
+		}
+
+		np = of_find_compatible_node(NULL, NULL, "hisilicon,hsdt_crg");
+		if (!np) {
+			dev_err(host->hba->dev, "can't find device node "
+						"\"hisilicon,hsdt_crg\n");
+			return -ENXIO;
+		}
+
+		host->hsdt_crg = of_iomap(np, 0);
+		if (!host->sysctrl) {
+			dev_err(host->hba->dev, "hsdt_crg iomap error!\n");
+			return -ENOMEM;
+		}
+	}
 	/* we only use 64 bit dma */
 	dev->dma_mask = &kirin_ufs_dma_mask;
 
@@ -1039,10 +1101,14 @@ static ssize_t ufs_kirin_inline_stat_show(struct device *dev,
 #ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
 	if (ufshcd_readl(hba, REG_CONTROLLER_CAPABILITIES)
 					& MASK_INLINE_ENCRYPTO_SUPPORT)
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
+		ret_show = 2;
+#else
 		ret_show = 1;
 #endif
+#endif
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", ret_show);
+	return snprintf(buf, PAGE_SIZE, "%d\n", ret_show); /* unsafe_function_ignore: snprintf */
 }
 /*lint -restore*/
 
@@ -1064,9 +1130,9 @@ static ssize_t ufs_kirin_inline_debug_show(struct device *dev,
 	struct ufs_hba *hba = dev_get_drvdata(dev);
 
 	if (hba->inline_debug_flag == DEBUG_LOG_ON || hba->inline_debug_flag == DEBUG_CRYPTO_ON) {
-		return snprintf(buf, PAGE_SIZE, "%s\n", "on");
+		return snprintf(buf, PAGE_SIZE, "%s\n", "on"); /* unsafe_function_ignore: snprintf */
 	} else {
-		return snprintf(buf, PAGE_SIZE, "%s\n", "off");
+		return snprintf(buf, PAGE_SIZE, "%s\n", "off"); /* unsafe_function_ignore: snprintf */
 	}
 }
 
@@ -1355,6 +1421,26 @@ void ufs_kirin_populate_dt(struct device *dev,
 	if (of_find_property(np, "broken-hce", NULL))
 		host->hba->quirks |= UFSHCD_QUIRK_BROKEN_HCE;
 }
+
+void sel_equalizer_by_device(struct ufs_hba *hba, u32 *equalizer)
+{
+	int ret;
+	struct device *dev = hba->dev;
+	struct device_node *np = dev->of_node;
+
+	if (!np) {
+		dev_err(dev, "can not find device node\n");
+		return;
+	}
+	ret = of_property_match_string(np, "ufs-35db-equalizer-product-names",
+				     ufs_product_name);
+	if (ret >= 0) {
+#ifdef CONFIG_HISI_DEBUG_FS
+		dev_err(dev, "%s found in 3.5db product names\n", ufs_product_name);
+#endif
+		*equalizer = 35;
+	}
+}
 /*lint +e648 +e845*/
 
 /*lint +e648 +e845*/
@@ -1417,6 +1503,10 @@ int ufs_kirin_init(struct ufs_hba *hba)
 #ifdef CONFIG_HISI_BOOTDEVICE
 	if (get_bootdevice_type() == BOOT_DEVICE_UFS) {
 #endif
+
+#ifdef CONFIG_HISI_RPMB_UFS
+		rpmb_ufs_init();
+#endif
 		ufs_kirin_inline_crypto_attr(hba);
 
 #if defined(CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO) && defined(CONFIG_HISI_DEBUG_FS)
@@ -1426,6 +1516,9 @@ int ufs_kirin_init(struct ufs_hba *hba)
 #ifdef CONFIG_HISI_BOOTDEVICE
 	}
 #endif
+
+	// if (ufshcd_is_hisi_ufs_hc_used(hba))
+	//	err = config_hisi_tr_qos(hba);
 
 	goto out;
 
@@ -1476,7 +1569,7 @@ bool IS_V200_MPHY(struct ufs_hba *hba)
 	u32 reg;
 	/* V200 memorymap is not equal to V120 */
 	ufs_i2c_readl(hba, &reg, REG_SC_APB_IF_V200);
-	dev_err(hba->dev, "UFS MPHY  %s\n",
+	dev_info(hba->dev, "UFS MPHY  %s\n",
 		(MPHY_BOARDID_V200 == reg) ? "V200" : "V120");
 	if (MPHY_BOARDID_V200 == reg) {
 		return true;
@@ -1532,11 +1625,21 @@ const struct ufs_hba_variant_ops ufs_hba_kirin_vops = {
 	.setup_clocks = NULL,
 	.hce_enable_notify = ufs_kirin_hce_enable_notify,
 	.link_startup_notify = ufs_kirin_link_startup_notify,
+	.hisi_dme_link_startup = hisi_dme_link_startup,
+	.hisi_uic_write_reg = hisi_uic_write_reg,
+	.hisi_uic_read_reg = hisi_uic_read_reg,
+	.hisi_uic_peer_set = hisi_uic_peer_set,
+	.hisi_uic_peer_get = hisi_uic_peer_get,
+	.ufshcd_hisi_hibern8_op_irq_safe = ufshcd_hisi_hibern8_op_irq_safe,
+	.ufshcd_hisi_uic_change_pwr_mode = ufshcd_hisi_uic_change_pwr_mode,
+	.snps_to_hisi_addr = snps_to_hisi_addr,
+	.dbg_hisi_dme_dump = hisi_ufs_dme_reg_dump,
 	.pwr_change_notify = ufs_kirin_pwr_change_notify,
 	.full_reset = ufs_kirin_full_reset,
 	.device_reset = ufs_kirin_device_hw_reset,
 	.set_ref_clk = set_device_clk,
-	.suspend_before_set_link_state = ufs_kirin_suspend_before_set_link_state,
+	.suspend_before_set_link_state =
+		ufs_kirin_suspend_before_set_link_state,
 	.suspend = ufs_kirin_suspend,
 	.resume = ufs_kirin_resume,
 	.resume_after_set_link_state = ufs_kirin_resume_after_set_link_state,

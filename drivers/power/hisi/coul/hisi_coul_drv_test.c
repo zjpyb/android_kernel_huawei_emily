@@ -20,6 +20,7 @@
 
 /* #include "hi6xxx_smartstar_v300.h" */
 #include "hisi_coul_core.h"
+#include <securec.h>
 
 #define COUL_TEST_LOG_INFO
 #ifndef COUL_TEST_LOG_INFO
@@ -62,14 +63,14 @@ static ssize_t hisi_coul_show_test_start_flag(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->test_start_flag;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_batt_exist(struct device *dev,
 					      struct device_attribute *attr,
 					      const char *buf, size_t count)
 {
-	long val;
+	long val = 0;
 	int status = count;
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
@@ -88,14 +89,14 @@ static ssize_t hisi_coul_show_input_batt_exist(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_batt_exist;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_batt_capacity(struct device *dev,
 						 struct device_attribute *attr,
 						 const char *buf, size_t count)
 {
-	long val;
+	long val = 0;
 	int status = count;
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
@@ -114,14 +115,14 @@ static ssize_t hisi_coul_show_input_batt_capacity(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_batt_capacity;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_batt_temp(struct device *dev,
 					     struct device_attribute *attr,
 					     const char *buf, size_t count)
 {
-	long val;
+	long val = 0;
 	int status = count;
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
@@ -140,14 +141,14 @@ static ssize_t hisi_coul_show_input_batt_temp(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_batt_temp;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_batt_full(struct device *dev,
 					     struct device_attribute *attr,
 					     const char *buf, size_t count)
 {
-	long val;
+	long val = 0;
 	int status = count;
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
@@ -166,14 +167,14 @@ static ssize_t hisi_coul_show_input_batt_full(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_batt_full;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_batt_volt(struct device *dev,
 					     struct device_attribute *attr,
 					     const char *buf, size_t count)
 {
-	long val;
+	long val = 0;
 	int status = count;
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
@@ -192,14 +193,14 @@ static ssize_t hisi_coul_show_input_batt_volt(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_batt_volt;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_batt_cur(struct device *dev,
 					    struct device_attribute *attr,
 					    const char *buf, size_t count)
 {
-	long val;
+	long val = 0;
 	int status = count;
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
@@ -218,14 +219,14 @@ static ssize_t hisi_coul_show_input_batt_cur(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_batt_cur;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_batt_fcc(struct device *dev,
 					    struct device_attribute *attr,
 					    const char *buf, size_t count)
 {
-	long val;
+	long val = 0;
 	int status = count;
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
@@ -244,7 +245,7 @@ static ssize_t hisi_coul_show_input_batt_fcc(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_batt_fcc;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 static ssize_t hisi_coul_set_input_event(struct device *dev,
@@ -270,7 +271,7 @@ static ssize_t hisi_coul_show_input_event(struct device *dev,
 	struct hisi_coul_test_info *di = dev_get_drvdata(dev);
 
 	val = di->input_event;
-	return snprintf(buf, 12, "%lu\n", val);
+	return snprintf_s(buf, PAGE_SIZE, 11, "%lu\n", val);
 }
 
 /*lint -e665*/
@@ -393,7 +394,6 @@ static void hisi_coul_drv_test_shutdown(struct platform_device *pdev)
 		return;
 	}
 	kfree(di);
-	di = NULL;
 	g_hisi_coul_test_info = NULL;
 	return;
 }

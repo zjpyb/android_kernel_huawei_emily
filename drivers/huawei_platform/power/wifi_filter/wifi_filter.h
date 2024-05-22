@@ -14,6 +14,7 @@ typedef struct {
 
 struct hw_wlan_filter_ops{
     int (*set_filter_enable)(int);
+    int (*set_filter_enable_ex)(int, int);
     int (*add_filter_items)(hw_wifi_filter_item*, int);
     int (*clear_filters)(void);
     int (*get_filter_pkg_stat)(hw_wifi_filter_item*, int, int*);

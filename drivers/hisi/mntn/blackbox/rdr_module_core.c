@@ -15,6 +15,8 @@
 
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/hisi_log.h>
+#include <securec.h>
+
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
 #include "rdr_inner.h"
 #include "rdr_field.h"
@@ -163,6 +165,9 @@ int rdr_get_module_info(u64 coreid, struct rdr_register_module_result *retinfo)
 	case RDR_EXCEPTION_TRACE:
 		ret = rdr_get_areainfo(RDR_AREA_EXCEPTION_TRACE, retinfo);
 		break;
+	case RDR_IVP:
+		ret = rdr_get_areainfo(RDR_AREA_IVP, retinfo);
+		break;
 	default:
 		ret = -1;
 	}
@@ -218,7 +223,11 @@ int rdr_register_module_ops(u64 coreid,
 		BB_PRINT_END();
 		return ret;
 	}
-	memset(p_module_ops, 0, sizeof(struct rdr_module_ops_s));
+
+	if (EOK != memset_s(p_module_ops, sizeof(struct rdr_module_ops_s), 0, sizeof(struct rdr_module_ops_s))) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
+
 	/*check modid & modid_end region */
 
 	p_module_ops->s_core_id = coreid;
@@ -266,7 +275,6 @@ int rdr_unregister_module_ops(u64 coreid)
 		}
 	}
 	spin_unlock_irqrestore(&__rdr_module_ops_list_lock, lock_flag);
-	/*return e_type_info->e_modid_end; */
 	BB_PRINT_END();
 	return 0;
 }
@@ -386,6 +394,10 @@ void rdr_notify_module_reset(u32 modid, struct rdr_exception_info_s *e_info)
 				     rdr_reboot_later_flag == true ? "true" : "false",
 				     rdr_syserr_list_empty() ? "empty" : "Non empty",
 				     mask & p_module_ops->s_core_id);
+			/* 如果指定立即复位或者 之前有需要复位异常但因有异常未处理而搁置的复位
+			  * 动作并且当前链表是空的情况下 或者当前异常需要AP复位并且没有异常需要
+			  * 处理做AP复位动作
+			  */
 			if (e_info->e_reboot_priority == RDR_REBOOT_NOW ||
 			    ((rdr_reboot_later_flag || (mask & p_module_ops->s_core_id))
 			     && rdr_syserr_list_empty())) {
@@ -470,7 +482,6 @@ u64 rdr_notify_onemodule_dump(u32 modid, u64 core, u32 type,
 			BB_PRINT_PN("dump module data [%s] end!\n",
 				     rdr_get_exception_core(p_module_ops->
 							    s_core_id));
-			/*spin_unlock(&__rdr_module_ops_list_lock);*/
 			coreid = p_module_ops->s_core_id;
 			break;
 		}

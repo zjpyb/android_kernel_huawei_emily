@@ -56,12 +56,16 @@
 #include <linux/kthread.h>
 #include <linux/netdevice.h>
 #include <linux/sched.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 #include <linux/etherdevice.h>
 #include <linux/wireless.h>
 #include <linux/ieee80211.h>
 #include <linux/wait.h>
 #include <net/cfg80211.h>
 #include <net/rtnetlink.h>
+#include <securec.h>
 
 #if defined WL_TEM_CTRL || defined WL_TIM_EVENT
 #include <linux/proc_fs.h>
@@ -613,7 +617,13 @@ static s32 wl_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device *dev,
 #endif
 #endif /* BRCM_RSDB */
 #ifdef WL_SCHED_SCAN
-static int wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+static int wl_cfg80211_sched_scan_stop(struct wiphy *wiphy,
+	struct net_device *dev, u64 reqid);
+#else
+static int wl_cfg80211_sched_scan_stop(struct wiphy *wiphy,
+	struct net_device *dev);
+#endif
 #endif
 
 #if defined(WL_VIRTUAL_APSTA) || defined(DUAL_STA_STATIC_IF)
@@ -920,7 +930,6 @@ int dhd_add_monitor(char *name, struct net_device **new_ndev);
 int dhd_del_monitor(struct net_device *ndev);
 int dhd_monitor_init(void *dhd_pub);
 int dhd_monitor_uninit(void);
-int dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
 
 #ifdef ROAM_CHANNEL_CACHE
 #ifdef  BRCM_RSDB
@@ -1905,7 +1914,10 @@ wl_cfg80211_add_virtual_iface(struct wiphy *wiphy,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)) && defined(HW_KERNEL_4_0_ADAPTATION)
 	unsigned char name_assign_type,
 #endif
-	enum nl80211_iftype type, u32 *flags,
+	enum nl80211_iftype type,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+	u32 *flags,
+#endif
 	struct vif_params *params)
 {
 	s32 err = -ENODEV;
@@ -2615,7 +2627,10 @@ wl_cfg80211_del_virtual_iface(struct wiphy *wiphy, bcm_struct_cfgdev *cfgdev)
 
 static s32
 wl_cfg80211_change_virtual_iface(struct wiphy *wiphy, struct net_device *ndev,
-	enum nl80211_iftype type, u32 *flags,
+	enum nl80211_iftype type,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+	u32 *flags,
+#endif
 	struct vif_params *params)
 {
 	s32 ap = 0;
@@ -3736,7 +3751,7 @@ __wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	 */
 	if (request && (scan_req_iftype(request) == NL80211_IFTYPE_AP)) {
 		WL_INFORM(("Scan Command on SoftAP Interface. Ignoring...\n"));
-		return 0;
+		goto scan_success;
 	}
 
 	ndev = ndev_to_wlc_ndev(ndev, cfg);
@@ -6437,7 +6452,11 @@ wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 #endif
 #ifdef WL_SCHED_SCAN
 	if (cfg->sched_scan_req) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		wl_cfg80211_sched_scan_stop(wiphy, bcmcfg_to_prmry_ndev(cfg), 0);
+#else
 		wl_cfg80211_sched_scan_stop(wiphy, bcmcfg_to_prmry_ndev(cfg));
+#endif
 	}
 #endif
 #if defined(WL_CFG80211_GON_COLLISION) && defined(BRCM_RSDB)
@@ -12718,8 +12737,14 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+static int
+wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev,
+	u64 reqid)
+#else
 static int
 wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
+#endif
 {
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 
@@ -13142,7 +13167,11 @@ static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev
 	wdev->wiphy->max_sched_scan_ssids = MAX_PFN_LIST_COUNT;
 	wdev->wiphy->max_match_sets = MAX_PFN_LIST_COUNT;
 	wdev->wiphy->max_sched_scan_ie_len = WL_SCAN_IE_LEN_MAX;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	wdev->wiphy->max_sched_scan_reqs = 1;
+#else
 	wdev->wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+#endif
 #endif /* WL_SCHED_SCAN */
 	wdev->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_STATION)
@@ -13421,11 +13450,18 @@ static s32 wl_inform_single_bss(struct bcm_cfg80211 *cfg, struct wl_bss_info *bi
 	u32 freq;
 	s32 err = 0;
 	gfp_t aflags;
+	u8 tmp_buf[IEEE80211_MAX_SSID_LEN + 1];
 
 	if (unlikely(dtoh32(bi->length) > WL_BSS_INFO_MAX)) {
 		WL_DBG(("Beacon is larger than buffer. Discarding\n"));
 		return err;
 	}
+
+	if (bi->SSID_len > IEEE80211_MAX_SSID_LEN) {
+		WL_ERR(("wrong SSID len:%d\n", bi->SSID_len));
+		return -EINVAL;
+	}
+
 	aflags = (in_atomic()) ? GFP_ATOMIC : GFP_KERNEL;
 	notif_bss_info = kzalloc(sizeof(*notif_bss_info) + sizeof(*mgmt)
 		- sizeof(u8) + WL_BSS_INFO_MAX, aflags);
@@ -13490,15 +13526,23 @@ static s32 wl_inform_single_bss(struct bcm_cfg80211 *cfg, struct wl_bss_info *bi
 		kfree(notif_bss_info);
 		return -EINVAL;
 	}
+
+	if (memcpy_s(tmp_buf, sizeof(tmp_buf) - 1, bi->SSID, bi->SSID_len) != EOK) {
+		WL_ERR(("memcpy_s bi->SSID failed.\n"));
+		kfree(notif_bss_info);
+		return -EFAULT;
+	}
+	tmp_buf[bi->SSID_len] = '\0';
 #ifdef HW_LOG_PATCH1
-	hw_dhd_looplog("(%s,%d,%d,%pM);", bi->SSID,
-			notif_bss_info->rssi, notif_bss_info->channel, &bi->BSSID);
+	hw_dhd_looplog("(%s,%d,%d," MACDBG ");", tmp_buf,
+		notif_bss_info->rssi, notif_bss_info->channel,
+		MAC2STRDBG(bi->BSSID.octet));
 #else
-	WL_DBG(("SSID : \"%s\", rssi %d, channel %d, capability : 0x04%x, bssid %pM"
-			"mgmt_type %d frame_len %d\n", bi->SSID,
-			notif_bss_info->rssi, notif_bss_info->channel,
-			mgmt->u.beacon.capab_info, &bi->BSSID, mgmt_type,
-			notif_bss_info->frame_len));
+	WL_DBG(("SSID : \"%s\", rssi %d, channel %d, capability : 0x04%x, bssid"
+		MACDBG "mgmt_type %d frame_len %d\n", tmp_buf,
+		notif_bss_info->rssi, notif_bss_info->channel,
+		mgmt->u.beacon.capab_info, MAC2STRDBG(bi->BSSID.octet),
+		mgmt_type, notif_bss_info->frame_len));
 #endif
 
 	signal = notif_bss_info->rssi * 100;
@@ -15978,6 +16022,9 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	u32 *channel;
 	u32 freq;
 #endif /* LINUX_VERSION > 2.6.39 || WL_COMPAT_WIRELESS */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	struct cfg80211_roam_info roam_info = {};
+#endif
 #ifdef WLFBT
 	uint32 data_len = 0;
 	if (data)
@@ -16051,6 +16098,7 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		memcpy(cfg->fbt_key, data, FBT_KEYLEN);
 	}
 #endif /* WLFBT */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	cfg80211_roamed(ndev,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)) || defined(WL_COMPAT_WIRELESS)
 		notify_channel,
@@ -16058,6 +16106,17 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		curbssid,
 		conn_info->req_ie, conn_info->req_ie_len,
 		conn_info->resp_ie, conn_info->resp_ie_len, GFP_KERNEL);
+#else
+	roam_info.channel = notify_channel;
+	roam_info.bssid = curbssid;
+	roam_info.req_ie = conn_info->req_ie;
+	roam_info.req_ie_len = conn_info->req_ie_len;
+	roam_info.resp_ie = conn_info->resp_ie;
+	roam_info.resp_ie_len = conn_info->resp_ie_len;
+
+	cfg80211_roamed(ndev, &roam_info, GFP_KERNEL);
+#endif
+
 	WL_DBG(("Report roaming result\n"));
 #ifdef  BRCM_RSDB
 	memcpy(&cfg->last_roamed_addr, (void *)&e->addr, ETHER_ADDR_LEN);
@@ -17131,6 +17190,7 @@ wl_notify_sched_scan_results(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	int channel_req = 0;
 	int band = 0;
 	struct wl_pfn_scanresults *pfn_result = NULL;
+	u8 tmp_buf[DOT11_MAX_SSID_LEN + 1];
 
 	if (data == NULL) {
 		WL_ERR(("%s :data is null\n", __FUNCTION__));
@@ -17189,12 +17249,26 @@ wl_notify_sched_scan_results(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 				err = -EINVAL;
 				goto out_err;
 			}
+
+			if (netinfo->pfnsubnet.SSID_len > DOT11_MAX_SSID_LEN) {
+				WL_ERR(("Wrong SSID length:%d\n",
+					netinfo->pfnsubnet.SSID_len));
+				err = -EINVAL;
+				goto out_err;
+			}
+			if (memcpy_s(tmp_buf, sizeof(tmp_buf) - 1, netinfo->pfnsubnet.SSID,
+				netinfo->pfnsubnet.SSID_len) != EOK) {
+				WL_ERR(("memcpy_s netinfo->pfnsubnet.SSID failed.\n"));
+				err = -EFAULT;
+				goto out_err;
+			}
+			tmp_buf[netinfo->pfnsubnet.SSID_len] = '\0';
 #ifndef  BRCM_RSDB
 			printf(">>> SSID:%s Channel:%d \n",
-				netinfo->pfnsubnet.SSID, netinfo->pfnsubnet.channel);
+				tmp_buf, netinfo->pfnsubnet.channel);
 #else
 			WL_ERR((">>> SSID:%s Channel:%d \n",
-				netinfo->pfnsubnet.SSID, netinfo->pfnsubnet.channel));
+				tmp_buf, netinfo->pfnsubnet.channel));
 #endif
 			/* PFN result doesn't have all the info which are required by the supplicant
 			 * (For e.g IEs) Do a target Escan so that sched scan results are reported
@@ -17204,7 +17278,7 @@ wl_notify_sched_scan_results(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			 */
 #ifdef BCM_PATCH_CVE_2016_0801
 #ifndef  BRCM_RSDB
-			ssid[i].ssid_len = MIN(DOT11_MAX_SSID_LEN, netinfo->pfnsubnet.SSID_len);
+			ssid[i].ssid_len = netinfo->pfnsubnet.SSID_len;
 			memcpy(ssid[i].ssid, netinfo->pfnsubnet.SSID,
 			       ssid[i].ssid_len);
 #else
@@ -18021,7 +18095,11 @@ static s32 wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 	if (cfg->sched_scan_req && !cfg->scan_request) {
 		WL_PNO((">>> REPORTING SCHED SCAN RESULTS \n"));
 		if (!aborted)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+			cfg80211_sched_scan_results(cfg->sched_scan_req->wiphy, 0);
+#else
 			cfg80211_sched_scan_results(cfg->sched_scan_req->wiphy);
+#endif
 		cfg->sched_scan_running = FALSE;
 		cfg->sched_scan_req = NULL;
 	}
@@ -22106,6 +22184,7 @@ wl_debuglevel_write(struct file *file, const char __user *userbuf,
 	char tbuf[S_SUBLOGLEVEL * ARRAYSIZE(sublogname_map)], sublog[S_SUBLOGLEVEL];
 	char *params, *token, *colon;
 	uint i, tokens, log_on = 0;
+	uint slen = 0;
 	memset(tbuf, 0, sizeof(tbuf));
 	memset(sublog, 0, sizeof(sublog));
 #ifndef  BRCM_RSDB
@@ -22120,6 +22199,7 @@ wl_debuglevel_write(struct file *file, const char __user *userbuf,
 	if (colon != NULL)
 		*colon = '\0';
 	while ((token = strsep(&params, " ")) != NULL) {
+		slen = 0;
 		memset(sublog, 0, sizeof(sublog));
 		if (token == NULL || !*token)
 			break;
@@ -22127,7 +22207,14 @@ wl_debuglevel_write(struct file *file, const char __user *userbuf,
 			continue;
 		colon = strchr(token, ':');
 		if (colon != NULL) {
+			slen = colon - token;
 			*colon = ' ';
+		} else {
+			slen = strlen(token);
+		}
+		if (slen >= S_SUBLOGLEVEL) {
+			WL_ERR(("%s: can't parse: length out of range\n", token));
+			continue;
 		}
 		tokens = sscanf(token, "%s %u", sublog, &log_on);
 		if (colon != NULL)
@@ -22416,7 +22503,7 @@ wl_debug_otp_fs_write(struct file *file, const char __user *userbuf,
 	cish.flags = 0;
 	cish.nbytes = OTP_SIZE;
 	parambuf = kmalloc(PARAM_BUF_SIZE, GFP_KERNEL);
-	if(NULL == parambuf){
+	if (NULL == parambuf){
 		WL_ERR(("failed to allocate parambuf\n"));
 		return -EFAULT;
 	}
@@ -22444,7 +22531,7 @@ wl_debug_otp_fs_write(struct file *file, const char __user *userbuf,
 	}
 
 	ioctlbuf = kmalloc(PARAM_BUF_SIZE, GFP_KERNEL);
-	if(NULL == ioctlbuf){
+	if (NULL == ioctlbuf){
 		WL_ERR(("failed to allocate ioctlbuf\n"));
 		ret = -EFAULT;
 		goto out;
@@ -22458,11 +22545,11 @@ wl_debug_otp_fs_write(struct file *file, const char __user *userbuf,
 	WL_ERR(("%s finish\n", __func__));
 	ret = count;
 out:
-	if(parambuf){
+	if (parambuf){
 		kfree(parambuf);
 		parambuf = NULL;
 	}
-	if(ioctlbuf){
+	if (ioctlbuf){
 		kfree(ioctlbuf);
 		ioctlbuf = NULL;
 	}
@@ -23981,6 +24068,11 @@ wl_cfg80211_set_mgmt_vndr_ies(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgde
 
 	WL_DBG(("Enter. pktflag:0x%x bssidx:%x vnd_ie_len:%d \n",
 		pktflag, bssidx, vndr_ie_len));
+
+	if (cfgdev == NULL) {
+		WL_ERR(("cfgdev is NULL\n"));
+		return -EINVAL;
+	}
 
 	ndev = cfgdev_to_wlc_ndev(cfgdev, cfg);
 

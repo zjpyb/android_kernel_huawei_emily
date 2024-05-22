@@ -17,7 +17,6 @@
 #ifndef __SSI_SRAM_MGR_H__
 #define __SSI_SRAM_MGR_H__
 
-
 #ifndef SSI_CC_SRAM_SIZE
 #define SSI_CC_SRAM_SIZE 4096
 #endif
@@ -28,7 +27,7 @@ struct ssi_drvdata;
  * Address (offset) within CC internal SRAM
  */
 
-typedef uint64_t ssi_sram_addr_t;
+typedef u64 ssi_sram_addr_t;
 
 #define NULL_SRAM_ADDR ((ssi_sram_addr_t)-1)
 
@@ -59,7 +58,7 @@ void ssi_sram_mgr_fini(struct ssi_drvdata *drvdata);
  * \param drvdata
  * \param size The requested bytes to allocate
  */
-ssi_sram_addr_t ssi_sram_mgr_alloc(struct ssi_drvdata *drvdata, uint32_t size);
+ssi_sram_addr_t ssi_sram_mgr_alloc(struct ssi_drvdata *drvdata, u32 size);
 
 /**
  * ssi_sram_mgr_const2sram_desc() - Create const descriptors sequence to
@@ -73,8 +72,8 @@ ssi_sram_addr_t ssi_sram_mgr_alloc(struct ssi_drvdata *drvdata, uint32_t size);
  * @seq_len:	  A pointer to the given IN/OUT sequence length
  */
 void ssi_sram_mgr_const2sram_desc(
-	const uint32_t *src, ssi_sram_addr_t dst,
+	const u32 *src, ssi_sram_addr_t dst,
 	unsigned int nelement,
-	HwDesc_s *seq, unsigned int *seq_len);
+	struct cc_hw_desc *seq, unsigned int *seq_len);
 
 #endif /*__SSI_SRAM_MGR_H__*/

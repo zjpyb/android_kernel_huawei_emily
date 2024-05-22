@@ -171,6 +171,7 @@ static int write_tp_color_to_nv(void)
 	int ret = 0;
 	u8 lcd_id = 0;
 	u8 phone_color = 0;
+	u64 len = sizeof(g_nv_data) - 1;
 
 	memset(g_nv_data, 0, sizeof(g_nv_data));
 	lcd_id = read_tp_color();
@@ -192,45 +193,45 @@ static int write_tp_color_to_nv(void)
 	}
 	switch (phone_color) {
 	case WHITE:
-		strncpy(g_nv_data, "white", sizeof(g_nv_data));
+		strncpy(g_nv_data, "white", len);
 		break;
 	case BLACK:
-		strncpy(g_nv_data, "black", sizeof(g_nv_data));
+		strncpy(g_nv_data, "black", len);
 		break;
 	case PINK:
 	case PINKGOLD:
-		strncpy(g_nv_data, "pink", sizeof(g_nv_data));
+		strncpy(g_nv_data, "pink", len);
 		break;
 	case RED:
-		strncpy(g_nv_data, "red", sizeof(g_nv_data));
+		strncpy(g_nv_data, "red", len);
 		break;
 	case YELLOW:
-		strncpy(g_nv_data, "yellow", sizeof(g_nv_data));
+		strncpy(g_nv_data, "yellow", len);
 		break;
 	case BLUE:
-		strncpy(g_nv_data, "blue", sizeof(g_nv_data));
+		strncpy(g_nv_data, "blue", len);
 		break;
 	case GOLD:
-		strncpy(g_nv_data, "gold", sizeof(g_nv_data));
+		strncpy(g_nv_data, "gold", len);
 		break;
 	case SILVER:
-		strncpy(g_nv_data, "silver", sizeof(g_nv_data));
+		strncpy(g_nv_data, "silver", len);
 		break;
 	case GRAY:
-		strncpy(g_nv_data, "gray", sizeof(g_nv_data));
+		strncpy(g_nv_data, "gray", len);
 		break;
 	case CAFE:
 	case CAFE2:
-		strncpy(g_nv_data, "cafe", sizeof(g_nv_data));
+		strncpy(g_nv_data, "cafe", len);
 		break;
 	case BLACK2:
-		strncpy(g_nv_data, "pdblack", sizeof(g_nv_data));
+		strncpy(g_nv_data, "pdblack", len);
 		break;
 	case GREEN:
-		strncpy(g_nv_data, "green", sizeof(g_nv_data));
+		strncpy(g_nv_data, "green", len);
 		break;
 	default:
-		strncpy(g_nv_data, "", sizeof(g_nv_data));
+		strncpy(g_nv_data, "", len);
 		break;
 	}
 

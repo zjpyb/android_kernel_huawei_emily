@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * The proc filesystem constants/structures
  */
@@ -21,19 +22,14 @@ extern struct proc_dir_entry *proc_mkdir_data(const char *, umode_t,
 					      struct proc_dir_entry *, void *);
 extern struct proc_dir_entry *proc_mkdir_mode(const char *, umode_t,
 					      struct proc_dir_entry *);
+struct proc_dir_entry *proc_create_mount_point(const char *name);
  
 extern struct proc_dir_entry *proc_create_data(const char *, umode_t,
 					       struct proc_dir_entry *,
 					       const struct file_operations *,
 					       void *);
 
-static inline struct proc_dir_entry *proc_create(
-	const char *name, umode_t mode, struct proc_dir_entry *parent,
-	const struct file_operations *proc_fops)
-{
-	return proc_create_data(name, mode, parent, proc_fops, NULL);
-}
-
+struct proc_dir_entry *proc_create(const char *name, umode_t mode, struct proc_dir_entry *parent, const struct file_operations *proc_fops);
 extern void proc_set_size(struct proc_dir_entry *, loff_t);
 extern void proc_set_user(struct proc_dir_entry *, kuid_t, kgid_t);
 extern void *PDE_DATA(const struct inode *);
@@ -44,6 +40,8 @@ extern int remove_proc_subtree(const char *, struct proc_dir_entry *);
 
 #ifdef CONFIG_SCHED_HWSTATUS
 extern void sched_hwstatus_updatefg(pid_t pid,pid_t tgid);
+extern void sched_hwstatus_qos_enqueue(struct task_struct *task, int qos_type);
+extern void sched_hwstatus_qos_dequeue(struct task_struct *task, int qos_type);
 #endif
 
 #ifdef CONFIG_HISI_SWAP_ZDATA
@@ -64,6 +62,7 @@ static inline struct proc_dir_entry *proc_symlink(const char *name,
 		struct proc_dir_entry *parent,const char *dest) { return NULL;}
 static inline struct proc_dir_entry *proc_mkdir(const char *name,
 	struct proc_dir_entry *parent) {return NULL;}
+static inline struct proc_dir_entry *proc_create_mount_point(const char *name) { return NULL; }
 static inline struct proc_dir_entry *proc_mkdir_data(const char *name,
 	umode_t mode, struct proc_dir_entry *parent, void *data) { return NULL; }
 static inline struct proc_dir_entry *proc_mkdir_mode(const char *name,
@@ -95,5 +94,9 @@ static inline struct proc_dir_entry *proc_net_mkdir(
 {
 	return proc_mkdir_data(name, 0, parent, net);
 }
+
+struct ns_common;
+int open_related_ns(struct ns_common *ns,
+		   struct ns_common *(*get_ns)(struct ns_common *ns));
 
 #endif /* _LINUX_PROC_FS_H */

@@ -168,7 +168,6 @@ int readMutualSenseNodeData(u64 address, MutualSenseData *node)
 	int ret = 0;
 	int size = node->header.force_node * node->header.sense_node;
 
-	TS_LOG_INFO( "%s Address for Node data = %08llX\n", __func__, address);
 	if(size <= 0){
 		TS_LOG_ERR("%s:input error.",__func__);
 		return ERROR_ALLOC;		
@@ -337,8 +336,6 @@ int readSelfSenseNodeData(u64 address, SelfSenseData *node)
 		goto ERR;
 	}
 
-	TS_LOG_INFO( "%s Address for Node data = %08llX\n", __func__, address);
-
 	TS_LOG_INFO( "%s Node Data to read %d bytes\n", __func__, size);
 
 	ret = fts_writeReadU8UX(FTS_CMD_FRAMEBUFFER_R, BITS_16, address, data,
@@ -493,7 +490,6 @@ int readTotMutualSenseNodeData(u64 address, TotMutualSenseData *node)
 	u8 data[toRead];
 
 	memset(data, 0, toRead);
-	TS_LOG_INFO( "%s Address for Node data = %04llX\n", __func__, address);
 
 	node->node_data = (short *)kmalloc(size * (sizeof(short)), GFP_KERNEL);
 
@@ -597,7 +593,7 @@ int readTotSelfSenseGlobalData(u64 *address, TotSelfSenseData *global)
 		TS_LOG_ERR( "%s:input error!\n", __func__);
 		return ERROR_OP_NOT_ALLOW;
 	}
-	TS_LOG_INFO( "%s Address for Global data= %04llX\n", __func__, *address);
+
 	ret = fts_writeReadU8UX(FTS_CMD_FRAMEBUFFER_R, BITS_16, *address, data,
 				COMP_DATA_GLOBAL, DUMMY_FRAMEBUFFER);
 	if (ret < OK) {
@@ -668,9 +664,6 @@ int readTotSelfSenseNodeData(u64 address, TotSelfSenseData *node)
 		ret = ERROR_ALLOC;
 		goto out;
 	}
-
-
-	TS_LOG_INFO( "%s Address for Node data = %04llX\n", __func__, address);
 
 	TS_LOG_INFO( "%s Node Data to read %d bytes\n", __func__, size);
 

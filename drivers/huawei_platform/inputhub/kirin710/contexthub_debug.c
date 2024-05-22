@@ -14,6 +14,7 @@
 #include "contexthub_ext_log.h"
 #include "sensor_detect.h"
 #include <huawei_platform/log/hwlog_kernel.h>
+#include "big_data_channel.h"
 
 
 static aod_display_pos_t *g_aod_pos;
@@ -26,7 +27,6 @@ iomcu_power_status i_power_status;
 static DEFINE_MUTEX(mutex_pstatus);
 
 extern int iom3_need_recovery(int modid, exp_source_t f);
-extern uint64_t iomcu_dubai_log_fetch(uint8_t event_type);
 
 extern struct als_platform_data als_data;
 extern struct ps_platform_data ps_data;
@@ -290,13 +290,15 @@ static void iomcu_big_data_flush(uint32_t event_id)
 	pkg_ap.wr_len = sizeof(event_id);
 
 	ret = write_customize_cmd(&pkg_ap, NULL, false);
+	if (ret != 0)
+		hwlog_err("%s failed, ret = %d\n", __func__, ret);
 }
 
 static int big_data_test(int tag, int argv[], int argc)
 {
 	write_info_t pkg_ap;
 	uint32_t def, sel;
-	uint64_t fetch_data;
+	uint64_t fetch_data = 0;
 	int ret = -1;
 
 	if (argc != 2)
@@ -308,7 +310,7 @@ static int big_data_test(int tag, int argv[], int argc)
 	if(0 == sel){
 		iomcu_big_data_flush(def);
 	}else{
-		fetch_data = iomcu_dubai_log_fetch(def);
+		iomcu_dubai_log_fetch(def, &fetch_data, sizeof(fetch_data));
 		hwlog_info("big data test fetch type = %d, res = hi: %d , low: %d\n", def,  (uint32_t) (fetch_data >> 32), (uint32_t) (fetch_data));
 	}
 
@@ -1373,7 +1375,7 @@ static ssize_t cls_attr_debug_store_func(struct class *cls, struct class_attribu
 	return size;
 }
 
-static CLASS_ATTR(sensorhub_dbg, 0660, cls_attr_debug_show_func, cls_attr_debug_store_func);
+static struct class_attribute class_attr_sensorhub_dbg = __ATTR(sensorhub_dbg, 0660, cls_attr_debug_show_func, cls_attr_debug_store_func);
 
 static ssize_t cls_attr_dump_show_func(struct class *cls, struct class_attribute *attr, char *buf)
 {
@@ -1382,7 +1384,7 @@ static ssize_t cls_attr_dump_show_func(struct class *cls, struct class_attribute
 	return snprintf(buf, MAX_STR_SIZE,	"read sensorhub_dump node, IOM7 will restart\n");
 }
 
-static CLASS_ATTR(sensorhub_dump, 0660, cls_attr_dump_show_func, NULL);
+static struct class_attribute class_attr_sensorhub_dump = __ATTR(sensorhub_dump, 0660, cls_attr_dump_show_func, NULL);
 
 static ssize_t cls_attr_kernel_support_lib_ver_show_func(struct class *cls, struct class_attribute *attr, char *buf)
 {
@@ -1392,7 +1394,7 @@ static ssize_t cls_attr_kernel_support_lib_ver_show_func(struct class *cls, stru
 	return sizeof(ver);
 }
 
-static CLASS_ATTR(libsensor_ver, 0660, cls_attr_kernel_support_lib_ver_show_func, NULL);
+static struct class_attribute class_attr_libsensor_ver = __ATTR(libsensor_ver, 0660, cls_attr_kernel_support_lib_ver_show_func, NULL);
 
 void create_debug_files(void)
 {

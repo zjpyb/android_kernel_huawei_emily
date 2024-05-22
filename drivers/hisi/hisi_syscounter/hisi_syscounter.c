@@ -1,3 +1,10 @@
+/*
+ * Copyright (C) Huawei Tech. Co. Ltd. 2016-2019. All rights reserved.
+ * Description: Syscounter driver
+ * Author: Huawei
+ * Create: 2016-06-28
+ */
+
 #include <linux/sysfs.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
@@ -13,7 +20,7 @@
 #include <linux/hisi/hisi_syscounter.h>
 #include <linux/syscore_ops.h>
 #include <linux/workqueue.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 
 #define RECORD_NEED_SYNC_PERIOD  0
 
@@ -27,9 +34,10 @@ int syscounter_to_timespec64(u64 syscnt, struct timespec64 *ts)
 	long nsec_delta, r_tv_nsec;
 	u64 cnt_delta, r_syscnt;
 
-	if (!ts)
+	if (ts == NULL)
 		return -EINVAL;
-	if (!dev) return -ENXIO;
+	if (dev == NULL)
+		return -ENXIO;
 
 	spin_lock_irqsave(&dev->sync_lock, flags);
 	r_syscnt = dev->record.syscnt;
@@ -72,7 +80,7 @@ u64 hisi_get_syscount(void)
 	union syscnt_val syscnt;
 	unsigned long flags;
 
-	if (!dev || !dev->base)
+	if (dev == NULL || dev->base == NULL)
 		return 0;
 
 	spin_lock_irqsave(&dev->r_lock, flags);
@@ -85,14 +93,14 @@ u64 hisi_get_syscount(void)
 EXPORT_SYMBOL(hisi_get_syscount);
 
 
-
 #if RECORD_NEED_SYNC_PERIOD
 static void hisi_syscounter_sync_work(struct work_struct *work)
 {
 	unsigned long flags;
 	struct syscnt_device *d = syscnt_dev;
 
-	if (!d) return;
+	if (d == NULL)
+		return;
 
 	spin_lock_irqsave(&d->sync_lock, flags);
 	get_monotonic_boottime64(&d->record.ts);
@@ -112,7 +120,7 @@ static int hisi_syscounter_suspend(void)
 
 	pr_info("%s ++", __func__);
 
-	if (!d) {
+	if (d == NULL) {
 		pr_err("%s syscnt device is NULL\n", __func__);
 		return -EXDEV;
 	}
@@ -133,7 +141,7 @@ static void hisi_syscounter_resume(void)
 
 	pr_info("%s ++", __func__);
 
-	if (!d) {
+	if (d == NULL) {
 		pr_err("%s syscnt device is NULL\n", __func__);
 		return;
 	}
@@ -162,40 +170,40 @@ static struct syscore_ops hisi_syscounter_syscore_ops = {
 static int hisi_syscounter_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct syscnt_device *d;
+	struct syscnt_device *d = NULL;
 	int ret;
 	unsigned long flags;
 
 	d = kzalloc(sizeof(struct syscnt_device), GFP_KERNEL);
-	if (!d) {
+	if (d == NULL) {
 		dev_err(dev, "kzalloc mem error\n");
 		return -ENOMEM;
 	}
 	syscnt_dev = d;
 
 	ret = of_property_read_u64(dev->of_node, "clock-rate", &d->clock_rate);
-	if (ret) {
+	if (ret != 0) {
 		dev_err(dev, "read clock-rate from dts error\n");
 		goto err_probe;
 	}
 
 #if RECORD_NEED_SYNC_PERIOD
 	ret = of_property_read_u32(dev->of_node, "sync-interval", &d->sync_interval);
-	if (ret) {
+	if (ret != 0) {
 		dev_err(dev, "read sync-interval from dts error\n");
 		goto err_probe;
 	}
 #endif
 
 	d->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!d->res) {
+	if (d->res == NULL) {
 		dev_err(dev, "platform_get_resource error\n");
 		ret = -ENOMEM;
 		goto err_probe;
 	}
 
 	d->base = ioremap(d->res->start, resource_size(d->res));
-	if (!d->base) {
+	if (d->base == NULL) {
 		dev_err(dev, "ioremap baseaddr error\n");
 		ret = -ENOMEM;
 		goto err_probe;
@@ -232,8 +240,9 @@ err_probe:
 static int hisi_syscounter_remove(struct platform_device *pdev)
 {
 	struct syscnt_device *d = syscnt_dev;
+
 	unregister_syscore_ops(&hisi_syscounter_syscore_ops);
-	if (d) {
+	if (d != NULL) {
 		iounmap(d->base);
 		kfree(d);
 		syscnt_dev = NULL;

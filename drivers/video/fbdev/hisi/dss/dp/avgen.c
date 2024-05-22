@@ -29,14 +29,16 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
+
 #include "avgen.h"
+#include "dp_aux.h"
+#include "core.h"
 #include "../hisi_fb.h"
 #include "../hisi_fb_def.h"
 
-#define FHD_TIMING_H_ACTIVE 1920
-#define FHD_TIMING_V_ACTIVE 1080
+#define OFFSET_FRACTIONAL_BITS 11
 
 /*lint -save -e* */
 static inline uint8_t dptx_bit_field(const uint16_t data, uint8_t shift, uint8_t width)
@@ -254,6 +256,146 @@ void dptx_audio_infoframe_sdp_send(struct dp_ctrl *dptx)
 	dptx_writel(dptx, DPTX_SDP_VERTICAL_CTRL, reg);
 }
 
+static void dptx_hdr_infoframe_set_reg(struct dp_ctrl *dptx, uint8_t enable)
+{
+	int i, j;
+	uint32_t reg;
+	uint32_t hdr_infoframe_data = 0;
+	struct sdp_full_data hdr_sdp_data;
+
+	if (dptx == NULL) {
+		HISI_FB_ERR("[DP] NULL Pointer\n");
+		return;
+	}
+
+	if (!dptx->dptx_enable) {
+		HISI_FB_ERR("[DP] dptx has already off.\n");
+		return;
+	}
+
+	memset(&hdr_sdp_data, 0, sizeof(hdr_sdp_data));
+	hdr_sdp_data.en = enable;
+	hdr_sdp_data.payload[0] = HDR_INFOFRAME_HEADER;
+	hdr_sdp_data.payload[1] = (dptx->hdr_infoframe.data[1] << 24) | (dptx->hdr_infoframe.data[0] << 16) |
+		(HDR_INFOFRAME_LENGTH << 8) |HDR_INFOFRAME_VERSION;
+
+	for (i = 2; i < HDR_INFOFRAME_LENGTH; i++) {
+		for (j = 0; j < DATA_NUM_PER_REG; j++) {
+			hdr_infoframe_data |= (uint32_t)dptx->hdr_infoframe.data[i] << ((j % DATA_NUM_PER_REG) * INFOFRAME_DATA_SIZE);
+
+			if (j < (DATA_NUM_PER_REG - 1))
+				i++;
+
+			if (i >= HDR_INFOFRAME_LENGTH)
+				break;
+		}
+
+		hdr_sdp_data.payload[i / DATA_NUM_PER_REG + 1] = hdr_infoframe_data;
+		hdr_infoframe_data = 0;
+	}
+
+	for (i = 0; i < DPTX_SDP_LEN; i++) {
+		HISI_FB_DEBUG("[DP] hdr_sdp_data.payload[%d]: %x\n", i, hdr_sdp_data.payload[i]);
+		dptx_writel(dptx, DPTX_SDP_BANK +  4 * i, hdr_sdp_data.payload[i]);
+		reg = (uint32_t)dptx_readl(dptx, DPTX_SDP_BANK + 4 * i);
+	}
+
+	reg = (uint32_t)dptx_readl(dptx, DPTX_SDP_VERTICAL_CTRL);
+	reg |= DPTX_EN_HDR_INFOFRAME_SDP | DPTX_FIXED_PRIORITY_ARBITRATION;
+	dptx_writel(dptx, DPTX_SDP_VERTICAL_CTRL, reg);
+}
+
+int dptx_hdr_infoframe_sdp_send(struct dp_ctrl *dptx, const void __user *argp)
+{
+	int i;
+
+	if (dptx == NULL) {
+		HISI_FB_ERR("[DP] dptx is NULL\n");
+		return -EINVAL;
+	}
+
+	if (argp == NULL) {
+		HISI_FB_ERR("[DP] argp is NULL\n");
+		return -EINVAL;
+	}
+
+	dptx->hdr_infoframe.type_code = INFOFRAME_PACKET_TYPE_HDR;
+	dptx->hdr_infoframe.version_number = HDR_INFOFRAME_VERSION;
+	dptx->hdr_infoframe.length = HDR_INFOFRAME_LENGTH;
+
+	memset(dptx->hdr_infoframe.data, 0x00, HDR_INFOFRAME_LENGTH);
+
+	if (copy_from_user(&(dptx->hdr_metadata), (void __user *)argp, sizeof(dptx->hdr_metadata))) {
+		HISI_FB_ERR("[%s]: copy arg failed!\n", __func__);
+		return -EFAULT;
+	}
+
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_EOTF_BYTE_NUM]
+		= dptx->hdr_metadata.electro_optical_transfer_function;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_METADATA_ID_BYTE_NUM]
+		= dptx->hdr_metadata.static_metadata_descriptor_id;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_X_0_LSB]
+		= dptx->hdr_metadata.red_primary_x & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_X_0_MSB]
+		= (dptx->hdr_metadata.red_primary_x & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_Y_0_LSB]
+		= dptx->hdr_metadata.red_primary_y & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_Y_0_MSB]
+		= (dptx->hdr_metadata.red_primary_y & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_X_1_LSB]
+		= dptx->hdr_metadata.green_primary_x & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_X_1_MSB]
+		= (dptx->hdr_metadata.green_primary_x & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_Y_1_LSB]
+		= dptx->hdr_metadata.green_primary_y & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_Y_1_MSB]
+		= (dptx->hdr_metadata.green_primary_y & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_X_2_LSB]
+		= dptx->hdr_metadata.blue_primary_x & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_X_2_MSB]
+		= (dptx->hdr_metadata.blue_primary_x & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_Y_2_LSB]
+		= dptx->hdr_metadata.blue_primary_y & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_DISP_PRI_Y_2_MSB]
+		= (dptx->hdr_metadata.blue_primary_y & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_WHITE_POINT_X_LSB]
+		= dptx->hdr_metadata.white_point_x & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_WHITE_POINT_X_MSB]
+		= (dptx->hdr_metadata.white_point_x & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_WHITE_POINT_Y_LSB]
+		= dptx->hdr_metadata.white_point_y & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_WHITE_POINT_Y_MSB]
+		= (dptx->hdr_metadata.white_point_y & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MAX_LUMI_LSB]
+		= dptx->hdr_metadata.max_display_mastering_luminance & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MAX_LUMI_MSB]
+		= (dptx->hdr_metadata.max_display_mastering_luminance & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MIN_LUMI_LSB]
+		= dptx->hdr_metadata.min_display_mastering_luminance & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MIN_LUMI_MSB]
+		= (dptx->hdr_metadata.min_display_mastering_luminance & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MAX_LIGHT_LEVEL_LSB]
+		= dptx->hdr_metadata.max_content_light_level & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MAX_LIGHT_LEVEL_MSB]
+		= (dptx->hdr_metadata.max_content_light_level & MSB_MASK) >> SHIFT_8BIT;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MAX_AVERAGE_LEVEL_LSB]
+		= dptx->hdr_metadata.max_frame_average_light_level & LSB_MASK;
+	dptx->hdr_infoframe.data[HDR_INFOFRAME_MAX_AVERAGE_LEVEL_MSB]
+		= (dptx->hdr_metadata.max_frame_average_light_level & MSB_MASK) >> SHIFT_8BIT;
+
+	for (i = 0; i < HDR_INFOFRAME_LENGTH; i++) {
+		HISI_FB_DEBUG("[DP] hdr_infoframe->data[%d] = 0x%02x", i, dptx->hdr_infoframe.data[i]);
+	}
+
+	mutex_lock(&dptx->dptx_mutex);
+
+	dptx_hdr_infoframe_set_reg(dptx, 1);
+
+	mutex_unlock(&dptx->dptx_mutex);
+
+	return 0;
+}
+
 void dptx_disable_sdp(struct dp_ctrl *dptx, uint32_t *payload)
 {
 	int i;
@@ -275,7 +417,7 @@ void dptx_disable_sdp(struct dp_ctrl *dptx, uint32_t *payload)
 
 void dptx_enable_sdp(struct dp_ctrl *dptx, struct sdp_full_data *data)
 {
-	int i;
+	uint32_t i;
 	uint32_t reg;
 	int reg_num;
 	uint32_t header;
@@ -438,16 +580,16 @@ void dptx_video_reset(struct dp_ctrl *dptx, int enable, int stream)
 
 	reg = (uint32_t)dptx_readl(dptx, DPTX_SRST_CTRL);
 	if (enable)
-		reg |= DPTX_SRST_VIDEO_RESET_N(stream);
+		reg |= DPTX_SRST_VIDEO_RESET_N((uint32_t)stream);
 	else
-		reg &= ~DPTX_SRST_VIDEO_RESET_N(stream);
+		reg &= ~DPTX_SRST_VIDEO_RESET_N((uint32_t)stream);
 	dptx_writel(dptx, DPTX_SRST_CTRL, reg);
 }
 
 void dptx_audio_mute(struct dp_ctrl *dptx)
 {
 	uint32_t reg;
-	struct audio_params *aparams;
+	struct audio_params *aparams = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -480,7 +622,7 @@ void dptx_audio_config(struct dp_ctrl *dptx)
 
 void dptx_audio_core_config(struct dp_ctrl *dptx)
 {
-	struct audio_params *aparams;
+	struct audio_params *aparams = NULL;
 	uint32_t reg;
 
 	if (dptx == NULL) {
@@ -505,7 +647,7 @@ void dptx_audio_core_config(struct dp_ctrl *dptx)
 
 void dptx_audio_inf_type_change(struct dp_ctrl *dptx)
 {
-	struct audio_params *aparams;
+	struct audio_params *aparams = NULL;
 	uint32_t reg;
 
 	if (dptx == NULL) {
@@ -525,7 +667,7 @@ void dptx_audio_num_ch_change(struct dp_ctrl *dptx)
 {
 	uint32_t reg = 0;
 	uint32_t num_ch_map = 0;
-	struct audio_params *aparams;
+	struct audio_params *aparams = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -550,7 +692,7 @@ void dptx_audio_num_ch_change(struct dp_ctrl *dptx)
 void dptx_audio_data_width_change(struct dp_ctrl *dptx)
 {
 	uint32_t reg;
-	struct audio_params *aparams;
+	struct audio_params *aparams = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -568,7 +710,7 @@ void dptx_audio_data_width_change(struct dp_ctrl *dptx)
 bool dptx_check_low_temperature(struct dp_ctrl *dptx)
 {
 	uint32_t perictrl4;
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -629,9 +771,9 @@ int dptx_change_video_mode_tu_fail(struct dp_ctrl *dptx)
 
 int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 {
-	struct video_params *vparams;
+	struct video_params *vparams = NULL;
 	int retval;
-	bool needchanged;
+	bool needchanged = false;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -639,7 +781,6 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 	}
 
 	vparams = &dptx->vparams;
-	needchanged = FALSE;
 	if (!dptx->same_source) {
 		if((vparams->mdtd.h_active > FHD_TIMING_H_ACTIVE) || (vparams->mdtd.v_active > FHD_TIMING_V_ACTIVE)) {
 			vparams->video_format = VCEA;
@@ -665,7 +806,7 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 	}
 
 	if (dptx_check_low_temperature(dptx)) {
-		if((vparams->mdtd.h_active > FHD_TIMING_H_ACTIVE) || (vparams->mdtd.v_active > FHD_TIMING_V_ACTIVE)) {
+		if ((vparams->mdtd.h_active > FHD_TIMING_H_ACTIVE) || (vparams->mdtd.v_active > FHD_TIMING_V_ACTIVE)) {
 			vparams->video_format = VCEA;
 			vparams->mode = 16; /*Siwtch to 1080p on PC mode*/
 			HISI_FB_INFO("[DP] Video mode is changed by low temperature!\n");
@@ -687,7 +828,7 @@ int dptx_change_video_mode_user(struct dp_ctrl *dptx)
 int dptx_video_mode_change(struct dp_ctrl *dptx, uint8_t vmode, int stream)
 {
 	int retval;
-	struct video_params *vparams;
+	struct video_params *vparams = NULL;
 	struct dtd mdtd;
 
 	if (dptx == NULL) {
@@ -715,8 +856,8 @@ int dptx_video_mode_change(struct dp_ctrl *dptx, uint8_t vmode, int stream)
 
 int dptx_video_config(struct dp_ctrl *dptx, int stream)
 {
-	struct video_params *vparams;
-	struct dtd *mdtd;
+	struct video_params *vparams = NULL;
+	struct dtd *mdtd = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -729,13 +870,16 @@ int dptx_video_config(struct dp_ctrl *dptx, int stream)
 	if (!dptx_dtd_fill(mdtd, vparams->mode,
 			   vparams->refresh_rate, vparams->video_format))
 		return -EINVAL;
+
 	dptx_video_core_config(dptx, stream);
 	return 0;
 }
+
+
 void dptx_video_core_config(struct dp_ctrl *dptx, int stream)
 {
-	struct video_params *vparams;
-	struct dtd *mdtd;
+	struct video_params *vparams = NULL;
+	struct dtd *mdtd = NULL;
 	uint32_t reg;
 	uint8_t vmode;
 
@@ -817,8 +961,8 @@ void dptx_video_core_config(struct dp_ctrl *dptx, int stream)
 int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 			    int bpc, int encoding, int pixel_clock)
 {
-	struct video_params *vparams;
-	struct dtd *mdtd;
+	struct video_params *vparams = NULL;
+	struct dtd *mdtd = NULL;
 	int link_rate;
 	int retval = 0;
 	int ts;
@@ -857,46 +1001,50 @@ int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 		color_dep = 18;
 		break;
 	case COLOR_DEPTH_8:
-		if (encoding == YCBCR420)
+		if (encoding == YCBCR420) {
 			color_dep  = 12;
-		else if (encoding == YCBCR422)
+		} else if (encoding == YCBCR422) {
 			color_dep = 16;
-		else if (encoding == YONLY)
+		} else if (encoding == YONLY) {
 			color_dep = 8;
-		else
+		} else {
 			color_dep = 24;
+		}
 		break;
 	case COLOR_DEPTH_10:
-		if (encoding == YCBCR420)
+		if (encoding == YCBCR420) {
 			color_dep = 15;
-		else if (encoding == YCBCR422)
+		} else if (encoding == YCBCR422) {
 			color_dep = 20;
-		else if (encoding  == YONLY)
+		} else if (encoding  == YONLY) {
 			color_dep = 10;
-		else
+		} else {
 			color_dep = 30;
+		}
 		break;
 
 	case COLOR_DEPTH_12:
-		if (encoding == YCBCR420)
+		if (encoding == YCBCR420) {
 			color_dep = 18;
-		else if (encoding == YCBCR422)
+		} else if (encoding == YCBCR422) {
 			color_dep = 24;
-		else if (encoding == YONLY)
+		} else if (encoding == YONLY) {
 			color_dep = 12;
-		else
+		} else {
 			color_dep = 36;
+		}
 		break;
 
 	case COLOR_DEPTH_16:
-		if (encoding == YCBCR420)
+		if (encoding == YCBCR420) {
 			color_dep = 24;
-		else if (encoding == YCBCR422)
+		} else if (encoding == YCBCR422) {
 			color_dep = 32;
-		else if (encoding == YONLY)
+		} else if (encoding == YONLY) {
 			color_dep = 16;
-		else
+		} else {
 			color_dep = 48;
+		}
 		break;
 	default:
 		color_dep = 18;
@@ -939,7 +1087,7 @@ int dptx_video_ts_calculate(struct dp_ctrl *dptx, int lane_num, int rate,
 void dptx_video_ts_change(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t reg;
-	struct video_params *vparams;
+	struct video_params *vparams = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -982,7 +1130,7 @@ void dptx_video_set_core_bpc(struct dp_ctrl *dptx, int stream)
 	uint32_t reg;
 	uint8_t bpc_mapping = 0, bpc = 0;
 	enum pixel_enc_type pix_enc;
-	struct video_params *vparams;
+	struct video_params *vparams = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -1061,7 +1209,14 @@ void dptx_video_set_core_bpc(struct dp_ctrl *dptx, int stream)
 		break;
 	}
 
-	reg |= (bpc_mapping << DPTX_VSAMPLE_CTRL_VMAP_BPC_SHIFT);
+	if (dptx->dsc) {
+		reg |= (1 << DPTX_VG_CONFIG1_BPC_SHIFT);
+	} else {
+		reg |= (bpc_mapping << DPTX_VSAMPLE_CTRL_VMAP_BPC_SHIFT);
+	}
+
+	reg |= (1 << DPTX_VSAMPLE_CTRL_VMAP_BPC_SHIFT); // this code is used to set 8 bit.
+
 	dptx_writel(dptx, DPTX_VSAMPLE_CTRL_N(stream), reg);
 }
 void dptx_video_set_sink_col(struct dp_ctrl *dptx, int stream)
@@ -1070,7 +1225,7 @@ void dptx_video_set_sink_col(struct dp_ctrl *dptx, int stream)
 	uint8_t col_mapping;
 	uint8_t colorimetry;
 	uint8_t dynamic_range;
-	struct video_params *vparams;
+	struct video_params *vparams = NULL;
 	enum pixel_enc_type pix_enc;
 
 	if (dptx == NULL) {
@@ -1124,7 +1279,7 @@ void dptx_video_set_sink_bpc(struct dp_ctrl *dptx, int stream)
 {
 	uint32_t reg_msa2, reg_msa3;
 	uint8_t bpc_mapping = 0, bpc = 0;
-	struct video_params *vparams;
+	struct video_params *vparams = NULL;
 	enum pixel_enc_type pix_enc;
 
 	if (dptx == NULL) {
@@ -1209,6 +1364,7 @@ void dptx_video_set_sink_bpc(struct dp_ctrl *dptx, int stream)
 	default:
 		break;
 	}
+
 	reg_msa2 |= (bpc_mapping << DPTX_VIDEO_VMSA2_BPC_SHIFT);
 
 	dptx_writel(dptx, DPTX_VIDEO_MSA2_N(stream), reg_msa2);
@@ -1288,8 +1444,10 @@ void dptx_video_params_reset(struct video_params *params)
 	}
 
 	memset(params, 0x0, sizeof(struct video_params));
-	/* TODO 6 bpc should be default - use 8 bpc for MST calculation */
+
+	/* 6 bpc should be default - use 8 bpc for MST calculation */
 	params->bpc = COLOR_DEPTH_8;
+	params->dsc_bpp = DPTX_BITS_PER_PIXEL;
 	params->pix_enc = RGB;
 	params->mode = 1;
 	params->colorimetry = ITU601;
@@ -1978,7 +2136,7 @@ bool dptx_dtd_fill(struct dtd *mdtd, uint8_t code, uint32_t refresh_rate,
 			mdtd->h_sync_polarity = 1;
 			mdtd->v_sync_polarity = 1;
 			mdtd->interlaced = 0;
-			mdtd->pixel_clock = 594000;
+			mdtd->pixel_clock = 59400;
 			break;
 		case 66:
 			mdtd->h_image_size = 4;

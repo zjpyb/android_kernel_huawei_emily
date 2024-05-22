@@ -13,7 +13,6 @@
 
 #include "hisi_fb.h"
 #include <huawei_platform/touthscreen/huawei_touchscreen.h>
-/*lint -e569 -e574*/
 // only for test video vesa3x
 //#define DSI_1_2_VESA3X_VIDEO
 
@@ -21,7 +20,7 @@
 static int g_lcd_fpga_flag;
 //extern bool g_lcd_control_tp_power;
 
-
+/*lint -e569 -e574 -e551*/
 extern unsigned int g_led_rg_para1;
 extern unsigned int g_led_rg_para2;
 extern u8 color_temp_cal_buf[32];
@@ -218,7 +217,6 @@ static uint32_t gpio_lcd_p5v5_enable;
 static uint32_t gpio_lcd_n5v5_enable;
 static uint32_t gpio_lcd_reset;
 static uint32_t gpio_lcd_bl_enable;
-static uint32_t gpio_lcd_tp2v85; //lint !e551
 static uint32_t gpio_lcd_tp1v8;
 
 static struct gpio_desc fpga_lcd_gpio_request_cmds[] = {
@@ -501,7 +499,6 @@ static int mipi_jdi_panel_on(struct platform_device *pdev)
 		while (status & 0x10) {
 			udelay(50);
 			if (++try_times > 100) {
-				try_times = 0;
 				HISI_FB_ERR("Read lcd power status timeout!\n");
 				break;
 			}
@@ -689,14 +686,14 @@ static int mipi_jdi_panel_set_display_region(struct platform_device *pdev,
 			dirty->x, dirty->y, dirty->w, dirty->h);
 	}
 
-	lcd_disp_x[1] = (dirty->x >> 8) & 0xff;
-	lcd_disp_x[2] = dirty->x & 0xff;
-	lcd_disp_x[3] = ((dirty->x + dirty->w - 1) >> 8) & 0xff;
-	lcd_disp_x[4] = (dirty->x + dirty->w - 1) & 0xff;
-	lcd_disp_y[1] = (dirty->y >> 8) & 0xff;
-	lcd_disp_y[2] = dirty->y & 0xff;
-	lcd_disp_y[3] = ((dirty->y + dirty->h - 1) >> 8) & 0xff;
-	lcd_disp_y[4] = (dirty->y + dirty->h - 1) & 0xff;
+	lcd_disp_x[1] = ((uint32_t)dirty->x >> 8) & 0xff;
+	lcd_disp_x[2] = (uint32_t)dirty->x & 0xff;
+	lcd_disp_x[3] = (((uint32_t)dirty->x + (uint32_t)dirty->w - 1) >> 8) & 0xff;
+	lcd_disp_x[4] = ((uint32_t)dirty->x + (uint32_t)dirty->w - 1) & 0xff;
+	lcd_disp_y[1] = ((uint32_t)dirty->y >> 8) & 0xff;
+	lcd_disp_y[2] = (uint32_t)dirty->y & 0xff;
+	lcd_disp_y[3] = (((uint32_t)dirty->y + (uint32_t)dirty->h - 1) >> 8) & 0xff;
+	lcd_disp_y[4] = ((uint32_t)dirty->y + (uint32_t)dirty->h - 1) & 0xff;
 
 	mipi_dsi_cmds_tx(set_display_address, \
 		ARRAY_SIZE(set_display_address), hisifd->mipi_dsi1_base);
@@ -865,7 +862,6 @@ static int mipi_jdi_probe(struct platform_device *pdev)
 		gpio_lcd_n5v5_enable = of_get_named_gpio(np, "gpios", 2);
 		gpio_lcd_reset = of_get_named_gpio(np, "gpios", 3);
 		gpio_lcd_bl_enable = of_get_named_gpio(np, "gpios", 4);
-		gpio_lcd_tp2v85 = of_get_named_gpio(np, "gpios", 5);
 		gpio_lcd_tp1v8 = of_get_named_gpio(np, "gpios", 6);
 	} else {
 		gpio_lcd_p5v5_enable = of_get_named_gpio(np, "gpios", 0);
@@ -1095,4 +1091,4 @@ static int __init mipi_jdi_NT35695_cut3_1_panel_init(void)
 }
 
 module_init(mipi_jdi_NT35695_cut3_1_panel_init);
-/*lint +e569 +e574*/
+/*lint +e569 +e574 +e551*/

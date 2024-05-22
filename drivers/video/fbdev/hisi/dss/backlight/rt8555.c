@@ -31,6 +31,7 @@
 
 static bool g_rt8555_used;
 static bool g_init_status;
+static bool bl_set_slope_status;
 static struct class *g_rt_class;
 static struct rt8555_chip_data *g_rtdev;
 static struct rt8555_info g_bl_info;
@@ -99,6 +100,11 @@ static int rt8555_parse_dts(struct device_node *np)
 				g_dts_str[i]);
 		}
 	}
+	ret = of_property_read_u32(np, "bl_set_long_slope",
+		&g_bl_info.bl_set_long_slope);
+	if (ret < 0)
+		RT8555_INFO(g_rtdev->dev,
+			"bl_set_long_slope dts don't config\n");
 	ret = of_property_read_u32(np, "rt8555_hw_en_gpio",
 		&g_bl_info.rt8555_hw_en_gpio);
 	if (ret < 0) {
@@ -275,7 +281,7 @@ i2c_error:
 static ssize_t rt8555_reg_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 	unsigned int val;
 	unsigned int reg;
 	unsigned int mask;
@@ -283,11 +289,11 @@ static ssize_t rt8555_reg_store(struct device *dev,
 
 	if (!buf) {
 		RT8555_ERR(g_rtdev->dev, "buf is null\n");
-		return ret;
+		return -1;
 	}
 	if (!dev) {
 		RT8555_ERR(g_rtdev->dev, "dev is null\n");
-		return ret;
+		return -1;
 	}
 	pchip = dev_get_drvdata(dev);
 	ret = sscanf(buf, "reg=0x%x, mask=0x%x, val=0x%x", &reg, &mask, &val);
@@ -303,12 +309,10 @@ static ssize_t rt8555_reg_store(struct device *dev,
 	return size;
 i2c_error:
 	dev_err(pchip->dev, "%s:i2c access fail to register\n", __func__);
-	ret = snprintf((char *)buf, PAGE_SIZE, "%s: Access fail\n", __func__);
-	return ret;
+	return -1;
 out_input:
 	dev_err(pchip->dev, "%s:input conversion fail\n", __func__);
-	ret = snprintf((char *)buf, PAGE_SIZE, "%s: input fail\n", __func__);
-	return ret;
+	return -1;
 }
 
 static DEVICE_ATTR(reg, 0644, rt8555_reg_show, rt8555_reg_store);
@@ -346,12 +350,14 @@ static int rt8555_probe(struct i2c_client *client,
 		sizeof(struct rt8555_chip_data), GFP_KERNEL);
 	if (!pchip)
 		return -ENOMEM;
+#ifdef CONFIG_REGMAP_I2C
 	pchip->regmap = devm_regmap_init_i2c(client, &rt8555_regmap);
 	if (IS_ERR(pchip->regmap)) {
 		ret = PTR_ERR(pchip->regmap);
 		dev_err(&client->dev, "allocate regmap failed: %d\n", ret);
 		goto err_out;
 	}
+#endif
 	g_rtdev = pchip;
 	pchip->client = client;
 	i2c_set_clientdata(client, pchip);

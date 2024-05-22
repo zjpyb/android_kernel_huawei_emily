@@ -1,7 +1,22 @@
-
+/**
+* @copyright    Copyright (c) 2014- Hisilicon Technologies CO., Ltd.
+* @file         hisp_msg.h
+* @brief        Header file
+*
+* @version      1.0
+* @date         2014-05-10 15:24:09
+* @author
+* @change       initial draft
+*
+* @date         2016-12-05 10:00:00
+* @change:      change from "message.h",add some definitions
+*/
 
 #ifndef HISP200_MSG_H_INCLUDED
 #define HISP200_MSG_H_INCLUDED
+
+#include <linux/platform_data/remoteproc-hisi.h>
+
 //#include "devices_ctl.h"
 #define MAX_INPUT_STREAM_NUM (2)
 /*be same with hisi/ap/kernel/... */
@@ -438,68 +453,12 @@ typedef struct _msg_ack_query_laser_t
     laser_spad_t   spad;
 } msg_ack_query_laser_t;
 
-//typedef struct _msg_req_acquire_camera_t
-//{
-//    unsigned int cam_id;
-//    unsigned int csi_index;
-//    unsigned int i2c_index;
-//    char         sensor_name[NAME_LEN];
-//    char         product_name[NAME_LEN];
-//    unsigned int input_otp_buffer;
-//    unsigned int input_calib_buffer;
-//    unsigned int buffer_size;
-//    unsigned int info_buffer;
-//    unsigned int info_count;
-//    unsigned int factory_calib_buffer;
-//} msg_req_acquire_camera_t;
-
-typedef enum _hisp_phy_id_e
-{
-    HISP_CDPHY_A = 0,
-    HISP_CDPHY_B,
-    HISP_CDPHY_C,
-    HISP_CDPHY_D,
-    HISP_CDPHY_MAX,
-}hisp_phy_id_e;
-
-typedef enum _hisp_phy_mode_e
-{
-    HISP_PHY_MODE_DPHY = 0,
-    HISP_PHY_MODE_CPHY,
-    HISP_PHY_MODE_MAX,
-}hisp_phy_mode_e;
-
-typedef enum _hisp_phy_freq_mode_e
-{
-    HISP_PHY_AUTO_FREQ = 0,
-    HISP_PHY_MANUAL_FREQ,
-    HISP_PHY_FREQ_MODE_MAX,
-}hisp_phy_freq_mode_e;
-
-typedef enum _hisp_phy_work_mode_e
-{
-    HISP_PHY_SINGLE_MODE = 0,
-    HISP_PHY_DUAL_MODE_SENSORA,//dphy use DL1&3,cphy use DL2
-    HISP_PHY_DUAL_MODE_SENSORB,//dphy use DL0&2,cphy use DL0&1
-    HISP_PHY_WORK_MODE_MAX,
-}hisp_phy_work_mode_e;
-
-typedef struct _hisp_phy_info_t
-{
-    unsigned int is_master_sensor;
-    hisp_phy_id_e phy_id;
-    hisp_phy_mode_e phy_mode;
-    hisp_phy_freq_mode_e phy_freq_mode;
-    unsigned int phy_freq;
-    hisp_phy_work_mode_e phy_work_mode;
-} hisp_phy_info_t;
-
 typedef struct _msg_req_acquire_camera_t
 {
     unsigned int cam_id;
     unsigned int csi_index;
     unsigned int i2c_index;
-    hisp_phy_info_t   phy_info;
+    struct hisp_phy_info_t phy_info;
     char         sensor_name[NAME_LEN];
     char         product_name[NAME_LEN];
     char         extend_name[NAME_LEN];

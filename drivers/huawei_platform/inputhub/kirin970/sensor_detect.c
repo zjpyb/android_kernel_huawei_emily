@@ -18,7 +18,7 @@
 #include <linux/types.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include "contexthub_route.h"
 #include "contexthub_boot.h"
 #include "protocol.h"
@@ -29,6 +29,7 @@
 #include <linux/mtd/hisi_nve_interface.h>
 #include <linux/switch.h>
 #include <linux/hisi/hw_cmdline_parse.h>
+#include <huawei_platform/inputhub/sensorhub.h>
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
@@ -43,7 +44,7 @@
 #define ADAPT_SENSOR_LIST_NUM           20
 
 static struct sensor_redetect_state s_redetect_state ;
-static struct wake_lock sensor_rd;
+static struct wakeup_source sensor_rd;
 static struct work_struct redetect_work;
 static const char *str_soft_para = "softiron_parameter";
 static char buf[MAX_PKT_LENGTH] = { 0 };
@@ -54,6 +55,8 @@ static u32 tof_replace_ps_flag = 0;
 uint8_t gyro_cali_way = 0;
 uint8_t acc_cali_way = 0;
 int mag_threshold_for_als_calibrate = 0;
+int gyro_detect_flag = 0;
+
 extern int ltr578_flag;
 extern int apds9922_flag;
 int akm_cal_algo;
@@ -368,6 +371,98 @@ struct sensor_detect_manager sensor_manager[SENSOR_MAX] = {
     {"fingerprint_ud", FINGERPRINT_UD, DET_INIT, TAG_FP_UD, &fingerprint_ud_data, sizeof(fingerprint_ud_data)},
     {"tof", TOF, DET_INIT,TAG_TOF, &tof_data, sizeof(tof_data)},
 };
+
+static const struct app_link_info app_link_info_gyro[] = {
+	{SENSORHUB_TYPE_ACCELEROMETER, TAG_ACCEL, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_LIGHT, TAG_ALS, 1, {TAG_ALS}},
+	{SENSORHUB_TYPE_PROXIMITY, TAG_PS, 1, {TAG_PS}},
+	{SENSORHUB_TYPE_GYROSCOPE, TAG_GYRO, 1, {TAG_GYRO}},
+	{SENSORHUB_TYPE_GRAVITY, TAG_GRAVITY, 3, {TAG_ACCEL, TAG_GYRO, TAG_MAG}},
+	{SENSORHUB_TYPE_MAGNETIC, TAG_MAG, 2, {TAG_GYRO, TAG_MAG,}},
+	{SENSORHUB_TYPE_LINEARACCELERATE, TAG_LINEAR_ACCEL, 3, {TAG_ACCEL, TAG_GYRO, TAG_MAG}},
+	{SENSORHUB_TYPE_ORIENTATION, TAG_ORIENTATION, 3, {TAG_ACCEL, TAG_GYRO, TAG_MAG}},
+	{SENSORHUB_TYPE_ROTATEVECTOR, TAG_ROTATION_VECTORS, 3, {TAG_ACCEL, TAG_GYRO, TAG_MAG}},
+	{SENSORHUB_TYPE_PRESSURE, TAG_PRESSURE, 1, {TAG_PRESSURE}},
+	{SENSORHUB_TYPE_HALL, TAG_HALL, 0, {0}},
+	{SENSORHUB_TYPE_MAGNETIC_FIELD_UNCALIBRATED, TAG_MAG_UNCALIBRATED, 2, {TAG_MAG, TAG_GYRO}},
+	{SENSORHUB_TYPE_GAME_ROTATION_VECTOR, TAG_GAME_RV, 2, {TAG_ACCEL, TAG_GYRO}},
+	{SENSORHUB_TYPE_GYROSCOPE_UNCALIBRATED, TAG_GYRO_UNCALIBRATED, 1, {TAG_GYRO}},
+	{SENSORHUB_TYPE_SIGNIFICANT_MOTION, TAG_SIGNIFICANT_MOTION, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_STEP_DETECTOR, TAG_STEP_DETECTOR, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_STEP_COUNTER, TAG_STEP_COUNTER, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_GEOMAGNETIC_ROTATION_VECTOR, TAG_GEOMAGNETIC_RV,
+		3, {TAG_ACCEL, TAG_GYRO, TAG_MAG}},
+	{SENSORHUB_TYPE_HANDPRESS, TAG_HANDPRESS, 1, {TAG_HANDPRESS}},
+	{SENSORHUB_TYPE_CAP_PROX, TAG_CAP_PROX, 1, {TAG_CAP_PROX}},
+	{SENSORHUB_TYPE_PHONECALL, TAG_PHONECALL, 2, {TAG_ACCEL, TAG_PS}},
+	{SENSORHUB_TYPE_MAGN_BRACKET, TAG_MAGN_BRACKET, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_TILT_DETECTOR, TAG_TILT_DETECTOR, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_META_DATA, TAG_FLUSH_META, 0, {0}},
+	{SENSORHUB_TYPE_RPC, TAG_RPC, 4, {TAG_ACCEL, TAG_GYRO, TAG_CAP_PROX}},
+	{SENSORHUB_TYPE_AGT, TAG_AGT, 0, {0}},
+	{SENSORHUB_TYPE_COLOR,TAG_COLOR, 0, {0}},
+	{SENSORHUB_TYPE_ACCELEROMETER_UNCALIBRATED, TAG_ACCEL_UNCALIBRATED, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_TOF, TAG_TOF, 1, {TAG_TOF}},
+	{SENSORHUB_TYPE_DROP, TAG_DROP, 1, {TAG_ACCEL}},
+};
+
+static const struct app_link_info app_link_info_no_gyro[] = {
+	{SENSORHUB_TYPE_ACCELEROMETER, TAG_ACCEL, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_LIGHT, TAG_ALS, 1, {TAG_ALS}},
+	{SENSORHUB_TYPE_PROXIMITY, TAG_PS, 1, {TAG_PS}},
+	{SENSORHUB_TYPE_GYROSCOPE, TAG_GYRO, 2, {TAG_MAG, TAG_ACCEL}},
+	{SENSORHUB_TYPE_GRAVITY, TAG_GRAVITY, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_MAGNETIC, TAG_MAG, 1, { TAG_MAG}},
+	{SENSORHUB_TYPE_LINEARACCELERATE, TAG_LINEAR_ACCEL, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_ORIENTATION, TAG_ORIENTATION, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_ROTATEVECTOR, TAG_ROTATION_VECTORS, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_PRESSURE, TAG_PRESSURE, 1, {TAG_PRESSURE}},
+	{SENSORHUB_TYPE_HALL, TAG_HALL, 0, {0}},
+	{SENSORHUB_TYPE_MAGNETIC_FIELD_UNCALIBRATED, TAG_MAG_UNCALIBRATED, 1, {TAG_MAG}},
+	{SENSORHUB_TYPE_GAME_ROTATION_VECTOR, TAG_GAME_RV, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_GYROSCOPE_UNCALIBRATED, TAG_GYRO_UNCALIBRATED, 0, {0}},
+	{SENSORHUB_TYPE_SIGNIFICANT_MOTION, TAG_SIGNIFICANT_MOTION, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_STEP_DETECTOR, TAG_STEP_DETECTOR, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_STEP_COUNTER, TAG_STEP_COUNTER, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_GEOMAGNETIC_ROTATION_VECTOR, TAG_GEOMAGNETIC_RV, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_HANDPRESS, TAG_HANDPRESS, 1, {TAG_HANDPRESS}},
+	{SENSORHUB_TYPE_CAP_PROX, TAG_CAP_PROX, 1, {TAG_CAP_PROX}},
+	{SENSORHUB_TYPE_PHONECALL, TAG_PHONECALL, 2, {TAG_ACCEL, TAG_PS}},
+	{SENSORHUB_TYPE_MAGN_BRACKET, TAG_MAGN_BRACKET, 2, {TAG_ACCEL, TAG_MAG}},
+	{SENSORHUB_TYPE_TILT_DETECTOR, TAG_TILT_DETECTOR, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_META_DATA, TAG_FLUSH_META, 0, {0}},
+	{SENSORHUB_TYPE_RPC, TAG_RPC, 3, {TAG_ACCEL, TAG_CAP_PROX}},
+	{SENSORHUB_TYPE_AGT, TAG_AGT, 0, {0}},
+	{SENSORHUB_TYPE_COLOR,TAG_COLOR, 0, {0}},
+	{SENSORHUB_TYPE_ACCELEROMETER_UNCALIBRATED, TAG_ACCEL_UNCALIBRATED, 1, {TAG_ACCEL}},
+	{SENSORHUB_TYPE_TOF, TAG_TOF, 1, {TAG_TOF}},
+	{SENSORHUB_TYPE_DROP, TAG_DROP, 1, {TAG_ACCEL}},
+};
+
+/* get app attach sensor info */
+const struct app_link_info *get_app_link_info(int type)
+{
+	size_t i, size;
+	const struct app_link_info *app_info;
+
+	if (gyro_detect_flag) {
+		app_info = app_link_info_gyro;
+		size = sizeof(app_link_info_gyro) / sizeof(struct app_link_info);
+	} else {
+		app_info = app_link_info_no_gyro;
+		size = sizeof(app_link_info_no_gyro) / sizeof(struct app_link_info);
+	}
+
+	for (i = 0; i < size; i++) {
+		if (type == app_info[i].hal_sensor_type &&
+			app_info[i].used_sensor_cnt > 0 &&
+			app_info[i].used_sensor_cnt <= SENSORHUB_TAG_NUM_MAX) {
+			return &app_info[i];
+		}
+	}
+
+	return NULL;
+}
 
 SENSOR_DETECT_LIST get_id_by_sensor_tag(int tag)
 {
@@ -2895,6 +2990,8 @@ static uint8_t check_detect_result(DETECT_MODE mode)
 			hwlog_info("%s :  %s detect fail \n",__func__,sensor_manager[i].sensor_name_str);
 		}else if(result == DET_SUCC){
 			hwlog_info("%s :  %s detect success \n",__func__,sensor_manager[i].sensor_name_str);
+			if (i == GYRO)
+				gyro_detect_flag = 1;
 		}
 	}
 
@@ -3297,7 +3394,7 @@ int sensor_set_fw_load(void)
 }
 static void redetect_sensor_work_handler(struct work_struct *wk)
 {
-	wake_lock(&sensor_rd);
+	__pm_stay_awake(&sensor_rd);
 	redetect_failed_sensors(REDETECT_LATER);
 
 	if(s_redetect_state.need_recovery == 1){
@@ -3307,7 +3404,7 @@ static void redetect_sensor_work_handler(struct work_struct *wk)
 	}else{
 		hwlog_info("%s: no sensor redetect success\n",__func__);
 	}
-	wake_unlock(&sensor_rd);
+	__pm_relax(&sensor_rd);
 }
 
 void sensor_redetect_enter(void)
@@ -3329,6 +3426,6 @@ void sensor_redetect_enter(void)
 void sensor_redetect_init(void)
 {
 	memset(&s_redetect_state,0,sizeof(s_redetect_state));
-	wake_lock_init(&sensor_rd, WAKE_LOCK_SUSPEND, "sensorhub_redetect");
+	wakeup_source_init(&sensor_rd, "sensorhub_redetect");
 	INIT_WORK(&redetect_work, redetect_sensor_work_handler);
 }

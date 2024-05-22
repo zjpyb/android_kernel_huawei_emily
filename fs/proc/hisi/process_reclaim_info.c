@@ -22,7 +22,7 @@
 #include <linux/sched.h>
 #include "internal.h"
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <linux/sched/task.h>
 #include <linux/signal.h>
 #endif
@@ -54,8 +54,8 @@ int process_reclaim_result_read(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *tsk)
 {
 	struct reclaim_result *result;
-	unsigned nr_reclaimed = 0;
-	unsigned nr_writedblock = 0;
+	unsigned int nr_reclaimed = 0;
+	unsigned int nr_writedblock = 0;
 	s64 elapsed_centisecs64 = 0;
 
 	if (tsk) {
@@ -103,7 +103,7 @@ void exit_proc_reclaim(struct task_struct *tsk)
 }
 
 void process_reclaim_result_write(struct task_struct *task,
-		unsigned nr_reclaimed, unsigned nr_writedblock,
+		unsigned int nr_reclaimed, unsigned int nr_writedblock,
 		s64 elapsed_centisecs64)
 {
 	struct reclaim_result *result = NULL;
@@ -144,14 +144,9 @@ bool process_reclaim_need_abort(struct mm_walk *walk)
 {
 	struct mm_struct *mm;
 #if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
-	if (!walk || !walk->private) {
+	if (!walk || !walk->private
+		|| !((struct reclaim_param *)walk->private)->hiber)
 		return false;
-	} else {
-		struct reclaim_param *rp = walk->private;
-
-		if (!rp->hiber)
-			return false;
-	}
 #else
 	if (!walk || !walk->hiber)
 		return false;

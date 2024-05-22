@@ -1,7 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Access vector cache interface for object managers.
  *
- * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
+ * Author : Stephen Smalley, <sds@tycho.nsa.gov>
  */
 #ifndef _SELINUX_AVC_H_
 #define _SELINUX_AVC_H_
@@ -184,10 +185,6 @@ void avc_disable(void);
 
 #ifdef CONFIG_SECURITY_SELINUX_AVC_STATS
 DECLARE_PER_CPU(struct avc_cache_stats, avc_cache_stats);
-#endif
-
-#ifdef CONFIG_HUAWEI_SELINUX_DSM
-extern void selinux_dsm_process(struct audit_buffer *ab, void *a, u32 denied);
 #endif
 
 #endif /* _SELINUX_AVC_H_ */

@@ -1,20 +1,46 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019-2019. All rights reserved.
- * Description: Qos schedule implementation
- * Author: JiangXiaofeng jiangxiaofeng8@huawei.com
- * Create: 2019-03-01
+ * iaware_qos.c
+ *
+ * Qos schedule implementation
+ *
+ * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <chipset_common/hwqos/iaware_qos.h>
 
-#include <linux/module.h>
 #include <linux/device.h>
+#include <linux/module.h>
 #include <linux/miscdevice.h>
+#include <linux/sched/task.h>
 #include <linux/uaccess.h>
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 #endif
 #include <chipset_common/hwqos/hwqos_common.h>
+
+struct trans_qos_allow g_qos_trans_allows[QOS_TRANS_THREADS_NUM];
+spinlock_t g_trans_qos_lock;
+
+static void init_trans_qos_allows(void)
+{
+	int i = 0;
+
+	spin_lock_init(&g_trans_qos_lock);
+	for (i = 0; i < QOS_TRANS_THREADS_NUM; i++)
+		memset(&g_qos_trans_allows[i],
+			0,
+			sizeof(g_qos_trans_allows[i]));
+}
 
 static long qos_ctrl_get_qos_stat(unsigned long arg)
 {
@@ -27,7 +53,7 @@ static long qos_ctrl_get_qos_stat(unsigned long arg)
 		return -EINVAL;
 
 	if (copy_from_user(&qs, uarg, sizeof(qs))) {
-		pr_err("QOS_CTRL_GET_QOS_STAT: failed to copy from user\n");
+		pr_warn("QOS_CTRL_GET_QOS_STAT: failed to copy from user\n");
 		return -EFAULT;
 	}
 	// get qos
@@ -42,14 +68,14 @@ static long qos_ctrl_get_qos_stat(unsigned long arg)
 	rcu_read_unlock();
 
 	if (copy_to_user(uarg, &qs, sizeof(qs))) {
-		pr_err("QOS_CTRL_GET_QOS_STAT: failed to copy to user\n");
+		pr_warn("QOS_CTRL_GET_QOS_STAT: failed to copy to user\n");
 		return -EFAULT;
 	}
 
 	return ret;
 }
 
-static long qos_ctrl_set_qos_stat(unsigned long arg)
+static long qos_ctrl_set_qos_stat(unsigned long arg, bool is_thread)
 {
 	struct task_struct *tsk = NULL;
 	struct qos_stat qs;
@@ -60,25 +86,32 @@ static long qos_ctrl_set_qos_stat(unsigned long arg)
 		return -EINVAL;
 
 	if (copy_from_user(&qs, uarg, sizeof(qs))) {
-		pr_err("QOS_CTRL_SET_QOS_STAT: failed to copy from user\n");
+		pr_warn("QOS_CTRL_SET_QOS_STAT: failed to copy from user\n");
 		return -EFAULT;
 	}
 
 	if ((!qs.pid) || (qs.qos < VALUE_QOS_LOW)
 		|| (qs.qos > VALUE_QOS_CRITICAL)) {
-		pr_err("QOS_CTRL_SET_QOS_STAT: bad parameter\n");
+		pr_warn("QOS_CTRL_SET_QOS_STAT: bad parameter\n");
 		return -EINVAL;
 	}
 	// set qos
-	rcu_read_lock();
 	if (qs.pid) {
+		rcu_read_lock();
 		tsk = find_task_by_vpid(qs.pid);
-		if (!tsk)
+		if (!tsk) {
+			rcu_read_unlock();
 			ret = -EFAULT;
+			return ret;
+		}
+		get_task_struct(tsk);
+		rcu_read_unlock();
+		if (is_thread)
+			set_task_qos_by_tid(tsk, qs.qos);
 		else
-			set_task_qos(tsk, qs.qos);
+			set_task_qos_by_pid(tsk, qs.qos);
+		put_task_struct(tsk);
 	}
-	rcu_read_unlock();
 
 	return ret;
 }
@@ -94,7 +127,7 @@ static long qos_ctrl_get_qos_whole(unsigned long arg)
 		return -EINVAL;
 
 	if (copy_from_user(&qs_whole, uarg, sizeof(qs_whole))) {
-		pr_err("QOS_CTRL_GET_QOS_WHOLE: failed to copy from user\n");
+		pr_warn("QOS_CTRL_GET_QOS_WHOLE: failed to copy from user\n");
 		return -EFAULT;
 	}
 	// get qos whole
@@ -104,8 +137,14 @@ static long qos_ctrl_get_qos_whole(unsigned long arg)
 		if (!tsk) {
 			ret = -EFAULT;
 		} else {
-			qs_whole.dynamic_qos =
-				atomic_read(&tsk->dynamic_qos);
+			qs_whole.proc_qos =
+				atomic_read(&tsk->proc_qos->dynamic_qos);
+			qs_whole.proc_usage =
+				atomic_read(&tsk->proc_qos->usage);
+			qs_whole.thread_qos =
+				atomic_read(&tsk->thread_qos.dynamic_qos);
+			qs_whole.thread_usage =
+				atomic_read(&tsk->thread_qos.usage);
 			qs_whole.trans_flags =
 				atomic_read(&tsk->trans_flags);
 		}
@@ -113,7 +152,7 @@ static long qos_ctrl_get_qos_whole(unsigned long arg)
 	rcu_read_unlock();
 
 	if (copy_to_user(uarg, &qs_whole, sizeof(qs_whole))) {
-		pr_err("QOS_CTRL_GET_QOS_WHOLE: failed to copy to user\n");
+		pr_warn("QOS_CTRL_GET_QOS_WHOLE: failed to copy to user\n");
 		return -EFAULT;
 	}
 
@@ -129,13 +168,13 @@ static long qos_ctrl_ioctl(struct file *file,
 		return ret;
 
 	if (_IOC_TYPE(cmd) != QOS_CTRL_MAGIC) {
-		pr_err("qos_ctrl: invalid magic number. type = %d\n",
+		pr_warn("qos_ctrl: invalid magic number. type = %d\n",
 			_IOC_TYPE(cmd));
 		return -EINVAL;
 	}
 
 	if (_IOC_NR(cmd) > QOS_CTRL_MAX_NR) {
-		pr_err("qos_ctrl: invalid qos cmd. cmd = %d\n", _IOC_NR(cmd));
+		pr_warn("qos_ctrl: invalid qos cmd. cmd = %d\n", _IOC_NR(cmd));
 		return -EINVAL;
 	}
 
@@ -143,8 +182,11 @@ static long qos_ctrl_ioctl(struct file *file,
 	case QOS_CTRL_GET_QOS_STAT:
 		ret = qos_ctrl_get_qos_stat(arg);
 		break;
-	case QOS_CTRL_SET_QOS_STAT:
-		ret = qos_ctrl_set_qos_stat(arg);
+	case QOS_CTRL_SET_QOS_STAT_THREAD:
+		ret = qos_ctrl_set_qos_stat(arg, true);
+		break;
+	case QOS_CTRL_SET_QOS_STAT_PROC:
+		ret = qos_ctrl_set_qos_stat(arg, false);
 		break;
 	case QOS_CTRL_GET_QOS_WHOLE:
 		ret = qos_ctrl_get_qos_whole(arg);
@@ -200,6 +242,7 @@ static int __init qos_ctrl_dev_init(void)
 	err = misc_register(&qos_ctrl_device);
 	if (err)
 		return err;
+	init_trans_qos_allows();
 	return 0;
 }
 

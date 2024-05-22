@@ -74,6 +74,9 @@
    4 全局变量定义
 *****************************************************************************/
 /* 将网卡的操作进行静态映射 */
+#if (VOS_OS_VER == VOS_WIN32)
+    static struct net_device_ops rnic_ops;
+#else
     static const struct net_device_ops rnic_ops = {
            .ndo_stop                = RNIC_StopNetCard,
            .ndo_open                = RNIC_OpenNetCard,
@@ -86,24 +89,37 @@
            .ndo_do_ioctl            = RNIC_Ioctrl,
            .ndo_get_stats           = RNIC_GetNetCardStats,
     };
+#endif
 
 #define BIND_VFILE_CRT_LEVEL            (0660)
 #define RNIC_BIND_PROC_FILE_LEN         (6)                                     /* 5个字节pid字符串+1个字符结束符 */
 
 VOS_UINT32                              g_ulBindPid = 0;
 
+#if (VOS_OS_VER == VOS_WIN32)
+static const struct file_operations     g_stBindPidOps;
+#else
 static const struct file_operations     g_stBindPidOps =
 {
     .owner      = THIS_MODULE,
     .write      = RNIC_WriteBindPidFile,
     .read       = RNIC_ReadBindPidFile,
 };
+#endif
 
+#if (FEATURE_ON == FEATURE_RMNET_CUSTOM)
+#define RNIC_DEV_NAME_PREFIX            "eth_x"
+#else
 #define RNIC_DEV_NAME_PREFIX            "rmnet"
+#endif
 const RNIC_NETCARD_ELEMENT_TAB_STRU           g_astRnicManageTbl[RNIC_NET_ID_MAX_NUM] =
 {
     {
+#if (FEATURE_ON == FEATURE_RMNET_CUSTOM)
+      "",
+#else
       "0",
+#endif
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x06}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x01}, 0x0008, {0, 0}},
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x06}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x01}, 0xDD86, {0, 0}},
       MODEM_ID_0, RNIC_RMNET_ID_0, {0, 0, 0, 0, 0}},
@@ -118,6 +134,7 @@ const RNIC_NETCARD_ELEMENT_TAB_STRU           g_astRnicManageTbl[RNIC_NET_ID_MAX
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x08}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x03}, 0xDD86, {0, 0}},
       MODEM_ID_0, RNIC_RMNET_ID_2, {0, 0, 0, 0, 0}},
 
+#if (MULTI_MODEM_NUMBER >= 2)
     { "3",
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x09}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x04}, 0x0008, {0, 0}},
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x09}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x04}, 0xDD86, {0, 0}},
@@ -128,6 +145,7 @@ const RNIC_NETCARD_ELEMENT_TAB_STRU           g_astRnicManageTbl[RNIC_NET_ID_MAX
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x0a}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x05}, 0xDD86, {0, 0}},
       MODEM_ID_1, RNIC_RMNET_ID_4, {0, 0, 0, 0, 0}},
 
+#if  (MULTI_MODEM_NUMBER == 3)
     { "5",
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x0b}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x06}, 0x0008, {0, 0}},
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x0b}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x06}, 0xDD86, {0, 0}},
@@ -137,7 +155,9 @@ const RNIC_NETCARD_ELEMENT_TAB_STRU           g_astRnicManageTbl[RNIC_NET_ID_MAX
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x0c}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x07}, 0x0008, {0, 0}},
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x0c}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x07}, 0xDD86, {0, 0}},
       MODEM_ID_2, RNIC_RMNET_ID_6, {0, 0, 0, 0, 0}},
+#endif /* #if (MULTI_MODEM_NUMBER == 3) */
 
+#endif
 
     { "_ims00",
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x0d}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x08}, 0x0008, {0, 0}},
@@ -154,6 +174,7 @@ const RNIC_NETCARD_ELEMENT_TAB_STRU           g_astRnicManageTbl[RNIC_NET_ID_MAX
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x0f}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x0a}, 0xDD86, {0, 0}},
       MODEM_ID_0, RNIC_RMNET_ID_R_IMS01, {0, 0, 0, 0, 0}},
 
+#if (MULTI_MODEM_NUMBER >= 2)
     { "_ims10",
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x10}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x0b}, 0x0008, {0, 0}},
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x10}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x0b}, 0xDD86, {0, 0}},
@@ -168,6 +189,7 @@ const RNIC_NETCARD_ELEMENT_TAB_STRU           g_astRnicManageTbl[RNIC_NET_ID_MAX
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x12}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x0d}, 0x0008, {0, 0}},
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x12}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x0d}, 0xDD86, {0, 0}},
       MODEM_ID_1, RNIC_RMNET_ID_R_IMS11, {0, 0, 0, 0, 0}},
+#endif
 
     { "_tun00",
       {{0x58, 0x02, 0x03, 0x04, 0x05, 0x13}, {0x00, 0x11, 0x09, 0x64, 0x01, 0x0e}, 0x0008, {0, 0}},
@@ -240,7 +262,9 @@ VOS_INT RNIC_StopNetCard(
     /* 获取网卡私有数据 */
     pstPriv = (RNIC_NETCARD_DEV_INFO_STRU *)netdev_priv(pstNetDev);
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     napi_disable(&pstPriv->stNapi);
+#endif
 
     /* 使用netif_stop_queue()停止网卡的数据收发 */
     netif_stop_queue(pstNetDev);
@@ -261,7 +285,9 @@ VOS_INT RNIC_OpenNetCard(
     /* 获取网卡私有数据 */
     pstPriv = (RNIC_NETCARD_DEV_INFO_STRU *)netdev_priv(pstNetDev);
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     napi_enable(&pstPriv->stNapi);
+#endif
 
     /* 启动网卡接收数据 */
     netif_start_queue(pstNetDev);
@@ -476,19 +502,31 @@ VOS_INT __init RNIC_InitNetCard(VOS_VOID)
 #endif
         pstDev->flags &= ~(IFF_BROADCAST | IFF_MULTICAST);
 
+#if (VOS_OS_VER == VOS_WIN32)
+        VOS_sprintf_s(pstDev->name, sizeof(pstDev->name),
+            "%s%s",
+            RNIC_DEV_NAME_PREFIX, g_astRnicManageTbl[ucIndex].pucRnicNetCardName);
+#else
         snprintf(pstDev->name, sizeof(pstDev->name),
             "%s%s",
             RNIC_DEV_NAME_PREFIX, g_astRnicManageTbl[ucIndex].pucRnicNetCardName);
+#endif
 
         /* 对申请到的net_device结构的设备指针的函数域进行赋值 */
+#if (VOS_OS_VER == VOS_WIN32)
+
+#else
         pstDev->netdev_ops = &rnic_ops;
+#endif
 
         /* 网卡私有数据初始化 */
         pstPriv = (RNIC_NETCARD_DEV_INFO_STRU *)netdev_priv(pstDev);
         pstPriv->pstDev    = pstDev;
         pstPriv->enRmNetId = ucIndex;
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
         netif_napi_add(pstDev, &pstPriv->stNapi, RNIC_Poll, RNIC_NAPI_POLL_DEFAULT_WEIGHT);
+#endif
 
         /* 关闭载波 */
         netif_carrier_off(pstDev);
@@ -634,8 +672,12 @@ VOS_INT __init RNIC_InitBindProc(VOS_VOID)
     return 0;
 }
 
+#if (VOS_LINUX == VOS_OS_VER)
+#if (FEATURE_ON == FEATURE_DELAY_MODEM_INIT)
 module_init(RNIC_InitNetCard);
 module_init(RNIC_InitBindProc);
+#endif
+#endif
 
 
 

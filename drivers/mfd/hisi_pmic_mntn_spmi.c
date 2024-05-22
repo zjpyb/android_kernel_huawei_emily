@@ -12,7 +12,7 @@
 #include <linux/of_hisi_spmi.h>
 #include <linux/notifier.h>
 #include <linux/export.h>
-#include "securec.h"
+#include <securec.h>
 #include <linux/hisi/hisi_log.h>
 #define HISI_LOG_TAG HISI_PMIC_MNTN_TAG
 
@@ -109,8 +109,8 @@ static void hisi_pmic_panic_handler(void)
 #ifdef CONFIG_HISILICON_PLATFORM_MAINTAIN
 static int hisi_pmic_sdcard_ocp_handler(char *power_name)
 {
-	static struct regulator *power_sd;
-	static struct regulator *power_sdio;
+	static struct regulator *power_sd = NULL;
+	static struct regulator *power_sdio = NULL;
 	int ret = 0;
 
 	if (NULL == power_sd) {
@@ -154,7 +154,8 @@ static int hisi_pmic_sdcard_ocp_handler(char *power_name)
 int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler)
 {
 	PMIC_MNTN_DESC *pmic_mntn = g_pmic_mntn;
-	struct special_ocp_attr *head, *cur;
+	struct special_ocp_attr *head = NULL;
+	struct special_ocp_attr *cur = NULL;
 
 	if (!pmic_mntn) {
 		pr_err("[%s]pmic mntn is null.\n", __func__);
@@ -283,21 +284,25 @@ static void get_pmu_key_register_info(PMIC_MNTN_DESC *pmic_mntn)
 static void hisi_pmic_ocp_scan(PMIC_MNTN_DESC *pmic_mntn)
 {
 	unsigned int index, bit;
-	int *reg_buff;
-	PMIC_EXCH_REG *exch_desc;
-	unsigned int reg_num;
+	int *reg_buff = NULL;
+	PMIC_EXCH_REG *exch_desc = NULL;
+	unsigned int reg_num = 0;
 	unsigned care_bit = 0;
 	char *bit_name = NULL;
 	char *cur_str = NULL;
 	unsigned int bit_reg = 0;
 	int ret = 0;
+	errno_t err = EOK;
 	PMIC_MNTN_EXCP_INFO  ocp_ldo_msg;
 
 #if defined (CONFIG_HUAWEI_DSM)
 	int pmic_ocp_error_offset = 0;
 #endif
 
-	memset_s(&ocp_ldo_msg,sizeof(PMIC_MNTN_EXCP_INFO), 0, sizeof(PMIC_MNTN_EXCP_INFO));
+	err = memset_s(&ocp_ldo_msg,sizeof(PMIC_MNTN_EXCP_INFO), 0, sizeof(PMIC_MNTN_EXCP_INFO));
+	if(err != EOK) {
+		pr_err("[%s]memset_s fail, err=%d\n", __func__, err);
+	}
 
 	reg_buff  = pmic_mntn->ocp_event_buff; /*lint !e64 */
 	exch_desc = pmic_mntn->ocp_exch_desc;
@@ -311,7 +316,7 @@ static void hisi_pmic_ocp_scan(PMIC_MNTN_DESC *pmic_mntn)
 		if (reg_buff[index]) {
 			pr_err("[%s]reg = 0x%x, value = 0x%x\n", __func__, pmic_mntn->ocp_regs[index], reg_buff[index]);
 			for (bit = 0; bit < pmic_mntn->data_width; bit++){
-				care_bit = reg_buff[index] & BIT(bit);
+				care_bit = ((unsigned int)reg_buff[index]) & BIT(bit);
 				if (care_bit) {
 					bit_name = exch_desc[index].event_bit_name[bit];
 					bit_reg = exch_desc[index].event_ops_reg[bit];
@@ -365,7 +370,10 @@ static void hisi_pmic_ocp_scan(PMIC_MNTN_DESC *pmic_mntn)
 							exch_desc[index].check_count[bit] = 0;
 
 							/*notify the terminal exception handling system*/
-							strncpy_s(ocp_ldo_msg.ldo_num,PMIC_OCP_LDO_NAME,bit_name,strlen(bit_name));
+							err = strncpy_s(ocp_ldo_msg.ldo_num,PMIC_OCP_LDO_NAME,bit_name,strlen(bit_name));
+							if(err != EOK) {
+								pr_err("[%s]strncpy_s fail, err=%d\n", __func__, err);
+							}
 							hisi_call_pmic_mntn_notifiers(HISI_PMIC_OCP_EVENT,(void *)&ocp_ldo_msg);
 
 						}else if( care_bit & exch_desc[index].check_ocp_reset ){
@@ -799,7 +807,7 @@ static int hisi_pmic_ocp_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DESC *
 	struct device_node *root = NULL;
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
-	PMIC_EXCH_REG *exch_reg_tmp;
+	PMIC_EXCH_REG *exch_reg_tmp = NULL;
 	unsigned int index, bit;
 	s32 ret = 0;
 	char compatible_string[PMIC_DTS_ATTR_LEN] = {0};
@@ -931,7 +939,7 @@ static int hisi_pmic_record_mntn_initial(struct spmi_device *pdev, PMIC_MNTN_DES
 	struct device_node *root = NULL;
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
-	PMIC_EXCH_REG *exch_reg_tmp;
+	PMIC_EXCH_REG *exch_reg_tmp = NULL;
 	unsigned int index, bit;
 	s32 ret = 0;
 	char compatible_string[PMIC_DTS_ATTR_LEN] = {0};

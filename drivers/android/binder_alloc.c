@@ -19,7 +19,7 @@
 
 #include <asm/cacheflush.h>
 #include <linux/list.h>
-#include <linux/mm.h>
+#include <linux/sched/mm.h>
 #include <linux/module.h>
 #include <linux/rtmutex.h>
 #include <linux/rbtree.h>
@@ -329,6 +329,34 @@ err_no_vma:
 	return vma ? -ENOMEM : -ESRCH;
 }
 
+static inline void binder_alloc_set_vma(struct binder_alloc *alloc,
+		struct vm_area_struct *vma)
+{
+	if (vma)
+		alloc->vma_vm_mm = vma->vm_mm;
+	/*
+	 * If we see alloc->vma is not NULL, buffer data structures set up
+	 * completely. Look at smp_rmb side binder_alloc_get_vma.
+	 * We also want to guarantee new alloc->vma_vm_mm is always visible
+	 * if alloc->vma is set.
+	 */
+	smp_wmb();
+	alloc->vma = vma;
+}
+
+static inline struct vm_area_struct *binder_alloc_get_vma(
+		struct binder_alloc *alloc)
+{
+	struct vm_area_struct *vma = NULL;
+
+	if (alloc->vma) {
+		/* Look at description in binder_alloc_set_vma */
+		smp_rmb();
+		vma = alloc->vma;
+	}
+	return vma;
+}
+
 static struct binder_buffer *binder_alloc_new_buf_locked(
 				struct binder_alloc *alloc,
 				size_t data_size,
@@ -345,7 +373,7 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 	size_t size, data_offsets_size;
 	int ret;
 
-	if (alloc->vma == NULL) {
+	if (!binder_alloc_get_vma(alloc)) {
 		pr_err("%d: binder_alloc_buf, no vma\n",
 		       alloc->pid);
 		return ERR_PTR(-ESRCH);
@@ -377,8 +405,6 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 		&& (alloc->free_async_space
 			< 3*(size + sizeof(struct binder_buffer))
 			|| alloc->free_async_space < 100*1024)) {
-		pr_warn("will no more space [freed:%zd][alloc size:%zd], pid [%d]\n",
-			alloc->free_async_space, size, alloc->pid);
 		hwbinderinfo(-1, alloc->pid);
 	}
 #endif
@@ -495,11 +521,6 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 			     "%d: binder_alloc_buf size %zd async free %zd\n",
 			      alloc->pid, size, alloc->free_async_space);
 	}
-
-#ifdef CONFIG_HUAWEI_BINDER_ASHMEM
-	buffer->ashmem.file = NULL;
-#endif
-
 	return buffer;
 
 err_alloc_buf_struct_failed:
@@ -660,10 +681,6 @@ static void binder_free_buf_locked(struct binder_alloc *alloc,
 void binder_alloc_free_buf(struct binder_alloc *alloc,
 			    struct binder_buffer *buffer)
 {
-#ifdef CONFIG_HUAWEI_BINDER_ASHMEM
-	binder_ashmem_unmap(alloc, buffer);
-#endif
-
 	mutex_lock(&alloc->mutex);
 	binder_free_buf_locked(alloc, buffer);
 	mutex_unlock(&alloc->mutex);
@@ -741,11 +758,8 @@ int binder_alloc_mmap_handler(struct binder_alloc *alloc,
 	buffer->free = 1;
 	binder_insert_free_buffer(alloc, buffer);
 	alloc->free_async_space = alloc->buffer_size / 2;
-	barrier();
-	alloc->vma = vma;
-	alloc->vma_vm_mm = vma->vm_mm;
-	/* Same as mmgrab() in later kernel versions */
-	atomic_inc(&alloc->vma_vm_mm->mm_count);
+	binder_alloc_set_vma(alloc, vma);
+	mmgrab(alloc->vma_vm_mm);
 
 	return 0;
 
@@ -771,19 +785,15 @@ void binder_alloc_deferred_release(struct binder_alloc *alloc)
 	int buffers, page_count;
 	struct binder_buffer *buffer;
 
-	BUG_ON(alloc->vma);
-
 	buffers = 0;
 	mutex_lock(&alloc->mutex);
+	BUG_ON(alloc->vma);
+
 	while ((n = rb_first(&alloc->allocated_buffers))) {
 		buffer = rb_entry(n, struct binder_buffer, rb_node);
 
 		/* Transaction should already have been freed */
 		BUG_ON(buffer->transaction);
-
-#ifdef CONFIG_HUAWEI_BINDER_ASHMEM
-		binder_ashmem_recycle(buffer);
-#endif
 
 		binder_free_buf_locked(alloc, buffer);
 		buffers++;
@@ -921,7 +931,7 @@ int binder_alloc_get_allocated_count(struct binder_alloc *alloc)
  */
 void binder_alloc_vma_close(struct binder_alloc *alloc)
 {
-	WRITE_ONCE(alloc->vma, NULL);
+	binder_alloc_set_vma(alloc, NULL);
 }
 
 /**
@@ -962,7 +972,7 @@ enum lru_status binder_alloc_free_page(struct list_head *item,
 		goto err_mmget;
 	if (!down_write_trylock(&mm->mmap_sem))
 		goto err_down_write_mmap_sem_failed;
-	vma = alloc->vma;
+	vma = binder_alloc_get_vma(alloc);
 
 	list_lru_isolate(lru, item);
 	spin_unlock(lock);
@@ -971,9 +981,8 @@ enum lru_status binder_alloc_free_page(struct list_head *item,
 		trace_binder_unmap_user_start(alloc, index);
 
 		zap_page_range(vma,
-			       page_addr +
-			       alloc->user_buffer_offset,
-			       PAGE_SIZE, NULL);
+			       page_addr + alloc->user_buffer_offset,
+			       PAGE_SIZE);
 
 		trace_binder_unmap_user_end(alloc, index);
 	}

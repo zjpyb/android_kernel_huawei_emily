@@ -18,17 +18,14 @@
 
 #include <linux/proc_fs.h>
 #include <linux/unistd.h>
-
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/slab.h>
-
-#include <asm/uaccess.h>
 #include <linux/delay.h>
-
 #include <linux/regulator/consumer.h>
+
 #include <huawei_platform/log/log_jank.h>
 #include "../../huawei_ts_kit_algo.h"
 #if defined (CONFIG_HUAWEI_DSM)
@@ -388,6 +385,7 @@ Description:
 return:
 	Executive outcomes. 0---success. -1---fail.
 *******************************************************/
+#define RAWDATA_NUM_MAX 40
 int8_t nvt_kit_get_fw_info(void)
 {
 	uint8_t buf[64] = {0};
@@ -409,6 +407,16 @@ info_retry:
 	nvt_fw_ver = buf[1];
 	x_num = buf[3];
 	y_num = buf[4];
+
+	/* rawdata array[40*40],so x_num y_num must <= 40 */
+	if (x_num > RAWDATA_NUM_MAX) {
+		TS_LOG_ERR("%s: x_num out of the max value\n", __func__);
+		x_num = RAWDATA_NUM_MAX;
+	}
+	if (y_num > RAWDATA_NUM_MAX) {
+		TS_LOG_ERR("%s: y_num out of the max value\n", __func__);
+		y_num = RAWDATA_NUM_MAX;
+	}
 	nvt_ts->x_num = x_num;
 	nvt_ts->y_num = y_num;
 	button_num = buf[11];

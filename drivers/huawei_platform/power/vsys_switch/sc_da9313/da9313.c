@@ -3,7 +3,7 @@
  *
  * vsys sc da9313 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -37,7 +37,7 @@
 #include <linux/workqueue.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/raid/pq.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/vsys_switch/vsys_switch.h>
@@ -62,7 +62,7 @@ struct da9313_device_info {
 	struct i2c_client *client;
 	struct device *dev;
 	struct work_struct irq_work;
-	struct wake_lock wakelock;
+	struct wakeup_source wakelock;
 	int chip_already_init;
 	int get_id_time;
 	int device_id;
@@ -74,27 +74,23 @@ struct da9313_device_info {
 	int state;
 	int support_pwrdown_mode;
 	bool is_pg;
+	struct mutex set_state_lock;
 };
 
 static struct da9313_device_info *g_da9313_di;
 
-#define MSG_LEN                      (2)
+#define MSG_LEN                      2
 
 static int da9313_write_block(struct da9313_device_info *di,
 	u8 reg, u8 *value, u8 len)
 {
 	struct i2c_msg msg[1];
-	int ret = 0;
-	int i = 0;
+	int ret;
+	int i;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
 		return -EIO;
-	}
-
-	if (di->client->adapter == NULL) {
-		hwlog_err("adapter is null\n");
-		return -ENODEV;
 	}
 
 	if (di->chip_already_init == 0) {
@@ -118,7 +114,7 @@ static int da9313_write_block(struct da9313_device_info *di,
 	/* i2c_transfer returns number of messages transferred */
 	if (ret != 1) {
 		hwlog_err("write_block failed[%x]\n", reg);
-		return -1;
+		return -EIO;
 	}
 
 	return 0;
@@ -128,18 +124,13 @@ static int da9313_read_block(struct da9313_device_info *di,
 	u8 reg, u8 *value, u8 len)
 {
 	struct i2c_msg msg[MSG_LEN];
-	u8 buf = 0;
-	int ret = 0;
-	int i = 0;
+	u8 buf;
+	int ret;
+	int i;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
-		return -ENOMEM;
-	}
-
-	if (di->client->adapter == NULL) {
-		hwlog_err("adapter is null\n");
-		return -ENODEV;
+		return -EIO;
 	}
 
 	if (!di->chip_already_init) {
@@ -168,7 +159,7 @@ static int da9313_read_block(struct da9313_device_info *di,
 	/* i2c_transfer returns number of messages transferred */
 	if (ret != MSG_LEN) {
 		hwlog_err("read_block failed[%x]\n", reg);
-		return -1;
+		return -EIO;
 	}
 
 	return 0;
@@ -194,7 +185,7 @@ static int da9313_read_byte(u8 reg, u8 *value)
 
 static int da9313_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = da9313_read_byte(reg, &val);
@@ -204,15 +195,13 @@ static int da9313_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 	val &= ~mask;
 	val |= ((value << shift) & mask);
 
-	ret = da9313_write_byte(reg, val);
-
-	return ret;
+	return da9313_write_byte(reg, val);
 }
 
 #ifdef POWER_MODULE_DEBUG_FUNCTION
 static int da9313_read_mask(u8 reg, u8 mask, u8 shift, u8 *value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = da9313_read_byte(reg, &val);
@@ -231,13 +220,13 @@ static void da9313_wake_lock(void)
 {
 	struct da9313_device_info *di = g_da9313_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
 
-	if (!wake_lock_active(&di->wakelock)) {
-		wake_lock(&di->wakelock);
+	if (!di->wakelock.active) {
+		__pm_stay_awake(&di->wakelock);
 		hwlog_info("wake_lock\n");
 	}
 }
@@ -246,13 +235,13 @@ static void da9313_wake_unlock(void)
 {
 	struct da9313_device_info *di = g_da9313_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
 
-	if (wake_lock_active(&di->wakelock)) {
-		wake_unlock(&di->wakelock);
+	if (di->wakelock.active) {
+		__pm_relax(&di->wakelock);
 		hwlog_info("wake_unlock\n");
 	}
 }
@@ -260,8 +249,8 @@ static void da9313_wake_unlock(void)
 #ifdef POWER_MODULE_DEBUG_FUNCTION
 static void da9313_dump_register(void)
 {
-	u8 i = 0;
-	int ret = 0;
+	u8 i;
+	int ret;
 	u8 val = 0;
 
 	for (i = 0; i < DA9313_REG_TOTAL_NUM; i++) {
@@ -277,12 +266,12 @@ static void da9313_dump_register(void)
 static int da9313_reset_cycle(void)
 {
 	int ret;
-	u8 val;
+	u8 val = 0;
 
 	ret = da9313_write_mask(DA9313_REG_MODECTRL,
 		DA9313_REG_RESET_CYCLE_MASK,
 		DA9313_REG_RESET_CYCLE_SHIFT,
-		DA9313_RESET_CYCLE_PWRDOWN);
+		DA9313_RESET_CYCLE_ACTIVE);
 	if (ret)
 		return -1;
 
@@ -298,7 +287,7 @@ static int da9313_reset_cycle(void)
 static int da9313_soft_reset(void)
 {
 	int ret;
-	u8 val;
+	u8 val = 0;
 
 	ret = da9313_write_mask(DA9313_REG_MODECTRL,
 		DA9313_REG_SOFTRESET_MASK,
@@ -341,10 +330,10 @@ static int da9313_set_test_regs(void)
 static int da9313_get_device_id(int *id)
 {
 	u8 part_info = 0;
-	int ret = 0;
+	int ret;
 	struct da9313_device_info *di = g_da9313_di;
 
-	if (di == NULL || id == NULL) {
+	if (!di || !id) {
 		hwlog_err("di or id is null\n");
 		return -1;
 	}
@@ -379,7 +368,7 @@ static int da9313_get_state(void)
 {
 	struct da9313_device_info *di = g_da9313_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -392,7 +381,7 @@ static int da9313_get_pg_state(void)
 	int val;
 	struct da9313_device_info *di = g_da9313_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -408,12 +397,44 @@ static int da9313_get_pg_state(void)
 	return val;
 }
 
+static int da9313_set_frequency_mode(u8 mode)
+{
+	int ret;
+	int tmp;
+	struct da9313_device_info *di = g_da9313_di;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -1;
+	}
+
+	if (mode > 1) {
+		hwlog_err("input mode is invalid\n");
+		return -1;
+	}
+
+	mutex_lock(&di->set_state_lock);
+	tmp = di->chip_already_init;
+	di->chip_already_init = 1;
+
+	/* 0: fixed frequency mode; 1: auto frequency mode */
+	ret = da9313_write_mask(DA9313_REG_PVCCTRL,
+		DA9313_REG_PVC_MODE_MASK,
+		DA9313_REG_PVC_MODE_SHIFT,
+		mode);
+	hwlog_info("set frequency mode %d, ret %d\n", mode, ret);
+
+	di->chip_already_init = tmp;
+	mutex_unlock(&di->set_state_lock);
+	return ret;
+}
+
 static int da9313_set_state(int enable)
 {
 	int ret = 0;
 	struct da9313_device_info *di = g_da9313_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -443,8 +464,22 @@ static int da9313_set_state(int enable)
 		gpio_set_value(di->gpio_nonkey_en, !enable);
 		hwlog_info("set_state set gpio_nonkey_en %d\n", !enable);
 
-		/* wait for 5ms */
-		usleep_range(5000, 6000);
+		/* wait for 20ms */
+		usleep_range(20000, 21000);
+	}
+
+	mutex_lock(&di->set_state_lock);
+
+	if (enable) {
+		di->chip_already_init = 1;
+		ret = da9313_set_test_regs();
+		if (ret) {
+			mutex_unlock(&di->set_state_lock);
+			return VSYS_SC_SET_TEST_REGS_FAIL;
+		}
+
+		/* wait for 20ms */
+		usleep_range(20000, 21000);
 	}
 
 	gpio_set_value(di->gpio_pwron, enable);
@@ -454,20 +489,21 @@ static int da9313_set_state(int enable)
 		di->is_pg = false;
 
 	if (!enable && di->support_pwrdown_mode) {
+		/* wait for 10ms */
+		usleep_range(10000, 11000);
+
 		ret = da9313_reset_cycle();
 		ret |= da9313_soft_reset();
-		if (ret)
+		di->chip_already_init = 0;
+		if (ret) {
+			mutex_unlock(&di->set_state_lock);
 			return VSYS_SC_SET_MODE_CTRL_REG_FAIL;
+		}
 	}
 
-	di->chip_already_init = enable ? 1 : 0;
-	hwlog_info("set_state set gpio_pwron %d\n", enable);
+	mutex_unlock(&di->set_state_lock);
 
 	if (enable) {
-		ret = da9313_set_test_regs();
-		if (ret)
-			return VSYS_SC_SET_TEST_REGS_FAIL;
-
 		/* wait for 100ms to read power good signal */
 		usleep_range(100000, 101000);
 
@@ -483,10 +519,16 @@ static int da9313_set_state(int enable)
 
 static void da9313_irq_work(struct work_struct *work)
 {
-	struct da9313_device_info *di = container_of(work,
-		struct da9313_device_info, irq_work);
+	struct da9313_device_info *di = NULL;
 
-	if (di == NULL) {
+	if (!work) {
+		hwlog_err("work is null\n");
+		da9313_wake_unlock();
+		return;
+	}
+
+	di = container_of(work, struct da9313_device_info, irq_work);
+	if (!di) {
 		hwlog_err("di is null\n");
 		da9313_wake_unlock();
 		return;
@@ -507,14 +549,14 @@ static irqreturn_t da9313_interrupt(int irq, void *_di)
 {
 	struct da9313_device_info *di = _di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
 
 	da9313_wake_lock();
 
-	hwlog_info("da9313 int happened (%d)\n", di->irq_active);
+	hwlog_info("da9313 int happened\n");
 
 	if (!di->is_pg || !di->chip_already_init ||
 		di->state == DA9313_CHIP_DISABLE) {
@@ -561,21 +603,21 @@ static int da9313_gpio_init(struct da9313_device_info *di,
 		hwlog_info("gpio_nonkey_en=%d\n", di->gpio_nonkey_en);
 
 		if (!gpio_is_valid(di->gpio_nonkey_en)) {
-			hwlog_err("gpio(gpio_nonkey_en) is not valid\n");
+			hwlog_err("gpio is not valid\n");
 			ret = -EINVAL;
 			goto gpio_init_fail_0;
 		}
 
 		ret = gpio_request(di->gpio_nonkey_en, "gpio_nonkey_en");
 		if (ret) {
-			hwlog_err("gpio(gpio_nonkey_en) request fail\n");
+			hwlog_err("gpio request fail\n");
 			goto gpio_init_fail_0;
 		}
 
 		/* 0: power down mode */
 		ret = gpio_direction_output(di->gpio_nonkey_en, 0);
 		if (ret) {
-			hwlog_err("gpio(gpio_nonkey_en) set output fail\n");
+			hwlog_err("gpio set output fail\n");
 			goto gpio_init_fail_1;
 		}
 	}
@@ -584,21 +626,21 @@ static int da9313_gpio_init(struct da9313_device_info *di,
 	hwlog_info("gpio_pwron=%d\n", di->gpio_pwron);
 
 	if (!gpio_is_valid(di->gpio_pwron)) {
-		hwlog_err("gpio(gpio_pwron) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto gpio_init_fail_1;
 	}
 
 	ret = gpio_request(di->gpio_pwron, "gpio_pwron");
 	if (ret) {
-		hwlog_err("gpio(gpio_pwron) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto gpio_init_fail_1;
 	}
 
 	/* 1:enable 0:disable */
 	ret = gpio_direction_output(di->gpio_pwron, DA9313_CHIP_DISABLE);
 	if (ret) {
-		hwlog_err("gpio(gpio_pwron) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto gpio_init_fail_2;
 	}
 
@@ -622,26 +664,26 @@ static int da9313_irq_init(struct da9313_device_info *di,
 	hwlog_info("gpio_int=%d\n", di->gpio_int);
 
 	if (!gpio_is_valid(di->gpio_int)) {
-		hwlog_err("gpio(gpio_int) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto irq_init_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_int, "gpio_irq");
 	if (ret) {
-		hwlog_err("gpio(gpio_int) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto irq_init_fail_0;
 	}
 
 	ret = gpio_direction_input(di->gpio_int);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) set input fail\n");
+		hwlog_err("gpio set input fail\n");
 		goto irq_init_fail_1;
 	}
 
 	di->irq_int = gpio_to_irq(di->gpio_int);
 	if (di->irq_int < 0) {
-		hwlog_err("gpio(gpio_int) map to irq fail\n");
+		hwlog_err("gpio map to irq fail\n");
 		ret = -1;
 		goto irq_init_fail_1;
 	}
@@ -649,7 +691,7 @@ static int da9313_irq_init(struct da9313_device_info *di,
 	ret = request_irq(di->irq_int, da9313_interrupt, IRQF_TRIGGER_FALLING,
 		"da9313_irq", di);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) irq request fail\n");
+		hwlog_err("gpio irq request fail\n");
 		di->irq_int = -1;
 		goto irq_init_fail_1;
 	}
@@ -673,12 +715,12 @@ static void da9313_para_init(struct da9313_device_info *di)
 	di->is_pg = false;
 }
 
-static struct vsys_sc_device_ops  da9313_ops = {
+static struct vsys_sc_device_ops da9313_ops = {
 	.chip_name = "da9313",
-
 	.get_state = da9313_get_state,
 	.set_state = da9313_set_state,
 	.get_id = da9313_get_device_id,
+	.set_frequency_mode = da9313_set_frequency_mode,
 };
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
@@ -686,15 +728,15 @@ static ssize_t da9313_dbg_show_reg_value(void *dev_data,
 	char *buf, size_t size)
 {
 	u8 val = 0;
-	int ret = 0;
-	int i = 0;
+	int ret;
+	int i;
 	char rd_buf[DA9313_RD_BUF_SIZE] = {0};
-	struct da9313_device_info *dev_p;
+	struct da9313_device_info *dev_p = NULL;
 
 	dev_p = (struct da9313_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
+		return scnprintf(buf, size, "buf or dev_p is null\n");
 	}
 
 	for (i = 0; i < DA9313_REG_TOTAL_NUM; i++) {
@@ -719,12 +761,12 @@ static ssize_t da9313_dbg_store_reg_value(void *dev_data,
 {
 	int regaddr = 0;
 	int regval = 0;
-	int ret = 0;
-	struct da9313_device_info *dev_p;
+	int ret;
+	struct da9313_device_info *dev_p = NULL;
 
 	dev_p = (struct da9313_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
 		return -EINVAL;
 	}
 
@@ -734,8 +776,8 @@ static ssize_t da9313_dbg_store_reg_value(void *dev_data,
 	}
 
 	/* maximum value of 8-bit num is 255 */
-	if (regaddr < 0 || regaddr >= DA9313_REG_TOTAL_NUM
-		|| regval < 0 || regval > 255) {
+	if (regaddr < 0 || regaddr >= DA9313_REG_TOTAL_NUM ||
+		regval < 0 || regval > 255) {
 		hwlog_err("regaddr 0x%x or regval 0x%x invalid\n",
 			regaddr, regval);
 		return -EINVAL;
@@ -772,19 +814,17 @@ static int da9313_parse_dts(struct device_node *np,
 static int da9313_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret = 0;
+	int ret;
 	struct da9313_device_info *di = NULL;
 	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
-	if (client == NULL || id == NULL) {
-		hwlog_err("client or id is null\n");
-		return -ENOMEM;
-	}
+	if (!client || !client->dev.of_node || !id)
+		return -ENODEV;
 
 	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_da9313_di = di;
@@ -805,25 +845,24 @@ static int da9313_probe(struct i2c_client *client,
 
 	da9313_reg_init(di);
 	da9313_para_init(di);
-	wake_lock_init(&di->wakelock, WAKE_LOCK_SUSPEND, "da9313_wakelock");
+	wakeup_source_init(&di->wakelock, "da9313_wakelock");
+	mutex_init(&di->set_state_lock);
 
 	ret = vsys_sc_ops_register(&da9313_ops);
-	if (ret) {
-		hwlog_err("register da9313 ops failed\n");
+	if (ret)
 		goto da9313_fail_2;
-	}
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
 	power_dbg_ops_register("da9313_regval", i2c_get_clientdata(client),
-		(power_dgb_show)da9313_dbg_show_reg_value,
-		(power_dgb_store)da9313_dbg_store_reg_value);
-#endif
+		(power_dbg_show)da9313_dbg_show_reg_value,
+		(power_dbg_store)da9313_dbg_store_reg_value);
+#endif /* CONFIG_HUAWEI_POWER_DEBUG */
 
 	hwlog_info("probe end\n");
 	return 0;
 
 da9313_fail_2:
-	wake_lock_destroy(&di->wakelock);
+	wakeup_source_trash(&di->wakelock);
 	free_irq(di->irq_int, di);
 	gpio_free(di->gpio_int);
 da9313_fail_1:
@@ -833,6 +872,7 @@ da9313_fail_1:
 da9313_fail_0:
 	devm_kfree(&client->dev, di);
 	g_da9313_di = NULL;
+
 	return ret;
 }
 
@@ -842,8 +882,8 @@ static int da9313_remove(struct i2c_client *client)
 
 	hwlog_info("remove begin\n");
 
-	if (di == NULL)
-		return -1;
+	if (!di)
+		return -ENODEV;
 
 	/* reset da9313 */
 	da9313_set_state(DA9313_CHIP_DISABLE);
@@ -862,7 +902,7 @@ static int da9313_remove(struct i2c_client *client)
 			gpio_free(di->gpio_nonkey_en);
 	}
 
-	wake_lock_destroy(&di->wakelock);
+	wakeup_source_trash(&di->wakelock);
 	g_da9313_di = NULL;
 
 	hwlog_info("remove end\n");
@@ -880,7 +920,7 @@ static const struct of_device_id da9313_of_match[] = {
 };
 
 static const struct i2c_device_id da9313_i2c_id[] = {
-	{"da9313", 0}, {}
+	{ "da9313", 0 }, {}
 };
 
 static struct i2c_driver da9313_driver = {
@@ -896,13 +936,7 @@ static struct i2c_driver da9313_driver = {
 
 static int __init da9313_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&da9313_driver);
-	if (ret)
-		hwlog_err("i2c_add_driver error\n");
-
-	return ret;
+	return i2c_add_driver(&da9313_driver);
 }
 
 static void __exit da9313_exit(void)

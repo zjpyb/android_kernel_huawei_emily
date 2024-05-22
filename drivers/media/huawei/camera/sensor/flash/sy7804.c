@@ -1,14 +1,22 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019-2019. All rights reserved.
- * Description:  sy7804.c
- * Author:       wushuhan wushuhan@huawei.com
- * Create:       2019-05-30
+ * sy7804.c
+ *
+ * driver for sy7804
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include "hw_flash.h"
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-label"
-
 /* SY7804 Registers define */
 #define SY7804_SLAVE_ADDRESS         0x63
 #define REG_CHIP_ID                  0x00
@@ -62,9 +70,9 @@ struct hw_sy7804_private_data_t {
 	unsigned int chipid;
 };
 
-static int flash_arry[16] = {94, 188, 281, 375, 469, 563, 656, 750,
-		844, 938, 1031, 1125, 1219, 1313, 1406, 1500};
-static int torch_arry[8] = {47, 94, 141, 188, 234, 281, 328, 375};
+static int flash_arry[FLASH_LED_MAX] = { 94, 188, 281, 375, 469, 563, 656, 750,
+		844, 938, 1031, 1125, 1219, 1313, 1406, 1500 };
+static int torch_arry[TORCH_LED_MAX] = { 47, 94, 141, 188, 234, 281, 328, 375 };
 
 /* Internal varible define */
 static struct hw_sy7804_private_data_t hw_sy7804_pdata;
@@ -150,7 +158,7 @@ static int hw_sy7804_find_match_flash_current(int cur_flash)
 		return SY7804_FLASH_DEFAULT_CUR_LEV;
 	}
 
-	for (i = 0; i < 16; i++) {
+	for (i = 0; i < FLASH_LED_MAX; i++) {
 		if (cur_flash <= flash_arry[i]) {
 			cam_info("%s  i %d.\n", __func__, i);
 			break;
@@ -159,7 +167,7 @@ static int hw_sy7804_find_match_flash_current(int cur_flash)
 
 	if (i == 0) {
 		cur_level = i;
-	} else if (i == 16) {
+	} else if (i == FLASH_LED_MAX) {
 		if ((cur_flash - flash_arry[i - 2]) < (flash_arry[i - 1] - cur_flash))
 			cur_level = i - 2;
 		else
@@ -190,7 +198,7 @@ static int hw_sy7804_find_match_torch_current(int cur_torch)
 		return SY7804_TORCH_MAX_LEV;
 	}
 
-	for (i = 0; i < 8; i++) {
+	for (i = 0; i < TORCH_LED_MAX; i++) {
 		if (cur_torch <= torch_arry[i]) {
 			cam_info("%s  i %d.\n", __func__, i);
 			break;
@@ -199,7 +207,7 @@ static int hw_sy7804_find_match_torch_current(int cur_torch)
 
 	if (i == 0) {
 		cur_level = i;
-	} else if (i == 8) {
+	} else if (i == TORCH_LED_MAX) {
 		if ((cur_torch - torch_arry[i - 2]) < (torch_arry[i - 1] - cur_torch))
 			cur_level = i - 2;
 		else
@@ -216,9 +224,8 @@ static int hw_sy7804_find_match_torch_current(int cur_torch)
 
 static int hw_sy7804_init(struct hw_flash_ctrl_t *flash_ctrl)
 {
-
 	cam_debug("%s ernter.\n", __func__);
-	if (flash_ctrl == NULL) {
+	if (!flash_ctrl) {
 		cam_err("%s flash_ctrl is NULL", __func__);
 		return -1;
 	}
@@ -228,7 +235,7 @@ static int hw_sy7804_init(struct hw_flash_ctrl_t *flash_ctrl)
 static int hw_sy7804_exit(struct hw_flash_ctrl_t *flash_ctrl)
 {
 	cam_debug("%s ernter.\n", __func__);
-	if (flash_ctrl == NULL) {
+	if (!flash_ctrl) {
 		cam_err("%s flash_ctrl is NULL", __func__);
 		return -1;
 	}
@@ -248,11 +255,12 @@ static int hw_sy7804_flash_mode(struct hw_flash_ctrl_t *flash_ctrl,
 	int rc;
 	unsigned char regval = 0;
 
-	if ((flash_ctrl == NULL) || (flash_ctrl->pdata == NULL) ||
-		(flash_ctrl->flash_i2c_client == NULL) || (cdata == NULL)) {
+	if ((!flash_ctrl) || (!flash_ctrl->pdata) ||
+		(!flash_ctrl->flash_i2c_client) || (!cdata)) {
 		cam_err("%s flash_ctrl is NULL", __func__);
 		return -1;
 	}
+
 	cam_info("%s data=%d.\n", __func__, cdata->data);
 
 	i2c_client = flash_ctrl->flash_i2c_client;
@@ -308,9 +316,9 @@ static int hw_sy7804_torch_mode(struct hw_flash_ctrl_t *flash_ctrl,
 	int rc;
 
 	cam_info("%s data=%d\n", __func__, data);
-	if ((flash_ctrl == NULL) ||
-		(flash_ctrl->pdata == NULL) ||
-		(flash_ctrl->flash_i2c_client == NULL)) {
+	if ((!flash_ctrl) ||
+		(!flash_ctrl->pdata) ||
+		(!flash_ctrl->flash_i2c_client)) {
 		cam_err("%s flash_ctrl is NULL", __func__);
 		return -1;
 	}
@@ -352,7 +360,7 @@ static int hw_sy7804_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
 	int rc = -1;
 
 	cam_debug("%s ernter.\n", __func__);
-	if ((flash_ctrl == NULL) || (cdata == NULL)) {
+	if ((!flash_ctrl) || (!cdata)) {
 		cam_err("%s flash_ctrl or cdata is NULL", __func__);
 		return -1;
 	}
@@ -377,9 +385,9 @@ static int hw_sy7804_off(struct hw_flash_ctrl_t *flash_ctrl)
 	unsigned char val;
 
 	cam_info("%s ernter.\n", __func__);
-	if ((flash_ctrl == NULL) ||
-		(flash_ctrl->flash_i2c_client == NULL) ||
-		(flash_ctrl->flash_i2c_client->i2c_func_tbl == NULL)) {
+	if ((!flash_ctrl) ||
+		(!flash_ctrl->flash_i2c_client) ||
+		(!flash_ctrl->flash_i2c_client->i2c_func_tbl)) {
 		cam_err("%s flash_ctrl is NULL", __func__);
 		return -1;
 	}
@@ -406,7 +414,7 @@ static int hw_sy7804_get_dt_data(struct hw_flash_ctrl_t *flash_ctrl)
 	int rc = -1;
 
 	cam_debug("%s enter.\n", __func__);
-	if ((flash_ctrl == NULL) || (flash_ctrl->pdata == NULL)) {
+	if ((!flash_ctrl) || (!flash_ctrl->pdata)) {
 		cam_err("%s flash_ctrl is NULL", __func__);
 		return rc;
 	}
@@ -448,8 +456,11 @@ static ssize_t hw_sy7804_lightness_show(struct device *dev,
 {
 	int rc;
 
-	snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE, "mode=%d, data=%d.\n",
-			hw_sy7804_ctrl.state.mode, hw_sy7804_ctrl.state.mode);
+	rc = snprintf_s(buf, MAX_ATTRIBUTE_BUFFER_SIZE, MAX_ATTRIBUTE_BUFFER_SIZE - 1,
+		"mode=%d, data=%d.\n", hw_sy7804_ctrl.state.mode, hw_sy7804_ctrl.state.mode);
+	if (rc < 0)
+		cam_err("%s snprintf_s failed", __func__);
+
 	rc = strlen(buf) + 1;
 	return rc;
 }
@@ -536,8 +547,11 @@ static ssize_t hw_sy7804_flash_mask_show(struct device *dev,
 {
 	int rc;
 
-	snprintf_s(buf, MAX_ATTRIBUTE_BUFFER_SIZE, MAX_ATTRIBUTE_BUFFER_SIZE - 1,
+	rc = snprintf_s(buf, MAX_ATTRIBUTE_BUFFER_SIZE, MAX_ATTRIBUTE_BUFFER_SIZE - 1,
 		"flash_mask_disabled=%d\n", hw_sy7804_ctrl.flash_mask_enable);
+	if (rc < 0)
+		cam_err("%s snprintf_s failed", __func__);
+
 	rc = strlen(buf) + 1;
 	return rc;
 }
@@ -593,7 +607,7 @@ static int hw_sy7804_register_attribute(struct hw_flash_ctrl_t *flash_ctrl,
 {
 	int rc;
 
-	if ((flash_ctrl == NULL) || (dev == NULL)) {
+	if ((!flash_ctrl) || (!dev)) {
 		cam_err("%s flash_ctrl or dev is NULL", __func__);
 		return -1;
 	}
@@ -611,7 +625,8 @@ static int hw_sy7804_register_attribute(struct hw_flash_ctrl_t *flash_ctrl,
 	rc = device_create_file(dev, &hw_sy7804_lightness);
 	if (rc < 0) {
 		cam_err("%s failed to creat lightness attribute", __func__);
-		goto err_create_lightness_file;
+		led_classdev_unregister(&flash_ctrl->cdev_torch);
+		return rc;
 	}
 #endif
 	rc = device_create_file(dev, &hw_sy7804_flash_mask);
@@ -624,11 +639,10 @@ err_create_flash_mask_file:
 #ifdef CAMERA_FLASH_FACTORY_TEST
 	device_remove_file(dev, &hw_sy7804_lightness);
 #endif
-err_create_lightness_file:
 	led_classdev_unregister(&flash_ctrl->cdev_torch);
 err_out:
 	return rc;
-}//lint !e563
+}
 
 static int hw_sy7804_match(struct hw_flash_ctrl_t *flash_ctrl)
 {
@@ -638,15 +652,15 @@ static int hw_sy7804_match(struct hw_flash_ctrl_t *flash_ctrl)
 	unsigned char id;
 
 	cam_debug("%s ernter\n", __func__);
-	if ((flash_ctrl == NULL) ||
-		(flash_ctrl->pdata == NULL) ||
-		(flash_ctrl->flash_i2c_client == NULL)) {
+	if ((!flash_ctrl) ||
+		(!flash_ctrl->pdata) ||
+		(!flash_ctrl->flash_i2c_client)) {
 		cam_err("%s flash_ctrl is NULL", __func__);
 		return -1;
 	}
 
 	i2c_client = flash_ctrl->flash_i2c_client;
-	if (i2c_client->client == NULL) {
+	if (!i2c_client->client) {
 		cam_err("%s i2c client is NULL", __func__);
 		return -EINVAL;
 	}
@@ -659,7 +673,7 @@ static int hw_sy7804_match(struct hw_flash_ctrl_t *flash_ctrl)
 	cam_info("%s id=0x%x\n", __func__, id);
 	if (id != pdata->chipid) {
 		cam_err("%s match error, id(0x%x) != 0x%x", __func__,
-				(id & 0x7), pdata->chipid);
+				id, pdata->chipid);
 		return -1;
 	}
 	loge_if_ret(i2c_func->i2c_write(i2c_client, REG_ENABLE, IVFM_EN) < 0);
@@ -684,7 +698,7 @@ static int hw_sy7804_remove(struct i2c_client *client)
 
 static void hw_sy7804_shutdown(struct i2c_client *client)
 {
-	int rc = -1;
+	int rc;
 
 	rc = hw_sy7804_off(&hw_sy7804_ctrl);
 	cam_info("%s sy7804 shut down at %d", __func__, __LINE__);
@@ -693,12 +707,12 @@ static void hw_sy7804_shutdown(struct i2c_client *client)
 }
 
 static const struct i2c_device_id hw_sy7804_id[] = {
-	{"sy7804", (unsigned long)&hw_sy7804_ctrl},
+	{ "sy7804", (unsigned long)&hw_sy7804_ctrl },
 	{}
 };
 
 static const struct of_device_id hw_sy7804_dt_match[] = {
-	{.compatible = "huawei,sy7804"},
+	{ .compatible = "huawei,sy7804" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, sy7804_dt_match);
@@ -753,5 +767,6 @@ static struct hw_flash_ctrl_t hw_sy7804_ctrl = {
 module_init(hw_sy7804_module_init);
 module_exit(hw_sy7804_module_exit);
 MODULE_DESCRIPTION("SY7804 FLASH");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
 MODULE_LICENSE("GPL v2");
-#pragma GCC diagnostic pop
+

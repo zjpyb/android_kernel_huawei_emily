@@ -21,9 +21,13 @@
 
 #define FS_CRYPTO_BLOCK_SIZE		16
 
-#define FS_KEY_DERIVATION_NONCE_SIZE		64
-#define FS_KEY_DERIVATION_IV_SIZE		16
-#define FS_KEY_DERIVATION_CIPHER_SIZE		(64 + 16) /* nonce + tag */
+
+/* Encryption parameters */
+#define FS_IV_SIZE                     16
+#define FS_KEY_DERIVATION_NONCE_SIZE           64
+#define FS_KEY_DERIVATION_IV_SIZE              16
+#define FS_KEY_DERIVATION_TAG_SIZE             16
+#define FS_KEY_DERIVATION_CIPHER_SIZE          (64 + 16) /* nonce + tag */
 
 /**
  * Encryption context for inode
@@ -38,13 +42,13 @@
  *  12 bytes: IV
  */
 struct fscrypt_context {
-	u8 format;
-	u8 contents_encryption_mode;
-	u8 filenames_encryption_mode;
-	u8 flags;
-	u8 master_key_descriptor[FS_KEY_DESCRIPTOR_SIZE];
-	u8 nonce[FS_KEY_DERIVATION_CIPHER_SIZE];
-	u8 iv[FS_KEY_DERIVATION_IV_SIZE];
+        u8 format;
+        u8 contents_encryption_mode;
+        u8 filenames_encryption_mode;
+        u8 flags;
+        u8 master_key_descriptor[FS_KEY_DESCRIPTOR_SIZE];
+        u8 nonce[FS_KEY_DERIVATION_CIPHER_SIZE];
+        u8 iv[FS_KEY_DERIVATION_IV_SIZE];
 } __packed;
 
 /*
@@ -150,20 +154,15 @@ struct fscrypt_name {
 struct fscrypt_operations {
 	unsigned int flags;
 	const char *key_prefix;
-	int (*get_context)(struct inode *, void *, size_t, int *);
-	int (*get_verify_context)(struct inode *, void *, size_t);
+	int (*get_context)(struct inode *, void *, size_t);
 	int (*set_context)(struct inode *, const void *, size_t, void *);
-	int (*set_verify_context)(struct inode *, const void *, size_t,
-				  void *, int);
-	int (*dummy_context)(struct inode *);
+	bool (*dummy_context)(struct inode *);
 	bool (*is_encrypted)(struct inode *);
 	bool (*is_inline_encrypted)(struct inode *);
-	void (*set_encrypted_corrupt)(struct inode *);
-	bool (*is_encrypted_fixed)(struct inode *);
 	bool (*empty_dir)(struct inode *);
-	unsigned (*max_namelen)(struct inode *);
+	unsigned int max_namelen;
 	int (*get_keyinfo)(struct inode *, void *, int *);
-	int (*is_permitted_context)(struct inode *, struct inode *);
+	int (*is_file_sdp_encrypted)(struct inode *);
 #ifdef CONFIG_HWAA
 	int (*set_hwaa_attr)(struct inode *, const void *, size_t, void *);
 	int (*update_hwaa_attr)(struct inode *, const void *, size_t, void *);
@@ -172,57 +171,5 @@ struct fscrypt_operations {
 	int (*set_hwaa_flags)(struct inode *, void *, u32 *);
 #endif
 };
-
-static inline bool fscrypt_dummy_context_enabled(struct inode *inode)
-{
-	if (inode->i_sb->s_cop->dummy_context &&
-				inode->i_sb->s_cop->dummy_context(inode))
-		return true;
-	return false;
-}
-
-static inline bool fscrypt_valid_enc_modes(u32 contents_mode,
-					u32 filenames_mode)
-{
-	if (contents_mode == FS_ENCRYPTION_MODE_AES_128_CBC &&
-	    filenames_mode == FS_ENCRYPTION_MODE_AES_128_CTS)
-		return true;
-
-	if (contents_mode == FS_ENCRYPTION_MODE_AES_256_XTS &&
-	    filenames_mode == FS_ENCRYPTION_MODE_AES_256_CTS)
-		return true;
-
-	return false;
-}
-
-static inline bool fscrypt_is_dot_dotdot(const struct qstr *str)
-{
-	if (str->len == 1 && str->name[0] == '.')
-		return true;
-
-	if (str->len == 2 && str->name[0] == '.' && str->name[1] == '.')
-		return true;
-
-	return false;
-}
-
-static inline struct page *fscrypt_control_page(struct page *page)
-{
-#if IS_ENABLED(CONFIG_FS_ENCRYPTION)
-	return ((struct fscrypt_ctx *)page_private(page))->w.control_page;
-#else
-	WARN_ON_ONCE(1);
-	return ERR_PTR(-EINVAL);
-#endif
-}
-
-static inline int fscrypt_has_encryption_key(const struct inode *inode)
-{
-#if IS_ENABLED(CONFIG_FS_ENCRYPTION)
-	return (inode->i_crypt_info != NULL);
-#else
-	return 0;
-#endif
-}
 
 #endif	/* _LINUX_FSCRYPT_COMMON_H */

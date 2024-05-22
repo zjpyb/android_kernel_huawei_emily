@@ -2,7 +2,7 @@
 #include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/module.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <huawei_platform/boottime/hw_boottime.h>
 #define BOOT_LOG_NUM 64
 #define BOOT_50_MS 50000

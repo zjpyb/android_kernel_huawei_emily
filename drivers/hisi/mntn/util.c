@@ -31,6 +31,7 @@
 #include <linux/hisi/util.h>
 #include <linux/uaccess.h>	/* For copy_to_user */
 #include <linux/pstore_ram.h>
+#include <securec.h>
 #include <linux/delay.h>
 #include <linux/hisi/hisi_log.h>
 #define HISI_LOG_TAG HISI_UTIL_TAG
@@ -83,7 +84,9 @@ out:
 
 static int __init early_parse_himntn_cmdline(char *himntn_cmdline)
 {
-	memset(himntn, 0x0, HIMNTN_VALID_SIZE + 1);
+	if (EOK != memset_s(himntn, HIMNTN_VALID_SIZE + 1, 0x0, HIMNTN_VALID_SIZE + 1)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	if (strlen(himntn_cmdline) > HIMNTN_VALID_SIZE) {
 		BB_PRINT_ERR("error: invalid himn cmdline size!\n");
 		return -1;
@@ -95,19 +98,24 @@ static int __init early_parse_himntn_cmdline(char *himntn_cmdline)
 
 early_param("himntn", early_parse_himntn_cmdline);
 
+#define PBUF_MAXSIZE 128
 void mntn_print_to_ramconsole(const char *fmt, ...)
 {
-	char pbuf[128] = { 0 };
+	char pbuf[PBUF_MAXSIZE] = { 0 };
 	va_list ap;
 
 	if (NULL == fmt) {
 		return;
 	}
-	memset(pbuf, 0, 128);
+	if (EOK != memset_s(pbuf, PBUF_MAXSIZE, 0, PBUF_MAXSIZE)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	va_start(ap, fmt);
 	vsnprintf(pbuf, 128, fmt, ap);
 	va_end(ap);
+#ifdef CONFIG_PSTORE
 	ramoops_console_write_buf(pbuf, strlen(pbuf));
+#endif
 }
 
 /*******************************************************************************
@@ -185,7 +193,9 @@ static inline struct proc_dir_entry *balong_create_proc_entry(const char *name,
 							      *proc_fops,
 							      void *data)
 {
+#ifdef CONFIG_PROC_FS
 	return proc_create_data(name, mode, parent, proc_fops, data);
+#endif
 
 	return NULL; /*lint !e527*/
 }
@@ -193,7 +203,9 @@ static inline struct proc_dir_entry *balong_create_proc_entry(const char *name,
 static inline void balong_remove_proc_entry(const char *name,
 					    struct proc_dir_entry *parent)
 {
+#ifdef CONFIG_PROC_FS
 	remove_proc_entry(name, parent);
+#endif
 
 	return;
 }

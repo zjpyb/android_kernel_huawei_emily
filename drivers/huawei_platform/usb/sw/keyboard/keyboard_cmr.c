@@ -280,17 +280,15 @@ static int cmrkb_create_hid_devices(struct cmrkb_device *cmrdev,
 {
 	int ret;
 	/* Report descriptor */
-	u8 *rd_data;
+	u8 *rd_data = NULL;
 	u32 rd_size;
 
+	cmrdev->commonkeys_dev = sw_register_new_hiddevice(KB_COMMON_KEY_DEV,
+		rootdev, g_keyboard_hid_report_desc,
+		sizeof(g_keyboard_hid_report_desc) / sizeof(u8));
 	if (cmrdev->commonkeys_dev == NULL) {
-		cmrdev->commonkeys_dev = sw_register_new_hiddevice(KB_COMMON_KEY_DEV,
-			rootdev, g_keyboard_hid_report_desc,
-			sizeof(g_keyboard_hid_report_desc) / sizeof(u8));
-		if (cmrdev->commonkeys_dev == NULL) {
-			ret = -1;
-			goto create_hid_failed;
-		}
+		ret = -1;
+		goto create_hid_failed;
 	}
 
 	/*
@@ -311,23 +309,19 @@ static int cmrkb_create_hid_devices(struct cmrkb_device *cmrdev,
 		rd_size = sizeof(g_mouse_hid_report_desc_v3) / sizeof(u8);
 	}
 
+	cmrdev->customkeys_dev = sw_register_new_hiddevice(KB_CUSTOM_KEY_DEV,
+		rootdev, g_custom_key_hid_report_desc,
+		sizeof(g_custom_key_hid_report_desc) / sizeof(u8));
 	if (cmrdev->customkeys_dev == NULL) {
-		cmrdev->customkeys_dev = sw_register_new_hiddevice(KB_CUSTOM_KEY_DEV,
-			rootdev, g_custom_key_hid_report_desc,
-			sizeof(g_custom_key_hid_report_desc) / sizeof(u8));
-		if (cmrdev->customkeys_dev == NULL) {
-			ret = -1;
-			goto create_hid_failed;
-		}
+		ret = -1;
+		goto create_hid_failed;
 	}
 
+	cmrdev->mousekeys_dev = sw_register_new_hiddevice(KB_MOUSE_DEV,
+		rootdev, rd_data, rd_size);
 	if (cmrdev->mousekeys_dev == NULL) {
-		cmrdev->mousekeys_dev = sw_register_new_hiddevice(KB_MOUSE_DEV,
-			rootdev, rd_data, rd_size);
-		if (cmrdev->mousekeys_dev == NULL) {
-			ret = -1;
-			goto create_hid_failed;
-		}
+		ret = -1;
+		goto create_hid_failed;
 	}
 
 	return 0;

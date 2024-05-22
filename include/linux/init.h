@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_INIT_H
 #define _LINUX_INIT_H
 
@@ -5,10 +6,10 @@
 #include <linux/types.h>
 
 /* Built-in __init functions needn't be compiled with retpoline */
-#if defined(RETPOLINE) && !defined(MODULE)
-#define __noretpoline __attribute__((indirect_branch("keep")))
+#if defined(__noretpoline) && !defined(MODULE)
+#define __noinitretpoline __noretpoline
 #else
-#define __noretpoline
+#define __noinitretpoline
 #endif
 
 /* These macros are used to mark some functions or 
@@ -19,7 +20,7 @@
  *
  * Usage:
  * For functions:
- *
+ * 
  * You should add __init immediately before the function name, like:
  *
  * static void __init initme(int x, int y)
@@ -46,7 +47,7 @@
 
 /* These are for everybody (although not all archs will actually
    discard it in modules) */
-#define __init		__section(.init.text) __cold notrace __latent_entropy __noretpoline __nocfi
+#define __init		__section(.init.text) __cold __inittrace __latent_entropy __noinitretpoline __nocfi
 #define __initdata	__section(.init.data)
 #define __initconst	__section(.init.rodata)
 #define __exitdata	__section(.exit.data)
@@ -75,8 +76,10 @@
 
 #ifdef MODULE
 #define __exitused
+#define __inittrace notrace
 #else
 #define __exitused  __used
+#define __inittrace
 #endif
 
 #define __exit          __section(.exit.text) __exitused __cold notrace
@@ -133,11 +136,10 @@ void prepare_namespace(void);
 void __init load_default_modules(void);
 int __init init_rootfs(void);
 
-#if defined(CONFIG_DEBUG_RODATA) || defined(CONFIG_DEBUG_SET_MODULE_RONX)
+#if defined(CONFIG_STRICT_KERNEL_RWX) || defined(CONFIG_STRICT_MODULE_RWX)
 extern bool rodata_enabled;
 #endif
-#ifdef CONFIG_DEBUG_RODATA
-extern bool rodata_enabled;
+#ifdef CONFIG_STRICT_KERNEL_RWX
 void mark_rodata_ro(void);
 #endif
 
@@ -146,7 +148,7 @@ extern void (*late_time_init)(void);
 extern bool initcall_debug;
 
 #endif
-
+  
 #ifndef MODULE
 
 #ifndef __ASSEMBLY__
@@ -163,8 +165,8 @@ extern bool initcall_debug;
 /*
  * initcalls are now grouped by functionality into separate
  * subsections. Ordering inside the subsections is determined
- * by link order.
- * For backwards compatibility, initcall() puts the call in
+ * by link order. 
+ * For backwards compatibility, initcall() puts the call in 
  * the device init subsection.
  *
  * The `id' arg to __define_initcall() is needed so that multiple initcalls

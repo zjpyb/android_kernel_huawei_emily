@@ -48,7 +48,7 @@ void core_set_state_unattached(void);               // Set state machine to unat
 void core_reset_pd(void);
 #endif // FSC_DEBUG
 #ifdef CONFIG_POGO_PIN
-int core_cc_disable(FSC_BOOL disabled);
+int core_cc_disable(bool disabled);
 #endif
 
 /*******************************************************************************

@@ -46,8 +46,13 @@
 #include <linux/earlysuspend.h>
 #endif /* defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND) */
 #if defined(CONFIG_WIFI_CONTROL_FUNC)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include "hw_wlan_plantform.h"
+#else
 #include <linux/wlan_plat.h>
 #endif
+#endif
+
 
 #if !defined(CONFIG_WIFI_CONTROL_FUNC)
 #define WLAN_PLAT_NODFS_FLAG	0x01

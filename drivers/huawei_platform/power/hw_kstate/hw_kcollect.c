@@ -14,19 +14,21 @@
 #include <linux/notifier.h>
 #include <linux/suspend.h>
 #include <linux/err.h>
+#include <securec.h>
 #include <huawei_platform/power/hw_kcollect.h>
 #include <huawei_platform/power/hw_kstate.h>
 
 struct kcollect_info {
 	s32 mask;
-	u32 tv_sec;	/* seconds */
-	u32 tv_usec;	/* microseconds */
+	u32 tv_sec; /* seconds */
+	u32 tv_usec; /* microseconds */
 	u32 len;
 	char buffer[KCOLLECT_BUFFER_SIZE];
 };
 
 static int switch_mask = 0;
 static int killed_pid = -1;
+
 /*
   * Function: kcollect_cb
   * Description: kstate call back
@@ -41,10 +43,15 @@ static int kcollect_cb(CHANNEL_ID src, PACKET_TAG tag, const char *data, size_t 
 		return -1;
 	}
 
-	memcpy(&mask, data, len);
+	if (memcpy_s(&mask, sizeof(mask), data, len) != EOK) {
+		pr_err("hw_kcollect %s: failed to memcpy_s\n", __func__);
+		return -1;
+	}
+
 	switch_mask = mask;
 
 	pr_debug("hw_kcollect %s: src=%d tag=%d len=%d pg_switch_mask=%d\n", __func__, src, tag, (int) len, switch_mask);
+
 	return 0;
 }
 
@@ -55,7 +62,6 @@ static struct kstate_opt kcollect_opt = {
 	.hook = kcollect_cb,
 };
 
-
 /*
   * Function: report
   * Description: Packet and Send data to userspace by kstate
@@ -65,12 +71,16 @@ static struct kstate_opt kcollect_opt = {
 **/
 static int report(int mask,  va_list args, const char *fmt)
 {
-	int ret  = -1;
+	int ret = -1;
 	struct kcollect_info info;
 	int length = 0;
 	size_t info_len = 0;
 
-	memset(&info, 0, sizeof(info));
+	if (memset_s(&info, sizeof(info), 0, sizeof(info)) != EOK) {
+		pr_err("hw_kcollect %s: failed to memset_s\n", __func__);
+		return -1;
+	}
+
 	length = vscnprintf(info.buffer, KCOLLECT_BUFFER_SIZE - 1, fmt, args);
 	if (length > 0) {
 		info.mask = mask;
@@ -78,13 +88,16 @@ static int report(int mask,  va_list args, const char *fmt)
 		info.tv_sec = 0;
 		info.tv_usec = 0;
 		info_len = sizeof(info) - KCOLLECT_BUFFER_SIZE + length + 1;
+
 		ret = kstate(CHANNEL_ID_KCOLLECT, PACKET_TAG_KCOLLECT, (char*)&info, info_len);
 		if (ret < 0) {
 			pr_err("hw_kcollect %s: kstate error\n", __func__);
 			ret = -1;
 		}
 	}
+
 	pr_debug("hw_kcollect %s: length=%d mask=%d\n", __func__, length, mask);
+
 	return ret;
 }
 
@@ -96,18 +109,25 @@ int hwbinderinfo(int callingpid, int calledpid)
 int hwkillinfo(int pid, int seg)
 {
 	int ret = -1;
+
 	if (killed_pid != pid) {
 		ret = kcollect(KCOLLECT_FREEZER_MASK, "[PID %d KILLED][SIG %d]", pid, seg);
 		killed_pid = pid;
 	}
+
 	return ret;
+}
+
+int hw_packet_cb(int uid, int pid)
+{
+	return kcollect(KCOLLECT_NETPACKET_MASK, "[PID %d NET][UID %d]", pid, uid);
 }
 
 /*
   * Function: kcollect
   * Description: collect the data and report system
   * Input: mask -- message mask
-  *		fmt -- string
+  * fmt -- string
   * Return: -1--failed, 0--success
 **/
 int kcollect(int mask, const char *fmt, ...)
@@ -120,6 +140,7 @@ int kcollect(int mask, const char *fmt, ...)
 		ret = report(mask, args, fmt);
 		va_end(args);
 	}
+
 	return ret;
 }
 
@@ -133,6 +154,7 @@ static int __init kcollect_init(void)
 	} else {
 		pr_info("hw_kcollect %s: kstate_register_hook success\n", __func__);
 	}
+
 	return ret;
 }
 

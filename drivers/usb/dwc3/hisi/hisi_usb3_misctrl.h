@@ -3,9 +3,6 @@
 
 #include <linux/hisi/usb/hisi_usb_interface.h>
 
-#define USB_MISC_REG_LOGIC_ANALYZER_TRACE_L	0x28
-#define USB_MISC_REG_LOGIC_ANALYZER_TRACE_H	0x2c
-
 int dwc3_misc_ctrl_get(enum misc_ctrl_type type);
 void dwc3_misc_ctrl_put(enum misc_ctrl_type type);
 
@@ -26,5 +23,8 @@ void usb3_sc_misc_reg_setbit(u32 bit, unsigned long int offset);
 void usb3_sc_misc_reg_clrbit(u32 bit, unsigned long int offset);
 void usb3_sc_misc_reg_setvalue(u32 val, unsigned long int offset);
 void usb3_sc_misc_reg_clrvalue(u32 val, unsigned long int offset);
+
+extern int usb3_open_misc_ctrl_clk(void);
+extern void usb3_close_misc_ctrl_clk(void);
 
 #endif /* _DWC3_HISI_COMMON__H */

@@ -28,6 +28,7 @@
 #include <linux/of.h>
 #include <linux/idr.h>
 #include <linux/device.h>
+#include <linux/sysfs.h>
 #include <linux/workqueue.h>
 #include <uapi/linux/thermal.h>
 
@@ -35,11 +36,7 @@
 #define THERMAL_MAX_TRIPS	12
 
 /* invalid cooling state */
-#ifdef CONFIG_HISI_IPA_THERMAL
-#define THERMAL_CSTATE_INVALID -1U
-#else
 #define THERMAL_CSTATE_INVALID -1UL
-#endif
 
 /* No upper/lower limit requirement */
 #define THERMAL_NO_LIMIT	((u32)~0)
@@ -130,6 +127,7 @@ enum thermal_notify_event {
 	THERMAL_DEVICE_DOWN, /* Thermal device is down */
 	THERMAL_DEVICE_UP, /* Thermal device is up after a down event */
 	THERMAL_DEVICE_POWER_CAPABILITY_CHANGED, /* power capability changed */
+	THERMAL_TABLE_CHANGED, /* Thermal table(s) changed */
 };
 
 struct thermal_zone_device_ops {
@@ -182,10 +180,12 @@ struct thermal_cooling_device {
 	const struct thermal_cooling_device_ops *ops;
 	bool updated; /* true if the cooling device does not need update */
 	struct mutex lock; /* protect thermal_instances list */
+#ifdef CONFIG_HISI_IPA_THERMAL
 	bool bound_event;  /* record bound event for bounded detection */
 	bool ipa_enabled;
 	int current_load;  /* record load information for bounded detection */
 	int current_freq;  /* record freq information for bounded detection */
+#endif
 	struct list_head thermal_instances;
 	struct list_head node;
 	u64 cdev_cur_power;
@@ -231,7 +231,7 @@ struct thermal_attr {
  * @governor:	pointer to the governor for this thermal zone
  * @governor_data:	private pointer for governor data
  * @thermal_instances:	list of &struct thermal_instance of this thermal zone
- * @idr:	&struct idr to generate unique id for this zone's cooling
+ * @ida:	&struct ida to generate unique id for this zone's cooling
  *		devices
  * @lock:	lock to protect thermal_instances list
  * @node:	node in thermal_tz_list (in thermal_core.c)
@@ -242,6 +242,7 @@ struct thermal_zone_device {
 	int id;
 	char type[THERMAL_NAME_LENGTH];
 	struct device device;
+	struct attribute_group trips_attribute_group;
 	struct thermal_attr *trip_temp_attrs;
 	struct thermal_attr *trip_type_attrs;
 	struct thermal_attr *trip_hyst_attrs;
@@ -263,7 +264,7 @@ struct thermal_zone_device {
 	struct thermal_governor *governor;
 	void *governor_data;
 	struct list_head thermal_instances;
-	struct idr idr;
+	struct ida ida;
 	struct mutex lock;
 	struct list_head node;
 	struct delayed_work poll_queue;
@@ -608,6 +609,8 @@ static inline int thermal_generate_netlink_event(struct thermal_zone_device *tz,
 #ifdef CONFIG_HISI_IPA_THERMAL
 #define IPA_PERIPH_NUM 8
 
+#define IPA_FREQ_MAX	(~0U)
+#define USER_SPACE_GOVERNOR       "user_space"
 #define SOC_THERMAL_NAME "soc_thermal"
 #define BOARD_THERMAL_NAME "board_thermal"
 
@@ -631,6 +634,12 @@ extern unsigned int g_ipa_actor_num;
 extern u32 ipa_cpufreq_table_index[CAPACITY_OF_ARRAY];
 extern const char *ipa_actor_name[CAPACITY_OF_ARRAY];
 extern u32 ipa_actor_index[CAPACITY_OF_ARRAY];
+#define IPA_CLUSTER0_WEIGHT_NAME       "cdev1_weight"  //default name value
+#define IPA_CLUSTER1_WEIGHT_NAME       "cdev2_weight"
+#define IPA_CLUSTER2_WEIGHT_NAME       "cdev3_weight"
+#define IPA_GPU_WEIGHT_NAME            "cdev0_weight"
+extern unsigned int g_ipa_gpu_boost_weights[CAPACITY_OF_ARRAY];
+extern unsigned int g_ipa_normal_weights[CAPACITY_OF_ARRAY];
 
 s32 thermal_zone_temp_check(s32 temperature);
 int thermal_zone_cdev_get_power(const char *thermal_zone_name, const char *cdev_name, unsigned int *power);
@@ -641,12 +650,11 @@ void ipa_freq_limit_init(void);
 void ipa_freq_limit_reset(struct thermal_zone_device *tz);
 unsigned int ipa_freq_limit(int actor, unsigned int target_freq);
 int get_soc_temp(void);
-void dynipa_get_weights_cfg(unsigned int * weight0, unsigned int * weight1);
+void dynipa_get_weights_cfg(unsigned int *weight0, unsigned int *weight1);
 #else
 static inline int get_soc_temp(void)
 {
 	return 0;
 }
 #endif
-
 #endif /* __THERMAL_H__ */

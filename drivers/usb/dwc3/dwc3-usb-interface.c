@@ -126,7 +126,7 @@ static int dwc3_compliance_mode_enable(void)
 	return 0;
 }
 
-static int dwc3_cptest_next_pattern(void)
+void dwc3_cptest_next_pattern(void)
 {
 	u32 value;
 	value = dwc3_readl(g_dwc->regs, DWC3_GUSB3PIPECTL(0));
@@ -136,7 +136,6 @@ static int dwc3_cptest_next_pattern(void)
 	value = dwc3_readl(g_dwc->regs, DWC3_GUSB3PIPECTL(0));
 	value |= DWC3_GUSB3PIPECTL_HSTPRTCMPl;
 	dwc3_writel(g_dwc->regs, DWC3_GUSB3PIPECTL(0), value);
-	return 0;
 }
 
 static int dwc3_enable_u3(void)
@@ -234,7 +233,6 @@ static void usb3_link_state_print(void)
 }
 #endif
 
-#ifdef CONFIG_USB_DWC3_MAR
 static void dwc3_logic_analyzer_trace_set(u32 value)
 {
 	u32 regvalue;
@@ -242,13 +240,12 @@ static void dwc3_logic_analyzer_trace_set(u32 value)
 	regvalue = DWC3_GDBGLSPMUX_DEV_ANALYZER_SET(regvalue, value);
 	dwc3_writel(g_dwc->regs, DWC3_GDBGLSPMUX_DEV,regvalue);
 }
-#endif
 
-#if defined(CONFIG_USB_DWC3_FEB) || defined(CONFIG_USB_DWC3_OCT) || defined(CONFIG_USB_DWC3_NOV)
-static void dwc3_lscdtimer_set(void)
+void dwc3_lscdtimer_set(void)
 {
-	u32 value;
 #if defined(CONFIG_USB_DWC3_FEB)
+	u32 value;
+
 	value = 0x47e1f4;
 	dwc3_writel(g_dwc->regs, DWC3_LSCDTIM1(0), value);
 
@@ -283,6 +280,8 @@ static void dwc3_lscdtimer_set(void)
 #endif
 
 #if defined(CONFIG_USB_DWC3_OCT) || defined(CONFIG_USB_DWC3_NOV)
+	u32 value;
+
 	value = dwc3_readl(g_dwc->regs, DWC3_GUCTL2);
 	value |= (1 << 20);
 	value &= ~(0x1Fu << 21);
@@ -291,7 +290,6 @@ static void dwc3_lscdtimer_set(void)
 	dwc3_writel(g_dwc->regs, DWC3_GUCTL2, value);
 #endif
 }
-#endif
 
 static struct usb3_core_ops dwc3_core_ops = {
 	.disable_usb2phy_suspend = dwc3_disable_usb2phy_suspend,
@@ -304,18 +302,12 @@ static struct usb3_core_ops dwc3_core_ops = {
 	.enable_p4_gate = dwc3_enable_p4_gate,
 	.disable_pipe_clock = dwc3_disable_pipe_clock,
 	.compliance_mode_enable = dwc3_compliance_mode_enable,
-	.cptest_next_pattern = dwc3_cptest_next_pattern,
 	.enable_u3 = dwc3_enable_u3,
 	.dump_regs = dwc3_dump_regs,
 #ifdef CONFIG_HISI_DEBUG_FS
 	.link_state_print = usb3_link_state_print,
 #endif
-#ifdef CONFIG_USB_DWC3_MAR
 	.logic_analyzer_trace_set = dwc3_logic_analyzer_trace_set,
-#endif
-#if defined(CONFIG_USB_DWC3_FEB) || defined(CONFIG_USB_DWC3_OCT) || defined(CONFIG_USB_DWC3_NOV)
-	.lscdtimer_set = dwc3_lscdtimer_set,
-#endif
 };
 
 struct usb3_core_ops * get_usb3_core_ops(void)

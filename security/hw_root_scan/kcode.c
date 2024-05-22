@@ -117,11 +117,6 @@ size_t kcode_get_size(void)
 	return (size_t)(_etext - _stext);
 }
 
-void kcode_copy(char *buffer)
-{
-	memcpy(buffer, _stext, (ulong)(_etext - _stext));
-}
-
 int kcode_syscall_scan(uint8_t *hash)
 {
 	size_t size;
@@ -157,3 +152,4 @@ int kcode_syscall_scan(uint8_t *hash)
 	crypto_free_shash(tfm);
 	return err;
 }
+

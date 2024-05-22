@@ -29,8 +29,8 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
 #ifndef __DPTX_REG_H__
 #define __DPTX_REG_H__
 
@@ -63,6 +63,7 @@
 
 /* MST */
 #define DPTX_MST_VCP_TABLE_REG_N(n)	(0x210 + (n) * 4)
+#define DP_DPRX_ESI_LEN 14
 
 /* Video Registers. N=0-3 */
 #ifdef CONFIG_HISI_FB_V510
@@ -225,7 +226,9 @@
 
 #define DPTX_CCTL_ENH_FRAME_EN		BIT(1)
 #define DPTX_CCTL_ENABLE_MST_MODE	BIT(25)
+#define DPTX_CCTL_ENABLE_FEC			BIT(26)
 #define DPTX_CCTL_INITIATE_MST_ACT	BIT(28)
+#define DPTX_CCTL_ENH_FRAME_FEC_EN	BIT(29)
 
 #define DPTX_CCTL_FORCE_HPD			BIT(4)
 
@@ -398,6 +401,7 @@
 #define DPTX_VSAMPLE_CTRL_VMAP_BPC_MASK                 GENMASK(20, 16)
 #define DPTX_VSAMPLE_CTRL_MULTI_PIXEL_SHIFT		21
 #define DPTX_VSAMPLE_CTRL_MULTI_PIXEL_MASK		GENMASK(22, 21)
+#define DPTX_VSAMPLE_CTRL_ENABLE_DSC			BIT(23)
 #define DPTX_VSAMPLE_CTRL_QUAD_PIXEL			DPTX_MP_QUAD_PIXEL
 #define DPTX_VSAMPLE_CTRL_DUAL_PIXEL			DPTX_MP_DUAL_PIXEL
 #define DPTX_VSAMPLE_CTRL_SINGLE_PIXEL			DPTX_MP_SINGLE_PIXEL
@@ -589,4 +593,46 @@ transmission channels. */
 #define DPTX_HDCP22_AUTH_FAILED			BIT(30)
 #define DPTX_HDCP22_RE_AUTH_REQ			BIT(31)
 
+#define DPTX_DSC_HWCFG 0x0230
+#define DPTX_DSC_NUM_ENC_MSK GENMASK(3, 0)
+#define DPTX_DSC_CTL 0x0234
+#define DPTX_DSC_STREAM0_ENC_CLK_DIV_MSK BIT(18)
+#define DPTX_DSC_STREAM0_ENC_CLK_DIV_SHIFT 18
+
+#define DPTX_DSC_ENC_STREAM_SEL(i) GENMASK((2 * i + 1), (2 * i))
+#define DPTX_DSC_ENC_STREAM_SEL_SHIFT(i) ((i) * 2)
+#define DPTX_DSC_STREAM0_NUM_SLICES_SHIFT 22
+
+// Stream should be [1 .. 4],  SST = 1
+#define DPTX_DSC_PPS(stream, i) ((0x3a00 + (stream -1) * 0x10000) + (i * 0x4))
+#define DPTX_SST_MODE 1
+
+// PPS SDPs
+#define DPTX_DSC_VER_MIN_SHIFT 0
+#define DPTX_DSC_VER_MAJ_SHIFT 4
+#define DPTX_DSC_BUF_DEPTH_SHIFT 24
+#define DPTX_DSC_BLOCK_PRED_SHIFT 5
+#define DPTX_DSC_BPP_HIGH_MASK GENMASK(9, 8)
+#define DPTX_DSC_BPP_LOW_MASK GENMASK(7, 0)
+#define DPTX_DSC_BPP_LOW_MASK1 GENMASK(15, 8)
+#define DPTX_DSC_BPC_SHIFT 28
+
+#define DPTX_CONFIG_REG2 0x104
+#define DSC_MAX_NUM_LINES_SHIFT 16
+#define DSC_MAX_NUM_LINES_MASK GENMASK(31, 16)
+
+#define DPTX_VIDEO_DSCCFG 0x334
+#define DPTX_DSC_LSTEER_INT_SHIFT 0
+#define DPTX_DSC_LSTEER_FRAC_SHIFT 5
+#define DPTX_DSC_LSTEER_XMIT_DELAY_SHIFT 16
+#define DPTX_DSC_LSTEER_XMIT_DELAY_MASK GENMASK(31, 16)
+#define DPTX_DSC_LSTEER_FRAC_SHIFT_MASK GENMASK(9, 5)
+#define DPTX_DSC_LSTEER_INT_SHIFT_MASK GENMASK(4, 0)
+
+#define DPTX_BITS_PER_PIXEL 8 // For Interop testing only RGB 8bpp 8bpc
+#define DPTX_BITS_PER_COMPONENT 8 // For Interop testing only RGB 8bpp 8bpc
+
+#define DPTX_EN_HDR_INFOFRAME_SDP BIT(3)
+#define DPTX_FIXED_PRIORITY_ARBITRATION BIT(31)
+#define DPTX_DISABLE_EXT_SDP BIT(30)
 #endif

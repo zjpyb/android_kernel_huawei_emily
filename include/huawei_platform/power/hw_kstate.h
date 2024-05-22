@@ -49,8 +49,7 @@ struct kstate_opt {
 	CHANNEL_ID dst; /*used to mark client*/
 	PACKET_TAG tag;
 	char name[KSTATE_NAME_LEN_MAX];
-	int (*hook)(CHANNEL_ID src, PACKET_TAG tag,
-				const char *data, size_t len);
+	int (*hook)(CHANNEL_ID src, PACKET_TAG tag, const char *data, size_t len);
 };
 
 int kstate(CHANNEL_ID channel, PACKET_TAG tag, const char *data, size_t len);

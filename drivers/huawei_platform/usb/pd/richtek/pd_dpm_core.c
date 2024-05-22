@@ -314,7 +314,7 @@ static bool dpm_find_match_req_info(struct dpm_rdo_info_t *req_info,
 	uint32_t snk_pdo, int cnt, uint32_t *src_pdos, int min_uw,
 	uint32_t caps)
 {
-	bool overload;
+	bool overload = false;
 	int ret = -1;
 	int i;
 	int uw, max_uw = min_uw, cur_mv = 0;
@@ -754,7 +754,7 @@ void pd_dpm_src_hard_reset(pd_port_t *pd_port)
 static inline bool dpm_ufp_update_svid_data_enter_mode(
 	pd_port_t *pd_port, uint16_t svid, uint8_t ops)
 {
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	DPM_DBG("EnterMode (svid0x%04x, ops:%d)\r\n", svid, ops);
 
@@ -784,8 +784,8 @@ static inline bool dpm_ufp_update_svid_data_exit_mode(
 	pd_port_t *pd_port, uint16_t svid, uint8_t ops)
 {
 	uint8_t i;
-	bool modal_operation;
-	svdm_svid_data_t *svid_data;
+	bool modal_operation = false;
+	svdm_svid_data_t *svid_data = NULL;
 
 	DPM_DBG("ExitMode (svid0x%04x, mode:%d)\r\n", svid, ops);
 
@@ -882,7 +882,7 @@ void pd_dpm_ufp_request_enter_mode(pd_port_t *pd_port, pd_event_t *pd_event)
 
 void pd_dpm_ufp_request_exit_mode(pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	bool ack;
+	bool ack = false;
 	uint16_t svid = 0;
 	uint8_t ops = 0;
 
@@ -901,7 +901,7 @@ int pd_dpm_ufp_response_id(pd_port_t *pd_port, pd_event_t *pd_event)
 
 int pd_dpm_ufp_response_svids(pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 	uint16_t svid_list[2];
 	uint32_t svids[VDO_MAX_DATA_SIZE];
 	uint8_t i = 0, j = 0, cnt = pd_port->svid_data_cnt;
@@ -957,7 +957,7 @@ static inline void dpm_dfp_update_svid_data_exist(
 			pd_port_t *pd_port, uint16_t svid)
 {
 	uint8_t k;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 #ifdef CONFIG_USB_PD_KEEP_SVIDS
 	svdm_svid_list_t *list = &pd_port->remote_svid_list;
@@ -985,7 +985,7 @@ static inline void dpm_dfp_update_svid_data_modes(
 	pd_port_t *pd_port, uint16_t svid, uint32_t *mode_list, uint8_t count)
 {
 	uint8_t i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	DPM_DBG("InformMode (0x%04x:%d): \r\n", svid, count);
 	for (i = 0; i < count; i++)
@@ -1006,7 +1006,7 @@ static inline void dpm_dfp_update_svid_data_modes(
 static inline void dpm_dfp_update_svid_enter_mode(
 	pd_port_t *pd_port, uint16_t svid, uint8_t ops)
 {
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	DPM_DBG("EnterMode (svid0x%04x, mode:%d)\r\n", svid, ops);
 
@@ -1025,8 +1025,8 @@ static inline void dpm_dfp_update_svid_data_exit_mode(
 	pd_port_t *pd_port, uint16_t svid, uint8_t ops)
 {
 	uint8_t i;
-	bool modal_operation;
-	svdm_svid_data_t *svid_data;
+	bool modal_operation = false;
+	svdm_svid_data_t *svid_data = NULL;
 
 	DPM_DBG("ExitMode (svid0x%04x, mode:%d)\r\n", svid, ops);
 
@@ -1140,7 +1140,7 @@ static inline int dpm_dfp_consume_svids(
 void pd_dpm_dfp_inform_svids(pd_port_t *pd_port, pd_event_t *pd_event, bool ack)
 {
 	uint8_t count;
-	uint32_t *svid_list;
+	uint32_t *svid_list = NULL;
 	pd_msg_t *pd_msg = pd_event->pd_msg;
 
 	if (ack) {
@@ -1250,6 +1250,7 @@ void pd_dpm_dfp_inform_cable_vdo(pd_port_t *pd_port, pd_event_t *pd_event)
 #ifdef CONFIG_USB_PD_RESET_CABLE
 		if (pd_port->detect_emark) {
 			pd_port->detect_emark = false;
+			pd_port->dpm_flags &= ~DPM_FLAGS_CHECK_CABLE_ID_DFP;
 			/* payload 4 is the cur limit cable vdo */
 			pd_dpm_handle_pe_event(PD_DPM_PE_CABLE_VDO,
 				(void *)(&(pd_event->pd_msg->payload[4])));
@@ -1460,7 +1461,10 @@ void pd_dpm_prs_evaluate_swap(pd_port_t *pd_port, uint8_t role)
 {
 	int good_power;
 	bool accept = true;
-	bool sink, check_src, check_snk, check_ext;
+	bool sink = false;
+	bool check_src = false;
+	bool check_snk = false;
+	bool check_ext = false;
 
 	check_src = (pd_port->dpm_caps & DPM_CAP_PR_SWAP_CHECK_GP_SRC) ? 1 : 0;
 	check_snk = (pd_port->dpm_caps & DPM_CAP_PR_SWAP_CHECK_GP_SNK) ? 1 : 0;
@@ -1800,9 +1804,6 @@ int pd_dpm_notify_pe_startup(pd_port_t *pd_port)
 
 	if (pd_port->dpm_caps & DPM_CAP_ATTEMP_DISCOVER_CABLE)
 		flags |= DPM_FLAGS_CHECK_CABLE_ID;
-
-	if (pd_port->dpm_caps & DPM_CAP_ATTEMP_DISCOVER_CABLE_DFP)
-		flags |= DPM_FLAGS_CHECK_CABLE_ID_DFP;
 
 #ifdef CONFIG_USB_PD_ALT_MODE_DFP
 	if (pd_port->dpm_caps & DPM_CAP_ATTEMP_ENTER_DP_MODE) {

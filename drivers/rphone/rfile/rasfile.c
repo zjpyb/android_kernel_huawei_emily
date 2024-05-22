@@ -695,8 +695,8 @@ static int rasprobe_handler(rw_verify_area) (struct rasprobe_instance *ri,
 	struct dentry *den = FILE_DEN(flp);
 	struct super_block *sb = den->d_sb;
 	loff_t pos = *(loff_t *)rd->args[2];
-
-	if (regs_return_value(regs) < 0)
+	int rw_verify_ret = (int)regs_return_value(regs);
+	if (rw_verify_ret < 0)
 		return 0;	/*nothing read return directly */
 	if (WRITE == (long)rd->args[0]) {
 		unsigned long long size_add =
@@ -726,7 +726,7 @@ static int rasprobe_handler(rw_verify_area) (struct rasprobe_instance *ri,
 		if (0 == pos) {/*record write from head*/
 			file_key_ops_tracer(current, den, "write");
 			/*cancel the borken fault when new written*/
-			should_fail(check_equal, chfil_rebuild, den);
+			(void)should_fail(check_equal, chfil_rebuild, den);
 		}
 	} else if (READ == (long)rd->args[0]) {
 		if (0 == pos)/*record read from head*/
@@ -737,9 +737,6 @@ static int rasprobe_handler(rw_verify_area) (struct rasprobe_instance *ri,
 			rasprobe_seturn(regs, ret);
 			return 0;
 		}
-
-		if (should_fail(check_include, fail_null_file, den))
-			rasprobe_seturn(regs, 0);
 	}
 
 	return 0;
@@ -791,6 +788,8 @@ static int rasprobe_handler(vfs_read) (struct rasprobe_instance *ri,
 		ras_retn_if(clear_user(buf_user, ras_div(cnt, 2)), 0);
 	if (CHFILETYPE_ZERO == ret)
 		ras_retn_if(clear_user(buf_user, cnt), 0);
+	if (should_fail(check_include, fail_null_file, FILE_DEN(fp)))
+		rasprobe_seturn(regs, 0);
 	return 0;
 }
 
@@ -974,12 +973,12 @@ static inline int chfile_check(void)
 	}
 #endif
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 10, 0)
-	vfs_getattr(pth, ks, rquestmask, queryflags);
+	(void)vfs_getattr(pth, ks, rquestmask, queryflags);
 	mnt = 0;
 #elif LINUX_VERSION_CODE <= KERNEL_VERSION(3, 8, 0)
-	vfs_getattr(mnt, den, ks);
+	(void)vfs_getattr(mnt, den, ks);
 #else
-	vfs_getattr(pth, ks);
+	(void)vfs_getattr(pth, ks);
 	mnt = 0;
 #endif
 	/*rw_verify_area(mode, f, ppos, count);*/

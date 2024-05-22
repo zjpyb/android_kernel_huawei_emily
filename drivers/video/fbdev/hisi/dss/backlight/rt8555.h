@@ -117,6 +117,7 @@ struct rt8555_info {
 	int rt8555_level_lsb;
 	int rt8555_level_msb;
 	int bl_led_num;
+	int bl_set_long_slope;
 };
 
 ssize_t rt8555_set_backlight_init(uint32_t bl_value);

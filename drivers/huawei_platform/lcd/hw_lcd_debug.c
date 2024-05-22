@@ -228,7 +228,6 @@ int hw_parse_dsi_cmds(struct dsi_panel_cmds* pcmds)
 	cnt = 0;
 	while (len > sizeof(*dchdr)) {
 		dchdr = (struct dsi_ctrl_hdr*)bp;
-		//      dchdr->dlen = ntohs(dchdr->dlen);
 		if (dchdr->dlen > len) {
 			HISI_FB_ERR("dtsi cmd=%x error, len=%d, cnt=%d\n", dchdr->dtype, dchdr->dlen, cnt);
 			return -ENOMEM;
@@ -273,7 +272,6 @@ int hw_parse_dsi_cmds(struct dsi_panel_cmds* pcmds)
 	}
 	cmds_temp = pcmds->cmds;
 	pcmds->bp = buf;
-	//  print_cmds(cmds_temp, pcmds->cmd_cnt);
 
 	HISI_FB_DEBUG("cmd_cnt=%d\n", pcmds->cmd_cnt);
 

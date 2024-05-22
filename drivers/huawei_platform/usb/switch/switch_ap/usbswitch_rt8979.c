@@ -29,7 +29,8 @@
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 
 #include "switch_chip.h"
 #include <huawei_platform/log/hw_log.h>
@@ -63,13 +64,9 @@ static const int usbswitch_rt8979_regaddrs[] = {
 
 static bool usbswitch_rt8979_is_in_fm8(void)
 {
-	int id_value;
-	int device_type3;
 	int status1;
 	bool retval = false;
 
-	device_type3 = fsa9685_common_read_reg(FSA9685_REG_DEVICE_TYPE_3);
-	id_value = fsa9685_common_read_reg(RT8979_REG_ADC);
 	status1 = fsa9685_common_read_reg(RT8979_REG_MUIC_STATUS1);
 
 	if (status1 & RT8979_REG_MUIC_STATUS1_FMEN)
@@ -166,24 +163,18 @@ static int usbswitch_rt8979_manual_switch(int input_select)
 	case FSA9685_USB1_ID_TO_IDBYPASS:
 		value = REG_VAL_FSA9685_USB1_ID_TO_IDBYPASS;
 		break;
-
 	case FSA9685_USB2_ID_TO_IDBYPASS:
 		value = REG_VAL_FSA9685_USB2_ID_TO_IDBYPASS;
 		break;
-
 	case FSA9685_UART_ID_TO_IDBYPASS:
 		value = REG_VAL_FSA9685_UART_ID_TO_IDBYPASS;
 		break;
-
 	case FSA9685_MHL_ID_TO_CBUS:
 		value = REG_VAL_FSA9685_MHL_ID_TO_CBUS;
 		break;
-
 	case FSA9685_USB1_ID_TO_VBAT:
 		value = REG_VAL_FSA9685_USB1_ID_TO_VBAT;
 		break;
-
-	/* fall through: default is open */
 	case FSA9685_OPEN:
 	default:
 		value = REG_VAL_FSA9685_OPEN;
@@ -222,12 +213,10 @@ static int usbswitch_rt8979_switchctrl_store(struct i2c_client *client,
 		hwlog_info("manual_detach\n");
 		usbswitch_common_manual_detach();
 		break;
-
 	case MANUAL_SWITCH:
 		hwlog_info("manual_switch(usb1_id_to_vbat)\n");
 		usbswitch_common_manual_sw(FSA9685_USB1_ID_TO_VBAT);
 		break;
-
 	default:
 		hwlog_err("wrong input action\n");
 		return -1;
@@ -242,7 +231,12 @@ static int usbswitch_rt8979_switchctrl_show(char *buf)
 	int device_type2;
 	int device_type3;
 	int mode = -1;
-	int tmp;
+	unsigned int tmp;
+
+	if (!buf) {
+		hwlog_err("buf is null\n");
+		return -1;
+	}
 
 	device_type1 = fsa9685_common_read_reg(FSA9685_REG_DEVICE_TYPE_1);
 	if (device_type1 < 0)
@@ -259,7 +253,11 @@ static int usbswitch_rt8979_switchctrl_show(char *buf)
 	hwlog_info("type1=0x%x type2=0x%x type3=0x%x\n",
 		device_type1, device_type2, device_type3);
 
-	/* 16: word, 8: byte */
+	/*
+	 * because device_type1 device_type2 device_type3 are nonnegative val
+	 * so it can be used in bit operation
+	 * 16: word, 8: byte
+	 */
 	tmp = device_type3 << 16 | device_type2 << 8 | device_type1;
 	mode = 0;
 	while (tmp >> mode)
@@ -293,7 +291,6 @@ static int usbswitch_rt8979_jigpin_ctrl_store(struct i2c_client *client,
 		if (ret < 0)
 			return ret;
 		break;
-
 	case JIG_PULL_UP:
 		hwlog_info("pull up jig pin to cut battery\n");
 
@@ -304,7 +301,6 @@ static int usbswitch_rt8979_jigpin_ctrl_store(struct i2c_client *client,
 		if (ret < 0)
 			return ret;
 		break;
-
 	default:
 		hwlog_err("wrong input action\n");
 		return -1;
@@ -316,6 +312,11 @@ static int usbswitch_rt8979_jigpin_ctrl_store(struct i2c_client *client,
 static int usbswitch_rt8979_jigpin_ctrl_show(char *buf)
 {
 	int manual_sw2_val;
+
+	if (!buf) {
+		hwlog_err("buf is null\n");
+		return -1;
+	}
 
 	manual_sw2_val = fsa9685_common_read_reg(FSA9685_REG_MANUAL_SW_2);
 

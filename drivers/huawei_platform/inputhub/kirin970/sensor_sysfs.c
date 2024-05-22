@@ -1305,7 +1305,7 @@ static void als_dark_noise_offset_enq_notify_work(const int item_id, uint16_t va
 
 	als_dark_noise_offset_event.item_id = item_id;
 	memcpy(als_dark_noise_offset_event.device_name,ALS_TEST_CAL,sizeof(ALS_TEST_CAL));
-	memcpy(als_dark_noise_offset_event.result,ALS_CAL_RESULT,sizeof(ALS_CAL_RESULT));
+	memcpy(als_dark_noise_offset_event.result, ALS_CAL_RESULT, strlen(ALS_CAL_RESULT) + 1);
 	memcpy(als_dark_noise_offset_event.test_name,ALS_DARK_CALI_NAME,sizeof(ALS_DARK_CALI_NAME));
 	snprintf(als_dark_noise_offset_event.value,MAX_VAL_LEN,"%d",value);
 	snprintf(als_dark_noise_offset_event.min_threshold,MAX_VAL_LEN,"%u",min_threshold);

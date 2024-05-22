@@ -76,7 +76,11 @@ VOS_UINT32                              g_ulAdsDLTaskReadyFlag = 0;  /* ADSÏÂÐÐÈ
 ADS_CTX_STRU                            g_stAdsCtx;
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#ifdef CONFIG_ARM64
 VOS_UINT64                              g_ullAdsDmaMask = 0xffffffffffffffffULL;
+#else
+VOS_UINT64                              g_ullAdsDmaMask = 0xffffffffULL;
+#endif
 #else
 struct device                          *g_pstDmaDev;
 #endif
@@ -585,7 +589,11 @@ VOS_VOID ADS_UL_SetQueue(
     g_stAdsCtx.astAdsSpecCtx[ulInstanceIndex].stAdsUlCtx.astAdsUlQueue[ulRabId].enPrio         = enPrio;
     g_stAdsCtx.astAdsSpecCtx[ulInstanceIndex].stAdsUlCtx.astAdsUlQueue[ulRabId].usRecordNum    = 0;
     g_stAdsCtx.astAdsSpecCtx[ulInstanceIndex].stAdsUlCtx.astAdsUlQueue[ulRabId].enPktType      = enPktType;
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     g_stAdsCtx.astAdsSpecCtx[ulInstanceIndex].stAdsUlCtx.astAdsUlQueue[ulRabId].uc1XorHrpdUlIpfFlag = uc1XorHrpdUlIpfFlag;
+#else
+    g_stAdsCtx.astAdsSpecCtx[ulInstanceIndex].stAdsUlCtx.astAdsUlQueue[ulRabId].uc1XorHrpdUlIpfFlag = VOS_FALSE;
+#endif
 }
 
 
@@ -627,7 +635,9 @@ VOS_VOID ADS_DL_SndEvent(VOS_UINT32 ulEvent)
 
 VOS_VOID ADS_DL_ProcEvent(VOS_UINT32 ulEvent)
 {
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     VOS_ULONG                           ulLockLevel;
+#endif
 
     if (ulEvent & ADS_DL_EVENT_IPF_RD_INT)
     {
@@ -639,11 +649,15 @@ VOS_VOID ADS_DL_ProcEvent(VOS_UINT32 ulEvent)
 
     if (ulEvent & ADS_DL_EVENT_IPF_ADQ_EMPTY_INT)
     {
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
         /*lint -e571*/
         VOS_SpinLockIntLock(&(g_stAdsCtx.stAdsIpfCtx.stAdqSpinLock), ulLockLevel);
         /*lint +e571*/
         ADS_DL_AllocMemForAdq();
         VOS_SpinUnlockIntUnlock(&(g_stAdsCtx.stAdsIpfCtx.stAdqSpinLock), ulLockLevel);
+#else
+        ADS_DL_AllocMemForAdq();
+#endif
         ADS_DBG_DL_PROC_IPF_AD_EVENT_NUM(1);
     }
 
@@ -968,6 +982,7 @@ VOS_VOID ADS_SetUlResetFlag(VOS_UINT8 ucFlag)
     return;
 }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 
 VOS_VOID ADS_RNIC_AdjNapiWeight(VOS_VOID)
 {
@@ -993,6 +1008,7 @@ VOS_VOID ADS_RNIC_AdjNapiWeight(VOS_VOID)
 
     return;
 }
+#endif
 
 
 
@@ -1101,8 +1117,10 @@ VOS_VOID ADS_InitDlCtx(VOS_UINT32 ulInstance)
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].ulExParam            = 0;
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pRcvDlDataFunc       = VOS_NULL_PTR;
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pRcvDlFilterDataFunc = VOS_NULL_PTR;
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pRcvRdLstDataFunc    = VOS_NULL_PTR;
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pAdjNapiWeightFunc   = VOS_NULL_PTR;
+#endif
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pstLstPkt            = VOS_NULL_PTR;
     }
 
@@ -1210,8 +1228,10 @@ VOS_VOID ADS_ResetSpecDlCtx(VOS_UINT32 ulInstance)
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].ulExParam            = 0;
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pRcvDlDataFunc       = VOS_NULL_PTR;
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pRcvDlFilterDataFunc = VOS_NULL_PTR;
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pRcvRdLstDataFunc    = VOS_NULL_PTR;
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pAdjNapiWeightFunc   = VOS_NULL_PTR;
+#endif
         pstAdsSpecCtx->stAdsDlCtx.astAdsDlRabInfo[i].pstLstPkt            = VOS_NULL_PTR;
     }
 
@@ -1419,7 +1439,9 @@ VOS_VOID ADS_InitIpfCtx(VOS_VOID)
 
     IMM_ZcQueueHeadInit(ADS_GET_IPF_FILTER_QUE());
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     VOS_SpinLockInit(&(g_stAdsCtx.stAdsIpfCtx.stAdqSpinLock));
+#endif
 
     return;
 }

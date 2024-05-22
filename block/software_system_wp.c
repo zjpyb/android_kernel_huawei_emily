@@ -63,16 +63,6 @@ int blk_set_ro_secure_debuggable(int state)
 }
 EXPORT_SYMBOL(blk_set_ro_secure_debuggable);
 
-static char *get_bio_part_name(struct bio *bio)
-{
-	if (unlikely(!bio || !bio->bi_bdev ||
-				!bio->bi_bdev->bd_part ||
-				!bio->bi_bdev->bd_part->info ||
-				!bio->bi_bdev->bd_part->info->volname[0]))
-		return NULL;
-	return bio->bi_bdev->bd_part->info->volname;
-}
-
 static inline char *fastboot_lock_str(void)
 {
 	if (strstr(saved_command_line, "fblock=locked") ||
@@ -98,7 +88,10 @@ static inline int is_protected_partition(const char *name)
 
 static void bio_endio_compat(struct bio *bio, int error)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	bio->bi_status = errno_to_blk_status(error);
+	bio_endio(bio);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 3, 0)
 	bio->bi_error = error;
 	bio_endio(bio);
 #else
@@ -108,12 +101,12 @@ static void bio_endio_compat(struct bio *bio, int error)
 
 int should_trap_this_bio(int rw, struct bio *bio, unsigned int count)
 {
-	char *name;
+	char name[BDEVNAME_SIZE];
 
 	if (!(rw & WRITE))
 		return 0;
 
-	name = get_bio_part_name(bio);
+	bio_devname(bio, name);
 
 	/*
 	 * runmode=factory:send write request to mmc driver.
@@ -121,9 +114,6 @@ int should_trap_this_bio(int rw, struct bio *bio, unsigned int count)
 	 * partition is mounted ro: file system will block write request.
 	 * root user: send write request to mmc driver.
 	 */
-	if (!name)
-		return 0;
-
 	if (likely(!is_protected_partition(name)))
 		return 0;
 

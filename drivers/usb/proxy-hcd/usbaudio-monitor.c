@@ -125,7 +125,7 @@ static bool is_usbaudio_device(struct usb_device *udev, int configuration)
 	}
 
 	for (i = 0; i < nintf; ++i) {
-		struct usb_interface_cache *intfc;
+		struct usb_interface_cache *intfc = NULL;
 		struct usb_host_interface *alt;
 
 		intfc = config->intf_cache[i];
@@ -144,7 +144,7 @@ static bool is_usbaudio_device(struct usb_device *udev, int configuration)
 		audio_intf_num, hid_intf_num, other_intf_num);
 
 	if ((audio_intf_num == 1) && (hid_intf_num <= 1) && (other_intf_num == 0)) {
-		DBG("[%s]this is usb addio device\n", __func__);
+		DBG("[%s]this is usb audio device\n", __func__);
 		return true;
 	}
 

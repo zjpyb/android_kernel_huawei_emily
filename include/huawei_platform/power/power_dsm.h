@@ -3,7 +3,7 @@
  *
  * dsm for power module
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -22,17 +22,15 @@
 #include <dsm/dsm_pub.h>
 
 /* define dsm buffer size */
-#define POWER_DSM_BUF_SIZE_0016      (16)
-#define POWER_DSM_BUF_SIZE_0128      (128)
-#define POWER_DSM_BUF_SIZE_0256      (256)
-#define POWER_DSM_BUF_SIZE_0512      (512)
-#define POWER_DSM_BUF_SIZE_1024      (1024)
-#define POWER_DSM_BUF_SIZE_2048      (2048)
+#define POWER_DSM_BUF_SIZE_0016       16
+#define POWER_DSM_BUF_SIZE_0128       128
+#define POWER_DSM_BUF_SIZE_0256       256
+#define POWER_DSM_BUF_SIZE_0512       512
+#define POWER_DSM_BUF_SIZE_1024       1024
+#define POWER_DSM_BUF_SIZE_2048       2048
 
 enum power_dsm_type {
-	/* type begin anchor, can not modify */
 	POWER_DSM_TYPE_BEGIN = 0,
-
 	POWER_DSM_CPU_BUCK = POWER_DSM_TYPE_BEGIN,
 	POWER_DSM_USB,
 	POWER_DSM_BATTERY_DETECT,
@@ -46,8 +44,6 @@ enum power_dsm_type {
 	POWER_DSM_PMU_OCP,
 	POWER_DSM_PMU_IRQ,
 	POWER_DSM_DIRECT_CHARGE_SC,
-
-	/* type end anchor, can not modify */
 	POWER_DSM_TYPE_END,
 };
 
@@ -64,9 +60,7 @@ int power_dsm_dmd_report(enum power_dsm_type type, int err_no, void *buf);
 
 #ifdef CONFIG_HUAWEI_DATA_ACQUISITION
 int power_dsm_bigdata_report(enum power_dsm_type type, int err_no, void *msg);
-
 #else
-
 static inline int power_dsm_bigdata_report(enum power_dsm_type type,
 	int err_no, void *msg)
 {
@@ -85,9 +79,7 @@ if (power_dsm_get_dclient(type)) { \
 	} \
 } \
 } while (0)
-
 #else
-
 static inline struct dsm_client *power_dsm_get_dclient(enum power_dsm_type type)
 {
 	return NULL;

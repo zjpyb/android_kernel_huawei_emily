@@ -34,6 +34,7 @@ void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 }
 
 #define UI_IO_BLOCK_DOT (26)
+#define UNIT_50MS 50
 
 u64 ui_thread_io_block_counts[UI_IO_BLOCK_DOT] = {0};
 
@@ -44,15 +45,15 @@ u64 ui_thread_io_block_counts[UI_IO_BLOCK_DOT] = {0};
 
 
 
-void sched_account_ui_thread_io_block_counts(int msecs) {
-    u64 ui_io_block_idx;
+void sched_account_ui_thread_io_block_counts(int msecs)
+{
+	u64 ui_io_block_idx;
 
-    ui_io_block_idx = msecs/200;
-    if (ui_io_block_idx >= UI_IO_BLOCK_DOT) {
-        ui_io_block_idx = UI_IO_BLOCK_DOT - 1;
-    }
+	ui_io_block_idx = msecs / UNIT_50MS;
+	if (ui_io_block_idx >= UI_IO_BLOCK_DOT)
+		ui_io_block_idx = UI_IO_BLOCK_DOT - 1;
 
-    hwioinfo_stat_inc(ui_thread_io_block_counts[ui_io_block_idx]);
+	hwioinfo_stat_inc(ui_thread_io_block_counts[ui_io_block_idx]);
 }
 
 static void show_val(struct seq_file *m, const char *s, unsigned long num)

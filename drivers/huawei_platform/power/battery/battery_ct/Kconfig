@@ -5,6 +5,8 @@ menuconfig HUAWEI_BATTERY_INFORMATION
 	prompt "Certificate battery by information of IC."
 	default n
 
-source "drivers/huawei_platform/power/battery/battery_ct/MAXIM/Kconfig"
+source "drivers/huawei_platform/power/battery/battery_ct/maxim/Kconfig"
+source "drivers/huawei_platform/power/battery/battery_ct/nxp/Kconfig"
+source "drivers/huawei_platform/power/battery/battery_ct/onewire/Kconfig"
 
 endmenu

@@ -21,7 +21,8 @@ extern struct mxt_data *mxt_core_data;
 
 void atmel_get_average_max_min_data(struct mxt_data *data, char *buf)
 {
-	int i = 0;
+	size_t i;
+
 	if(!data || !buf) {
 		TS_LOG_ERR("%s, param invalid\n", __func__);
 		return;
@@ -35,7 +36,7 @@ void atmel_get_average_max_min_data(struct mxt_data *data, char *buf)
 
 	i = strlen(buf);
 	if (i >= MAX_BUF_SIZE) {
-		TS_LOG_ERR("over buf limit, buf size is %ld\n", sizeof(buf));
+		TS_LOG_ERR("over buf limit, buf size is %lu\n", i);
 		return;
 	}
 	snprintf((buf + i), PAGE_SIZE,
@@ -653,9 +654,9 @@ static ssize_t mxt_fw_version_show(struct device *dev,
 		TS_LOG_ERR("%s, param NULL\n", __func__);
 		return -ENODEV;
 	}
-
+	/* save version high-4bit, low-4bit to buf */
 	return scnprintf(buf, PAGE_SIZE, "%u.%u.%02X\n",
-			 data->info->version >> 4, data->info->version & 0xf,	/*save versoin high-4bit¡¢low-4bit to buf */
+			 data->info->version >> 4, data->info->version & 0xf,
 			 data->info->build);
 }
 
@@ -1330,9 +1331,9 @@ static ssize_t mxt_mem_access_read(struct file *filp, struct kobject *kobj,
 	return ret == 0 ? count : ret;
 }
 
-static ssize_t mxt_mem_access_write(struct file *filp, struct kobject *kobj,
-				    struct bin_attribute *bin_attr, char *buf,
-				    loff_t off, size_t count)
+static ssize_t mxt_mem_access_write(struct file *filp,
+	struct kobject *kobj, struct bin_attribute *bin_attr,
+	char *buf, loff_t off, size_t count)
 {
 	struct mxt_data *data = mxt_core_data;
 	int ret = 0;

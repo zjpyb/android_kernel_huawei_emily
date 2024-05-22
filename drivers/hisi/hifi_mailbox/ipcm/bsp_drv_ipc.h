@@ -88,7 +88,7 @@ typedef struct tagIPC_DEV_S {
 } IPC_DEV_S;
 
 typedef struct {
-	VOIDFUNCPTR routine;
+	irq_handler routine;
 	BSP_U32 arg;
 } BSP_IPC_ENTRY;
 
@@ -105,7 +105,7 @@ BSP_S32 DRV_IPCIntInit(void);
 
 BSP_S32 IPC_IntEnable (IPC_INT_LEV_E ulLvl);
 
-BSP_S32 IPC_IntConnect  (IPC_INT_LEV_E ulLvl, VOIDFUNCPTR routine, BSP_U32 parameter);
+BSP_S32 IPC_IntConnect  (IPC_INT_LEV_E ulLvl, irq_handler routine, BSP_U32 parameter);
 
 BSP_S32 IPC_IntSend(IPC_INT_CORE_E enDstCore, IPC_INT_LEV_E ulLvl);
 

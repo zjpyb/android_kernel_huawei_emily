@@ -3,6 +3,7 @@
 #include <linux/spinlock.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/sched.h>
 #include <securec.h>
 #include "inc/base/macros.h"
 #include "inc/base/hwaa_utils.h"
@@ -262,7 +263,7 @@ s32 send_qcode_request_towards_tee(u64 profile_id, const u8 *qcode,
 	TEEC_Result tee_res;
 	struct async_send_work_t teec_init_work;
 	u32 shmem_size;
-	u8 *shmem;
+	u8 *shmem = NULL;
 	s32 ret;
 
 	if (!init_send_operation_and_para(&op, &teec_init_work))

@@ -16,22 +16,15 @@
 #include <linux/wait.h>
 #include <linux/hisi/hisi_mailbox.h>
 #include <linux/hisi/hisi_rproc.h>
-
 #include <linux/hisi/hisi_log.h>
 #define HISI_LOG_TAG	AP_MAILBOX_TAG
 
-#define READY()				do { is_ready = 1; } while (0)
-#define NOT_READY()			do { is_ready = 0; } while (0)
-#define IS_READY()			({ is_ready; })
-#define RPROC_PR_ERR(fmt, args ...)	\
-	({				\
+#define RPROC_PR_ERR(fmt, args ...) \
+	do { \
 		pr_err(fmt "\n", ##args); \
-	})
-/*#define RPROC_PR_INFO(fmt, args ...)	\
-	({				\
-		pr_info("(%d):" fmt "\n", \
-			__LINE__, ##args); \
-	})*/
+	} while (0)
+
+#define RPROC_PR_DEBUG(fmt, args ...)		do {} while (0)
 
 typedef enum {
 	ASYNC_CALL = 0,
@@ -45,153 +38,23 @@ struct hisi_rproc_info {
 	struct hisi_mbox *mbox;
 };
 
-static int is_ready;
+static int is_rproc_table_ready;
+
+#define RPROC_TABLE_READY()		\
+	do {\
+		is_rproc_table_ready = 1; \
+	} while (0)
+#define RPROC_TABLE_NOT_READY()	\
+	do { \
+		is_rproc_table_ready = 0; \
+	} while (0)
+#define IS_RPROC_TABLE_READY()		({ is_rproc_table_ready; })
+
 extern struct hisi_mbox_task *g_TxTaskBuffer;
-static struct hisi_rproc_info rproc_table[] = {
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX0,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_RDR_MBX1,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_HIFI_MBX2,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_DEFAULT_MBX3,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_IOM3_MBX4,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_IVP_MBX5,
-	 },/*lint !e785 */
-	{
-	 .rproc_id = HISI_RPROC_IVP_MBX6,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_DEFAULT_MBX7,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX8,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX9,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_IOM3_MBX10,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_IOM3_MBX11,
-	 },/*lint !e785 */
-	{
-	 .rproc_id = HISI_RPROC_IOM3_MBX12,
-	 },/*lint !e785 */
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX13,
-	 },/*lint !e785 */
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX14,
-	 },/*lint !e785 */
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX15,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX16,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX17,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_HIFI_MBX18,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_MODEM_A9_MBX19,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_MODEM_A9_MBX20,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_MODEM_A9_MBX21,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_MODEM_BBE16_MBX22,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX23,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX24,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_IVP_MBX25,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_IVP_MBX26,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX27,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX28,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_HIFI_MBX29,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_LPM3_MBX30,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX0,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX1,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX2,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_ISP_MBX3,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_AO_MBX0,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_AO_MBX1,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_AO_MBX2,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_AO_MBX3,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_AO_MBX4,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_AO_MBX5,
-	 },
-     {
-	 .rproc_id = HISI_RPROC_NPU_MBX0,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_NPU_MBX1,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_NPU_MBX2
-	 },
-	{
-	 .rproc_id = HISI_RPROC_NPU_MBX3,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_NPU_MBX4,
-	 },
-	{
-	 .rproc_id = HISI_RPROC_NPU_MBX5,
-	 }
-};
 
 extern void hisi_mbox_empty_task(struct hisi_mbox_device *mdev);
+
+static struct hisi_rproc_info rproc_table[HISI_RPROC_NUM];
 
 static inline struct hisi_rproc_info *find_rproc(rproc_id_t rproc_id)
 {
@@ -210,14 +73,12 @@ static inline struct hisi_rproc_info *find_rproc(rproc_id_t rproc_id)
 
 int hisi_rproc_xfer_async(rproc_id_t rproc_id, rproc_msg_t *msg, rproc_msg_len_t len)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	struct hisi_mbox_task *tx_task = NULL;
 	struct hisi_mbox *mbox = NULL;
 	mbox_ack_type_t ack_type = AUTO_ACK;
 
 	int ret = 0;
-
-	BUG_ON(!IS_READY());
 
 	if (MBOX_CHAN_DATA_SIZE < len) {
 		ret = -EINVAL;
@@ -255,12 +116,10 @@ EXPORT_SYMBOL(hisi_rproc_xfer_async);
 
 int hisi_rproc_xfer_sync(rproc_id_t rproc_id, rproc_msg_t *msg, rproc_msg_len_t len, rproc_msg_t *ack_buffer, rproc_msg_len_t ack_buffer_len)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	struct hisi_mbox *mbox = NULL;
 	mbox_ack_type_t ack_type = MANUAL_ACK;
 	int ret = 0;
-
-	BUG_ON(!IS_READY());
 
 	if (MBOX_CHAN_DATA_SIZE < len || MBOX_CHAN_DATA_SIZE < ack_buffer_len) {
 		ret = -EINVAL;
@@ -298,10 +157,8 @@ static int hisi_rproc_rx_notifier(struct notifier_block *nb, unsigned long len, 
 
 int hisi_rproc_rx_register(rproc_id_t rproc_id, struct notifier_block *nb)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	int ret = 0;
-
-	BUG_ON(!IS_READY());
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc) {
@@ -319,10 +176,8 @@ EXPORT_SYMBOL(hisi_rproc_rx_register);
 
 int hisi_rproc_rx_unregister(rproc_id_t rproc_id, struct notifier_block *nb)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	int ret = 0;
-
-	BUG_ON(!IS_READY());
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc) {
@@ -346,7 +201,7 @@ out:
  */
 int hisi_rproc_put(rproc_id_t rproc_id)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	int i;
 
 	for (i = 0; i < sizeof(rproc_table) / sizeof(struct hisi_rproc_info); i++) {/*lint !e574*/
@@ -357,7 +212,11 @@ int hisi_rproc_put(rproc_id_t rproc_id)
 		}
 	}
 	if (unlikely(sizeof(rproc_table) / sizeof(struct hisi_rproc_info) == i)) {
-		RPROC_PR_ERR("\nrelease the ipc channel %d 's structure failed\n", rproc->rproc_id);
+		if(rproc == NULL) {
+			RPROC_PR_ERR("[%s]rproc pointer is null!\n", __func__);
+		} else {
+			RPROC_PR_ERR("\nrelease the ipc channel %d 's structure failed\n", rproc->rproc_id);
+		}
 		return -ENODEV;
 	}
 	return 0;
@@ -373,7 +232,7 @@ int hisi_rproc_put(rproc_id_t rproc_id)
  */
 int hisi_rproc_flush_tx(rproc_id_t rproc_id)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	int i;
 
 	for (i = 0; i < sizeof(rproc_table) / sizeof(struct hisi_rproc_info); i++) {/*lint !e574*/
@@ -404,12 +263,10 @@ EXPORT_SYMBOL(hisi_rproc_rx_unregister);
  */
 int hisi_rproc_is_suspend(rproc_id_t rproc_id)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	struct hisi_mbox_device *mdev = NULL;
 	int ret = 0;
 	unsigned long flags = 0;
-
-	WARN_ON(!IS_READY());
 
 	rproc = find_rproc(rproc_id);
 	if (!rproc || !rproc->mbox || !rproc->mbox->tx) {
@@ -429,11 +286,41 @@ out:
 
 EXPORT_SYMBOL(hisi_rproc_is_suspend);
 
+static inline int hisi_rproc_table_init(int cur_index, int rproc_start, int rproc_end)
+{
+	int i;
+
+	for (i = 0; i < (rproc_end - rproc_start); i++) {
+		rproc_table[cur_index].rproc_id = i + rproc_start;
+		cur_index++;
+	}
+	RPROC_PR_DEBUG("%s: start-%d, end-%d, cur_index-%d",
+		__func__, rproc_start, rproc_end, cur_index);
+	return cur_index;
+}
+
 int hisi_rproc_init(void)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	struct hisi_mbox_task *ptask = NULL;
 	int i;
+	int cur_index = 0;
+
+	if (!IS_RPROC_TABLE_READY()) {
+		RPROC_TABLE_READY();
+		/* PERI_NS_IPC rproc table init */
+		cur_index = hisi_rproc_table_init(cur_index,
+			HISI_RPROC_LPM3_MBX0, HISI_RPROC_NSIPC_MAX);
+		/* AO_NS_IPC rproc table init */
+		cur_index = hisi_rproc_table_init(cur_index,
+			HISI_RPROC_AO_MBX0, HISI_RPROC_AO_NSIPC_MAX);
+		/* NPU_IPC rproc table init */
+		cur_index = hisi_rproc_table_init(cur_index,
+			HISI_RPROC_NPU_MBX0, HISI_RPROC_NPU_IPC_MAX);
+		/* PERI_CRG_NS_IPC rproc table init */
+		cur_index = hisi_rproc_table_init(cur_index,
+			HISI_RPROC_CFGIPC_MBX0, HISI_RPROC_CFGIPC_MAX);
+	}
 
 	for (i = 0; i < sizeof(rproc_table) / sizeof(struct hisi_rproc_info); i++) {/*lint !e574*/
 		rproc = &rproc_table[i];
@@ -445,14 +332,13 @@ int hisi_rproc_init(void)
 			/* rproc->rproc_id as mdev_index to get the right mailbox-dev */
 			rproc->mbox = hisi_mbox_get(rproc->rproc_id, &rproc->nb);
 			if (!rproc->mbox) {
-				/*RPROC_PR_ERR("\nrproc %d will get later \n",rproc->rproc_id);*/
+				RPROC_PR_DEBUG("%s rproc[%d] mbox is not exist",
+					__func__, rproc->rproc_id);
 				continue;
 			}
+			RPROC_PR_DEBUG("%s rproc[%d] get mbox",
+				__func__, rproc->rproc_id);
 		}
-	}
-	/*the last rproc info has been initialize, set the rproc ready */
-	if ((sizeof(rproc_table) / sizeof(struct hisi_rproc_info)) == i) {
-		READY();
 	}
 
 	if (NULL == g_TxTaskBuffer) {
@@ -476,10 +362,10 @@ int hisi_rproc_init(void)
 EXPORT_SYMBOL(hisi_rproc_init);
 static void __exit hisi_rproc_exit(void)
 {
-	struct hisi_rproc_info *rproc;
+	struct hisi_rproc_info *rproc = NULL;
 	int i;
 
-	NOT_READY();
+	RPROC_TABLE_NOT_READY();
 
 	for (i = 0; i < sizeof(rproc_table) / sizeof(struct hisi_rproc_info); i++) {/*lint !e574*/
 		rproc = &rproc_table[i];

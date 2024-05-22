@@ -9,6 +9,7 @@ obj-$(CONFIG_JDI_HOST_TS_KIT) += bu21150_thp.o
 obj-$(CONFIG_HUAWEI_THP_HIMAX) += himax_thp.o
 obj-$(CONFIG_HUAWEI_THP_GOODIX) += goodix_thp.o
 obj-$(CONFIG_HUAWEI_THP_SOLOMON) += ssl_thp.o
+obj-$(CONFIG_HUAWEI_SHB_THP) += huawei_thp_log.o
 EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
 EXTRA_CFLAGS += -Idrivers/tzdriver
 EXTRA_CFLAGS += -Idrivers/devkit/lcdkit/lcdkit1.0/core/common
@@ -17,4 +18,10 @@ ifeq ($(wildcard $(srctree)/drivers/huawei_platform/inputhub/$(TARGET_BOARD_PLAT
 EXTRA_CFLAGS += -Idrivers/huawei_platform/inputhub/default
 else
 EXTRA_CFLAGS += -Idrivers/huawei_platform/inputhub/$(TARGET_BOARD_PLATFORM)
+endif
+
+ifeq ($(TARGET_BOARD_PLATFORM), $(TRINKET))
+EXTRA_CFLAGS += -Idrivers/gpu/drm/msm
+EXTRA_CFLAGS += -Idrivers/gpu/drm/msm/dsi-staging
+EXTRA_CFLAGS += -Idrivers/hwsensor/pssensor
 endif

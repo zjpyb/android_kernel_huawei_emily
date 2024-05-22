@@ -36,6 +36,9 @@
 #include <linux/stringify.h>
 #include "../../huawei_ts_kit_algo.h"
 #include "../../huawei_ts_kit.h"
+#if defined(CONFIG_TEE_TUI)
+#include "tui.h"
+#endif
 
 #define ELAN_KTF_NAME     "elan"
 #define ELAN_IC_NAME     "ekth5512c_"
@@ -61,8 +64,8 @@
 #define PEN_OSR        260
 #define MAX_PEN_PRESSURE    2047
 #define ELAN_IAP
-#define TEN_FINGER_DATA_LEN    90
-#define REPORT_DATA_LEN    18
+#define TEN_FINGER_DATA_LEN    115
+#define REPORT_DATA_LEN    26
 #define RESULT_MAX_LEN    10
 
 #define FWID_HIGH_BYTE_IN_EKT    54763
@@ -82,19 +85,27 @@
 #define PEN_PRESS_HBYTE    9
 #define PEN_PRESS_LBYTE    8
 
-#define FINGERX_POINT_HBYTE    4
-#define FINGERX_POINT_LBYTE    3
-#define FINGERY_POINT_HBYTE    6
-#define FINGERY_POINT_LBYTE    5
+#define FINGERX_POINT_HBYTE    8
+#define FINGERX_POINT_LBYTE    7
+#define FINGERY_POINT_HBYTE    10
+#define FINGERY_POINT_LBYTE    9
+
+#define FINGERX_WIDTH_BYTE    1
+#define FINGERY_WIDTH_BYTE    2
+#define FINGERX_EDGE_WIDTH_BYTE    3
+#define FINGERY_EDGE_WIDTH_BYTE    4
+#define FINGERX_XEDGE_RATIO_BYTE    5
+#define FINGERY_YEDGE_RATIO_BYTE    6
+
 #define FINGER_PRESSURE    255
 #define FINGER_MAJOR    100
 #define FINGER_MINOR    100
-#define VALUE_OFFSET    7
+#define VALUE_OFFSET    11
 #define FW_UPDATE_RETRY    2
-#define CUR_FINGER_NUM_BYTE    17
+#define CUR_FINGER_NUM_BYTE    25
 #define TP_NORMAL_DATA_BYTE    4
 #define TP_RECOVER_DATA_BYTE    6
-#define WRITE_DATA_VALID_LEN_BYTE 8
+#define WRITE_DATA_VALID_LEN_BYTE    8
 #define OFFSET_LBYTE    7
 #define OFFSET_HBYTE    6
 #define REPORT_ID_BYTE    2
@@ -115,9 +126,10 @@
 #define ELAN_PANEL_ID_START_BIT    6
 #define READ_PORJECT_ID_WORDS    6
 #define SEND_CMD_VALID_INDEX    9
+#define ELAN_DEBUG_MESG    0x04
 
-#define ELAN_MT_FLAGS_CONFIG	"mt_flags"
-#define ELAN_SUPPORT_GET_TP_COLOR	"support_get_tp_color"
+#define ELAN_MT_FLAGS_CONFIG    "mt_flags"
+#define ELAN_SUPPORT_GET_TP_COLOR    "support_get_tp_color"
 
 enum elan_mt_flags {
 	ELAN_MT_FLAG_FLIP = 0x08, // x,y exchange
@@ -135,12 +147,29 @@ struct elan_ktf_ts_data {
 	int fw_id;
 	int tx_num;
 	int rx_num;
+	uint16_t finger_x;
+	uint16_t finger_y;
+	uint16_t pen_x;
+	uint16_t pen_y;
+	uint16_t pen_pressure;
+	uint16_t wx;
+	uint16_t wy;
+	uint16_t ewx;
+	uint16_t ewy;
+	uint16_t xer;
+	uint16_t yer;
+
+	uint16_t water;
+	uint16_t palm;
+	uint16_t freq_hop;
+	uint16_t obl;
+
 	int finger_x_resolution;
 	int finger_y_resolution;
 	int pen_x_resolution;
 	int pen_y_resolution;
 	int cur_finger_num;
-	struct miscdevice elan_device;    // fw debug node
+	struct miscdevice elan_device; /* fw debug node */
 	struct ts_kit_device_data *elan_chip_data;
 	struct ts_kit_platform_data *elan_chip_client;
 	struct platform_device *elan_dev;
@@ -151,7 +180,7 @@ struct elan_ktf_ts_data {
 	atomic_t tp_mode;
 	char project_id[10];
 	char color_id[2];
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 	bool sd_fw_updata;
 	bool pen_detected;
 	char lcd_panel_info[LCD_PANEL_INFO_MAX_LEN];
@@ -162,6 +191,10 @@ struct elan_ktf_ts_data {
 
 int elan_i2c_write(u8 *buf, u16 length);
 int elan_i2c_read(u8 *reg_addr, u16 reg_len, u8 *buf, u16 len);
+
+#if defined(CONFIG_TEE_TUI)
+extern struct ts_tui_data tee_tui_data;
+#endif
 
 #endif /* _LINUX_ELAN_KTF_H */
 

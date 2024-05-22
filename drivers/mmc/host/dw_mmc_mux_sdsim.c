@@ -68,7 +68,11 @@ int GPIO_current_number_for_SD_DATA1 = GPIO_DEFAULT_NUMBER_FOR_SD_DATA1;
 int GPIO_current_number_for_SD_DATA2 = GPIO_DEFAULT_NUMBER_FOR_SD_DATA2;
 int GPIO_current_number_for_SD_DATA3 = GPIO_DEFAULT_NUMBER_FOR_SD_DATA3;
 
-
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+int gpio_current_number_for_sim_clk = GPIO_DEFAULT_NUMBER_FOR_SIM_CLK;
+int gpio_current_number_for_sim_rst = GPIO_DEFAULT_NUMBER_FOR_SIM_RST;
+int gpio_current_number_for_sim_data = GPIO_DEFAULT_NUMBER_FOR_SIM_DATA;
+#endif
 
 int sd_sim_detect_status_current = SD_SIM_DETECT_STATUS_UNDETECTED;
 
@@ -102,7 +106,58 @@ int sd_clk_driver_strength = -1;
 int sd_cmd_driver_strength = -1;
 int sd_data_driver_strength = -1;
 
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+int set_sd_sim_gpio_direction(int gpio_num, const char* gpio_name, int direction, int power_level) {
+	/* direction: 0 = input, 1 = output;  power_level: 0 = lowlevel; 1 = highlevel */
+	int err = -1;
+	if (gpio_num < GPIO_current_number_for_SD_CLK ||
+		gpio_num > gpio_current_number_for_sim_data) {
+		pr_err("%s %s argument gpionumber=%d is invalid, just return\n",
+			MUX_SDSIM_LOG_TAG, __func__, gpio_num);
+		return err;
+	}
+	if (!gpio_name) {
+		pr_err("%s %s argument gpio_name is null, just return\n",
+			MUX_SDSIM_LOG_TAG, __func__);
+		return err;
+	}
+	if (direction != 0 && direction != 1) {
+		pr_err("%s %s argument direction=%d is invalid, just return\n",
+			MUX_SDSIM_LOG_TAG, __func__, direction);
+		return err;
+	}
+	if (power_level != 0 && power_level != 1) {
+		pr_err("%s %s argument power_level=%d is invalid, just return\n",
+			MUX_SDSIM_LOG_TAG, __func__, power_level);
+		return err;
+	}
+	err = gpio_request(gpio_num, gpio_name);
+	if (err < 0) {
+		pr_err("%s %s gpio_request failed\n", MUX_SDSIM_LOG_TAG, __func__);
+		goto out;
+	}
+	if (direction == 0) {
+		err = gpio_direction_input(gpio_num);
+		if (err)
+			pr_err("%s %s gpio_direction_input failed", MUX_SDSIM_LOG_TAG, __func__);
+	} else {
+		err = gpio_direction_output(gpio_num, power_level);
+		if (err)
+			pr_err("%s %s gpio_direction_output failed", MUX_SDSIM_LOG_TAG, __func__);
+	}
+	gpio_free(gpio_num);
 
+out:
+	pr_info("%s %s set gpio%d(%s) %s(%s) %s err = %d)",
+		MUX_SDSIM_LOG_TAG, __func__,
+		gpio_num, gpio_name,
+		direction ? "output" : "input",
+		power_level ? "high" : "low",
+		(err < 0) ? "failed" : "success", err);
+	return err;
+
+}
+#endif
 
 void register_gpio_number_group(int start_gpio_number_for_SD_CLK)
 {
@@ -208,8 +263,11 @@ int set_sd_sim_group_io_register(int gpionumber,int function_select,int pulltype
 	{
 		iocg_ctrl_reg = ioremap(IOCG_BASE_GPIO_for_SD_CLK, 0x1000);
 	}
-
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+	if(gpionumber < GPIO_current_number_for_SD_CLK || gpionumber > gpio_current_number_for_sim_data)
+#else
 	if(gpionumber < GPIO_current_number_for_SD_CLK || gpionumber > GPIO_current_number_for_SD_DATA3)
+#endif
 	{
 		printk("%s %s argument gpionumber=%d is invalid,just return.\n",MUX_SDSIM_LOG_TAG,__func__,gpionumber);
 		return 0;
@@ -225,9 +283,6 @@ int set_sd_sim_group_io_register(int gpionumber,int function_select,int pulltype
 
 	return 0;
 }
-
-
-
 
 /*
 GpioMode/GpioNum                           Func     PullType        Driver           SlewRate           GpioDirection           OutputValue
@@ -321,7 +376,14 @@ int config_sdsim_gpio_mode(enum sdsim_gpio_mode gpio_mode)
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA1, FUNCTION1, PULL_TYPE_PU, sd_data_driver_strength );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA2, FUNCTION1, PULL_TYPE_PU, sd_data_driver_strength );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA3, FUNCTION1, PULL_TYPE_PU, sd_data_driver_strength );
-
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_clk, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_rst, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_data, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		(void)set_sd_sim_gpio_direction(gpio_current_number_for_sim_clk, "sim_clk", 0, 0);
+		(void)set_sd_sim_gpio_direction(gpio_current_number_for_sim_rst, "sim_rst", 0, 0);
+		(void)set_sd_sim_gpio_direction(gpio_current_number_for_sim_data, "sim_data", 0, 0);
+#endif
 	}
 	else if(SDSIM_MODE_SD_IDLE == gpio_mode)
 	{
@@ -337,24 +399,53 @@ int config_sdsim_gpio_mode(enum sdsim_gpio_mode gpio_mode)
 	else if(SDSIM_MODE_SIM_NORMAL == gpio_mode)
 	{
 		printk("%s %s set SDSIM_MODE_SIM_NORMAL.\n",MUX_SDSIM_LOG_TAG,__func__);
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CLK, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CMD, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA0, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA1, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA2, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA3, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_clk, FUNCTION1, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_rst, FUNCTION1, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_data, FUNCTION1, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		(void)set_sd_sim_gpio_direction(GPIO_current_number_for_SD_CLK, "sd_clk", 0, 0);
+		(void)set_sd_sim_gpio_direction(GPIO_current_number_for_SD_CMD, "sd_cmd", 0, 0);
+		(void)set_sd_sim_gpio_direction(GPIO_current_number_for_SD_DATA0, "sd_data0", 0, 0);
+		(void)set_sd_sim_gpio_direction(GPIO_current_number_for_SD_DATA1, "sd_data1", 0, 0);
+		(void)set_sd_sim_gpio_direction(GPIO_current_number_for_SD_DATA2, "sd_data2", 0, 0);
+		(void)set_sd_sim_gpio_direction(GPIO_current_number_for_SD_DATA3, "sd_data3", 0, 0);
+#else
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CLK,   FUNCTION4, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CMD,   FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA0, FUNCTION4, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA1, FUNCTION4, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA2, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA3, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
+#endif
 
 	}
 	else if(SDSIM_MODE_SIM_IDLE == gpio_mode)
 	{
 		printk("%s %s set SDSIM_MODE_SIM_IDLE.\n",MUX_SDSIM_LOG_TAG,__func__);
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CLK, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CMD, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA0, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA1, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA2, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA3, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_clk, FUNCTION1, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_rst, FUNCTION1, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+		set_sd_sim_group_io_register(gpio_current_number_for_sim_data, FUNCTION1, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0);
+#else
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CLK,   FUNCTION4, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_CMD,   FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA0, FUNCTION4, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA1, FUNCTION4, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA2, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
 		set_sd_sim_group_io_register(GPIO_current_number_for_SD_DATA3, FUNCTION0, PULL_TYPE_NP, DRIVER_STRENGTH_4MA_0 );
-
+#endif
 	}
 
 	return 0;
@@ -444,6 +535,7 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 	int ret = 0;
 	int i = 0;
 
+	int get_regulator_flag = 0;
 	int sd_data0_and_sim1_rst_value = 0;
 	int sd_data2_value = 0;
 
@@ -451,13 +543,54 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 	int sd_data3_value = 0;
 
 	struct dw_mci *host = NULL;
-
-	down(&sem_mux_sdsim_detect);
+	struct mmc_host *mmc_host_temp = NULL;
+	struct dw_mci_slot	*cur_slot = NULL;
 
 	printk("%s %s version 3.4.\n",MUX_SDSIM_LOG_TAG,__func__);
 	printk("%s %s argument list: status = %d current_module = %d sd_sim_detect_status_current = %d need_sleep = %d\n",
 		MUX_SDSIM_LOG_TAG,__func__,status,current_module,sd_sim_detect_status_current,need_sleep);
 
+	if(STATUS_PLUG_OUT == status) {
+		down(&sem_mux_sdsim_detect);
+		/*For plug out event,just update sd_sim_detect_status_current here*/
+		if(SD_SIM_DETECT_STATUS_UNDETECTED != sd_sim_detect_status_current) {
+			config_sdsim_gpio_mode(SDSIM_MODE_GPIO_DETECT);
+			printk("%s %s For plug out event,sd_sim_detect_status_current=%d,now is not SD_SIM_DETECT_STATUS_UNDETECTED,so config as SDSIM_MODE_GPIO_DETECT mode for lowpower.\n",
+				MUX_SDSIM_LOG_TAG,__func__,sd_sim_detect_status_current);
+		}
+
+		sd_sim_detect_status_current = SD_SIM_DETECT_STATUS_UNDETECTED;
+		printk("%s %s For plug out event,update sd_sim_detect_status_current here.\n",MUX_SDSIM_LOG_TAG,__func__);
+
+		if(dw_mci_check_himntn(HIMNTN_SD2JTAG) || dw_mci_check_himntn(HIMNTN_SD2DJTAG)) {
+			switch_gpio_change(SWITCH_GPIO_SD_SIDE);
+		} else {
+			switch_gpio_change(SWITCH_GPIO_SIM_SIDE);
+		}
+		up(&sem_mux_sdsim_detect);
+		return STATUS_PLUG_OUT;
+	}
+
+	if(STATUS_PLUG_IN == status && SD_SIM_DETECT_STATUS_SD == sd_sim_detect_status_current && MODULE_SIM == current_module) {
+		printk("%s %s MODULE_SIM find SD card already detected,just return STATUS_PLUG_OUT and do nothing.\n",MUX_SDSIM_LOG_TAG,__func__);
+		return STATUS_PLUG_OUT;
+	}
+
+	if(MODULE_SIM == current_module) {
+		host = host_from_sd_module;
+	} else
+		host = dw_mci_host;
+	if(host) {
+		cur_slot = host->slot[0];
+		mmc_host_temp = cur_slot->mmc;
+		mmc_claim_host(mmc_host_temp);
+	} else {
+		printk("%s %s host=NULL,current_module=%d,This is Error,maybe MODULE_SIM,just return STATUS_PLUG_IN and let SIM go on.\n",MUX_SDSIM_LOG_TAG,__func__,current_module);
+		/*This is sim*/
+		return STATUS_PLUG_IN;
+	}
+
+	down(&sem_mux_sdsim_detect);
 	if(NULL == dw_mci_host)
 	{
 		printk("%s %s argument list: dw_mci_host == NULL.\n",MUX_SDSIM_LOG_TAG,__func__);
@@ -490,6 +623,7 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 			{
 				printk("%s %s for those non DWMMC_SD_ID device,just return former status value.\n",MUX_SDSIM_LOG_TAG,__func__);
 				up(&sem_mux_sdsim_detect);
+				mmc_release_host(mmc_host_temp);
 				return status;
 			}
 
@@ -497,6 +631,7 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 			{
 				printk("%s %s for device mux_sdsim not enabled,just return former status value.\n",MUX_SDSIM_LOG_TAG,__func__);
 				up(&sem_mux_sdsim_detect);
+				mmc_release_host(mmc_host_temp);
 				return status;
 			}
 
@@ -510,63 +645,25 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 		/*to do something*/
 	}
 
-
-	host = host_from_sd_module;
-
-
-	if(!host)
-	{
-		printk("%s %s host=NULL,current_module=%d,This is Error,maybe MODULE_SIM,just return STATUS_PLUG_IN and let SIM go on.\n",MUX_SDSIM_LOG_TAG,__func__,current_module);
-		/*This is sim*/
-		up(&sem_mux_sdsim_detect);
-		return STATUS_PLUG_IN;
-	}
-
-	if(STATUS_PLUG_OUT == status)
-	{
-		/*For plug out event,just update sd_sim_detect_status_current here*/
-		if(SD_SIM_DETECT_STATUS_UNDETECTED != sd_sim_detect_status_current)
-		{
-			config_sdsim_gpio_mode(SDSIM_MODE_GPIO_DETECT);
-			printk("%s %s For plug out event,sd_sim_detect_status_current=%d,now is not SD_SIM_DETECT_STATUS_UNDETECTED,so config as SDSIM_MODE_GPIO_DETECT mode for lowpower.\n",
-				MUX_SDSIM_LOG_TAG,__func__,sd_sim_detect_status_current);
-		}
-
-		sd_sim_detect_status_current = SD_SIM_DETECT_STATUS_UNDETECTED;
-		printk("%s %s For plug out event,update sd_sim_detect_status_current here.\n",MUX_SDSIM_LOG_TAG,__func__);
-
-		if(dw_mci_check_himntn(HIMNTN_SD2JTAG) || dw_mci_check_himntn(HIMNTN_SD2DJTAG))
-		{
-			switch_gpio_change(SWITCH_GPIO_SD_SIDE);
-		}
-		else
-		{
-			switch_gpio_change(SWITCH_GPIO_SIM_SIDE);
-		}
-
-		up(&sem_mux_sdsim_detect);
-		return STATUS_PLUG_OUT;
-	}
-	else if(STATUS_PLUG_IN == status)
+	if(STATUS_PLUG_IN == status)
 	{
 		if( SD_SIM_DETECT_STATUS_SIM == sd_sim_detect_status_current && MODULE_SD == current_module )
 		{
 			printk("%s %s MODULE_SD find SIM card already detected,just return STATUS_PLUG_OUT and do nothing.\n",MUX_SDSIM_LOG_TAG,__func__);
 			up(&sem_mux_sdsim_detect);
-			return STATUS_PLUG_OUT;
-		}
-		else if( SD_SIM_DETECT_STATUS_SD == sd_sim_detect_status_current && MODULE_SIM == current_module )
-		{
-			printk("%s %s MODULE_SIM find SD card already detected,just return STATUS_PLUG_OUT and do nothing.\n",MUX_SDSIM_LOG_TAG,__func__);
-			up(&sem_mux_sdsim_detect);
+			mmc_release_host(mmc_host_temp);
 			return STATUS_PLUG_OUT;
 		}
 		else if( (SD_SIM_DETECT_STATUS_UNDETECTED == sd_sim_detect_status_current) || (SD_SIM_DETECT_STATUS_ERROR == sd_sim_detect_status_current) )
 		{
 			int cmd1_result = -1;
+			/*lint -e578*/
 			struct mmc_host *mmc_host_temp = NULL;
+			/*lint +e578*/
 			struct dw_mci_hs_priv_data *priv_temp = NULL;
+			/*lint -e578*/
 			struct dw_mci_slot	*cur_slot = NULL;
+			/*lint +e578*/
 			unsigned long former_present_flag = 0;
 
 			cur_slot = host->slot[0];
@@ -575,57 +672,59 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 
 			printk("%s %s enter GPIO-4-PIN STATUS detect stage.\n",MUX_SDSIM_LOG_TAG,__func__);
 
-			if(host)
-			{
-				if (host->vqmmc) {
-					/*temp value for work around after modem set raw register here,but ap can't set same value again*/
-					ret = regulator_set_voltage(host->vqmmc, 1775000, 1775000);
-					printk("%s %s vqmmc set 1.775v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-
-					ret = regulator_set_voltage(host->vqmmc, 1800000, 1800000);
-					printk("%s %s vqmmc set 1.8v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-					ret = regulator_enable(host->vqmmc);
-					printk("%s %s vqmmc enable ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-					usleep_range(1000, 1500);
-				}
-
-				if (host->vmmc) {
-					/*temp value for work around after modem set raw register here,but ap can't set same value again*/
-					ret = regulator_set_voltage(host->vmmc, 1850000, 1850000);
-					printk("%s %s vmmc set 1.85v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-
-					ret = regulator_set_voltage(host->vmmc, 1800000, 1800000);
-					printk("%s %s vmmc set 1.8v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-
-					if(!host->vmmcmosen)
-					{
-						ret = regulator_enable(host->vmmc);
-						printk("%s %s vmmc enable ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-					}
-					usleep_range(1000, 1500);
-				}
-
-
-				if (host->vmmcmosen) {
-					/*temp value for work around after modem set raw register here,but ap can't set same value again*/
-					ret = regulator_set_voltage(host->vmmcmosen, 2950000, 2950000);
-					printk("%s %s vmmcmosen set 2.95v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-
-					ret = regulator_set_voltage(host->vmmcmosen, 3000000, 3000000);
-					printk("%s %s vmmcmosen set 3.00v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-
-					ret = regulator_enable(host->vmmcmosen);
-					printk("%s %s vmmcmosen enable ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
-					usleep_range(1000, 1500);
-				}
-
-
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+			if (host->need_get_mmc_regulator) {
+				printk("%s %s enter get regulator\n",MUX_SDSIM_LOG_TAG,__func__);
+				get_regulator_flag = 1;
+				dw_mci_get_regulator(host);
 			}
-			else
-			{
-				/*now sim module just use mmc host LDO config interface,and host_from_sd_module*/
+#endif
+			if (host->vqmmc) {
+				/*temp value for work around after modem set raw register here,but ap can't set same value again*/
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+				/* set vqmmc to 1.75v first */
+				ret = regulator_set_voltage(host->vqmmc, 1750000, 1750000);
+				printk("%s %s vqmmc set 1.75v ret=%d\n", MUX_SDSIM_LOG_TAG, __func__, ret);
+#else
+				ret = regulator_set_voltage(host->vqmmc, 1775000, 1775000);
+				printk("%s %s vqmmc set 1.775v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+#endif
+				ret = regulator_set_voltage(host->vqmmc, 1800000, 1800000);
+				printk("%s %s vqmmc set 1.8v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+				ret = regulator_enable(host->vqmmc);
+				printk("%s %s vqmmc enable ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+				usleep_range(1000, 1500);
 			}
 
+			if (host->vmmc) {
+				/*temp value for work around after modem set raw register here,but ap can't set same value again*/
+				ret = regulator_set_voltage(host->vmmc, 1850000, 1850000);
+				printk("%s %s vmmc set 1.85v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+
+				ret = regulator_set_voltage(host->vmmc, 1800000, 1800000);
+				printk("%s %s vmmc set 1.8v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+
+				if(!host->vmmcmosen)
+				{
+					ret = regulator_enable(host->vmmc);
+					printk("%s %s vmmc enable ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+				}
+				usleep_range(1000, 1500);
+			}
+
+
+			if (host->vmmcmosen) {
+				/*temp value for work around after modem set raw register here,but ap can't set same value again*/
+				ret = regulator_set_voltage(host->vmmcmosen, 2950000, 2950000);
+				printk("%s %s vmmcmosen set 2.95v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+
+				ret = regulator_set_voltage(host->vmmcmosen, 3000000, 3000000);
+				printk("%s %s vmmcmosen set 3.00v ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+
+				ret = regulator_enable(host->vmmcmosen);
+				printk("%s %s vmmcmosen enable ret=%d\n",MUX_SDSIM_LOG_TAG,__func__,ret);
+				usleep_range(1000, 1500);
+			}
 			config_sdsim_gpio_mode(SDSIM_MODE_GPIO_DETECT);
 
 			switch_gpio_change(SWITCH_GPIO_SD_SIDE);
@@ -676,7 +775,13 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 			printk("%s %s <GPIO %d> sd_data3_value=%d\n",MUX_SDSIM_LOG_TAG,__func__,GPIO_current_number_for_SD_DATA3,sd_data3_value);
 
 			vdd_vcc_disable(host);
-
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+			if (get_regulator_flag) {
+				printk("%s %s enter put regulator\n",MUX_SDSIM_LOG_TAG,__func__);
+				get_regulator_flag = 0;
+				dw_mci_put_regulator(host);
+			}
+#endif
 			msleep(20);
 			printk("%s %s enter CMD1-RESPONSE STATUS detect stage after sleep 20 ms.\n",MUX_SDSIM_LOG_TAG,__func__);
 
@@ -710,20 +815,21 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 				if(current_module == MODULE_SD)
 				{
 					up(&sem_mux_sdsim_detect);
+					mmc_release_host(mmc_host_temp);
 					return STATUS_PLUG_IN;
 				}
 				else if(current_module == MODULE_SIM)
 				{
 					up(&sem_mux_sdsim_detect);
+					mmc_release_host(mmc_host_temp);
 					return STATUS_PLUG_OUT;
 				}
 			}
-#ifdef SDSIM_MUX_DETECT_SOLUTION_CMD1_ONLY
-			else
-			{
+			else if(!(host->flags & PINS_DETECT_ENABLE)) {
+#ifndef CONFIG_HISI_ESIM
 				switch_gpio_change(SWITCH_GPIO_SIM_SIDE);
 				config_sdsim_gpio_mode(SDSIM_MODE_SIM_NORMAL);
-
+#endif
 				sd_sim_detect_status_current = SD_SIM_DETECT_STATUS_SIM;
 
 				printk("%s %s SIM is inserted and detected now(CMD1 fail),go with SIM.\n",MUX_SDSIM_LOG_TAG,__func__);
@@ -731,16 +837,17 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 				if(current_module == MODULE_SD)
 				{
 					up(&sem_mux_sdsim_detect);
+					mmc_release_host(mmc_host_temp);
 					return STATUS_PLUG_OUT;
 				}
 				else if(current_module == MODULE_SIM)
 				{
 					up(&sem_mux_sdsim_detect);
+					mmc_release_host(mmc_host_temp);
 					return STATUS_PLUG_IN;
 				}
 
 			}
-#endif
 			for(i=0; i < (int)(sizeof(g_array)/sizeof(detect_gpio_status_array_s)); i++)
 			{
 				if( (sd_cmd_and_sim1_vpp_value == g_array[i].sd_cmd_and_sim1_vpp_value)
@@ -753,9 +860,10 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 
 					if(SD_SIM_DETECT_STATUS_SIM == g_array[i].actual_card_type)
 					{
+#ifndef CONFIG_HISI_ESIM
 						switch_gpio_change(SWITCH_GPIO_SIM_SIDE);
 						config_sdsim_gpio_mode(SDSIM_MODE_SIM_NORMAL);
-
+#endif
 						sd_sim_detect_status_current = SD_SIM_DETECT_STATUS_SIM;
 
 						printk("%s %s SIM is inserted and detected now,go with SIM.\n",MUX_SDSIM_LOG_TAG,__func__);
@@ -763,11 +871,13 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 						if(current_module == MODULE_SD)
 						{
 							up(&sem_mux_sdsim_detect);
+							mmc_release_host(mmc_host_temp);
 							return STATUS_PLUG_OUT;
 						}
 						else if(current_module == MODULE_SIM)
 						{
 							up(&sem_mux_sdsim_detect);
+							mmc_release_host(mmc_host_temp);
 							return STATUS_PLUG_IN;
 						}
 
@@ -782,11 +892,13 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 						if(current_module == MODULE_SD)
 						{
 							up(&sem_mux_sdsim_detect);
+							mmc_release_host(mmc_host_temp);
 							return STATUS_PLUG_IN;
 						}
 						else if(current_module == MODULE_SIM)
 						{
 							up(&sem_mux_sdsim_detect);
+							mmc_release_host(mmc_host_temp);
 							return STATUS_PLUG_OUT;
 						}
 					}
@@ -799,19 +911,23 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 			{
 
 				printk("%s %s SD_SIM_DETECT_STATUS_ERROR detected,but just go with SIM.\n", MUX_SDSIM_LOG_TAG, __func__);
+#ifndef CONFIG_HISI_ESIM
 				switch_gpio_change(SWITCH_GPIO_SIM_SIDE);
 				config_sdsim_gpio_mode(SDSIM_MODE_SIM_NORMAL);
+#endif
 				sd_sim_detect_status_current = SD_SIM_DETECT_STATUS_SIM;
 
 
 				if(current_module == MODULE_SD)
 				{
 					up(&sem_mux_sdsim_detect);
+					mmc_release_host(mmc_host_temp);
 					return STATUS_PLUG_OUT;
 				}
 				else
 				{
 					up(&sem_mux_sdsim_detect);
+					mmc_release_host(mmc_host_temp);
 					return STATUS_PLUG_IN;
 				}
 
@@ -819,6 +935,7 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 			else
 			{
 				up(&sem_mux_sdsim_detect);
+				mmc_release_host(mmc_host_temp);
 				return STATUS_PLUG_IN;
 			}
 
@@ -829,6 +946,7 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 		}
 
 		up(&sem_mux_sdsim_detect);
+		mmc_release_host(mmc_host_temp);
 		return STATUS_PLUG_IN;
 
 	}
@@ -836,6 +954,7 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 	{
 		printk("%s %s input argument status=%d is not correct,just return STATUS_PLUG_OUT.\n",MUX_SDSIM_LOG_TAG,__func__,status);
 		up(&sem_mux_sdsim_detect);
+		mmc_release_host(mmc_host_temp);
 		return STATUS_PLUG_OUT;
 	}
 
@@ -965,10 +1084,10 @@ void notify_sim_while_sd_fail(struct mmc_host *mmc)
 	{
 
 		printk("%s %s SD card init fail now,retry go with SIM.\n",MUX_SDSIM_LOG_TAG,__func__);
-
+#ifndef CONFIG_HISI_ESIM
 		switch_gpio_change(SWITCH_GPIO_SIM_SIDE);
 		config_sdsim_gpio_mode(SDSIM_MODE_SIM_NORMAL);
-
+#endif
 		sd_sim_detect_status_current = SD_SIM_DETECT_STATUS_SIM;
 
 		notify_sim1_card_in();
@@ -989,6 +1108,9 @@ int get_sd2jtag_status(void)
     return (1 == dw_mci_check_himntn(HIMNTN_SD2JTAG) || 1 == dw_mci_check_himntn(HIMNTN_SD2DJTAG));
 }
 EXPORT_SYMBOL(get_sd2jtag_status);
+EXPORT_SYMBOL(switch_gpio_change);
+EXPORT_SYMBOL(config_sdsim_gpio_mode);
+
 
 #define STATUS_SIM                          5
 #define STATUS_SD                           6

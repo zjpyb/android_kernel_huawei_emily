@@ -40,6 +40,9 @@
 #define BIT_SYS_UFS_CLK_TYPE_OFF	(0x6)
 #define BIT_SYS_UFS_CLK_TYPE_MASK	(0x3 << BIT_SYS_UFS_CLK_TYPE_OFF)
 
+#define SCTRL_SCPRSTATUS3_OFFSET             (0x36C)
+#define BIT_SCTRL_UFS_PSW_MEM_REPAIR_ACK_MASK UFS_BIT(30)
+
 /*
  * pmctrl specific define
  */
@@ -75,6 +78,15 @@
 #define CLK_UFSIO		UFS_BIT(14)
 #define CLK_UFS_SUBSYS		UFS_BIT(21)
 #define CLK_ABB_BACKUP		UFS_BIT(22)
+/*
+ * hsdtcrg specific define
+ */
+#define SOC_HSDT_CRG_PEREN1 0x010
+#define SOC_HSDT_CRG_PERRSTDIS0 0x064
+#define SOC_SCTRL_SCPERRSTEN1 0x20C
+#define SOC_PMCTRL_NOC_POWER_IDLEREQ_0 0x380
+#define SOC_PMCTRL_NOC_POWER_IDLEACK_0 0x384
+#define SOC_PMCTRL_NOC_POWER_IDLE_0 0x388
 /* USE_HISI_MPHY_TC */
 /* LPMCU: 0xB4000000, A53: 0xF4000000, I2C: 0x0 */
 #define BASE_BUS_ADDR         ( 0x0)
@@ -163,7 +175,8 @@
 #define UFS_MEM_CTRL_VAL                (0x850)
 #define UFS_BP_MEM_CTRL_MASK            (0xFFFF)
 #define UFS_BP_MEM_CTRL_VAL             (0x4858)
-
+#define SOC_SCTRL_SCPERRSTDIS1 0x210
+#define UFS_RESET_CTRL 0x08 // UFS_DEVICE_RESET_CTRL different addr on baltimore
 #define PHY_START 0xC000
 /* UFS_DEBUG_CTRL */
 #define UFS_DEBUG_CTRL_DEFAULT_MASK	(BIT_UFS_PWM_CNT_INT_MASK |\
@@ -301,7 +314,7 @@ enum {
 /* Here external BL31 function declaration for UFS inline encrypt */
 /* Now it is a test magic number */
 //#define RPMB_SVC_UFS_TEST		(0xc500bbb0)
-#define RPMB_SVC_UFS_TEST             (0xc600FFF5)
+#define RPMB_SVC_UFS_TEST             (0xc600FF20)
 
 /*use #0~29 key index*/
 #ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO
@@ -311,6 +324,8 @@ enum {
 /* REG UFS_REG_OCPTHRTL definition */
 #define LP_PGE UFS_BIT(16)
 #define LP_AH8_PGE UFS_BIT(17)
+#define UFS_BUS_DELAY_MASK 0xFF
+#define UFS_BUS_DELAY_VALUE 0x22
 
 #define UFS_HCLKDIV_NORMAL_VALUE	0xE4
 #define UFS_HCLKDIV_FPGA_VALUE		0x28
@@ -347,6 +362,7 @@ enum {
 #define RX_CANNOT_DISABLE	UFS_BIT(11)
 #define DISABLE_UFS_PMRUNTIME	UFS_BIT(12)
 #define RX_VCO_VREF	 UFS_BIT(13)
+#define USE_HISI_MPHY_ASIC UFS_BIT(17)
 #define MPHY_BOARDID_V200     ( 0x18903205)
 bool IS_V200_MPHY(struct ufs_hba *hba);
 
@@ -358,6 +374,8 @@ struct ufs_kirin_host {
 	void __iomem *pericrg;
 	void __iomem *pmctrl;
 	void __iomem *sysctrl;
+	void __iomem *actrl;
+	void __iomem *hsdt_crg;
 
 	struct clk *clk_ufsio_ref;
 
@@ -410,9 +428,28 @@ struct st_register_dump {
 
 #define ufs_pmctrl_writel(host, val, reg) writel((val), (host)->pmctrl + (reg))
 #define ufs_pmctrl_readl(host, reg) readl((host)->pmctrl + (reg))
+#define ufs_pmctrl_ctrl_clr_bits(host, mask, reg)                                 \
+        ufs_pmctrl_ctrl_writel((host),                                            \
+                                ((~(mask)) & (ufs_pmc_ctrl_readl((host), (reg)))), \
+                                (reg))
 
 #define ufs_sctrl_writel(host, val, reg) writel((val), (host)->sysctrl + (reg))
 #define ufs_sctrl_readl(host, reg) readl((host)->sysctrl + (reg))
+
+#define sys_ctrl_set_bits(host, mask, reg)                                     \
+	ufs_sctrl_writel(                                                      \
+		(host), ((mask) | (ufs_sctrl_readl((host), (reg)))), (reg))
+#define sys_ctrl_clr_bits(host, mask, reg)                                     \
+	ufs_sctrl_writel(                                                      \
+		(host), ((~(mask)) & (ufs_sctrl_readl((host), (reg)))), (reg))
+
+#define hsdt_crg_writel(host, val, reg)                                    \
+        writel((val), (host)->hsdt_crg + (reg))
+#define hsdt_crg_readl(host, reg) readl((host)->hsdt_crg + (reg))
+#define hsdt_crg_set_bits(host, mask, reg)                                 \
+        hsdt_crg_writel(                                                   \
+                        (host), ((mask) | (hsdt_crg_readl((host), (reg)))), (reg))
+
 
 /* TODO: get limit information from dts */
 struct ufs_kirin_dev_params {
@@ -430,6 +467,7 @@ struct ufs_kirin_dev_params {
 	u32 desired_working_mode;
 };
 
+void sel_equalizer_by_device(struct ufs_hba *hba, u32 *equalizer);
 int ufs_i2c_readl(struct ufs_hba *hba, u32 *value, u32 addr);
 int ufs_i2c_writel(struct ufs_hba *hba, u32 val, u32 addr);
 int create_i2c_client(struct ufs_hba *hba);
@@ -442,6 +480,7 @@ void ufs_kirin_advertise_quirks(struct ufs_hba *hba);
 void ufs_kirin_set_pm_lvl(struct ufs_hba *hba);
 void ufs_kirin_populate_dt(struct device *dev,
 				  struct ufs_kirin_host *host);
+int ufs_kirin_get_resource(struct ufs_kirin_host *host);
 void ufs_kirin_regulator_init(struct ufs_hba *hba);
 void ufs_kirin_inline_crypto_attr(struct ufs_hba *hba);
 #ifndef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO
@@ -450,7 +489,9 @@ void ufs_kirin_uie_key_prepare(struct ufs_hba *hba, int key_index, void *key);
 
 int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba);
 int ufs_kirin_link_startup_post_change(struct ufs_hba *hba);
-void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba);
+void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba, struct ufs_pa_layer_attr *dev_req_params);
+void ufs_hisi_kirin_pwr_change_pre_change(struct ufs_hba *hba, struct
+ufs_pa_layer_attr *dev_req_params);
 
 void hisi_mphy_updata_temp_sqvref(struct ufs_hba *hba,
 				struct ufs_kirin_host *host);

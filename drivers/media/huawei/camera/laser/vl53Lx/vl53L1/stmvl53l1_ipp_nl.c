@@ -109,9 +109,9 @@ static int get_next_xfer_id(void)
 static int send_client_msg(void *msg_data, int msg_size)
 {
 	int rc;
-	struct sk_buff *skb_out;
-	struct nlmsghdr *nlh;
-	void *nl_data;
+	struct sk_buff *skb_out = NULL;
+	struct nlmsghdr *nlh = NULL;
+	void *nl_data = NULL;
 
 	ipp_dbg("to send %d byte", msg_size);
 	skb_out = nlmsg_new(msg_size, 0);
@@ -148,6 +148,7 @@ static int send_client_msg(void *msg_data, int msg_size)
 int ipp_in_process(struct ipp_work_t *pwork)
 {
 	struct stmvl53l1_data *data = NULL;
+	int ret;
 
 	ipp_dbg("enter");
 	_ipp_dump_work(pwork, IPP_WORK_MAX_PAYLOAD, STMVL53L1_CFG_MAX_DEV);
@@ -164,7 +165,12 @@ int ipp_in_process(struct ipp_work_t *pwork)
 		/* if  it was already handled ignore it */
 		if (data->ipp.waited_xfer_id == pwork->xfer_id) {
 			/* ok that is what we are expecting back */
-			memcpy_s(&data->ipp.work_out, pwork->payload, pwork, pwork->payload);
+			ret = memcpy_s(&data->ipp.work_out,
+				pwork->payload,
+				pwork,
+				pwork->payload);
+			if (ret != 0)
+				ipp_err("memcpy failed %d", __LINE__);
 			data->ipp.buzy |= IPP_STATE_COMPLETED;
 			ipp_dbg("to wake ipp waiter as buzy state %d",
 					data->ipp.buzy);
@@ -206,11 +212,11 @@ int stmvl53l1_ipp_stop(struct stmvl53l1_data *data)
  * release and re-grabbed here
  */
 int stmvl53l1_ipp_do(struct stmvl53l1_data *data,
-		struct ipp_work_t *pin, struct ipp_work_t *pout)
+	struct ipp_work_t *pin, struct ipp_work_t *pout)
 {
 	int xfer_id;
 	int rc;
-	bool has_timeout;
+	bool has_timeout = false;
 
 	ipp_dbg("enter");
 

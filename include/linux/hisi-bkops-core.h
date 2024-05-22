@@ -97,7 +97,7 @@ struct hisi_bkops {
 	struct delayed_work bkops_idle_work;
 	unsigned long bkops_flag;
 	unsigned long bkops_idle_delay_ms;
-	struct blk_busy_idle_nb bkops_nb;
+	struct blk_busy_idle_event_node busy_idle_event_node;
 
 	u32 bkops_status; /* bkops status of last query */
 	unsigned int en_bkops_retry;
@@ -135,6 +135,6 @@ extern int hisi_bkops_set_status_info(struct hisi_bkops *bkops, u32 bkops_status
 extern int hisi_bkops_enable(struct request_queue *q, struct hisi_bkops *bkops, struct dentry *debugfs_parent_dir);
 extern int hisi_bkops_add_debugfs(struct hisi_bkops *bkops, struct dentry *bkops_root);
 extern void hisi_bkops_update_dur(struct bkops_stats *bkops_stats_p);
-
+extern void hisi_bkops_remove_debugfs(struct hisi_bkops *bkops);
 #endif /* HISI_BKOPS_CORE_H */
 

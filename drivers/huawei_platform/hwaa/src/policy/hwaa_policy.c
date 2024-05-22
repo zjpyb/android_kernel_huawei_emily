@@ -149,7 +149,7 @@ static bool ext_name_matches(const s8 *filename, const s8 *policy_ext_node)
 	s32 len;
 	s8 policy_buf[MAX_POLICY_BUF_LEN] = {0};
 	s8 *policy_ext = &policy_buf[0];
-	s8 *file_ext_name;
+	s8 *file_ext_name = NULL;
 
 	if ((filename == NULL) || (policy_ext_node == NULL))
 		return false;
@@ -238,7 +238,7 @@ static bool file_matches_rule(const struct ruleset_cache_entry_t *rule,
 	const s8 *fsname, const s8 *filename)
 {
 	size_t filename_len;
-	const s8 *filename_part;
+	const s8 *filename_part = NULL;
 
 	if ((rule == NULL) || (fsname == NULL) || (filename == NULL)) {
 		hwaa_pr_err("file_matches_rule bad arg");
@@ -302,9 +302,7 @@ bool hwaa_evaluate_policies(struct package_info_listnode_t *pkg_info_node,
 		*perms = local_perms;
 		matched = true;
 	}
-	if (matched) {
-		hwaa_pr_debug("evaluate_policies called %s filename matched %d",
-			filename, matched);
-	}
+	if (matched)
+		hwaa_pr_info("%s mh %d", filename, matched);
 	return matched;
 }

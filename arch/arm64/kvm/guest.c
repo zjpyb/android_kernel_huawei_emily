@@ -27,7 +27,7 @@
 #include <linux/fs.h>
 #include <kvm/arm_psci.h>
 #include <asm/cputype.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/kvm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_coproc.h>
@@ -402,6 +402,9 @@ int kvm_arm_vcpu_arch_set_attr(struct kvm_vcpu *vcpu,
 	case KVM_ARM_VCPU_PMU_V3_CTRL:
 		ret = kvm_arm_pmu_v3_set_attr(vcpu, attr);
 		break;
+	case KVM_ARM_VCPU_TIMER_CTRL:
+		ret = kvm_arm_timer_set_attr(vcpu, attr);
+		break;
 	default:
 		ret = -ENXIO;
 		break;
@@ -419,6 +422,9 @@ int kvm_arm_vcpu_arch_get_attr(struct kvm_vcpu *vcpu,
 	case KVM_ARM_VCPU_PMU_V3_CTRL:
 		ret = kvm_arm_pmu_v3_get_attr(vcpu, attr);
 		break;
+	case KVM_ARM_VCPU_TIMER_CTRL:
+		ret = kvm_arm_timer_get_attr(vcpu, attr);
+		break;
 	default:
 		ret = -ENXIO;
 		break;
@@ -435,6 +441,9 @@ int kvm_arm_vcpu_arch_has_attr(struct kvm_vcpu *vcpu,
 	switch (attr->group) {
 	case KVM_ARM_VCPU_PMU_V3_CTRL:
 		ret = kvm_arm_pmu_v3_has_attr(vcpu, attr);
+		break;
+	case KVM_ARM_VCPU_TIMER_CTRL:
+		ret = kvm_arm_timer_has_attr(vcpu, attr);
 		break;
 	default:
 		ret = -ENXIO;

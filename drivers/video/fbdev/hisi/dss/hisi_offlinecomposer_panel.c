@@ -80,7 +80,7 @@ static int hisi_offlinecompser_panel_remove(struct platform_device *pdev)
 		return -EINVAL;
 	}*/
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		return 0;
 	}
 

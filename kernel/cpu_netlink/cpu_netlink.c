@@ -1,11 +1,11 @@
 #include <cpu_netlink/cpu_netlink.h>
 
-#define MAX_DATA_LEN 10
+#define MAX_DATA_LEN 20
 
 static __u32 pid;
 static struct sock *netlinkfd;
 
-int send_to_user(int sock_no, size_t len, int *data)
+int send_to_user(int sock_no, size_t len, const int *data)
 {
     int ret = -1;
     int i;

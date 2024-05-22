@@ -15,7 +15,7 @@
  */
 
 /* \file ssi_sysfs.h
-   ARM CryptoCell sysfs APIs
+ * ARM CryptoCell sysfs APIs
  */
 
 #ifndef __SSI_SYSFS_H__
@@ -36,6 +36,7 @@ enum stat_phase {
 	STAT_PHASE_6,
 	MAX_STAT_PHASES,
 };
+
 enum stat_op {
 	STAT_OP_TYPE_NULL = 0,
 	STAT_OP_TYPE_ENCODE,

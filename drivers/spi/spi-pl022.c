@@ -305,6 +305,7 @@
 
 #if defined CONFIG_HISI_SPI
 u32 spi_smc_flag[5] = {0};
+#define HARDWARE_LOCK_DEFAULT 1
 #endif
 
 /*
@@ -428,6 +429,7 @@ struct pl022 {
 	struct dev_pin_info pins;
 	spinlock_t sync_spinlock;
 	int sync_locked;
+
 #endif
 	int cur_cs;
 	int *chipselects;
@@ -933,14 +935,14 @@ static void setup_dma_scatter(struct pl022 *pl022,
 	u32 i = 0;
 
 	if (buffer) {
-		for_each_sg(sgtab->sgl, sg, sgtab->nents, i) {
+		for_each_sg(sgtab->sgl, sg, sgtab->nents, i) {/*lint !e574 */
 			/*
 			 * If there are less bytes left than what fits
 			 * in the current page (plus page alignment offset)
 			 * we just feed in this, else we stuff in as much
 			 * as we can.
 			 */
-			if (bytesleft < (PAGE_SIZE - offset_in_page(bufp)))
+			if (bytesleft < (PAGE_SIZE - offset_in_page(bufp)))/*lint !e574 */
 				mapbytes = bytesleft;
 			else
 				mapbytes = PAGE_SIZE - offset_in_page(bufp);
@@ -954,8 +956,8 @@ static void setup_dma_scatter(struct pl022 *pl022,
 		}
 	} else {
 		/* Map the dummy buffer on every page */
-		for_each_sg(sgtab->sgl, sg, sgtab->nents, i) {
-			if (bytesleft < PAGE_SIZE)
+		for_each_sg(sgtab->sgl, sg, sgtab->nents, i) {/*lint !e574 */
+			if (bytesleft < PAGE_SIZE)/*lint !e574 */
 				mapbytes = bytesleft;
 			else
 				mapbytes = PAGE_SIZE;
@@ -1161,7 +1163,6 @@ static int configure_dma(struct pl022 *pl022)
 	/* Put the callback on the RX transfer only, that should finish last */
 	rxdesc->callback = dma_callback;
 	rxdesc->callback_param = pl022;
-
 	/* Submit and fire RX and TX with TX last so we're ready to read! */
 	dmaengine_submit(rxdesc);
 	dmaengine_submit(txdesc);
@@ -1319,6 +1320,7 @@ static inline void pl022_dma_remove(struct pl022 *pl022)
 {
 }
 #endif
+
 
 /**
  * pl022_interrupt_handler - Interrupt handler for SSP controller
@@ -1627,7 +1629,6 @@ static void do_polling_transfer(struct pl022 *pl022)
 		spin_lock_irqsave(&pl022->sync_spinlock, flags);
 	}
 #endif
-
 	chip = pl022->cur_chip;
 	message = pl022->cur_msg;
 
@@ -1694,12 +1695,12 @@ static void do_polling_transfer(struct pl022 *pl022)
 	}
 out:
 	/* Handle end of message */
-	if (message->state == STATE_DONE){
+	if (message->state == STATE_DONE) {
 		message->status = 0;
 #if defined CONFIG_HISI_SPI
-		flush(pl022);
+        flush(pl022);
 #endif
-	}
+    }
 	else
 		message->status = -EIO;
 
@@ -1739,9 +1740,9 @@ static int pl022_transfer_one_message(struct spi_master *master,
 }
 
 #if defined CONFIG_HISI_SPI
-void disable_spi(struct spi_master *master)
+void disable_spi(struct spi_controller *ctlr)
 {
-	struct pl022 *pl022 = spi_master_get_devdata(master);
+	struct pl022 *pl022 = spi_master_get_devdata(ctlr);
 
 	/* nothing more to do - disable spi/ssp and power off */
 	writew((readw(SSP_CR1(pl022->virtbase)) &
@@ -1902,7 +1903,7 @@ static int calculate_effective_freq(struct pl022 *pl022, int freq, struct
 	/* cpsdvsr = 254 & scr = 255 */
 	min_tclk = spi_rate(rate, CPSDVR_MAX, SCR_MAX);
 
-	if (freq > max_tclk) //lint !e574
+	if ((u32)freq > max_tclk)
 		dev_warn(&pl022->adev->dev,
 			"Max speed that can be programmed is %d Hz, you requested %d\n",
 			max_tclk, freq);
@@ -1950,8 +1951,7 @@ static int calculate_effective_freq(struct pl022 *pl022, int freq, struct
 		scr = SCR_MIN;
 	}
 
-	WARN(!best_freq, "pl022: Matching cpsdvsr and scr not found for %d Hz rate \n",
-			freq);
+	WARN(!best_freq, "pl022: Matching cpsdvsr and scr not found for %d Hz rate \n",	freq);/*lint !e146 !e665*/
 
 	clk_freq->cpsdvsr = (u8) (best_cpsdvsr & 0xFF);
 	clk_freq->scr = (u8) (best_scr & 0xFF);
@@ -2196,7 +2196,7 @@ static int pl022_setup(struct spi_device *spi)
 		tmp = SSP_CLK_POL_IDLE_HIGH;
 	else
 		tmp = SSP_CLK_POL_IDLE_LOW;
-	SSP_WRITE_BITS(chip->cr0, tmp, SSP_CR0_MASK_SPO, 6); /*lint !e647*/
+	SSP_WRITE_BITS(chip->cr0, tmp, SSP_CR0_MASK_SPO, 6); /*lint !e647 */
 
 	if (spi->mode & SPI_CPHA)
 		tmp = SSP_CLK_SECOND_EDGE;
@@ -2247,8 +2247,11 @@ pl022_platform_data_dt_get(struct device *dev)
 {
 	struct device_node *np = dev->of_node;
 	struct pl022_ssp_controller *pd;
+#if defined CONFIG_HISI_SPI
 	u32 tmp = 0xFFFFFFFF;
-
+#else
+	u32 tmp = 0;
+#endif
 	if (!np) {
 		dev_err(dev, "no dt node defined\n");
 		return NULL;
@@ -2343,7 +2346,14 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	if (of_property_read_u32(np, "hardware-mutex", &pl022->hardware_mutex))
 		pl022->hardware_mutex = 0;
 	if (pl022->hardware_mutex) {
-		pl022->spi_hwspin_lock = hwspin_lock_request_specific(ENUM_SPI_HWSPIN_LOCK);
+		if (HARDWARE_LOCK_DEFAULT == pl022->hardware_mutex) {
+			/*if hardware-mutex config to 1 in dts, then hardware lock is default value 27*/
+			pl022->spi_hwspin_lock = hwspin_lock_request_specific(ENUM_SPI_HWSPIN_LOCK);
+		} else {
+			/*if hardware-mutex is not 0 or 1 int dts, then hardware lock is config value in dts*/
+			pl022->spi_hwspin_lock = hwspin_lock_request_specific(pl022->hardware_mutex);
+		}
+
 		if (!pl022->spi_hwspin_lock) {
 			dev_err(dev, "spi_hwspin_lock request error\n");
 			goto hwspin_lock_err0;
@@ -2362,6 +2372,7 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	if (pl022->sync_locked) {
 		spin_lock_init(&pl022->sync_spinlock);
 	}
+
 #endif
 	/*
 	 * Bus Number Which has been Assigned to this SSP controller
@@ -2463,7 +2474,6 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 		dev_err(&adev->dev, "could not retrieve SSP/SPI bus clock\n");
 		goto err_no_clk;
 	}
-
 	status = clk_prepare_enable(pl022->clk);
 	if (status) {
 		dev_err(&adev->dev, "could not enable SSP/SPI bus clock\n");
@@ -2683,19 +2693,10 @@ int pl022_runtime_suspend(struct device *dev)
 int pl022_runtime_resume(struct device *dev)
 {
 	struct pl022 *pl022 = dev_get_drvdata(dev);
-#ifdef CONFIG_HISI_SPI
-	int ret;
-	pinctrl_pm_select_default_state(dev);
-	ret = clk_prepare_enable(pl022->clk);
-	if (ret)
-	    dev_err(dev, "problem on clk_prepare_enable (%d)\n", ret);
-	return ret;
-#else
 	pinctrl_pm_select_default_state(dev);
 	clk_prepare_enable(pl022->clk);
 
 	return 0;
-#endif
 }
 #endif
 
@@ -2757,7 +2758,7 @@ static struct vendor_data vendor_lsi = {
 	.internal_cs_ctrl = true,
 };
 
-static struct amba_id pl022_ids[] = {
+static const struct amba_id pl022_ids[] = {
 	{
 		/*
 		 * ARM PL022 variant, this has a 16bit wide

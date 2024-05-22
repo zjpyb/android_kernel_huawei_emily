@@ -50,11 +50,11 @@
 
 typedef struct
 {
-    bfmr_boot_stage_e boot_stage;
+    bfmr_detail_boot_stage_e boot_stage;
     char *desc;
 } bfm_boot_stage_no_desc_t;
 
-static char *bfm_get_boot_stage_no_desc(bfmr_boot_stage_e boot_stage);
+static char *bfm_get_boot_stage_no_desc(bfmr_detail_boot_stage_e boot_stage);
 static size_t bfm_format_stages_info(char *bs_data, unsigned int bs_data_buffer_len);
 
 static DEFINE_MUTEX(s_record_stage_mutex);
@@ -109,7 +109,7 @@ static bfm_stages_t * s_stages_info = NULL;
 
 /*----function definitions--------------------------------------------------------------*/
 
-static char* bfm_get_boot_stage_no_desc(bfmr_boot_stage_e boot_stage)
+static char* bfm_get_boot_stage_no_desc(bfmr_detail_boot_stage_e boot_stage)
 {
     int count = sizeof(s_boot_stage_desc) / sizeof(s_boot_stage_desc[0]);
     int i = 0;

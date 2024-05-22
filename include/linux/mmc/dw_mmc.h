@@ -19,6 +19,18 @@
 #include <linux/dmaengine.h>
 #include <linux/reset.h>
 
+#include <linux/atm.h>
+#include <linux/atmdev.h>
+#include <linux/completion.h>
+#include <linux/device.h>
+#include <linux/kernel.h>
+#include <linux/kref.h>
+#include <linux/list.h>
+#include <linux/stringify.h>
+#include <linux/usb.h>
+#include <linux/mutex.h>
+#include <linux/ratelimit.h>
+
 /* austin k3v5 platform dw emmc controller use as wifi usage with id = 0 */
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 #undef CONFIG_HUAWEI_EMMC_DSM
@@ -170,6 +182,7 @@ struct dw_mci_dma_slave {
  * using barriers.
  */
 struct dw_mci {
+	bool			wm_aligned;
 	unsigned int sdio_rst;
         unsigned int bit_sdcard_o_sel18;
         unsigned int scperctrls;
@@ -180,7 +193,6 @@ struct dw_mci {
 	spinlock_t		irq_lock;
 	void __iomem		*regs;
 	void __iomem		*fifo_reg;
-
 
 #ifdef CONFIG_SD_SDIO_CRC_RETUNING
         int                     clk_change;
@@ -234,7 +246,7 @@ struct dw_mci {
 	struct tasklet_struct	tasklet;
 	struct work_struct	card_work;
 #ifdef CONFIG_SD_TIMEOUT_RESET
-	struct work_struct	 work_volt_mmc;
+	struct work_struct	work_volt_mmc;
 #endif
 	unsigned long		pending_events;
 	unsigned long		completed_events;
@@ -252,13 +264,13 @@ struct dw_mci {
 	const struct dw_mci_drv_data	*drv_data;
 	void			*priv;
 #ifdef CONFIG_SD_TIMEOUT_RESET
-	int volt_hold_clk_sd;
-	int volt_hold_clk_sdio;
-	int set_sd_data_tras_timeout;
-	int set_sdio_data_tras_timeout;
+	int			volt_hold_clk_sd;
+	int			volt_hold_clk_sdio;
+	int			set_sd_data_tras_timeout;
+	int			set_sdio_data_tras_timeout;
 	struct clk		*volt_hold_sd_clk;
-	struct clk		*volt_hold_sdio_clk;
 #endif
+	struct clk		*volt_hold_sdio_clk;
 	struct clk		*biu_clk;
 	struct clk		*ciu_clk;
 	struct clk 		*parent_clk;
@@ -304,20 +316,32 @@ struct dw_mci {
 	int			irq;
 
 	unsigned int			flags;		/* Host attributes */
+#define PINS_DETECT_ENABLE	(1 << 4)	/* NM card 4-pin detect control */
 #define DWMMC_IN_TUNING		(1 << 5)	/* Host is doing tuning */
 #define DWMMC_TUNING_DONE	(1 << 6)	/* Host initialization tuning done */
+#define DWMMC_HPD_IRQ		(1 << 7)	/* pheonix enable hpd irq */
 
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+	int						tuning_flag_all_pass;
+#endif
 	int						current_div;				/* record current div */
 	int						tuning_current_sample;		/* record current sample */
 	int						tuning_init_sample;			/* record the inital sample */
 	int						tuning_move_sample;			/* record the move sample */
 	int						tuning_move_count;			/* record the move count */
 	unsigned int			tuning_sample_flag;			/* record the sample OK or NOT */
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+	unsigned int			all_pass_flag;			/* tuning all pass flag */
+	unsigned int			data_crc_flag;			/* tuning all pass then data crc flag */
+#endif
 	int						tuning_move_start;			/* tuning move start flag */
 #define DWMMC_EMMC_ID		0
 #define DWMMC_SD_ID			1
 #define DWMMC_SDIO_ID		2
 	int						hw_mmc_id;					/* Hardware mmc id */
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+	int						need_get_mmc_regulator;
+#endif
 	int						sd_reinit;
 	int						sd_hw_timeout;
 
@@ -330,6 +354,7 @@ struct dw_mci {
 	int			sdio_id0;
 
 	struct timer_list       cmd11_timer;
+	struct timer_list       cto_timer;
 	struct timer_list       dto_timer;
 	int                     is_reset_after_retry;
 };

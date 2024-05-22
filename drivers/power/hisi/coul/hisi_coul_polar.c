@@ -12,15 +12,15 @@
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <linux/slab.h>
-#include <linux/delay.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/mod_devicetable.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
+#include <linux/slab.h>
+#include <linux/delay.h>
 #include <linux/kern_levels.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
@@ -29,7 +29,7 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <hisi_partition.h>
-#include "securec.h"
+#include <securec.h>
 #include "polar_table.h"
 #define COUL_POLAR_INFO
 #ifndef COUL_POLAR_INFO
@@ -130,8 +130,8 @@ static polar_learn_tbl polar_learn_lut = {
 static struct polar_curr_info polar_avg_curr_info
     [POLAR_TIME_ARRAY_NUM][POLAR_CURR_ARRAY_NUM + 1];
 static long polar_err_a = POLAR_ERR_A_DEFAULT;
-static long polar_err_b1 = 0;
-static long polar_err_b2 = 0;
+long polar_err_b1 = 0;
+long polar_err_b2 = 0;
 
 static long polar_err_a_array[POLAR_VALID_A_NUM] = {0};
 static int polar_err_a_coe[POLAR_VALID_A_NUM + 1] = {25,25,25,25};
@@ -546,7 +546,7 @@ static int interpolate_linear_a(polar_learn_tbl* lut, int batt_temp_index, int s
     neg_index = batt_temp_index;
     for (i = 0; i < POLAR_LEARN_TEMP_RANGE; i++) {
         temp_index++;
-    polar_debug("%s:vol:%ld, temp_index:%d\n", __func__, lut->value[soc_index][temp_index].polar_vol_mv, temp_index);
+    polar_info("%s:vol:%d, temp_index:%d\n", __func__, lut->value[soc_index][temp_index].polar_vol_mv, temp_index);
         if (POLAR_LEARN_TEMP_COLS <= temp_index || 0 > temp_index)
             break;
         if (0 != lut->value[soc_index][temp_index].polar_vol_mv) {
@@ -563,14 +563,14 @@ static int interpolate_linear_a(polar_learn_tbl* lut, int batt_temp_index, int s
         /*因为25度后温度不连续，超过25度不再继续查找有效值*/
         if (lut->y_array[temp_index] >= TEMP_25_DEGREE)
             break;
-    polar_debug("%s:vol:%ld, temp_index:%d\n", __func__, lut->value[soc_index][temp_index].polar_vol_mv, temp_index);
+    polar_info("%s:vol:%d, temp_index:%d\n", __func__, lut->value[soc_index][temp_index].polar_vol_mv, temp_index);
         if (0 != lut->value[soc_index][temp_index].polar_vol_mv) {
             neg_trained_a = lut->value[soc_index][temp_index].a_trained;
             neg_index = temp_index;
             break;
         }
     }
-    polar_debug("%s:neg_trained_a:%ld, pos_trained_a:%ld\n", __func__, neg_trained_a, pos_trained_a);
+    polar_info("%s:neg_trained_a:%ld, pos_trained_a:%ld\n", __func__, neg_trained_a, pos_trained_a);
     if (neg_trained_a && pos_trained_a){
         result = polar_linear_interpolate(neg_trained_a, lut->y_array[neg_index],
             pos_trained_a,lut->y_array[pos_index], lut->y_array[batt_temp_index]);
@@ -618,7 +618,7 @@ static int polar_flash_open(int flags)
 	char p_name[POLAR_BUF_SHOW_LEN + 1] = {0};
 	int ret, fd_dfx;
 
-	ret = flash_find_ptn(PART_BATT_TP_PARA, p_name);
+	ret = flash_find_ptn_s(PART_BATT_TP_PARA, p_name, sizeof(p_name));
 	if (0 != ret) {
 		polar_err("%s()-line=%d\n", __func__, __LINE__);
 	}
@@ -733,9 +733,10 @@ void polar_clear_flash_data(void)
 		pr_err("%s()-line=%d\n", __func__, __LINE__);
 		return;
 	}
+
+	pr_err("%s()-line=%d\n", __func__, __LINE__);
 	polar_add_flash_data(p_buf, POLAR_LUT_SIZE, POLAR_LUT_OFFSET);
 	kfree(p_buf);
-	p_buf = NULL;
 }
 EXPORT_SYMBOL(polar_clear_flash_data);
 /****************************************************************************//**
@@ -749,7 +750,7 @@ static int polar_partition_ready(void)
 	char p_name[POLAR_BUF_SHOW_LEN + 1] = {0};
 	int ret;
 
-	ret = flash_find_ptn(PART_BATT_TP_PARA, p_name);
+	ret = flash_find_ptn_s(PART_BATT_TP_PARA, p_name, sizeof(p_name));
 	if (0 != ret) {
 		polar_err("%s()-line=%d\n", __func__, __LINE__);
 	}
@@ -818,7 +819,6 @@ ssize_t polar_self_learn_show(struct device *dev, struct device_attribute *attr,
 	}
 
 	kfree(p_buf);
-	p_buf = NULL;
 
 	return (ssize_t)cnt;
 }/*lint !e715*/
@@ -847,14 +847,14 @@ static void store_trained_a(polar_learn_tbl* lut, int batt_temp_degc, int soc,
     soc_index = interpolate_nearest_x(lut->x_array, lut->rows, soc);
     batt_temp_index = interpolate_nearest_x(lut->y_array, lut->cols,
                     batt_temp_degc);
-    lut->value[soc_index][batt_temp_index].polar_vol_mv = polar_vol_uv / UVOLT_PER_MVOLT;
-    lut->value[soc_index][batt_temp_index].a_trained = trained_a;
+    lut->value[soc_index][batt_temp_index].polar_vol_mv = (short)(polar_vol_uv / UVOLT_PER_MVOLT);
+    lut->value[soc_index][batt_temp_index].a_trained = (short)trained_a;
     if (time_after(time_now, last_self_learn_time + SELF_LEARN_GAP)) {
         polar_debug("%s:last_learn_time:%d,time_now:%d\n", __func__, last_self_learn_time, time_now);
         last_self_learn_time = time_now;
         polar_add_flash_data(lut->value, sizeof(lut->value), POLAR_LUT_OFFSET);
     }
-    polar_info("%s:polar trained a:%ld, polar vol:%ld\n", __func__, trained_a, polar_vol_uv);
+    polar_info("%s:polar trained a:%d, polar vol:%d\n", __func__, lut->value[soc_index][batt_temp_index].a_trained, lut->value[soc_index][batt_temp_index].polar_vol_mv);
 }
 
 /*******************************************************
@@ -896,7 +896,7 @@ static long get_trained_a(polar_learn_tbl* lut, int batt_temp_degc, int soc)
     soc_index = interpolate_nearest_x(lut->x_array, lut->rows, soc);
     batt_temp_index = interpolate_nearest_x(lut->y_array, lut->cols,
                     batt_temp_degc);
-    polar_debug("%s:temp:%d,temp_idx:%d,soc:%d,soc_idx:%d\n", __func__,
+    polar_info("%s:temp:%d,temp_idx:%d,soc:%d,soc_idx:%d\n", __func__,
         batt_temp_degc, batt_temp_index, soc, soc_index);
     /*超出温度范围内，返回-1*/
     if (batt_temp_index >= POLAR_LEARN_TEMP_COLS || batt_temp_index  < 0)
@@ -947,16 +947,16 @@ static bool could_vbat_learn_a (struct hisi_polar_device *di, int ocv_soc_mv,
     polar_debug("%s:vol_coe:%d, last_avgcurr_5s:%d\n", __func__, vol_coe, di->last_avgcurr_5s);
     if (VBAT_LEARN_COE_HIGH < vol_coe)
         return TRUE;
-    /*平均电流I<-1.5A@放电电流为负*/
+    /*平均电流I<-1A@放电电流为负*/
     if (di->last_avgcurr_5s < VBAT_LEARN_AVGCURR_HIGH)
         return TRUE;
     polar_vol_trained = get_trained_polar_vol(&polar_learn_lut, temp, soc);
-    polar_debug("%s:trained_vol:%ld\n", __func__, polar_vol_trained);
-    /*即0.6<[OCV(tn)-VBAT(tn)+I(tn)*RPCB]/ [OCV(tn)-Vcutoff+I(tn)*RPCB]≤0.8
+    polar_info("%s:trained_vol:%ld\n", __func__, polar_vol_trained);
+    /*即0.4<[OCV(tn)-VBAT(tn)+I(tn)*RPCB]/ [OCV(tn)-Vcutoff+I(tn)*RPCB]≤0.7
     且Vpert(tn)< Vpert_ training(SOCn ,Tempm) @放电电流为负*/
     if (VBAT_LEARN_COE_LOW < vol_coe && polar_vol_mv < polar_vol_trained)
         return TRUE;
-    /*即-1.5A<最近5s放电平均电流I≤-0.5A
+    /*即-1A<最近5s放电平均电流I≤-0.5A
     且Vpert(tn)< Vpert_ training(SOCn ,Tempm) @放电电流为正*/
     if (di->last_avgcurr_5s < VBAT_LEARN_AVGCURR_LOW
             && polar_vol_mv < polar_vol_trained)
@@ -1090,7 +1090,7 @@ static long calc_weighted_a(long a_trained, int enqueue)
         polar_valid_a_index++;
         polar_valid_a_index = polar_valid_a_index % POLAR_VALID_A_NUM;
     }
-    polar_debug("%s:update real polar a:%ld, weighted average a:%ld\n",
+    polar_info("%s:update real polar a:%ld, weighted average a:%ld\n",
         __func__, a_trained, a_weighted);
     return a_weighted;
 }
@@ -1169,10 +1169,10 @@ static void update_polar_error_a(int ocv_soc_mv, int vol_now_mv, int cur,
         store_trained_a(&polar_learn_lut, temp, soc, temp_err_a, polar_vol_uv);
 get_a:
     a_trained = get_trained_a(&polar_learn_lut, temp, soc);
-    polar_debug("%s:polar a before weighted average:%ld, trained_a:%ld\n",
+    polar_info("%s:polar a before weighted average:%ld, trained_a:%ld\n",
                 __func__, temp_err_a, a_trained);
     if (a_trained <= 0) {
-        polar_debug("no self learn polar a ,use current value\n");
+        polar_info("no self learn polar a ,use current value\n");
         polar_err_a = calc_weighted_a(temp_err_a, 0);
     } else
         polar_err_a = calc_weighted_a(a_trained, 1);
@@ -1527,8 +1527,9 @@ static void update_polar_avg_curr(struct hisi_polar_device *di, int predict_msec
 static void polar_info_calc(struct hisi_polar_device *di, int predict_msec)
 {
     int t_index = 0, last_soc_avg;
-    struct ploarized_info *ppolar, *ppolar_head;
-    struct list_head *pos;
+    struct ploarized_info *ppolar = NULL;
+    struct ploarized_info *ppolar_head = NULL;
+    struct list_head *pos = NULL;
     unsigned long node_sample_time = 0, node_duration_time = 0;
     unsigned long temp_duration_time = 0, head_sample_time = 0;
 
@@ -1607,9 +1608,9 @@ static void fill_up_polar_fifo(struct hisi_polar_device *di,
                                 struct hisiap_ringbuffer_s *rbuffer,
                                 unsigned long total_sample_time)
 {
-    struct ploarized_info *ppolar_head;
-    struct ploarized_info *ppolar_tail;
-    struct ploarized_info* ppolar_buff;
+    struct ploarized_info *ppolar_head = NULL;
+    struct ploarized_info *ppolar_tail = NULL;
+    struct ploarized_info* ppolar_buff = NULL;
     u32 buff_pos = 0;
 
     if (NULL == ppolar || NULL == rbuffer || NULL == head || NULL == di)
@@ -1649,7 +1650,7 @@ static void fill_up_polar_fifo(struct hisi_polar_device *di,
 static unsigned long polar_get_head_time(struct hisi_polar_device *di,
                                               struct list_head* head)
 {
-    struct ploarized_info *ppolar_head;
+    struct ploarized_info *ppolar_head = NULL;
     unsigned long sample_time;
 
     if (NULL == di || NULL == head)
@@ -1665,7 +1666,7 @@ static unsigned long polar_get_head_time(struct hisi_polar_device *di,
 static int polar_get_head_curr(struct hisi_polar_device *di,
                                               struct list_head* head)
 {
-    struct ploarized_info *ppolar_head;
+    struct ploarized_info *ppolar_head = NULL;
     int sample_curr;
 
     if (NULL == di || NULL == head)
@@ -1761,8 +1762,8 @@ void copy_fifo_buffer(struct list_head* fifo_head,
                            struct hisiap_ringbuffer_s *polar_rbuffer)
 {
     struct hisi_polar_device *di = g_polar_di;
-    struct ploarized_info* ppolar_temp;
-    struct ploarized_info* n;
+    struct ploarized_info* ppolar_temp = NULL;
+    struct ploarized_info* n = NULL;
 
     if (NULL == fifo_head || NULL == polar_head || NULL == di ||
         NULL == fifo_rbuffer || NULL == polar_rbuffer) {
@@ -1859,7 +1860,7 @@ bool is_polar_list_ready(void)
 {
     struct hisi_polar_device *di = g_polar_di;
     struct list_head* head = NULL;
-    struct ploarized_info *ppolar_head;
+    struct ploarized_info *ppolar_head = NULL;
 
     if (NULL == di)
         return FALSE;
@@ -2010,7 +2011,6 @@ int polar_params_calculate(struct polar_calc_info* polar,int ocv_soc_mv,
         curr_future_peak = curr_future_5s;
     polar->curr_5s = curr_future_5s;
     polar->curr_peak = curr_future_peak;
-    //polar->ocv = get_polar_ocv(batt_soc_real, cur, temp, vol_now);
     polar->ocv_old = ocv_soc_mv;
     polar->ori_vol = vol_now;
     polar->ori_cur = cur;
@@ -2119,12 +2119,22 @@ int test_get_trained_a(int temp, int soc)
     return get_trained_a(&polar_learn_lut,temp,soc);
 }
 
+short test_get_trained_a_vol(int temp, int soc)
+{
+    return get_trained_polar_vol(&polar_learn_lut,temp,soc);
+}
+
 int test_store_trained_a(int temp, int soc, long a, long polar_vol_uv)
 {
     store_trained_a(&polar_learn_lut, temp, soc, a, polar_vol_uv);
     return 0;
 }
 
+int test_store_neg_trained_a(int temp, int soc, long a, long polar_vol_uv)
+{
+    store_trained_a(&polar_learn_lut, temp, soc, a, -polar_vol_uv);
+    return 0;
+}
 int get_last_5s_curr(void)
 {
     struct hisi_polar_device *di = g_polar_di;
@@ -2167,11 +2177,10 @@ int test_could_vbat_learn_a (int ocv_soc_mv,int vol_now_mv, int cur,
   Return:         phandle of the battery
 ********************************************************/
 static struct device_node *get_batt_phandle(struct device_node *np,
-                    const char * prop, int p_num, u32 id_voltage)
+                    const char * prop, int p_num, const char *name)
 {
     int i, ret;
-    u32 id_identify_min = 0,id_identify_max = 0;
-    const char *batt_brand;
+    const char *cell_brand = NULL;
     struct device_node *temp_node = NULL;
 
     if (NULL == np)
@@ -2184,34 +2193,20 @@ static struct device_node *get_batt_phandle(struct device_node *np,
     /*iter the phandle list*/
     for (i = 0; i < p_num; i++) {
         temp_node = of_parse_phandle(np, prop, i);
-        ret = of_property_read_u32(temp_node, "id_voltage_min",
-                &id_identify_min);
-        if (ret) {
-            polar_err("get id_identify_min failed\n");
-            return NULL;
-        }
-        ret = of_property_read_u32(temp_node, "id_voltage_max",
-                &id_identify_max);
-        if (ret) {
-            polar_err("get id_identify_max failed\n");
-            return NULL;
-        }
-        polar_info("id_identify_min:%d,id_identify_max:%d\n",
-                id_identify_min, id_identify_max);
-        if ((id_voltage >= id_identify_min) && (id_voltage <= id_identify_max))
-            break;
+		ret = of_property_read_string(temp_node, "batt_brand", &cell_brand);
+		if (ret) {
+		    polar_err("get batt_brand failed\n");
+		    return NULL;
+		}
+		if (strstr(name, cell_brand))
+			break;
     }
     if (p_num == i) {
         polar_err("no battery modle matched\n");
         return NULL;
     }
     /*print the battery brand*/
-    ret = of_property_read_string(temp_node, "batt_brand", &batt_brand);
-    if (ret) {
-        polar_err("get batt_brand failed\n");
-        return NULL;
-    }
-    polar_info("batt_name:%s matched\n", batt_brand);
+    polar_info("batt_name:%s, cell_name:%s matched\n", name, cell_brand);
     return temp_node;
 }
 
@@ -2260,14 +2255,14 @@ static int get_polar_table_info(struct device_node *bat_node,
  * -ENODATA if property does not have a value, and -EOVERFLOW if the
  * property data isn't large enough
 ********************************************************/
-static int get_polar_dts_info(struct hisi_polar_device *di)
+static int get_polar_dts_info(struct hisi_polar_device *di, const char *name)
 {
-    int id_voltage = 0;
     int ret = 0, ret1 = 0;
     int batt_count = 0;
-    struct device_node *bat_node;
-    struct device_node *coul_node;
-    if (NULL == di)
+    struct device_node *bat_node = NULL;
+    struct device_node *coul_node = NULL;
+
+    if (di == NULL || name == NULL)
         return -EINVAL;
     coul_node = of_find_compatible_node(NULL, NULL, "hisi,coul_core");
     if (coul_node) {
@@ -2302,15 +2297,13 @@ static int get_polar_dts_info(struct hisi_polar_device *di)
         return ret;
     }
     polar_info("polar_batt_cnt:%d\n", batt_count);
-    id_voltage = hisi_battery_id_voltage();
     bat_node = get_batt_phandle(di->np, "polar_batt_name",
-                    batt_count, (u32)id_voltage);
+                    batt_count, name);
     if (NULL == bat_node) {
         polar_err("get polar_phandle failed\n");
         ret = -EINVAL;
         goto out;
     }
-    polar_err("polar_bat_node:%s\n", bat_node->name);
     ret = get_polar_table_info(bat_node,
                     "polar_ocv_table", (u32 *)polar_ocv_lut.ocv,
                     (POLAR_OCV_PC_TEMP_ROWS * POLAR_OCV_PC_TEMP_COLS));
@@ -2352,12 +2345,16 @@ static DEVICE_ATTR(self_learn_value, (S_IRUSR | S_IRGRP), polar_self_learn_show,
 ********************************************************/
 static int polar_info_init(struct hisi_polar_device *di)
 {
-    int i, batt_fcc;
-    int batt_present;
-    int ret = 0, ret1 = 0;
+    int i;
+	int ret = 0;
+	char batt_name[BATTCELL_NAME_SIZE_MAX] = {0};
+	int batt_fcc = hisi_battery_fcc();
+	int batt_fcc_design = hisi_battery_fcc_design();
+    int batt_present = is_hisi_battery_exist();
+	char *batt_brand = hisi_battery_brand();
 
-    batt_fcc = hisi_battery_fcc();
-    batt_present = is_hisi_battery_exist();
+	if (batt_present == 0)
+		return -1;
     for (i = 1; i < POLAR_CURR_ARRAY_NUM; i++){
         polar_curr_interval[i] = polar_curr_interval[i]
                         *  batt_fcc / UA_PER_MA;
@@ -2383,10 +2380,19 @@ static int polar_info_init(struct hisi_polar_device *di)
     if (ret)
         polar_err("failed to create file");
 #endif
-    ret1 = get_polar_dts_info(di);
-    if (ret1)
+	polar_info("cell name:%s_%d\n", batt_brand, batt_fcc_design);
+	ret = snprintf_s(batt_name, BATTCELL_NAME_SIZE_MAX,
+			BATTCELL_NAME_SIZE_MAX - 1, "%s_%d", batt_brand, batt_fcc_design);
+	if (ret < 0) {
+		polar_err("get batt cell name fail\n");
+		return ret;
+	}
+    ret = get_polar_dts_info(di, batt_name);
+    if (ret) {
         polar_err("get dts info failed\n");
-    return (ret||ret1);
+		return ret;
+	}
+    return 0;
 }
 
 //lint -esym(429, di)
@@ -2468,7 +2474,6 @@ static int hisi_coul_polar_remove(struct platform_device *pdev)
     struct hisi_polar_device *di = platform_get_drvdata(pdev);
 
     hrtimer_cancel(&di->coul_sample_timer);
-    di = NULL;
     g_polar_di = NULL;
 #ifdef CONFIG_HISI_DEBUG_FS
     device_remove_file(&pdev->dev, &dev_attr_self_learn_value);

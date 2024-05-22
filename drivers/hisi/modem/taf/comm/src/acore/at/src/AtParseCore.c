@@ -954,6 +954,7 @@ VOS_UINT32 CmdParseProc(VOS_UINT8 ucClientId, VOS_UINT8 *pData, VOS_UINT16 usLen
         }
     }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     /* 下发的AT命令是否与CL模式下需要保护的AT命令相匹配，匹配的话，直接返回操作不允许 */
     if (VOS_TRUE == At_CheckCurrRatModeIsCL(ucClientId))
     {
@@ -969,6 +970,7 @@ VOS_UINT32 CmdParseProc(VOS_UINT8 ucClientId, VOS_UINT8 *pData, VOS_UINT16 usLen
             return AT_CME_OPERATION_NOT_ALLOWED;
         }
     }
+#endif
 
     ulResult = (AT_RRETURN_CODE_ENUM_UINT32)atCmdDispatch(ucClientId);
 
@@ -2442,6 +2444,7 @@ VOS_UINT32 AT_IsAllClientDataMode(VOS_VOID)
 }
 
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT8 atCmdIsSupportedByCLMode(VOS_UINT8 ucIndex)
 {
@@ -2453,7 +2456,9 @@ VOS_UINT8 atCmdIsSupportedByCLMode(VOS_UINT8 ucIndex)
                                                                     AT_CMD_DTMF,*/
                                                              AT_CMD_CARDMODE,
 
+                                                             #if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))
                                                              AT_CMD_CSCB,
+                                                             #endif
                                                              /*AT_CMD_CNMI,*/
 
                                                              /*AT_CMD_CSASM,*/
@@ -2559,6 +2564,7 @@ VOS_UINT8 atCmdIsSupportedByGULMode(VOS_UINT8 ucIndex)
 
     return VOS_TRUE;
 }
+#endif
 
 
 

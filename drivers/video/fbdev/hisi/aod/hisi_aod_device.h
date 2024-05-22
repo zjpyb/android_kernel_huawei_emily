@@ -68,6 +68,7 @@
 #define AOD_IOCTL_AOD_GET_DYNAMIC_FB	_IOW(0xB2, 0x0D, unsigned long)
 #define AOD_IOCTL_AOD_FREE_DYNAMIC_FB   _IOW(0xB2, 0x0E, unsigned long)
 #define AOD_IOCTL_AOD_SET_MAX_AND_MIN_BACKLIGHT   _IOW(0xB2, 0x0F, unsigned long)
+#define AOD_IOCTL_AOD_SET_COMMON_SENSORHUB _IOW(0xB2, 0x10, unsigned long)
 
 #define LCD_TYPE_UNKNOWN 0
 #define LCD_TYPE_SAMSUNG_S6E3HF4 1
@@ -79,7 +80,12 @@
 #define MAX_BIT_MAP_SIZE 2
 
 #define DIFF_NUMBER 1
-
+#define SHMEM_START_MSG_CMD_TYPE	1
+#if defined (CONFIG_HISI_FB_V510)
+#define SHMEM_START_CONFIG	1
+#else
+#define SHMEM_START_CONFIG	0
+#endif
 enum aod_fb_pixel_format {
 	AOD_FB_PIXEL_FORMAT_RGB_565 = 0,
 	AOD_FB_PIXEL_FORMAT_RGBX_4444,
@@ -124,6 +130,12 @@ typedef enum aod_dmd_type {
 	AOD_DMD_SENSORHUB_RECOVERY,
 	AOD_DMD_BUTT,
 }AOD_DMD_TYPE_T;
+
+struct aod_common_data {
+	uint32_t size;
+	uint32_t cmd_type;
+	uint32_t data[0];
+};
 
 /*aod start*/
 typedef struct aod_notif {
@@ -236,6 +248,9 @@ typedef struct aod_dss_ctrl_sh_status {
 } aod_dss_ctrl_status_sh_t;
 
 typedef struct aod_start_config_mcu {
+#if SHMEM_START_CONFIG
+	uint32_t cmd_sub_type; // 1:start msg
+#endif
 	aod_display_pos_t aod_pos;
 	int32_t intelli_switching;
 	int32_t aod_type;
@@ -244,6 +259,12 @@ typedef struct aod_start_config_mcu {
 	uint32_t dynamic_ext_fb_count;
 	uint32_t face_id_fb_count;
 	uint32_t pd_logo_fb_count;
+#if SHMEM_START_CONFIG
+	uint32_t digital_clock_count;
+	uint32_t analog_clock_count;
+	uint32_t pattern_clock_count;
+	uint32_t dynamic_reserve_count;
+#endif
 	uint32_t dynamic_fb_addr[MAX_DYNAMIC_ALLOC_FB_COUNT];
 } aod_start_config_mcu_t;
 
@@ -302,11 +323,17 @@ typedef struct aod_ion_buf_fb {
     int32_t  ion_buf_fb;
 } aod_ion_buf_fb_t;
 typedef struct aod_dynamic_fb {
-    uint32_t dynamic_fb_count;
-    uint32_t dynamic_ext_fb_count;
-    uint32_t face_id_fb_count;
-    uint32_t pd_logo_fb_count;
-    aod_ion_buf_fb_t  str_ion_fb[MAX_DYNAMIC_ALLOC_FB_COUNT] ;
+	uint32_t dynamic_fb_count;
+	uint32_t dynamic_ext_fb_count;
+	uint32_t face_id_fb_count;
+	uint32_t pd_logo_fb_count;
+#if SHMEM_START_CONFIG
+	uint32_t digital_clock_count;
+	uint32_t analog_clock_count;
+	uint32_t pattern_clock_count;
+	uint32_t dynamic_reserve_count;
+#endif
+	aod_ion_buf_fb_t  str_ion_fb[MAX_DYNAMIC_ALLOC_FB_COUNT] ;
 } aod_dynamic_fb_space_t;
 
 
@@ -352,7 +379,7 @@ struct aod_data_t {
 	bool no_need_enter_aod;
 	struct semaphore aod_status_sem;
 	struct mutex aod_lock;
-	struct wake_lock  wlock;
+	struct wakeup_source  wlock;
 
 };
 #endif

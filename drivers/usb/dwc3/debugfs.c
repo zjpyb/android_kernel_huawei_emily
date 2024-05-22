@@ -32,6 +32,7 @@
 #include "gadget.h"
 #include "io.h"
 #include "debug.h"
+#include "dwc3-hisi-debugfs.h"
 
 #define dump_register(nm)				\
 {							\
@@ -300,7 +301,7 @@ static int dwc3_mode_show(struct seq_file *s, void *unused)
 		seq_printf(s, "device\n");
 		break;
 	case DWC3_GCTL_PRTCAP_OTG:
-		seq_printf(s, "OTG\n");
+		seq_printf(s, "otg\n");
 		break;
 	default:
 		seq_printf(s, "UNKNOWN %08x\n", DWC3_GCTL_PRTCAP(reg));
@@ -319,7 +320,6 @@ static ssize_t dwc3_mode_write(struct file *file,
 {
 	struct seq_file		*s = file->private_data;
 	struct dwc3		*dwc = s->private;
-	unsigned long		flags;
 	u32			mode = 0;
 	char			buf[32];
 
@@ -327,19 +327,16 @@ static ssize_t dwc3_mode_write(struct file *file,
 		return -EFAULT;
 
 	if (!strncmp(buf, "host", 4))
-		mode |= DWC3_GCTL_PRTCAP_HOST;
+		mode = DWC3_GCTL_PRTCAP_HOST;
 
 	if (!strncmp(buf, "device", 6))
-		mode |= DWC3_GCTL_PRTCAP_DEVICE;
+		mode = DWC3_GCTL_PRTCAP_DEVICE;
 
 	if (!strncmp(buf, "otg", 3))
-		mode |= DWC3_GCTL_PRTCAP_OTG;
+		mode = DWC3_GCTL_PRTCAP_OTG;
 
-	if (mode) {
-		spin_lock_irqsave(&dwc->lock, flags);
-		dwc3_set_prtcap(dwc, mode);
-		spin_unlock_irqrestore(&dwc->lock, flags);
-	}
+	dwc3_set_mode(dwc, mode);
+
 	return count;
 }
 
@@ -446,52 +443,7 @@ static int dwc3_link_state_show(struct seq_file *s, void *unused)
 	state = DWC3_DSTS_USBLNKST(reg);
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
-	switch (state) {
-	case DWC3_LINK_STATE_U0:
-		seq_printf(s, "U0\n");
-		break;
-	case DWC3_LINK_STATE_U1:
-		seq_printf(s, "U1\n");
-		break;
-	case DWC3_LINK_STATE_U2:
-		seq_printf(s, "U2\n");
-		break;
-	case DWC3_LINK_STATE_U3:
-		seq_printf(s, "U3\n");
-		break;
-	case DWC3_LINK_STATE_SS_DIS:
-		seq_printf(s, "SS.Disabled\n");
-		break;
-	case DWC3_LINK_STATE_RX_DET:
-		seq_printf(s, "Rx.Detect\n");
-		break;
-	case DWC3_LINK_STATE_SS_INACT:
-		seq_printf(s, "SS.Inactive\n");
-		break;
-	case DWC3_LINK_STATE_POLL:
-		seq_printf(s, "Poll\n");
-		break;
-	case DWC3_LINK_STATE_RECOV:
-		seq_printf(s, "Recovery\n");
-		break;
-	case DWC3_LINK_STATE_HRESET:
-		seq_printf(s, "HRESET\n");
-		break;
-	case DWC3_LINK_STATE_CMPLY:
-		seq_printf(s, "Compliance\n");
-		break;
-	case DWC3_LINK_STATE_LPBK:
-		seq_printf(s, "Loopback\n");
-		break;
-	case DWC3_LINK_STATE_RESET:
-		seq_printf(s, "Reset\n");
-		break;
-	case DWC3_LINK_STATE_RESUME:
-		seq_printf(s, "Resume\n");
-		break;
-	default:
-		seq_printf(s, "UNKNOWN %d\n", state);
-	}
+	seq_printf(s, "%s\n", dwc3_gadget_link_string(state));
 
 	return 0;
 }
@@ -689,30 +641,6 @@ out:
 	return 0;
 }
 
-static inline const char *dwc3_trb_type_string(struct dwc3_trb *trb)
-{
-	switch (DWC3_TRBCTL_TYPE(trb->ctrl)) {
-	case DWC3_TRBCTL_NORMAL:
-		return "normal";
-	case DWC3_TRBCTL_CONTROL_SETUP:
-		return "control-setup";
-	case DWC3_TRBCTL_CONTROL_STATUS2:
-		return "control-status2";
-	case DWC3_TRBCTL_CONTROL_STATUS3:
-		return "control-status3";
-	case DWC3_TRBCTL_CONTROL_DATA:
-		return "control-data";
-	case DWC3_TRBCTL_ISOCHRONOUS_FIRST:
-		return "isoc-first";
-	case DWC3_TRBCTL_ISOCHRONOUS:
-		return "isoc";
-	case DWC3_TRBCTL_LINK_TRB:
-		return "link";
-	default:
-		return "UNKNOWN";
-	}
-}
-
 static int dwc3_ep_trb_ring_show(struct seq_file *s, void *unused)
 {
 	struct dwc3_ep		*dep = s->private;
@@ -726,23 +654,23 @@ static int dwc3_ep_trb_ring_show(struct seq_file *s, void *unused)
 		goto out;
 	}
 
-	seq_printf(s, "enqueue pointer %d\n", dep->trb_enqueue);
-	seq_printf(s, "dequeue pointer %d\n", dep->trb_dequeue);
-	seq_printf(s, "\n--------------------------------------------------\n\n");
 	seq_printf(s, "buffer_addr,size,type,ioc,isp_imi,csp,chn,lst,hwo\n");
 
 	for (i = 0; i < DWC3_TRB_NUM; i++) {
 		struct dwc3_trb *trb = &dep->trb_pool[i];
+		unsigned int type = DWC3_TRBCTL_TYPE(trb->ctrl);
 
-		seq_printf(s, "%08x%08x,%d,%s,%d,%d,%d,%d,%d,%d\n",
+		seq_printf(s, "%08x%08x,%d,%s,%d,%d,%d,%d,%d,%d       %c%c\n",
 				trb->bph, trb->bpl, trb->size,
-				dwc3_trb_type_string(trb),
+				dwc3_trb_type_string(type),
 				!!(trb->ctrl & DWC3_TRB_CTRL_IOC),
 				!!(trb->ctrl & DWC3_TRB_CTRL_ISP_IMI),
 				!!(trb->ctrl & DWC3_TRB_CTRL_CSP),
 				!!(trb->ctrl & DWC3_TRB_CTRL_CHN),
 				!!(trb->ctrl & DWC3_TRB_CTRL_LST),
-				!!(trb->ctrl & DWC3_TRB_CTRL_HWO));
+				!!(trb->ctrl & DWC3_TRB_CTRL_HWO),
+				dep->trb_enqueue == i ? 'E' : ' ',
+				dep->trb_dequeue == i ? 'D' : ' ');
 	}
 
 out:
@@ -820,184 +748,17 @@ static void dwc3_debugfs_create_endpoint_dir(struct dwc3_ep *dep,
 static void dwc3_debugfs_create_endpoint_dirs(struct dwc3 *dwc,
 		struct dentry *parent)
 {
-	unsigned int i;
-
-	for (i = 0; i < dwc->num_in_eps; i++) {
-		u8		epnum = (i << 1) | 1;
-		struct dwc3_ep	*dep = dwc->eps[epnum];
-
-		if (!dep)
-			continue;
-
-		dwc3_debugfs_create_endpoint_dir(dep, parent);
-	}
-
-	for (i = 0; i < dwc->num_out_eps; i++) {
-		u8		epnum = (i << 1);
-		struct dwc3_ep	*dep = dwc->eps[epnum];
-
-		if (!dep)
-			continue;
-
-		dwc3_debugfs_create_endpoint_dir(dep, parent);
-	}
-}
-
-#ifdef CONFIG_HISI_DEBUG_FS
-static int dwc3_maximum_speed_show(struct seq_file *s, void *unused)
-{
-	struct dwc3		*dwc = s->private;
-	unsigned long		flags;
-
-	spin_lock_irqsave(&dwc->lock, flags);
-	seq_printf(s, "current maximum_speed %s\n"
-		      "Usage:\n"
-		      " write \"full\" into this file to force USB full-speed\n"
-		      " write \"high\" into this file to force USB high-speed\n",
-			usb_speed_string((enum usb_device_speed)dwc->maximum_speed));
-	spin_unlock_irqrestore(&dwc->lock, flags);
-	return 0;
-}
-
-static int dwc3_maximum_speed_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, dwc3_maximum_speed_show, inode->i_private);
-}
-
-static ssize_t dwc3_maximum_speed_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
-{
-	struct seq_file		*s = file->private_data;
-	struct dwc3		*dwc = s->private;
-	unsigned long		flags;
-	u32			maximum_speed;
-	char			buf[8] = {0};
-
-	if (copy_from_user(buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
-		return -EFAULT;
-
-	if (!strncmp(buf, "super+", 6))
-		maximum_speed = USB_SPEED_SUPER_PLUS;
-	else if (!strncmp(buf, "super", 5))
-		maximum_speed = USB_SPEED_SUPER;
-	else if (!strncmp(buf, "high", 4))
-		maximum_speed = USB_SPEED_HIGH;
-	else if (!strncmp(buf, "full", 4))
-		maximum_speed = USB_SPEED_FULL;
-	else if (!strncmp(buf, "clear", 5))
-		maximum_speed = USB_SPEED_UNKNOWN;
-	else
-		return -EINVAL;
-
-	spin_lock_irqsave(&dwc->lock, flags);
-	dwc->maximum_speed = maximum_speed;
-	spin_unlock_irqrestore(&dwc->lock, flags);
-
-	return count;
-}
-
-static const struct file_operations dwc3_maximum_speed_fops = {
-	.open			= dwc3_maximum_speed_open,
-	.write			= dwc3_maximum_speed_write,
-	.read			= seq_read,
-	.llseek			= seq_lseek,
-	.release		= single_release,
-};
-
-#define EP_DBG_FREE		"free"
-#define EP_DBG_USED		"used"
-#define EP_DBG_FAKE_USED	"fake_use"
-static int dwc3_ep_dbg_show(struct seq_file *s, void *unused)
-{
-	struct dwc3		*dwc = s->private;
-	unsigned long		flags;
-	struct usb_ep		*ep;
-	char			*str;
-	int i;
-
-	spin_lock_irqsave(&dwc->lock, flags);
-	seq_printf(s, "ep status list:\n");
-	for (i = 0; i < DWC3_ENDPOINTS_NUM; i++) {
-		ep = &dwc->eps[i]->endpoint;
-		str = EP_DBG_FREE;
-		if (ep->driver_data)
-			str = EP_DBG_USED;
-		if (ep->fake_claimed)
-			str = EP_DBG_FAKE_USED;
-
-		seq_printf(s, "%d: %s\t%s\n", i, dwc->eps[i]->name, str);
-	}
-	seq_printf(s, "\nwrite \"ep_index  1\" to the file to fake ep used\n");
-	seq_printf(s, "write \"ep_index  0\" to the file to set ep free\n");
-	seq_printf(s, "write \"-1  1/0\" to the file to fake/set ep used/free\n");
-	spin_unlock_irqrestore(&dwc->lock, flags);
-
-	return 0;
-}
-static int dwc3_ep_dbg_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, dwc3_ep_dbg_show, inode->i_private);
-}
-
-static ssize_t dwc3_ep_dbg_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
-{
-	struct seq_file		*s = file->private_data;
-	struct dwc3		*dwc = s->private;
-	char			buf[10] = {0};
-	int			ep_num;
-	int			set_use;
-	unsigned long		flags;
-	struct usb_ep		*ep;
 	int			i;
 
-	if (copy_from_user(buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
-		return -EFAULT;
+	for (i = 0; i < dwc->num_eps; i++) {
+		struct dwc3_ep	*dep = dwc->eps[i];
 
-	if (sscanf(buf, "%d %d", &ep_num, &set_use) > 5)
-		return -EINVAL;
+		if (!dep)
+			continue;
 
-	/* available ep_num: -1, 2 ~ DWC3_ENDPOINTS_NUM-1 */
-	if (ep_num < -1 || ep_num == 0 || ep_num == 1
-			|| ep_num >= DWC3_ENDPOINTS_NUM) {
-		pr_err("input %d error\n", ep_num);
-		return -EINVAL;
+		dwc3_debugfs_create_endpoint_dir(dep, parent);
 	}
-
-	spin_lock_irqsave(&dwc->lock, flags);
-	set_use = !!set_use;
-	/* fake or clear all fake_claimed */
-	if (ep_num == -1) {
-		for (i = 0; i < DWC3_ENDPOINTS_NUM; i++) {
-			ep = &dwc->eps[i]->endpoint;
-			if (set_use)
-				ep->fake_claimed = true;
-			else
-				ep->fake_claimed = false;
-		}
-		goto out;
-	}
-
-	/* fake ep is in use */
-	ep = &dwc->eps[ep_num]->endpoint;
-	if (set_use)
-		ep->fake_claimed = true;
-	else
-		ep->fake_claimed = false;
-out:
-	spin_unlock_irqrestore(&dwc->lock, flags);
-
-	return count;
 }
-
-static const struct file_operations dwc3_ep_dbg_fops = {
-	.open			= dwc3_ep_dbg_open,
-	.write			= dwc3_ep_dbg_write,
-	.read			= seq_read,
-	.llseek			= seq_lseek,
-	.release		= single_release,
-};
-#endif
 
 void dwc3_debugfs_init(struct dwc3 *dwc)
 {
@@ -1048,21 +809,7 @@ void dwc3_debugfs_init(struct dwc3 *dwc)
 		dwc3_debugfs_create_endpoint_dirs(dwc, root);
 	}
 
-#ifdef CONFIG_HISI_DEBUG_FS
-	if (IS_ENABLED(CONFIG_USB_DWC3_DUAL_ROLE) ||
-			IS_ENABLED(CONFIG_USB_DWC3_GADGET)) {
-		file = debugfs_create_file("maximum_speed", S_IRUGO | S_IWUSR, root,
-				dwc, &dwc3_maximum_speed_fops);
-		if (!file)
-			return;
-	}
-
-	file = debugfs_create_file("ep_dbg", S_IRUGO | S_IWUSR, root,
-			dwc, &dwc3_ep_dbg_fops);
-	if (!file)
-		return;
-#endif
-
+	dwc3_hisi_debugfs_init(dwc, root);
 }
 
 void dwc3_debugfs_exit(struct dwc3 *dwc)

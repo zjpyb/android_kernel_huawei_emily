@@ -10,6 +10,7 @@
 #include <linux/atomic.h>
 #include <linux/jiffies.h>
 #include "power.h"
+#include <linux/hisi/hisi_cpufreq_dt.h>
 
 /*
  *	control - Report/change current runtime PM setting of the device
@@ -263,7 +264,11 @@ static ssize_t pm_qos_latency_tolerance_store(struct device *dev,
 	s32 value;
 	int ret;
 
-	if (kstrtos32(buf, 0, &value)) {
+	if (kstrtos32(buf, 0, &value) == 0) {
+		/* Users can't write negative values directly */
+		if (value < 0)
+			return -EINVAL;
+	} else {
 		if (!strcmp(buf, "auto") || !strcmp(buf, "auto\n"))
 			value = PM_QOS_LATENCY_TOLERANCE_NO_CONSTRAINT;
 		else if (!strcmp(buf, "any") || !strcmp(buf, "any\n"))
@@ -593,6 +598,25 @@ static DEVICE_ATTR(async, 0644, async_show, async_store);
 #endif /* CONFIG_PM_SLEEP */
 #endif /* CONFIG_PM_ADVANCED_DEBUG */
 
+#ifdef CONFIG_HISI_FREQ_STATS_COUNTING_IDLE
+static ssize_t time_in_state_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	return hisi_time_in_state_show(dev->id, buf);
+}
+
+static DEVICE_ATTR(time_in_state, 0440, time_in_state_show, NULL);
+
+static struct attribute *time_in_state_attrs[] = {
+	&dev_attr_time_in_state.attr,
+	NULL,
+};
+static const struct attribute_group time_in_state_attr_group = {
+	.name	= power_group_name,
+	.attrs	= time_in_state_attrs,
+};
+#endif
+
 static struct attribute *power_attrs[] = {
 #ifdef CONFIG_PM_ADVANCED_DEBUG
 #ifdef CONFIG_PM_SLEEP
@@ -605,7 +629,7 @@ static struct attribute *power_attrs[] = {
 #endif /* CONFIG_PM_ADVANCED_DEBUG */
 	NULL,
 };
-static struct attribute_group pm_attr_group = {
+static const struct attribute_group pm_attr_group = {
 	.name	= power_group_name,
 	.attrs	= power_attrs,
 };
@@ -627,7 +651,7 @@ static struct attribute *wakeup_attrs[] = {
 #endif
 	NULL,
 };
-static struct attribute_group pm_wakeup_attr_group = {
+static const struct attribute_group pm_wakeup_attr_group = {
 	.name	= power_group_name,
 	.attrs	= wakeup_attrs,
 };
@@ -642,7 +666,7 @@ static struct attribute *runtime_attrs[] = {
 	&dev_attr_autosuspend_delay_ms.attr,
 	NULL,
 };
-static struct attribute_group pm_runtime_attr_group = {
+static const struct attribute_group pm_runtime_attr_group = {
 	.name	= power_group_name,
 	.attrs	= runtime_attrs,
 };
@@ -651,7 +675,7 @@ static struct attribute *pm_qos_resume_latency_attrs[] = {
 	&dev_attr_pm_qos_resume_latency_us.attr,
 	NULL,
 };
-static struct attribute_group pm_qos_resume_latency_attr_group = {
+static const struct attribute_group pm_qos_resume_latency_attr_group = {
 	.name	= power_group_name,
 	.attrs	= pm_qos_resume_latency_attrs,
 };
@@ -660,7 +684,7 @@ static struct attribute *pm_qos_latency_tolerance_attrs[] = {
 	&dev_attr_pm_qos_latency_tolerance_us.attr,
 	NULL,
 };
-static struct attribute_group pm_qos_latency_tolerance_attr_group = {
+static const struct attribute_group pm_qos_latency_tolerance_attr_group = {
 	.name	= power_group_name,
 	.attrs	= pm_qos_latency_tolerance_attrs,
 };
@@ -670,7 +694,7 @@ static struct attribute *pm_qos_flags_attrs[] = {
 	&dev_attr_pm_qos_remote_wakeup.attr,
 	NULL,
 };
-static struct attribute_group pm_qos_flags_attr_group = {
+static const struct attribute_group pm_qos_flags_attr_group = {
 	.name	= power_group_name,
 	.attrs	= pm_qos_flags_attrs,
 };
@@ -699,8 +723,18 @@ int dpm_sysfs_add(struct device *dev)
 		if (rc)
 			goto err_wakeup;
 	}
+#ifdef CONFIG_HISI_FREQ_STATS_COUNTING_IDLE
+	rc = sysfs_merge_group(&dev->kobj, &time_in_state_attr_group);
+	if (rc)
+		goto err_pm_qos;
+#endif
+
 	return 0;
 
+#ifdef CONFIG_HISI_FREQ_STATS_COUNTING_IDLE
+ err_pm_qos:
+	sysfs_unmerge_group(&dev->kobj, &pm_qos_latency_tolerance_attr_group);
+#endif
  err_wakeup:
 	sysfs_unmerge_group(&dev->kobj, &pm_wakeup_attr_group);
  err_runtime:
@@ -758,6 +792,9 @@ void rpm_sysfs_remove(struct device *dev)
 
 void dpm_sysfs_remove(struct device *dev)
 {
+#ifdef CONFIG_HISI_FREQ_STATS_COUNTING_IDLE
+	sysfs_unmerge_group(&dev->kobj, &time_in_state_attr_group);
+#endif
 	sysfs_unmerge_group(&dev->kobj, &pm_qos_latency_tolerance_attr_group);
 	dev_pm_qos_constraints_destroy(dev);
 	rpm_sysfs_remove(dev);

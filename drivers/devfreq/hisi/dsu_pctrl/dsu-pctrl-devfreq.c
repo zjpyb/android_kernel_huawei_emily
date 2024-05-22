@@ -57,6 +57,7 @@
 #include <linux/cpu_pm.h>
 #include <linux/cpu.h>
 #include <linux/perf_event.h>
+#include <securec.h>
 
 #include "governor.h"
 
@@ -180,7 +181,7 @@ do {							\
 
 
 #ifdef CONFIG_HISI_L3CACHE_SHARE_PERF
-#define FORBID_SHARE_NUM		1
+#define MAX_PORTIONS_NUM		4
 #define L3D_CACHE_REFILL_EV		0x02A
 #define L3D_CACHE_EV			0x02B
 
@@ -326,7 +327,11 @@ static atomic_t dsu_pctrl_device_id = ATOMIC_INIT(0);
 
 static const struct dsu_pctrl_data device_data[] = {
 	{.dsu_version = ARM_DSU_R0, .portion_min = 1, .portion_max = 2},
+#ifdef CONFIG_HISI_L3CACHE_SHARE_PERF
+	{.dsu_version = ARM_DSU_R1, .portion_min = 0, .portion_max = 4},
+#else
 	{.dsu_version = ARM_DSU_R1, .portion_min = 1, .portion_max = 4},
+#endif
 };
 
 static const struct of_device_id dsu_pctrl_devfreq_id[] = {
@@ -381,11 +386,10 @@ static ssize_t store_downsize_ratio(struct device *dev, struct device_attribute 
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
-
 	unsigned long value = 0;
 	int ret = 0;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
+	ret = sscanf_s(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
 
@@ -411,14 +415,17 @@ static ssize_t show_downsize_ratio(struct device *dev, struct device_attribute *
 	ssize_t count = 0;
 	int ret = 0;
 
-	ret = snprintf(buf + count, (PAGE_SIZE - count), "downsize_ratio = %u\n", dsu->downsize_ratio); /* unsafe_function_ignore: snprintf */
-	if (ret >= (PAGE_SIZE - count) || ret < 0) {	/*lint !e574 */
+	ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1), "downsize_ratio = %u\n", dsu->downsize_ratio);
+	if (ret < 0) {
 		goto err;
 	}
 	count += ret;
+	if ((unsigned int)count >= PAGE_SIZE) {
+		goto err;
+	}
 
-	ret = snprintf(buf + count, (PAGE_SIZE - count), "downsize_threshold = %lu\n", dsu->downsize_threshold); /* unsafe_function_ignore: snprintf */
-	if (ret >= (PAGE_SIZE - count) || ret < 0) {	/*lint !e574 */
+	ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1), "downsize_threshold = %lu\n", dsu->downsize_threshold);
+	if (ret < 0) {
 		goto err;
 	}
 	count += ret;
@@ -433,11 +440,10 @@ static ssize_t store_upsize_ratio(struct device *dev, struct device_attribute *a
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
-
 	unsigned long value = 0;
 	int ret = 0;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
+	ret = sscanf_s(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
 
@@ -463,14 +469,17 @@ static ssize_t show_upsize_ratio(struct device *dev, struct device_attribute *at
 	ssize_t count = 0;
 	int ret = 0;
 
-	ret = snprintf(buf + count, (PAGE_SIZE - count), "upsize_ratio = %u\n", dsu->upsize_ratio);	/* unsafe_function_ignore: snprintf */
-	if (ret >= (PAGE_SIZE - count) || ret < 0) {	/*lint !e574 */
+	ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1), "upsize_ratio = %u\n", dsu->upsize_ratio);
+	if (ret < 0) {
 		goto err;
 	}
 	count += ret;
+	if ((unsigned int)count >= PAGE_SIZE) {
+		goto err;
+	}
 
-	ret = snprintf(buf + count, (PAGE_SIZE - count), "upsize_threshold = %lu\n", dsu->upsize_threshold);	/* unsafe_function_ignore: snprintf */
-	if (ret >= (PAGE_SIZE - count) || ret < 0) {	/*lint !e574 */
+	ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1), "upsize_threshold = %lu\n", dsu->upsize_threshold);
+	if (ret < 0) {
 		goto err;
 	}
 	count += ret;
@@ -486,11 +495,10 @@ static ssize_t store_static_leakage(struct device *dev, struct device_attribute 
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
 	struct dsu_pctrl_data *data = dsu->dsu_data;
-
 	unsigned long value = 0;
 	int ret = 0;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
+	ret = sscanf_s(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
 
@@ -534,21 +542,18 @@ static ssize_t show_static_leakage(struct device *dev, struct device_attribute *
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", dsu->static_leakage_per_mb);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1 , "%u\n", dsu->static_leakage_per_mb);
 }
-
-
 
 static ssize_t store_dram_energy(struct device *dev, struct device_attribute *attr,
 			      const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
-
 	unsigned long value = 0;
 	int ret = 0;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
+	ret = sscanf_s(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
 
@@ -586,7 +591,7 @@ static ssize_t show_dram_energy(struct device *dev, struct device_attribute *att
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", dsu->dram_energy_per_mb);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%u\n", dsu->dram_energy_per_mb);
 }
 
 
@@ -596,21 +601,18 @@ static ssize_t show_max_threshold(struct device *dev, struct device_attribute *a
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
 
-	return snprintf(buf, PAGE_SIZE, "%lu\n", dsu->max_threshold);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%lu\n", dsu->max_threshold);
 }
-
-
 
 static ssize_t store_down_interval(struct device *dev, struct device_attribute *attr,
 			      const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct dsu_pctrl *dsu = dev_get_drvdata(devfreq->dev.parent);
-
 	unsigned long value = 0;
 	int ret = 0;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
+	ret = sscanf_s(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
 
@@ -634,14 +636,17 @@ static ssize_t show_down_interval(struct device *dev, struct device_attribute *a
 	ssize_t count = 0;
 	int ret = 0;
 
-	ret = snprintf(buf + count, (PAGE_SIZE - count), "down_interval = %u\n", dsu->down_interval); /* unsafe_function_ignore: snprintf */
-	if (ret >= (PAGE_SIZE - count) || ret < 0) {	/*lint !e574 */
+	ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1), "down_interval = %u\n", dsu->down_interval);
+	if (ret < 0) {
 		goto err;
 	}
 	count += ret;
+	if ((unsigned int)count >= PAGE_SIZE) {
+		goto err;
+	}
 
-	ret = snprintf(buf + count, (PAGE_SIZE - count), "down_polling_ms = %u\n", dsu->down_polling_ms); /* unsafe_function_ignore: snprintf */
-	if (ret >= (PAGE_SIZE - count) || ret < 0) {	/*lint !e574 */
+	ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1), "down_polling_ms = %u\n", dsu->down_polling_ms);
+	if (ret < 0) {
 		goto err;
 	}
 	count += ret;
@@ -658,14 +663,16 @@ static ssize_t store_power_control(struct device *dev, struct device_attribute *
 	unsigned long portion_active = 0;
 	int ret = 0;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
-	if (ret != 1)
+	ret = sscanf_s(buf, "%lu", &value);
+	if (ret != 1 || value > 4) {
+		dev_err(dev, "ret = %d, value = %lu\n", ret, value);
 		return -EINVAL;
+	}
 
 	portion_active = (1UL << value) - 1;
 	set_pwr_ctlr(portion_active);
 
-	return ret;
+	return count;
 }
 
 static ssize_t show_power_status(struct device *dev, struct device_attribute *attr,
@@ -675,7 +682,7 @@ static ssize_t show_power_status(struct device *dev, struct device_attribute *at
 	asm volatile("mrs %0,  s3_0_c15_c3_7" : "=r" (val));	/* CLUSTERPWRSTAT_EL1 */
 	dev_err(dev, "power_status = 0x%lx\n", val);
 
-	return snprintf(buf, PAGE_SIZE, "0x%lx\n", val);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "0x%lx\n", val);
 }
 static DEVICE_ATTR(power, 0660, show_power_status, store_power_control);
 
@@ -746,11 +753,11 @@ static unsigned long dsu_pctrl_get_cnt(struct perf_hwmon *hw)
 {
 	int cpu;
 	struct cpu_grp_info *cpu_grp = hw->cpu_grp;
-	struct dev_stats *devstats =  NULL;
+	struct dev_stats *devstats = NULL;
 
 	hw->total_refill= 0;
 	hw->total_access = 0;
-	for_each_cpu(cpu, &cpu_grp->inited_cpus){
+	for_each_cpu(cpu, &cpu_grp->inited_cpus) { /*lint !e574*/
 		read_perf_counters(cpu, hw);
 		devstats =  to_devstats(hw, cpu);
 		hw->total_refill += devstats->l3d_refill_cnt;
@@ -781,10 +788,10 @@ static void dsu_pctrl_stop_hwmon(struct perf_hwmon *hw)
 {
 	int cpu;
 	struct cpu_grp_info *cpu_grp = hw->cpu_grp;
-	struct dev_stats *devstats;
+	struct dev_stats *devstats = NULL;
 
 	get_online_cpus();
-	for_each_cpu(cpu, &cpu_grp->inited_cpus) {
+	for_each_cpu(cpu, &cpu_grp->inited_cpus) { /*lint !e574*/
 		delete_events(to_cpustats(cpu_grp, cpu));
 
 		devstats = to_devstats(hw, cpu);
@@ -811,7 +818,7 @@ static void dsu_pctrl_stop_hwmon(struct perf_hwmon *hw)
 
 static struct perf_event_attr *alloc_attr(void)
 {
-	struct perf_event_attr *attr;
+	struct perf_event_attr *attr = NULL;
 
 	attr = kzalloc(sizeof(struct perf_event_attr), GFP_KERNEL);
 	if (!attr)
@@ -827,8 +834,8 @@ static struct perf_event_attr *alloc_attr(void)
 
 static int set_events(struct cpu_grp_info *cpu_grp, int cpu)
 {
-	struct perf_event *pevent;
-	struct perf_event_attr *attr;
+	struct perf_event *pevent = NULL;
+	struct perf_event_attr *attr = NULL;
 	int err;
 	unsigned int i = 0, j = 0;
 	struct cpu_pmu_stats *cpustats = to_cpustats(cpu_grp, cpu);
@@ -869,7 +876,8 @@ static int dsu_pctrl_perf_cpu_callback(struct notifier_block *nb,
 		unsigned long action, void *hcpu)
 {
 	unsigned long cpu = (uintptr_t)hcpu;
-	struct cpu_grp_info *cpu_grp, *tmp;
+	struct cpu_grp_info *cpu_grp = NULL;
+	struct cpu_grp_info *tmp = NULL;
 
 	if (action != CPU_ONLINE)
 		return NOTIFY_OK;
@@ -896,7 +904,8 @@ static int dsu_pctrl_perf_cpu_callback(struct notifier_block *nb,
 #else
 static int __ref dsu_pctrl_perf_cpu_online(unsigned int cpu)
 {
-	struct cpu_grp_info *cpu_grp, *tmp;
+	struct cpu_grp_info *cpu_grp = NULL;
+	struct cpu_grp_info *tmp = NULL;
 
 	mutex_lock(&list_lock);
 	list_for_each_entry_safe(cpu_grp, tmp, &perf_mon_list, mon_list) {
@@ -905,7 +914,7 @@ static int __ref dsu_pctrl_perf_cpu_online(unsigned int cpu)
 			continue;
 
 		if (set_events(cpu_grp, cpu))
-			pr_warn("Failed to create perf ev for CPU%lu\n", cpu);
+			pr_warn("Failed to create perf ev for CPU%u\n", cpu);
 		else
 			cpumask_set_cpu(cpu, &cpu_grp->inited_cpus);
 
@@ -932,7 +941,7 @@ static int dsu_pctrl_start_hwmon(struct perf_hwmon *hw)
 #endif
 
 	get_online_cpus();
-	for_each_cpu(cpu, &cpu_grp->cpus) {
+	for_each_cpu(cpu, &cpu_grp->cpus) { /*lint !e574*/
 		ret = set_events(cpu_grp, cpu);
 		if (ret) {
 			if (!cpu_online(cpu)) {
@@ -1016,7 +1025,9 @@ static int dsu_pctrl_set_active_portions(struct device *dev,
 	struct dsu_pctrl *dsu = dev_get_drvdata(dev);
 	struct dsu_pctrl_data *data = dsu->dsu_data;
 	unsigned long portion_active;
-	//unsigned long portion_control;
+#ifdef CONFIG_HISI_L3CACHE_SHARE_PERF
+	unsigned int non_share_size;
+#endif
 
 	if (*portions < data->portion_min) {
 		dev_warn(dev, "%s: Target %lu < min = %u. Target set to min.\n",
@@ -1053,19 +1064,25 @@ static int dsu_pctrl_set_active_portions(struct device *dev,
 	 */
 #ifdef CONFIG_HISI_L3CACHE_SHARE_PERF
 	mutex_lock(&l3c_acp_lock);
-	if (true == req_pending_flag && *portions <= FORBID_SHARE_NUM){
-		if (false == acp_enable_flag){
+	non_share_size = MAX_PORTIONS_NUM - dsu->l3share_size;
+	/* if DSS request full size of L3Cache, group0 is shareable between acpu and DSS */
+	if (non_share_size >= MAX_PORTIONS_NUM || non_share_size == 0) {
+		non_share_size = 1;
+	}
+
+	if (req_pending_flag && *portions <= non_share_size) {
+		if (acp_enable_flag == false) {
 			acp_enable_flag = true;
 			l3_cache_enable_acp(dsu->l3share_id, dsu->l3share_size);
 			dev_dbg(dev, "enable acp id %d\n", dsu->l3share_id);
 			trace_dsu_pctrl_target_acp("enable acp", dsu->l3share_id);
 		}
-	}else if (true == acp_enable_flag && *portions > FORBID_SHARE_NUM){
-			acp_enable_flag = false;
-			req_pending_flag = true;
-			l3_cache_disable_acp(dsu->l3share_id);
-			dev_dbg(dev, "disable acp id %d\n", dsu->l3share_id);
-			trace_dsu_pctrl_target_acp("disable acp", dsu->l3share_id);
+	} else if (acp_enable_flag && *portions > non_share_size) {
+		acp_enable_flag = false;
+		req_pending_flag = true;
+		l3_cache_disable_acp(dsu->l3share_id);
+		dev_dbg(dev, "disable acp id %d\n", dsu->l3share_id);
+		trace_dsu_pctrl_target_acp("disable acp", dsu->l3share_id);
 	}
 	mutex_unlock(&l3c_acp_lock);
 #endif
@@ -1228,6 +1245,7 @@ static int dsu_pctrl_governor_get_target_portions(struct devfreq *df,
 	struct dsu_pctrl *dsu = dev_get_drvdata(df->dev.parent);
 	struct dsu_pctrl_data *data = dsu->dsu_data;
 	int err;
+
 	err = devfreq_update_stats(df);
 	if (err)
 		return err;
@@ -1319,7 +1337,7 @@ static int dsu_pctrl_reinit_device(struct device *dev)
 	struct dsu_pctrl *dsu = dev_get_drvdata(dev);
 
 	/* Clean the algorithm statistics and start from scrach */
-	memset(&dsu->alg, 0, sizeof(dsu->alg));	/* unsafe_function_ignore: memset */
+	(void)memset_s(&dsu->alg, sizeof(dsu->alg), 0, sizeof(dsu->alg));
 	dsu->alg.last_update = ktime_to_us(ktime_get());
 
 	return 0;
@@ -1330,7 +1348,7 @@ static int dsu_pctrl_reinit_device(struct device *dev)
 static int dsu_pctrl_setup_devfreq_profile(struct platform_device *pdev)
 {
 	struct dsu_pctrl *dsu = platform_get_drvdata(pdev);
-	struct devfreq_dev_profile *df_profile;
+	struct devfreq_dev_profile *df_profile = NULL;
 
 	dsu->devfreq_profile = devm_kzalloc(&pdev->dev,
 			sizeof(struct devfreq_dev_profile), GFP_KERNEL);
@@ -1477,7 +1495,7 @@ static inline void dsu_pctrl_opp_put(struct dev_pm_opp *opp)
 
 static void dsu_pctrl_remove_opps(struct platform_device *pdev)
 {
-	struct dev_pm_opp *opp;
+	struct dev_pm_opp *opp = NULL;
 	int i, count;
 	unsigned long freq;
 
@@ -1637,11 +1655,11 @@ static int l3c_acp_callback(struct notifier_block *nb,
 	struct dsu_pctrl *dsu = container_of(nb, struct dsu_pctrl,
 					     l3c_acp_notify);
 
-	struct l3_cache_request_params *l3share;
+	struct l3_cache_request_params *l3share = NULL;
 	unsigned long portion_active = 0xF;
 	unsigned long portions = dsu->dsu_data->portion_max;
 
-	if (IS_ERR_OR_NULL(data)){
+	if (IS_ERR_OR_NULL(data)) {
 		pr_err("%s data is NULL\n", __func__);
 		return NOTIFY_OK;
 	}
@@ -1676,7 +1694,7 @@ static int l3c_acp_callback(struct notifier_block *nb,
 /*lint -e429*/
 static int dsu_pctrl_devfreq_probe(struct platform_device *pdev)
 {
-	struct dsu_pctrl *dsu;
+	struct dsu_pctrl *dsu = NULL;
 	int ret = 0;
 
 	dev_err(&pdev->dev, "registering DSU portion control device.\n");

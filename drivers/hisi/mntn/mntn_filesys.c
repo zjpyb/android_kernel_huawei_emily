@@ -65,8 +65,8 @@ int mntn_filesys_rm_all_file(const char *path)
 	int nread = 0;
 	int bpos = 0;
 	int ret = 0;
-	char *buf;
-	struct linux_dirent *d;
+	char *buf = NULL;
+	struct linux_dirent *d = NULL;
 	char fullname[MNTN_FILESYS_FNAME_LEN] = { 0 };
 
 	if (NULL == path) {
@@ -230,10 +230,10 @@ int mntn_filesys_dir_list(const char *path, char *pout_namelist, int cnt,
 	int ret = 0;
 	int tmp_cnt = 0;
 	int ulen = 0;
-	char *buf;
+	char *buf = NULL;
 	char *ptmp = pout_namelist;
 	char d_type;
-	struct linux_dirent *d;
+	struct linux_dirent *d = NULL;
 
 	if (NULL == pout_namelist || NULL == path) {
 		MNTN_FILESYS_PRINT(
@@ -327,7 +327,10 @@ int mntn_filesys_write_log(const char *pname, const void *pbuf_vir, unsigned int
 		MNTN_FILESYS_PRINT("mntn_err: Fail to open file %s\n",
 				   pname);
 	} else {
-		sys_lseek((int)(fd), 0, 2);
+		if (sys_lseek((int)(fd), 0, 2)<0)
+		{
+			MNTN_FILESYS_PRINT("%s(): sys_lseek failed\n",__func__);
+		}
 		bytes = sys_write(fd, pbuf_vir, ulen);
 		if (bytes != ulen) {
 			MNTN_FILESYS_PRINT(

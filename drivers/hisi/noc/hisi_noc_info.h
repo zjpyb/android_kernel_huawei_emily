@@ -5,14 +5,14 @@
 #include <linux/bitops.h>
 #include <linux/io.h>
 /*
-* NoC. (NoC Mntn Module.)
-*
-* Copyright (c) 2016 Huawei Technologies CO., Ltd.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*/
+ * NoC. (NoC Mntn Module.)
+ *
+ * Copyright (c) 2016 Huawei Technologies CO., Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -35,18 +35,11 @@
 #define ARRAY_END_FLAG		0xffffffff
 #define ARRAY_SIZE_NOC(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-typedef struct datapath_routid_addr {
-	int init_flow;
-	int targ_flow;
-	int targ_subrange;
-	u64 init_localaddr;
-} ROUTE_ID_ADDR_STRU;
-
 struct noc_mid_info {
 	unsigned int idx;	/*Bus Id: 0 */
 	int init_flow;
-	int mask;
-	int mid_val;
+	unsigned int mask;
+	unsigned int mid_val;
 	char *mid_name;
 };
 
@@ -75,7 +68,7 @@ struct noc_bus_info {
 	char **targetflow_array;
 	unsigned int targetflow_array_size;
 
-	const ROUTE_ID_ADDR_STRU *routeid_tbl;
+	const struct datapath_routid_addr *routeid_tbl;
 	unsigned int routeid_tbl_size;
 
 	unsigned int opc_mask;
@@ -119,7 +112,24 @@ struct noc_dump_reg {
 	unsigned int offset;
 };
 
+/*hisi platform noc bus info struct.*/
+struct noc_platform_info {
+	const char *name;
+	unsigned int platform_id;
+	const struct noc_bus_info *p_noc_info_bus;
+	unsigned int noc_info_bus_len;
+	struct noc_dump_reg *p_noc_info_dump;
+	unsigned int noc_info_dump_len;
+	const struct noc_busid_initflow *p_noc_info_filter_initflow;
+	void (*pfun_get_size)(unsigned int *info_size, unsigned int *list_size);
+	unsigned int (*pfun_clock_enable)(struct hisi_noc_device *device,
+					   struct noc_node *node);
+};
+
 extern struct noc_dump_reg *noc_dump_reg_list;
+extern struct noc_dump_reg g_dump_reg_offset[MAX_DUMP_REG];
+extern struct noc_busid_initflow g_busid_initflow[MAX_FILTER_INITFLOW];
+extern struct noc_bus_info g_noc_bus_info[MAX_BUSID_VALE];
 
 extern const struct noc_bus_info noc_buses_info_hi3650[];
 extern struct noc_mid_info noc_mid_hi3650[];
@@ -176,14 +186,21 @@ extern struct noc_mid_info noc_mid_PHOE[];
 extern struct noc_dump_reg noc_dump_reg_list_PHOE[];
 extern const struct noc_busid_initflow hisi_filter_initflow_PHOE[];
 
+extern const struct noc_bus_info noc_buses_info_PHOE_cs2[];
+extern struct noc_mid_info noc_mid_PHOE_cs2[];
+extern struct noc_dump_reg noc_dump_reg_list_PHOE_cs2[];
+extern const struct noc_busid_initflow hisi_filter_initflow_PHOE_cs2[];
+
 int noc_set_buses_info(unsigned int info_index);
 void noc_get_mid_info(unsigned int bus_id, struct noc_mid_info **pt_info,
 		      unsigned int *pt_size);
 void noc_get_sec_info(unsigned int bus_id, struct noc_sec_info **pt_info,
 		      unsigned int *pt_size);
 struct noc_arr_info *noc_get_buses_info(void);
-
+unsigned int hisi_noc_clock_enable_check(struct hisi_noc_device *noc_dev, struct noc_node *node);
+extern int noc_get_platform_info_index(unsigned int platform_id);
 extern const struct noc_bus_info *noc_get_bus_info(unsigned int bus_id);
+extern struct noc_platform_info g_noc_platform_info[];
 extern unsigned int hisi_noc_get_bus_info_num(void);
 extern unsigned int hisi_noc_get_dump_reg_list_num(void);
 extern void hisi_get_noc_initflow(const struct noc_busid_initflow
@@ -200,16 +217,14 @@ extern void hisi_noc_get_array_size_kirin970_es(unsigned int *bus_info_size,
 extern void hisi_noc_get_array_size_kirin970(unsigned int *bus_info_size,
 					     unsigned int *dump_list_size);
 extern void hisi_noc_get_array_size_ATLA_es(unsigned int *bus_info_size,
-		                 unsigned int *dump_list_size);
+						unsigned int *dump_list_size);
 extern void hisi_noc_get_array_size_ATLA(unsigned int *bus_info_size,
-		                 unsigned int *dump_list_size);
+						unsigned int *dump_list_size);
 extern void hisi_noc_get_array_size_MIA(unsigned int *bus_info_size,
 					     unsigned int *dump_list_size);
 extern void hisi_noc_get_array_size_ORLA(unsigned int *bus_info_size,
-		                 unsigned int *dump_list_size);
-extern void hisi_noc_get_array_size_PHOE_es(unsigned int *bus_info_size,
-					     unsigned int *dump_list_size);
-extern void hisi_noc_get_array_size_PHOE(unsigned int *bus_info_size,
+						unsigned int *dump_list_size);
+extern void hisi_noc_get_array_size_PHOE_cs2(unsigned int *bus_info_size,
 					     unsigned int *dump_list_size);
 
 extern unsigned int hisi_noc_clock_enable(struct hisi_noc_device *noc_dev,
@@ -227,11 +242,11 @@ extern unsigned int hisi_noc_clock_enable_kirin970_es(struct hisi_noc_device
 						      *noc_dev,
 						      struct noc_node *node);
 extern unsigned int hisi_noc_clock_enable_ATLA_es(struct hisi_noc_device
-		                      *noc_dev,
-		                      struct noc_node *node);
+								*noc_dev,
+								struct noc_node *node);
 extern unsigned int hisi_noc_clock_enable_ATLA(struct hisi_noc_device
-		                      *noc_dev,
-		                      struct noc_node *node);
+								*noc_dev,
+								struct noc_node *node);
 extern unsigned int hisi_noc_clock_enable_kirin970(struct hisi_noc_device
 						   *noc_dev,
 						   struct noc_node *node);
@@ -239,12 +254,9 @@ extern unsigned int hisi_noc_clock_enable_MIA(struct hisi_noc_device
 						   *noc_dev,
 						   struct noc_node *node);
 extern unsigned int hisi_noc_clock_enable_ORLA(struct hisi_noc_device
-		                      *noc_dev,
-		                      struct noc_node *node);
-extern unsigned int hisi_noc_clock_enable_PHOE_es(struct hisi_noc_device
-						   *noc_dev,
-						   struct noc_node *node);
-extern unsigned int hisi_noc_clock_enable_PHOE(struct hisi_noc_device
+								*noc_dev,
+								struct noc_node *node);
+extern unsigned int hisi_noc_clock_enable_PHOE_cs2(struct hisi_noc_device
 						   *noc_dev,
 						   struct noc_node *node);
 

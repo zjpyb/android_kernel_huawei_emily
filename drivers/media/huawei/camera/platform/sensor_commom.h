@@ -57,12 +57,12 @@ struct sensor_cfg_data;
 #define EXT_NAME_NUM                   (5)
 #define EXT_THRESHOLD_NUM              (EXT_NAME_NUM*2)
 
-typedef enum _ext_type
-{
-    NO_EXT_INFO = 0,
-    EXT_INFO_NO_ADC = 1,
-    EXT_INFO_ADC = 2,
-}ext_type;
+typedef enum _ext_type {
+	NO_EXT_INFO = 0,
+	EXT_INFO_NO_ADC = 1,
+	EXT_INFO_ADC = 2,
+	EXT_INFO_GPIO = 3, /* use gpio 3 status to id 3 types */
+} ext_type;
 
 
 /***************************** cfg type define *******************************/
@@ -133,6 +133,7 @@ typedef enum _ext_type
 #define PMIC_2P85V              2850000
 #define PMIC_2P9V              2900000
 #define PMIC_3PV                3000000
+#define MULTIPLEX_GPIO_MAX         4
 
 enum sensor_power_state_t{
     POWER_OFF = 0,
@@ -202,6 +203,8 @@ enum sensor_power_seq_type_t {
     SENSOR_LASER_XSHUT,/*xshut used for laser*/
     SENSOR_MIPI_SW2,
     SENSOR_PMIC2,
+    SENSOR_BUCK, /* lion buck power */
+    SENSOR_BOOT_5V,
 };
 
 enum sensor_power_pmic_type_t {
@@ -347,6 +350,7 @@ typedef enum {
     AFVDD_EN,/*used for power up afvdd gpio*/
     LASER_XSHUT,/*laser*/
     MIPI_SW2, // used for 2nd mipisw
+    BUCK, /* camera buck */
     IO_MAX,
 } gpio_t;
 
@@ -361,71 +365,76 @@ typedef struct _tag_rpc_info_t {
     int camera_status;
 } rpc_info_t;
 
-typedef struct _tag_hwsensor_board_info
-{
-    const char *name;   /* sensor name */
-    struct device *dev;
+typedef struct _tag_hwsensor_board_info {
+	const char *name;   /* sensor name */
+	struct device *dev;
 
-    /* interface_type : MIPI or DVP */
-    data_interface_t interface_type;
-    csi_lane_t csi_lane;
-    csi_index_t csi_index;
-    u32 csi_mipi_clk;
+	/* interface_type : MIPI or DVP */
+	data_interface_t interface_type;
+	csi_lane_t csi_lane;
+	csi_index_t csi_index;
+	u32 csi_mipi_clk;
 
-    sensor_power_t power_conf;
-    /* regulator: dvdd, avdd, iopw, vcm*/
-    int ldo_num;
-    struct regulator_bulk_data ldo[LDO_MAX];
+	sensor_power_t power_conf;
+	/* regulator: dvdd, avdd, iopw, vcm*/
+	int ldo_num;
+	struct regulator_bulk_data ldo[LDO_MAX];
 
-    /* i2c  */
-    struct pinctrl *pctrl;
-    struct pinctrl_state *pinctrl_def;
-    struct pinctrl_state *pinctrl_idle;
+	/* i2c  */
+	struct pinctrl *pctrl;
+	struct pinctrl_state *pinctrl_def;
+	struct pinctrl_state *pinctrl_idle;
 
-    sensor_index_t sensor_index;
-    i2c_t i2c_config;
-    i2c_t otp_i2c_config;
+	sensor_index_t sensor_index;
+	const char *bus_type; /* I2C, I3C */
+	i2c_t i2c_config;
+	i2c_t otp_i2c_config;
 
-    int gpio_num;
-    struct gpio gpios[IO_MAX];
-    int active_gpios[IO_MAX];
-    unsigned int sensor_chipid;
-    unsigned int camif_id;
-    const char *vcm_name;
-    int vcm_enable;
+	int gpio_num;
+	struct gpio gpios[IO_MAX];
+	int active_gpios[IO_MAX];
+	unsigned int sensor_chipid;
+	unsigned int camif_id;
+	const char *vcm_name;
+	int vcm_enable;
 
-    unsigned int sensor_type;
-    int extisp_type;
+	unsigned int sensor_type;
+	int extisp_type;
 
-    unsigned int mclk;
-    unsigned int phy_clk_freq;
-    unsigned int phy_clk_num;
-    struct clk *phy_clk[CSI_INDEX_MAX];
-    unsigned int ldo_diverse;/*this is used to distinguish different dvdd voltage values for main camera sensors*/
-    int csi_id[2];
-    int i2c_id[2];
-    int module_type;
-    int flash_pos_type;//0-alone 1-mix
-    int reset_type;
-    int release_value;  //reset gpio release active value
-    int hold_value;  //reset gpio hold activity value
-    int topology_type;//hardware topology type for structured light
-    int            phyinfo_valid;
-    phy_info_t     phyinfo;
-    /*add for TOF Tx name*/
-    unsigned int ext_type;
-    int adc_channel;
-    int ext_num;
-    int adc_threshold[EXT_THRESHOLD_NUM];
-    char ext_name[EXT_NAME_NUM][DEVICE_NAME_SIZE];
-    /*add for Txx rpc*/
-    int need_rpc;//radio power ctl for radio frequency interference
-    rpc_info_t rpc_info;
-    /* add for multi mipisw */
-    unsigned int dynamic_mipisw_num; // for dynamic mipisw in do_hw_reset
-    unsigned int mipisw_enable_value0;
-    unsigned int mipisw_enable_value1;
-    int lpm3_gpu_buck; // for the camera is disturbed by lpm3
+	unsigned int mclk;
+	unsigned int phy_clk_freq;
+	unsigned int phy_clk_num;
+	struct clk *phy_clk[CSI_INDEX_MAX];
+	/* this is used to distinguish different dvdd voltage values for main camera sensors */
+	unsigned int ldo_diverse;
+	int csi_id[2];
+	int i2c_id[2];
+	int multiplex_gpio_id[MULTIPLEX_GPIO_MAX];
+	int ao_i2c_id;
+	int module_type;
+	int flash_pos_type; /* 0-alone 1-mix */
+	int reset_type;
+	int release_value; /* reset gpio release active value */
+	int hold_value; /*reset gpio hold activity value */
+	int topology_type; /* hardware topology type for structured light */
+	int            phyinfo_valid;
+	phy_info_t     phyinfo;
+	/* add for TOF Tx name */
+	unsigned int ext_type;
+	int adc_channel;
+	int ext_num;
+	int adc_threshold[EXT_THRESHOLD_NUM];
+	char ext_name[EXT_NAME_NUM][DEVICE_NAME_SIZE];
+	/* add for Txx rpc */
+	int need_rpc; /* radio power ctl for radio frequency interference */
+	rpc_info_t rpc_info;
+	/* add for multi mipisw */
+	unsigned int dynamic_mipisw_num; /* for dynamic mipisw in do_hw_reset */
+	unsigned int mipisw_enable_value0;
+	unsigned int mipisw_enable_value1;
+	int lpm3_gpu_buck; /*for the camera is disturbed by lpm3 */
+	/* use power down seq, not reverse order of power on seq */
+	unsigned int use_power_down_seq;
 } hwsensor_board_info_t;
 
 struct hisi_sensor_awb_otp {

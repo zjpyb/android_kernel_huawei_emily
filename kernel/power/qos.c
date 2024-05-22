@@ -165,18 +165,18 @@ static struct pm_qos_object memory_throughput_up_th_pm_qos = {
 };
 #endif
 
-#ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
-static BLOCKING_NOTIFIER_HEAD(acpuddr_link_governor_level_notifier);
-static struct pm_qos_constraints acpuddr_link_gov_lvl_constraints = {
-	.list = PLIST_HEAD_INIT(acpuddr_link_gov_lvl_constraints.list),
-	.target_value = PM_QOS_ACPUDDR_LINK_GOVERNOR_LEVEL_DEFAULT_VALUE,
-	.default_value = PM_QOS_ACPUDDR_LINK_GOVERNOR_LEVEL_DEFAULT_VALUE,
-	.no_constraint_value = PM_QOS_ACPUDDR_LINK_GOVERNOR_LEVEL_DEFAULT_VALUE,
+#ifdef CONFIG_HISI_FREQ_LINK
+static BLOCKING_NOTIFIER_HEAD(freq_link_level_notifier);
+static struct pm_qos_constraints freq_link_level_constraints = {
+	.list = PLIST_HEAD_INIT(freq_link_level_constraints.list),
+	.target_value = PM_QOS_FREQ_LINK_LEVEL_DEFAULT_VALUE,
+	.default_value = PM_QOS_FREQ_LINK_LEVEL_DEFAULT_VALUE,
+	.no_constraint_value = PM_QOS_FREQ_LINK_LEVEL_DEFAULT_VALUE,
 	.type = PM_QOS_MIN,
-	.notifiers = &acpuddr_link_governor_level_notifier,
+	.notifiers = &freq_link_level_notifier,
 };
-static struct pm_qos_object acpuddr_link_gov_lvl_pm_qos = {
-	.constraints = &acpuddr_link_gov_lvl_constraints,
+static struct pm_qos_object freq_link_level_pm_qos = {
+	.constraints = &freq_link_level_constraints,
 	.name = "acpuddr_link_governor_level",
 };
 #endif
@@ -195,6 +195,20 @@ static struct pm_qos_object hisi_npu_freq_dnlimit_pm_qos = {
 	.constraints = &hisi_npu_freq_dnlimit_constraints,
 	.name = "npu_freq_dnlimit",
 };
+
+static BLOCKING_NOTIFIER_HEAD(hisi_npu_freq_uplimit_notifier);
+static struct pm_qos_constraints hisi_npu_freq_uplimit_constraints = {
+	.list = PLIST_HEAD_INIT(hisi_npu_freq_uplimit_constraints.list),
+	.target_value = PM_QOS_HISI_NPU_FREQ_UPLIMIT_DEFAULT_VALUE,
+	.default_value = PM_QOS_HISI_NPU_FREQ_UPLIMIT_DEFAULT_VALUE,
+	.no_constraint_value = PM_QOS_HISI_NPU_FREQ_UPLIMIT_DEFAULT_VALUE,
+	.type = PM_QOS_MIN,
+	.notifiers = &hisi_npu_freq_uplimit_notifier,
+};
+static struct pm_qos_object hisi_npu_freq_uplimit_pm_qos = {
+	.constraints = &hisi_npu_freq_uplimit_constraints,
+	.name = "npu_freq_uplimit",
+};
 #endif
 
 static struct pm_qos_object *pm_qos_array[] = {
@@ -208,11 +222,12 @@ static struct pm_qos_object *pm_qos_array[] = {
 	&memory_throughput_pm_qos,
 	&memory_throughput_up_th_pm_qos,
 #endif
-#ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
-	&acpuddr_link_gov_lvl_pm_qos,
+#ifdef CONFIG_HISI_FREQ_LINK
+	&freq_link_level_pm_qos,
 #endif
 #ifdef CONFIG_HISI_NPUFREQ_PM_QOS
 	&hisi_npu_freq_dnlimit_pm_qos,
+	&hisi_npu_freq_uplimit_pm_qos,
 #endif
 };
 
@@ -572,16 +587,7 @@ void pm_qos_update_request(struct pm_qos_request *req,
 		return;
 	}
 
-	/*
-	 * This function may be called very early during boot, for example,
-	 * from of_clk_init(), where irq needs to stay disabled.
-	 * cancel_delayed_work_sync() assumes that irq is enabled on
-	 * invocation and re-enables it on return.  Avoid calling it until
-	 * workqueue is initialized.
-	 */
-	if (keventd_up())
-		cancel_delayed_work_sync(&req->work);
-
+	cancel_delayed_work_sync(&req->work);
 	__pm_qos_update_request(req, new_value);
 }
 EXPORT_SYMBOL_GPL(pm_qos_update_request);

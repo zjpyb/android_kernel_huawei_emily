@@ -12,4 +12,3 @@ endif
 obj-$(CONFIG_GPU_GMC_GENERIC) += gmc.o
 obj-$(CONFIG_GPU_GMC_GENERIC) += gmc_storage.o
 
-EXTRA_CFLAGS += -Idrivers/hisi/tzdriver/libhwsecurec

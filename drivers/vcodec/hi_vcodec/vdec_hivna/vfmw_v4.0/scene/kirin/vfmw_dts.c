@@ -1,79 +1,90 @@
+
+
 #include "vfmw_dts.h"
 #include "sysconfig.h"
 #include "public.h"
 
-UINT32  gIsFPGA              = 0;
-UINT32  gVdhRegBaseAddr      = 0;
-UINT32  gScdRegBaseAddr      = 0;
-UINT32  gBpdRegBaseAddr      = 0;
-UINT32  gVdhRegRange         = 0;
-UINT32  gSOFTRST_REQ_Addr    = 0;
-UINT32  gSOFTRST_OK_ADDR     = 0;
-UINT64  gSmmuPageBase        = 0;
-UINT32  gPERICRG_RegBaseAddr = 0;
-UINT32  gVdecQosMode         = 0;
+UINT32  g_is_fpga;
+UINT32  g_vdh_reg_base_addr;
+UINT32  g_scd_reg_base_addr;
+UINT32  g_bpd_reg_base_addr;
+UINT32  g_vdh_reg_range;
+UINT32  g_soft_rst_req_addr;
+UINT32  g_soft_rst_ok_addr;
+UINT64  g_smmu_page_base;
+UINT32  g_pericrg_reg_base_addr;
+UINT32  g_vdec_qos_mode;
 
 /* irq num */
-UINT32  gVdecIrqNumNorm           = 0;
-UINT32  gVdecIrqNumProt           = 0;
-UINT32  gVdecIrqNumSafe           = 0;
+UINT32  g_vdec_irq_num_norm;
+UINT32  g_vdec_irq_num_prot;
+UINT32  g_vdec_irq_num_safe;
 
-SINT32 VFMW_SetDtsConfig(VFMW_DTS_CONFIG_S *pDtsConfig)
+SINT32 vfmw_set_dts_config(vfmw_dts_config_s *p_dts_config)
 {
-	if (pDtsConfig == NULL) {
-		dprint(PRN_ERROR, "%s : pDtsConfig is NULL\n", __func__);
+	if (p_dts_config == NULL) {
+		dprint(PRN_ERROR, "%s : p_dts_config is NULL\n", __func__);
 		return VDEC_ERR;
 	}
 
-	if (pDtsConfig->VdecIrqNumNorm == 0 || pDtsConfig->VdecIrqNumProt == 0 || pDtsConfig->VdecIrqNumSafe == 0   ||
-	    pDtsConfig->VdhRegBaseAddr == 0 || pDtsConfig->VdhRegRange == 0    || pDtsConfig->SmmuPageBaseAddr == 0 ||
-	    pDtsConfig->PERICRG_RegBaseAddr == 0) {
-		dprint(PRN_ERROR, "%s invalid param: IsFPGA : %d, VdecIrqNumNorm : %d\n", __func__, pDtsConfig->IsFPGA, pDtsConfig->VdecIrqNumNorm);
-             dprint(PRN_ERROR,"VdecIrqNumProt : %d, VdecIrqNumSafe : %d, VdhRegBaseAddr : %pK\n", pDtsConfig->VdecIrqNumProt, pDtsConfig->VdecIrqNumSafe, (void *)(uintptr_t)(pDtsConfig->VdhRegBaseAddr));
-             dprint(PRN_ERROR,"VdhRegSize : %d, SmmuPageBaseAddr : %pK, PERICRG_RegBaseAddr : %pK\n", pDtsConfig->VdhRegRange, (void *)(uintptr_t)(pDtsConfig->SmmuPageBaseAddr), (void *)(uintptr_t)(pDtsConfig->PERICRG_RegBaseAddr));
+	if (p_dts_config->vdec_irq_num_norm == 0 ||
+		p_dts_config->vdec_irq_num_prot == 0 ||
+		p_dts_config->vdec_irq_num_safe == 0 ||
+		p_dts_config->vdh_reg_base_addr == 0 ||
+		p_dts_config->vdh_reg_range == 0    ||
+		p_dts_config->smmu_page_base_addr == 0 ||
+		p_dts_config->pericrg_reg_base_addr == 0) {
+		dprint(PRN_ERROR, "%s invalid param: is_fpga : %d, vdec_irq_num_norm : %d\n", __func__, p_dts_config->is_fpga,
+			p_dts_config->vdec_irq_num_norm);
+		dprint(PRN_ERROR, "vdec_irq_num_prot : %d, vdec_irq_num_safe : %d, vdh_reg_base_addr : %pK\n",
+			p_dts_config->vdec_irq_num_prot, p_dts_config->vdec_irq_num_safe,
+			(void *)(uintptr_t)(p_dts_config->vdh_reg_base_addr));
+		dprint(PRN_ERROR, "VdhRegSize : %d, smmu_page_base_addr : %pK, pericrg_reg_base_addr : %pK\n",
+			p_dts_config->vdh_reg_range, (void *)(uintptr_t)(p_dts_config->smmu_page_base_addr),
+			(void *)(uintptr_t)(p_dts_config->pericrg_reg_base_addr));
 		return VDEC_ERR;
 	}
 
-	gIsFPGA              = pDtsConfig->IsFPGA;
-	gVdecIrqNumNorm      = pDtsConfig->VdecIrqNumNorm;
-	gVdecIrqNumProt      = pDtsConfig->VdecIrqNumProt;
-	gVdecIrqNumSafe      = pDtsConfig->VdecIrqNumSafe;
+	g_is_fpga                = p_dts_config->is_fpga;
+	g_vdec_irq_num_norm      = p_dts_config->vdec_irq_num_norm;
+	g_vdec_irq_num_prot      = p_dts_config->vdec_irq_num_prot;
+	g_vdec_irq_num_safe      = p_dts_config->vdec_irq_num_safe;
 
-	gVdhRegBaseAddr      = pDtsConfig->VdhRegBaseAddr;
-	gVdhRegRange         = pDtsConfig->VdhRegRange;
-	gSmmuPageBase        = pDtsConfig->SmmuPageBaseAddr;
-	gPERICRG_RegBaseAddr = pDtsConfig->PERICRG_RegBaseAddr;
-	gVdecQosMode         = pDtsConfig->VdecQosMode;
+	g_vdh_reg_base_addr      = p_dts_config->vdh_reg_base_addr;
+	g_vdh_reg_range          = p_dts_config->vdh_reg_range;
+	g_smmu_page_base         = p_dts_config->smmu_page_base_addr;
+	g_pericrg_reg_base_addr  = p_dts_config->pericrg_reg_base_addr;
+	g_vdec_qos_mode          = p_dts_config->vdec_qos_mode;
 
-	gScdRegBaseAddr      = gVdhRegBaseAddr + SCD_REG_OFFSET;
-	gBpdRegBaseAddr      = gVdhRegBaseAddr + BPD_REG_OFFSET;
-	gSOFTRST_REQ_Addr    = gVdhRegBaseAddr + SOFTRST_REQ_OFFSET;
-	gSOFTRST_OK_ADDR     = gVdhRegBaseAddr + SOFTRST_OK_OFFSET;
+	g_scd_reg_base_addr      = g_vdh_reg_base_addr + SCD_REG_OFFSET;
+	g_bpd_reg_base_addr      = g_vdh_reg_base_addr + BPD_REG_OFFSET;
+	g_soft_rst_req_addr      = g_vdh_reg_base_addr + SOFTRST_REQ_OFFSET;
+	g_soft_rst_ok_addr       = g_vdh_reg_base_addr + SOFTRST_OK_OFFSET;
 
 	return VDEC_OK;
 }
 
-SINT32 VFMW_GetDtsConfig(VFMW_DTS_CONFIG_S *pDtsConfig)
+SINT32 vfmw_get_dts_config(vfmw_dts_config_s *p_dts_config)
 {
-	if (pDtsConfig == NULL) {
-		dprint(PRN_ERROR, "%s FATAL: pDtsConfig is NULL\n", __func__);
+	if (p_dts_config == NULL) {
+		dprint(PRN_ERROR, "%s FATAL: p_dts_config is NULL\n", __func__);
 		return VDEC_ERR;
 	}
 
-	pDtsConfig->IsFPGA              = gIsFPGA;
-	pDtsConfig->VdecIrqNumNorm      = gVdecIrqNumNorm;
-	pDtsConfig->VdecIrqNumProt      = gVdecIrqNumProt;
-	pDtsConfig->VdecIrqNumSafe      = gVdecIrqNumSafe;
+	p_dts_config->is_fpga               = g_is_fpga;
+	p_dts_config->vdec_irq_num_norm     = g_vdec_irq_num_norm;
+	p_dts_config->vdec_irq_num_prot     = g_vdec_irq_num_prot;
+	p_dts_config->vdec_irq_num_safe     = g_vdec_irq_num_safe;
 
-	pDtsConfig->VdhRegBaseAddr      = gVdhRegBaseAddr;
-	pDtsConfig->VdhRegRange         = gVdhRegRange;
-	pDtsConfig->SmmuPageBaseAddr    = gSmmuPageBase;
+	p_dts_config->vdh_reg_base_addr     = g_vdh_reg_base_addr;
+	p_dts_config->vdh_reg_range         = g_vdh_reg_range;
+	p_dts_config->smmu_page_base_addr   = g_smmu_page_base;
 
-	pDtsConfig->PERICRG_RegBaseAddr = gPERICRG_RegBaseAddr;
+	p_dts_config->pericrg_reg_base_addr = g_pericrg_reg_base_addr;
 
 	return VDEC_OK;
 }
 
 #ifdef ENV_ARMLINUX_KERNEL
-EXPORT_SYMBOL(VFMW_SetDtsConfig);
+EXPORT_SYMBOL(vfmw_set_dts_config);
 #endif

@@ -14,3 +14,8 @@ config WIFI_DELAY_STATISTIC
 config HW_SNIFFER
 	bool "hw sniffer"
 	default n
+
+config HW_CHR_TCP_SMALL_WIN_PROC
+	bool "Huawei tcp small window monitor proc support"
+	depends on HW_CHR_TCP_SMALL_WIN_MONITOR
+	default n

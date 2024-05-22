@@ -1,14 +1,21 @@
-/**********************************************************
- * Filename:    zrhung_event.c
+/*
+ * zrhung_event.c
  *
- * Discription: Interfaces implementation for sending hung event
-                from kernel
+ * Interfaces implementation for sending hung event from kernel
  *
- * Copyright: (C) 2017 huawei.
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
  *
- * Author: huangyu(00381502) zhangliang(00175161)
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
-**********************************************************/
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/types.h>
@@ -19,92 +26,87 @@
 #include <linux/slab.h>
 #include <linux/version.h>
 #include <linux/ioctl.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include "huawei_platform/log/hw_log.h"
 #include "chipset_common/hwzrhung/zrhung.h"
 #include "zrhung_common.h"
 #include "zrhung_transtation.h"
 
-#define HWLOG_TAG    zrhung
-#define BUF_SIZE  (sizeof(zrhung_write_event)+ZRHUNG_CMD_LEN_MAX+ZRHUNG_MSG_LEN_MAX+2)
+#define HWLOG_TAG zrhung
+#define BUF_SIZE (sizeof(struct zrhung_write_event) + ZRHUNG_CMD_LEN_MAX + ZRHUNG_MSG_LEN_MAX + 2)
 
 HWLOG_REGIST();
 static uint8_t g_buf[BUF_SIZE];
 static DEFINE_SPINLOCK(lock);
 
-int zrhung_send_event(zrhung_wp_id id, const char* cmd_buf, const char* msg_buf)
+int zrhung_send_event(enum zrhung_wp_id id, const char *cmd_buf, const char *msg_buf)
 {
-    int ret     = 0;
-    int cmd_len = 0;
-    int msg_len = 0;
-    char *p     = NULL;
-    char *out_buf   = NULL;
-    int total_len   = sizeof(zrhung_write_event);
-    zrhung_write_event evt = {0};
-    unsigned long flags;
+	int ret;
+	int cmd_len = 0;
+	int msg_len = 0;
+	char *p = NULL;
+	char *out_buf = NULL;
+	struct zrhung_write_event evt = {0};
+	int total_len = sizeof(evt);
+	unsigned long flags;
 
-    /* now we support atomic context */
-    /*if (in_atomic() || in_interrupt()) {
-        hwlog_err("can not zrhung_send_event in interrupt context");
-        return -EINVAL;
-    }*/
-    memset(&evt, 0, sizeof(evt));
-    if (zrhung_is_id_valid(id) < 0) {
-        hwlog_err("Bad watchpoint id");
-        return -EINVAL;
-    }
+	memset(&evt, 0, sizeof(evt));
+	if (zrhung_is_id_valid(id) < 0) {
+		hwlog_err("Bad watchpoint id");
+		return -EINVAL;
+	}
 
-    if (cmd_buf)
-        cmd_len = strlen(cmd_buf);
-    if (cmd_len > ZRHUNG_CMD_LEN_MAX) {
-        hwlog_err("watchpoint cmd too long");
-        return -EINVAL;
-    }
-    total_len += cmd_len + 1;
+	if (cmd_buf)
+		cmd_len = strlen(cmd_buf);
+	if (cmd_len > ZRHUNG_CMD_LEN_MAX) {
+		hwlog_err("watchpoint cmd too long");
+		return -EINVAL;
+	}
+	total_len += cmd_len + 1;
 
-    if (msg_buf)
-        msg_len = strlen(msg_buf);
-    if (msg_len > ZRHUNG_MSG_LEN_MAX) {
-        hwlog_err("watchpoint msg buffer too long");
-        return -EINVAL;
-    }
-    total_len += msg_len + 1;
+	if (msg_buf)
+		msg_len = strlen(msg_buf);
+	if (msg_len > ZRHUNG_MSG_LEN_MAX) {
+		hwlog_err("watchpoint msg buffer too long");
+		return -EINVAL;
+	}
+	total_len += msg_len + 1;
 
-    spin_lock_irqsave(&lock, flags);
-    out_buf = g_buf;
+	spin_lock_irqsave(&lock, flags);
+	out_buf = g_buf;
 
-    /* construct the message */
-    evt.magic   = MAGIC_NUM;
-    evt.len     = total_len;
-    evt.wp_id   = id;
-    evt.cmd_len = cmd_len + 1;
-    evt.msg_len = msg_len + 1;
+	/* construct the message */
+	evt.magic = MAGIC_NUM;
+	evt.len = total_len;
+	evt.wp_id = id;
+	evt.cmd_len = cmd_len + 1;
+	evt.msg_len = msg_len + 1;
 
-    memset(out_buf, 0, total_len);
-    p  = out_buf;
-    memcpy(p, &evt, sizeof(evt));
-    p += sizeof(evt);
+	memset(out_buf, 0, total_len);
+	p = out_buf;
+	memcpy(p, &evt, sizeof(evt));
+	p += sizeof(evt);
 
-    if (cmd_len > 0) {
-        memcpy(p, cmd_buf, cmd_len);
-    }
-    p += cmd_len;
-    *p = 0;
-    p++;
+	if (cmd_len > 0)
+		memcpy(p, cmd_buf, cmd_len);
 
-    if (msg_buf) {
-        memcpy(p, msg_buf, msg_len);
-    }
-    p += msg_len;
-    *p = 0;
+	p += cmd_len;
+	*p = 0;
+	p++;
 
-    /* send the message */
-    ret = htrans_write_event_kernel(out_buf);
-    spin_unlock_irqrestore(&lock, flags);
+	if (msg_buf)
+		memcpy(p, msg_buf, msg_len);
 
-    hwlog_info("zrhung send event from kernel: wp=%d, ret=%d", evt.wp_id, ret);
+	p += msg_len;
+	*p = 0;
 
-    return ret;
+	/* send the message */
+	ret = htrans_write_event_kernel(out_buf);
+	spin_unlock_irqrestore(&lock, flags);
+
+	hwlog_info("zrhung send event from kernel: wp=%d, ret=%d", evt.wp_id,
+		   ret);
+
+	return ret;
 }
-
 EXPORT_SYMBOL(zrhung_send_event);

@@ -1,49 +1,21 @@
-/*
- * hisi Contiguous Memory Allocator base on
- * Copyright (c) 2010-2011 by Hisicon Electronics.
- * Written by:
- *     Dongbin Yu <Yudongbin@hisilicon.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 of the
- * License or (at your optional) any later version of the license.
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
+ * FileName: hisi_cma.c
+ * Description: This program is free software; you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation;
+ * either version 2 of the License,
+ * or (at your option) any later version.
+ * Author:Dongbin Yu
+ * Create:2014-05-15
  */
 
-/*
-	cma-memory {
-		#address-cells = <2>;
-		#size-cells = <2>;
-		ranges;
-
-		tui-cma-heap-s {
-			reg = <0x0 0x0 0x0 0x800000>;
-			hisi,cma-name = "tui-heap";
-			hisi,cma-dynamic;
-			hisi,cma-sec;
-		};
-
-		drm-cma-heap {
-			reg = <0x0 0xb000000 0x0 0x3000000>;
-			hisi,cma-name = "drm-heap";
-			hisi,cma-dynamic;
-		};
-	};
-*/
 #define pr_fmt(fmt) "hisi_cma: " fmt
 #include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0)
-#include <linux/device.h>
-#endif
 #include <asm/dma-contiguous.h>
 #include <linux/err.h>
 #include <linux/sizes.h>
 #include <linux/dma-contiguous.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 18, 0)
-
-#else
 #include <linux/cma.h>
-#endif
 #include <linux/dma-mapping.h>
 #include <linux/of.h>
 #include <linux/of_fdt.h>
@@ -71,12 +43,12 @@ static int __init hisi_cma_reserve_mem_fdt_scan(unsigned long node,
 	int len;
 	bool fixed = false;
 	phys_addr_t limit = *((phys_addr_t *)data);
-	char *status;
-	char *cma_name;
-	struct cma **cma_area;
-	struct device *cma_dev;
+	char *status = NULL;
+	char *cma_name = NULL;
+	struct cma **cma_area = NULL;
+	struct device *cma_dev = NULL;
 	phys_addr_t base, size;
-	const __be32 *prop;
+	const __be32 *prop = NULL;
 	unsigned long size_cells = dt_root_size_cells;
 	unsigned long addr_cells = dt_root_addr_cells;
 
@@ -113,8 +85,8 @@ static int __init hisi_cma_reserve_mem_fdt_scan(unsigned long node,
 		fixed = hisi_cma[hisi_cma_area_nr].fixed;
 	}
 
-	if (!!(cma_name = (char *)of_get_flat_dt_prop(node, "hisi,cma-name",
-					NULL)))
+	cma_name = (char *)of_get_flat_dt_prop(node, "hisi,cma-name", NULL);
+	if (cma_name)
 		hisi_cma[hisi_cma_area_nr].cma_name = cma_name;
 
 	if (of_get_flat_dt_prop(node, "hisi,cma-sec", NULL))
@@ -141,11 +113,8 @@ static int __init hisi_cma_reserve_mem_fdt_scan(unsigned long node,
 	 */
 	limit = DMA_BIT_MASK(48); /*lint !e838*/
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-	ret = cma_declare_contiguous(base, size, limit,  0, 0, fixed, cma_name, cma_area);
-#else
-	ret = cma_declare_contiguous(base, size, limit,  0, 0, fixed, cma_area);
-#endif
+	ret = cma_declare_contiguous(base, size, limit,  0, 0,
+			fixed, cma_name, cma_area);
 	if (ret) {
 		WARN_ON(1);
 		return 1;

@@ -536,6 +536,10 @@ static int touch_parse_report(void)
 			TS_LOG_DEBUG("device_status = 0%2x\n", tcm_hcd->device_status);
 			offset += bits;
 			break;
+		default:
+			bits = config_data[idx++];
+			offset += bits;
+			break;
 		}
 	}
 
@@ -963,7 +967,7 @@ int syna_tcm_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en)
 	}
 
 	//read out identify report firstly
-  	if (TS_BUS_SPI != tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
+	if (tcm_hcd->htd == false) {
                 while(retry) {
                         retval = syna_tcm_read(tcm_hcd,
                                                 resp_buf,
@@ -1096,12 +1100,13 @@ int touch_init(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 
-	touch_hcd = kzalloc(sizeof(struct touch_hcd), GFP_KERNEL);
-	if (!touch_hcd) {
-		TS_LOG_ERR("Failed to allocate memory for touch_hcd\n");
-		return -ENOMEM;
+	if(!touch_hcd) {
+		touch_hcd = kzalloc(sizeof(struct touch_hcd), GFP_KERNEL);
+		if (!touch_hcd) {
+			TS_LOG_ERR("Failed to allocate memory for touch_hcd\n");
+			return -ENOMEM;
+		}
 	}
-
 	touch_hcd->tcm_hcd = tcm_hcd;
 	mutex_init(&touch_hcd->report_mutex);
 

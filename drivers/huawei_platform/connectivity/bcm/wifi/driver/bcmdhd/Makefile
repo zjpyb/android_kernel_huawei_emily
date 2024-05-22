@@ -411,6 +411,7 @@ EXTRA_CFLAGS += -I$(src)/include/ -I$(src)/
 KBUILD_CFLAGS += -I$(LINUXDIR)/include -I$(shell pwd)
 KBUILD_CFLAGS += -I$(LINUXDIR)/drivers
 EXTRA_CFLAGS += -Idrivers/huawei_platform/connectivity/bcm/wifi/include
+EXTRA_CFLAGS += -Idrivers/hisi/tzdriver/libhwsecurec
 
 DHDOFILES := dhd_pno.o dhd_common.o dhd_ip.o dhd_custom_gpio.o \
 	dhd_linux.o dhd_linux_sched.o dhd_cfg80211.o dhd_linux_wq.o aiutils.o bcmevent.o \

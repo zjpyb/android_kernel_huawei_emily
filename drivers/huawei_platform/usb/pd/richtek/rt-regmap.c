@@ -98,6 +98,9 @@ struct rt_regmap_device {
 };
 
 struct dentry *rt_regmap_dir;
+
+#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_RT1711_DEBUG_FS
 static void rt_release_every_debug(struct rt_regmap_device *rd);
 
 static int get_parameters(char *buf, long int *param1, int num_of_par)
@@ -148,6 +151,8 @@ static int get_datas(const char *buf, const int length,
 	}
 	return 0;
 }
+#endif /* CONFIG_RT1711_DEBUG_FS */
+#endif /* CONFIG_DEBUG_FS */
 
 static struct reg_index_offset find_register_index(
 		const struct rt_regmap_device *rd, u32 reg)
@@ -1206,11 +1211,13 @@ int rt_regmap_add_debugfs(struct rt_regmap_device *rd, const char *name,
 			  const struct file_operations *fops)
 {
 #ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_RT1711_DEBUG_FS
 	struct dentry *den;
 
 	den = debugfs_create_file(name, mode, rd->rt_den, data, fops);
 	if (!den)
 		return -EINVAL;
+#endif /* CONFIG_RT1711_DEBUG_FS */
 #endif /*CONFIG_DEBUG_FS*/
 	return 0;
 }
@@ -1232,7 +1239,7 @@ static void rt_regmap_cache_release(struct rt_regmap_device *rd)
 }
 
 #ifdef CONFIG_DEBUG_FS
-
+#ifdef CONFIG_RT1711_DEBUG_FS
 static int general_read(struct seq_file *seq_file, void *_data)
 {
 	struct rt_debug_st *st = (struct rt_debug_st *)seq_file->private;
@@ -1292,7 +1299,6 @@ hiden_read:
 		else
 			seq_printf(seq_file, rd->err_msg);
 		break;
-
 	case RT_DBG_NAME:
 		seq_printf(seq_file, "%s\n", rd->props.aliases);
 		break;
@@ -1873,6 +1879,7 @@ static void rt_release_every_debug(struct rt_regmap_device *rd)
 	if(rd->reg_st)
 		devm_kfree(&rd->dev, rd->reg_st);
 }
+#endif /* CONFIG_RT1711_DEBUG_FS */
 #endif /* CONFIG_DEBUG_FS */
 
 static void rt_regmap_device_release(struct device *dev)
@@ -1929,7 +1936,7 @@ single_byte:
 static int rt_create_simple_map(struct rt_regmap_device *rd)
 {
 	int i, j, count = 0, num = 0;
-	rt_register_map_t *rm;
+	rt_register_map_t *rm = NULL;
 
 	pr_info("%s\n", __func__);
 	for (i = 0; i < rd->props.register_num; i++)
@@ -2062,6 +2069,7 @@ struct rt_regmap_device *rt_regmap_device_register
 	}
 
 #ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_RT1711_DEBUG_FS
 	rd->rt_den = debugfs_create_dir(props->name, rt_regmap_dir);
 	if (!IS_ERR(rd->rt_den)) {
 		rt_create_general_debug(rd, rd->rt_den);
@@ -2069,13 +2077,16 @@ struct rt_regmap_device *rt_regmap_device_register
 			rt_create_every_debug(rd, rd->rt_den);
 	} else
 		goto err_debug;
+#endif /* CONFIG_RT1711_DEBUG_FS */
 #endif /* CONFIG_DEBUG_FS */
 
 	return rd;
 
 #ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_RT1711_DEBUG_FS
 err_debug:
 	rt_regmap_cache_release(rd);
+#endif /* CONFIG_RT1711_DEBUG_FS */
 #endif /* CONFIG_DEBUG_FS */
 err_cacheinit:
 	device_unregister(&rd->dev);
@@ -2095,9 +2106,11 @@ void rt_regmap_device_unregister(struct rt_regmap_device *rd)
 	if (rd->cache_inited)
 		rt_regmap_cache_release(rd);
 #ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_RT1711_DEBUG_FS
 	debugfs_remove_recursive(rd->rt_den);
 	if (rd->props.rt_regmap_mode & DBG_MODE_MASK)
 		rt_release_every_debug(rd);
+#endif /* CONFIG_RT1711_DEBUG_FS */
 #endif /* CONFIG_DEBUG_FS */
 	device_unregister(&rd->dev);
 }

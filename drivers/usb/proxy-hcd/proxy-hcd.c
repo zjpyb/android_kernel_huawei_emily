@@ -116,7 +116,7 @@ static int phcd_get_ep_index_from_desc(struct usb_endpoint_descriptor *desc)
 
 static struct proxy_hcd_urb* find_urb_by_buf(struct list_head *head, const void *buf)
 {
-	struct proxy_hcd_urb *pos;
+	struct proxy_hcd_urb *pos = NULL;
 
 	list_for_each_entry(pos, head, urb_list) {
 		if (pos->urb_msg->share_buf == buf)
@@ -130,7 +130,7 @@ static struct proxy_hcd_urb* find_urb_by_buf(struct list_head *head, const void 
 static struct proxy_hcd_urb *find_phcd_urb(struct proxy_hcd *phcd,
 			struct proxy_hcd_ep *phcd_ep, struct urb_msg *urb_msg)
 {
-	struct proxy_hcd_urb *phcd_urb;
+	struct proxy_hcd_urb *phcd_urb = NULL;
 
 	if (urb_msg->slot_id != phcd->phcd_udev.udev->slot_id) {
 		ERR("slot_id not match!\n");
@@ -159,7 +159,7 @@ static struct proxy_hcd_urb *find_phcd_urb(struct proxy_hcd *phcd,
 static bool non_usbaudio_monitor(struct usb_hcd *hcd, struct urb *urb)
 {
 	struct usb_device *udev = urb->dev;
-	struct usb_ctrlrequest *ctrl;
+	struct usb_ctrlrequest *ctrl = NULL;
 	int configuration;
 
 	if (!udev->parent)
@@ -195,10 +195,10 @@ static bool non_usbaudio_monitor(struct usb_hcd *hcd, struct urb *urb)
 
 int phcd_urb_complete(struct proxy_hcd *phcd, struct urb_msg *urb_msg)
 {
-	struct usb_hcd *hcd;
+	struct usb_hcd *hcd = NULL;
 	struct proxy_hcd_ep *phcd_ep = NULL;
-	struct proxy_hcd_urb *phcd_urb;
-	struct urb *urb;
+	struct proxy_hcd_urb *phcd_urb = NULL;
+	struct urb *urb = NULL;
 	int status;
 	int ep_index;
 	unsigned long flags;
@@ -388,14 +388,17 @@ static int intercept_urb(struct usb_hcd *hcd, struct urb *urb)
  */
 static int intercept_some_control_msg(struct usb_hcd *hcd, struct urb *urb)
 {
-	struct usb_ctrlrequest *ctrl;
+	struct usb_ctrlrequest *ctrl = NULL;
 	int ret;
 
 	if (!usb_endpoint_xfer_control(&urb->ep->desc))
 		return 0;
 
 	ctrl = (struct usb_ctrlrequest *)urb->setup_packet;
-	WARN_ON(ctrl == NULL);
+	if (ctrl == NULL) {
+		WARN_ON(1);
+		return -1;
+	}
 
 	if ((ctrl->bRequestType == USB_RECIP_DEVICE)
 			&& ((ctrl->bRequest == USB_REQ_CLEAR_FEATURE)
@@ -442,8 +445,8 @@ static int intercept_some_control_msg(struct usb_hcd *hcd, struct urb *urb)
 static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flags)
 {
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
-	struct proxy_hcd_urb *phcd_urb;
-	struct proxy_hcd_ep *phcd_ep;
+	struct proxy_hcd_urb *phcd_urb = NULL;
+	struct proxy_hcd_ep *phcd_ep = NULL;
 	int ep_index;
 	int slot_id;
 	unsigned long flags;
@@ -506,7 +509,7 @@ static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 
 	ret = usb_hcd_link_urb_to_ep(hcd, urb);
 	if (unlikely(ret)) {
-		ERR("usb_hcd_link_urb_to_ep failed\n");
+		ERR("usb_hcd_link_urb_to_ep failed %d\n",ret);
 		goto del_phcd_urb;
 	}
 
@@ -520,7 +523,7 @@ static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 
 	ret = proxy_urb_enqueue(phcd, phcd_urb->urb_msg);
 	if (unlikely(ret)) {
-		ERR("proxy_urb_enqueue failed\n");
+		ERR("proxy_urb_enqueue failed %d\n",ret);
 		spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
 		goto unlink_urb;
 	}
@@ -562,8 +565,8 @@ free_phcd_urb:
 static int phcd_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 {
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
-	struct proxy_hcd_urb *phcd_urb;
-	struct proxy_hcd_ep *phcd_ep;
+	struct proxy_hcd_urb *phcd_urb = NULL;
+	struct proxy_hcd_ep *phcd_ep = NULL;
 	unsigned long wait_enqueue_complete_count = 1000;
 	unsigned long flags;
 	int ep_index;
@@ -624,7 +627,7 @@ wait_enqueue_complete:
 	/* urb maybe unlinked just before here */
 	ret = usb_hcd_check_unlink_urb(hcd, urb, status);
 	if (ret) {
-		ERR("usb_hcd_check_unlink_urb error\n");
+		ERR("usb_hcd_check_unlink_urb error %d\n",ret);
 		goto error;
 	}
 
@@ -634,7 +637,7 @@ wait_enqueue_complete:
 	ret = proxy_urb_dequeue(phcd, phcd_urb->urb_msg);
 	if (unlikely(ret)) {
 		/* If dequeue command failed, dequeue the urb right now. */
-		DBG("proxy_urb_dequeue failed\n");
+		ERR("proxy_urb_dequeue failed %d\n",ret);
 
 		spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
 
@@ -750,7 +753,7 @@ static int phcd_alloc_dev(struct usb_hcd *hcd, struct usb_device *udev)
 	spin_unlock_irqrestore(&phcd->lock, flags);
 	if (ret) {
 		mutex_unlock(&phcd->mutex);
-		pr_err("%s: phcd_init_virt_device failed.\n", __func__);
+		pr_err("%s: phcd_init_virt_device failed ret %d.\n", __func__, ret);
 		return 0;
 	}
 
@@ -765,7 +768,7 @@ static int phcd_alloc_dev(struct usb_hcd *hcd, struct usb_device *udev)
 void phcd_giveback_all_urbs(struct proxy_hcd_client *client)
 {
 	struct proxy_hcd *phcd = client_to_phcd(client);
-	struct usb_hcd *hcd;
+	struct usb_hcd *hcd = NULL;
 	unsigned long flags;
 	int i;
 
@@ -786,7 +789,7 @@ void phcd_giveback_all_urbs(struct proxy_hcd_client *client)
 		struct list_head *list = &phcd->phcd_udev.phcd_eps[i].urb_list;
 
 		while (!list_empty(list)) {
-			struct proxy_hcd_urb *phcd_urb;
+			struct proxy_hcd_urb *phcd_urb = NULL;
 			struct urb *urb;
 
 			phcd_urb = list_first_entry(list, struct proxy_hcd_urb, urb_list);
@@ -857,8 +860,8 @@ static void phcd_free_dev(struct usb_hcd *hcd, struct usb_device *udev)
 static int phcd_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 		struct usb_host_endpoint *ep)
 {
-	struct proxy_hcd *phcd;
-	struct proxy_hcd_ep *phcd_ep;
+	struct proxy_hcd *phcd = NULL;
+	struct proxy_hcd_ep *phcd_ep = NULL;
 	int ep_index;
 	int ret = 0;
 
@@ -879,7 +882,7 @@ static int phcd_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 
 	ret = proxy_add_endpoint(phcd, udev, ep);
 	if (ret < 0) {
-		DBG("proxy_add_endpoint failed\n");
+		ERR("proxy_add_endpoint failed %d\n", ret);
 		return ret;
 	}
 
@@ -923,8 +926,8 @@ __u32 phcd_current_port_status(struct proxy_hcd *phcd)
 static int phcd_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 		struct usb_host_endpoint *ep)
 {
-	struct proxy_hcd *phcd;
-	struct proxy_hcd_ep *phcd_ep;
+	struct proxy_hcd *phcd = NULL;
+	struct proxy_hcd_ep *phcd_ep = NULL;
 	int ep_index;
 	int ret;
 
@@ -951,7 +954,7 @@ static int phcd_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 
 	ret = proxy_drop_endpoint(phcd, udev, ep);
 	if (ret < 0) {
-		DBG("proxy_drop_endpoint failed\n");
+		ERR("proxy_drop_endpoint failed %d\n", ret);
 		return ret;
 	}
 	phcd_ep->added = 0;
@@ -965,7 +968,7 @@ static int phcd_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 static int phcd_check_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 {
 	int ret = 0;
-	struct proxy_hcd *phcd;
+	struct proxy_hcd *phcd = NULL;
 
 	DBG("+\n");
 	if (!hcd || !udev) {
@@ -983,7 +986,7 @@ static int phcd_check_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 
 	ret = proxy_check_bandwidth(phcd, udev->slot_id);
 	if (ret < 0) {
-		DBG("proxy_check_bandwidth failed\n");
+		ERR("proxy_check_bandwidth failed %d\n", ret);
 		return ret;
 	}
 	DBG("-\n");
@@ -993,7 +996,7 @@ static int phcd_check_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 
 static void phcd_reset_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 {
-	struct proxy_hcd *phcd;
+	struct proxy_hcd *phcd = NULL;
 	int ret;
 
 	DBG("+\n");
@@ -1011,7 +1014,7 @@ static void phcd_reset_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 
 	ret = proxy_reset_bandwidth(phcd, udev->slot_id);
 	if (ret < 0)
-		DBG("proxy_add_endpoint failed\n");
+		ERR("proxy_add_endpoint failed %d\n", ret);
 	DBG("-\n");
 }
 
@@ -1027,8 +1030,9 @@ static int phcd_address_device(struct usb_hcd *hcd, struct usb_device *udev)
 	might_sleep();
 
 	ret = proxy_address_device(phcd, udev->slot_id);
+	if (ret < 0)
+		ERR("proxy_address_device failed %d\n", ret);
 	DBG("-\n");
-
 	return ret;
 }
 
@@ -1045,6 +1049,8 @@ static int phcd_enable_device(struct usb_hcd *hcd, struct usb_device *udev)
 
 	ret = proxy_enable_device(phcd, udev->slot_id, udev->speed,
 				udev->ep0.desc.wMaxPacketSize);
+	if (ret < 0)
+		ERR("proxy_enable_device failed %d\n", ret);
 	DBG("-\n");
 
 	return ret;
@@ -1063,7 +1069,7 @@ static int phcd_update_hub_device(struct usb_hcd *hcd, struct usb_device *hdev,
 static int phcd_reset_device(struct usb_hcd *hcd, struct usb_device *udev)
 {
 	int ret;
-	struct proxy_hcd *phcd;
+	struct proxy_hcd *phcd = NULL;
 
 	DBG("+\n");
 	if (!hcd || !udev) {
@@ -1084,6 +1090,8 @@ static int phcd_reset_device(struct usb_hcd *hcd, struct usb_device *udev)
 	might_sleep();
 
 	ret = proxy_reset_device(phcd, udev->slot_id);
+	if (ret < 0)
+		ERR("proxy_reset_device failed %d\n", ret);
 	DBG("-\n");
 
 	return ret;
@@ -1092,7 +1100,7 @@ static int phcd_reset_device(struct usb_hcd *hcd, struct usb_device *udev)
 #ifdef CONFIG_PM
 static int phcd_update_device(struct usb_hcd *hcd, struct usb_device *udev)
 {
-	struct proxy_hcd *phcd;
+	struct proxy_hcd *phcd = NULL;
 	int ret = 0;
 
 	DBG("+\n");
@@ -1616,7 +1624,7 @@ void phcd_unregister_client(struct proxy_hcd_client *client)
 
 struct proxy_hcd_client *find_client_by_name(const char *name)
 {
-	struct proxy_hcd_client *client;
+	struct proxy_hcd_client *client = NULL;
 
 	if (!name)
 		return NULL;
@@ -1639,7 +1647,7 @@ enum hibernation_policy phcd_get_hibernation_policy(struct proxy_hcd_client *cli
 {
 	struct proxy_hcd *phcd = client_to_phcd(client);
 	struct platform_device *pdev = phcd->pdev;
-	const char *hibernation_policy;
+	const char *hibernation_policy = NULL;
 	int err;
 
 	err = device_property_read_string(&pdev->dev, "hibernation-policy", &hibernation_policy);
@@ -1668,9 +1676,9 @@ MODULE_DEVICE_TABLE(of, phcd_of_match);
 
 static int phcd_plat_probe(struct platform_device *pdev)
 {
-	struct usb_hcd *hcd;
-	struct proxy_hcd *phcd;
-	const struct of_device_id *match;
+	struct usb_hcd *hcd = NULL;
+	struct proxy_hcd *phcd = NULL;
+	const struct of_device_id *match = NULL;
 	int ret;
 
 	INFO("+\n");
@@ -1695,6 +1703,17 @@ static int phcd_plat_probe(struct platform_device *pdev)
 		ERR("no client!!!\n");
 		kfree(phcd);
 		return -ENODEV;
+	}
+
+	if (!pdev->dev.dma_mask)
+		ret = dma_coerce_mask_and_coherent(&pdev->dev,
+				DMA_BIT_MASK(64));
+	else
+		ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
+	if (ret) {
+		ERR("set dmamask to MASK 64 failed\n");
+		kfree(phcd);
+		return ret;
 	}
 
 	ret = phcd_client_init(phcd->client, phcd);
@@ -1801,8 +1820,8 @@ int phcd_plat_prepare(struct device *dev)
 }
 void phcd_plat_complete(struct device *dev)
 {
-	DBG("+\n");
-	DBG("-\n");
+	INFO("+\n");
+	INFO("-\n");
 }
 
 int phcd_plat_suspend_late(struct device *dev)

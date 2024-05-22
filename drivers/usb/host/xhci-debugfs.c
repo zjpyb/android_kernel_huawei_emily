@@ -46,8 +46,8 @@ static const struct file_operations xhci_compliance_debug_fops = {
 
 int xhci_create_debug_file(struct xhci_hcd *xhci)
 {
-	struct dentry *root;
-	struct dentry *file;
+	struct dentry *root = NULL;
+	struct dentry *file = NULL;
 	int ret;
 
 	root = debugfs_create_dir("xhci", usb_debug_root);

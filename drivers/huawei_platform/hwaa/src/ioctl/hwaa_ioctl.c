@@ -86,7 +86,7 @@ do_copy_ret:
 static s32 handle_init_user(struct hwaa_init_user_t __user *udata)
 {
 	s32 ret = 0;
-	u8 *addr_key_desc;
+	u8 *addr_key_desc = NULL;
 	struct hwaa_init_user_t kdata = {0};
 
 	if (!udata)

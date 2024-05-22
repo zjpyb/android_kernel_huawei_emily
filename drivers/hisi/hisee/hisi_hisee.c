@@ -34,6 +34,7 @@
 #include <linux/hisi/kirin_partition.h>
 #include <linux/clk.h>
 #include <linux/mm.h>
+#include <securec.h>
 #include "soc_acpu_baseaddr_interface.h"
 #include "soc_sctrl_interface.h"
 #include "hisi_hisee.h"
@@ -41,8 +42,9 @@
 #include "hisi_hisee_fs.h"
 #include "hisi_hisee_upgrade.h"
 #include "hisi_hisee_chip_test.h"
+#ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
-
+#endif
 
 
 #define HISEE_EFUSE_GROUP_BIT_SIZE    32
@@ -92,7 +94,7 @@ extern unsigned int g_runtime_cosid;
 
 
 /*  hisee autoteset interface entryfor cmd "hisee_channel_test" */
-int hisee_auto_test_func(void *buf, int para);
+int hisee_auto_test_func(const void *buf, int para);
 
 extern int efuse_check_secdebug_disable(bool *b_disabled);
 extern int get_rpmb_init_status(void);
@@ -101,11 +103,13 @@ extern int get_efuse_hisee_value(unsigned char *pu8Buffer, unsigned int u32Lengt
 extern int set_efuse_hisee_value(unsigned char *pu8Buffer, unsigned int u32Length, unsigned int timeout);
 extern void register_flash_hisee_otp_fn(int (*fn_ptr)(void));
 extern int check_new_cosimage(unsigned int cos_id, int *is_new_cosimage);
+#ifdef CONFIG_HISI_HISEE_MNTN
 extern u32 hisee_mntn_get_vote_val_lpm3(void);
 extern u32 hisee_mntn_get_vote_val_atf(void);
 extern int hisee_mntn_collect_vote_value_cmd(void);
 extern void hisee_mntn_update_local_lcsmode_val(void);
 extern int hisee_mntn_record_dmd_info(long dmd_no, const char *dmd_info);
+#endif
 static hisee_errcode_item_des g_errcode_items_des[] = {
 	{HISEE_OK, "no error\n"},
 	{HISEE_ERROR, "general error\n"},
@@ -186,7 +190,9 @@ static hisee_driver_function g_hisee_atf_function_list[] = {
 
 
 	{"hisee_factory_check", hisee_factory_check_func},
+#ifdef CONFIG_HISI_SMX_PROCESS
 	{"hisee_get_smx", hisee_get_smx_func},
+#endif
 	{NULL, NULL},
 };
 
@@ -201,7 +207,7 @@ static hisee_driver_function g_hisee_lpm3_function_list[] = {
 /*
     hisee autoteset interface entryfor cmd "hisee_channel_test"
 */
-int hisee_auto_test_func(void *buf, int para)
+int hisee_auto_test_func(const void *buf, int para)
 {
 	return HISEE_OK;
 }
@@ -282,19 +288,24 @@ int set_hisee_lcs_sm_efuse(void)
 		pr_err("%s() set_efuse_hisee_value failed,ret=%d\n", __func__, ret);
 		set_errno_and_return(HISEE_SET_HISEE_VALUE_ERROR);
 	}
+#ifdef CONFIG_HISI_HISEE_MNTN
 	/*update local variable of lcs mode*/
 	hisee_mntn_update_local_lcsmode_val();
+#endif
 	check_and_print_result();
 	return ret;
 }
 
+#ifdef CONFIG_HUAWEI_DSM
 static void record_hisee_log_by_dmd(long dmd_errno, int hisee_errno)
 {
+#ifdef CONFIG_HISI_HISEE_MNTN
 	int ret;
+#endif
 	char buff[HISEE_CMD_NAME_LEN] = {0};
 	int i;
 
-	memset(buff, 0, (unsigned long)HISEE_CMD_NAME_LEN);
+	(void)memset_s(buff, HISEE_CMD_NAME_LEN, 0, (unsigned long)HISEE_CMD_NAME_LEN);
 	for (i = 0; i < ARRAY_SIZE(g_errcode_items_des); i++) {/*lint !e846 !e514 !e866 !e30 !e84 !e574 !e737*/
 		if (hisee_errno == g_errcode_items_des[i].err_code) {
 			break;
@@ -305,15 +316,28 @@ static void record_hisee_log_by_dmd(long dmd_errno, int hisee_errno)
 		return;
 	}
 
-	snprintf(buff, (unsigned long)8, "%d,", hisee_errno);
-	strncat(buff, g_errcode_items_des[i].err_description, (unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));/*lint !e662*/
+	ret = snprintf_s(buff, HISEE_CMD_NAME_LEN, (unsigned long)8, "%d,", hisee_errno);
+	if (ret == HISEE_SECLIB_ERROR) {
+		pr_err("%s(): snprintf failed\n", __func__);
+		return;
+	}
 
+	ret = strncat_s(buff, HISEE_CMD_NAME_LEN, g_errcode_items_des[i].err_description,
+					(unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));/*lint !e662*/
+	if (ret != EOK) {
+		pr_err("%s(): strncat failed\n", __func__);
+		return;
+	}
+
+#ifdef CONFIG_HISI_HISEE_MNTN
 	ret = hisee_mntn_record_dmd_info(dmd_errno, (const char *)buff);
 	if (0 != ret)
 		pr_err("%s(): hisee_mntn_record_dmd_info return %d failed\n", __func__, ret);
+#endif
 
 	return;
 }
+#endif
 
 /*
  * hisi_hisee_active - handle hisee request from ATF
@@ -324,16 +348,6 @@ static void record_hisee_log_by_dmd(long dmd_errno, int hisee_errno)
  */
 void hisi_hisee_active(void)
 {
-/*
-	pr_err("%s() sem_timeout=%d smc_cmd_running=%d, count=%d\n", __func__,
-		atomic_read(&g_hisee_data.wait_sem_timeout), g_hisee_data.smc_cmd_running, g_hisee_data.atf_sem.count);
-
-	if (atomic_sub_return(1, &(g_hisee_data.wait_sem_timeout)) >= 0) {
-		return;
-	} else {
-		atomic_set(&(g_hisee_data.wait_sem_timeout), 0);
-	}
-*/
 	if (g_hisee_data.smc_cmd_running) {
 		up(&(g_hisee_data.atf_sem));
 	}
@@ -389,22 +403,6 @@ int send_smc_process(atf_message_header *p_message_header, phys_addr_t phy_addr,
 			ret = HISEE_SMC_CMD_PROCESS_ERROR;
 		else
 			ret = HISEE_OK;
-		/*ret = get_hisee_lcs_mode(&hisee_lcs_mode);
-		if (HISEE_OK == ret) {
-			if (CMD_FACTORY_APDU_TEST == smc_cmd &&
-				HISEE_SM_MODE_MAGIC == hisee_lcs_mode) {
-				if (!(p_message_header->cmd == smc_cmd &&
-					p_message_header->ack == HISEE_ATF_ACK_FAILURE)) {
-					ret = HISEE_SMC_CMD_PROCESS_ERROR;
-				}
-			} else {
-				if (!(p_message_header->cmd == smc_cmd &&
-					p_message_header->ack == HISEE_ATF_ACK_SUCCESS)) {
-					ret = HISEE_SMC_CMD_PROCESS_ERROR;
-				}
-			}
-		} else
-			ret = HISEE_SMC_CMD_PROCESS_ERROR;*/
 	}
 
 	pr_err("%s() ret=%d\n", __func__, ret);
@@ -431,13 +429,13 @@ void hisee_get_smx_cfg(unsigned int *p_smx_cfg)
 
 static int write_apdu_command_func (const char *apdu_buf, unsigned int apdu_len)
 {
-	atf_message_header *p_message_header;
+	atf_message_header *p_message_header = NULL;
 	int ret = HISEE_OK;
 	int image_size;
 
 	mutex_lock(&hisee_apdu_mutex);
 	if (NULL == g_hisee_data.apdu_command_buff_virt) {
-		g_hisee_data.apdu_command_buff_virt = (void *)dma_alloc_coherent(g_hisee_data.cma_device, (u64)(SIZE_1K * 4),
+		g_hisee_data.apdu_command_buff_virt = (void *)dma_alloc_coherent(g_hisee_data.cma_device, (u64)(SIZE_4K),
 											&(g_hisee_data.apdu_command_buff_phy), GFP_KERNEL);
 	}
 	if (NULL == g_hisee_data.apdu_command_buff_virt) {
@@ -445,12 +443,18 @@ static int write_apdu_command_func (const char *apdu_buf, unsigned int apdu_len)
 		mutex_unlock(&hisee_apdu_mutex);
 		set_errno_and_return(HISEE_NO_RESOURCES);
 	}
-	memset(g_hisee_data.apdu_command_buff_virt, 0, (u64)(SIZE_1K * 4));
+	(void)memset_s(g_hisee_data.apdu_command_buff_virt, SIZE_4K, 0, (u64)(SIZE_4K));
 	p_message_header = (atf_message_header *)g_hisee_data.apdu_command_buff_virt; /*lint !e826*/
 	set_message_header(p_message_header, CMD_APDU_RAWDATA);
 
 	apdu_len = (apdu_len > HISEE_APDU_DATA_LEN_MAX) ?  HISEE_APDU_DATA_LEN_MAX : apdu_len;
-	memcpy(g_hisee_data.apdu_command_buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN, (void *)apdu_buf, (u64)(u32)apdu_len);/*lint !e124*/
+	ret = memcpy_s(g_hisee_data.apdu_command_buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN,
+					SIZE_4K - HISEE_ATF_MESSAGE_HEADER_LEN,
+					(void *)apdu_buf, (u64)(u32)apdu_len);/*lint !e124*/
+	if (ret != EOK) {
+		pr_err("%s(): memcpy1 failed\n", __func__);
+		goto memcpy_err;
+	}
 	image_size = HISEE_ATF_MESSAGE_HEADER_LEN + apdu_len;
 	p_message_header->test_result_phy = (u32)(g_hisee_data.apdu_command_buff_phy + (SIZE_1K * 2));
 	p_message_header->test_result_size = (unsigned int)SIZE_1K;
@@ -458,7 +462,14 @@ static int write_apdu_command_func (const char *apdu_buf, unsigned int apdu_len)
 							HISEE_ATF_GENERAL_TIMEOUT, CMD_APDU_RAWDATA);
 
 	if (HISEE_OK == ret && p_message_header->test_result_size <= HISEE_APDU_DATA_LEN_MAX) {
-		memcpy(g_hisee_data.apdu_ack.ack_buf, (g_hisee_data.apdu_command_buff_virt + (SIZE_1K * 2)), (u64)p_message_header->test_result_size);
+		ret = memcpy_s(g_hisee_data.apdu_ack.ack_buf,
+						HISEE_APDU_DATA_LEN_MAX + 1,
+						(g_hisee_data.apdu_command_buff_virt + (SIZE_1K * 2)),
+						(u64)p_message_header->test_result_size);
+		if (ret != EOK) {
+			pr_err("%s(): memcpy2 failed\n", __func__);
+			goto memcpy_err;
+		}
 		g_hisee_data.apdu_ack.ack_len = p_message_header->test_result_size;
 	} else {
 		g_hisee_data.apdu_ack.ack_len = 0;
@@ -468,6 +479,10 @@ static int write_apdu_command_func (const char *apdu_buf, unsigned int apdu_len)
 	check_and_print_result();
 	mutex_unlock(&hisee_apdu_mutex);
 	set_errno_and_return(ret);
+memcpy_err:
+	mutex_unlock(&hisee_apdu_mutex);
+	set_errno_and_return(HISEE_SECUREC_ERR);
+
 }/*lint !e715*/
 
 int send_apdu_cmd(int type)
@@ -483,9 +498,15 @@ int send_apdu_cmd(int type)
 	unsigned char cmd1[5] = {0xF0,0xd8, 0x00,0x00,0x00};
 	/* delete test applet cmd */
 	unsigned char cmd2[5] = {0x00, 0xa4, 0x04, 0x00, 0x00};
+#ifdef CONFIG_HISEE_APPLET_APDU_TEST_OPTIMIZATION
 	unsigned char cmd3[13] = {0x80, 0xe4, 0x00, 0x80,0x08, \
 							0x4f, 0x06, 0x68, 0x69, 0x73, \
 							0x69, 0x74, 0x61};
+#else
+	unsigned char cmd3[12] = {0x80, 0xe4, 0x00, 0x80,0x07, \
+							0x4f, 0x05, 0x12, 0x34, 0x56, \
+							0x78, 0x90};
+#endif
 	unsigned char *sel_cmd[2];
 	unsigned int sel_cmd_len[2];
 
@@ -499,7 +520,11 @@ int send_apdu_cmd(int type)
 		sel_cmd[0] = cmd2;
 		sel_cmd[1] = cmd3;
 		sel_cmd_len[0] = 5;
+#ifdef CONFIG_HISEE_APPLET_APDU_TEST_OPTIMIZATION
 		sel_cmd_len[1] = 13;
+#else
+		sel_cmd_len[1] = 12;
+#endif
 
 	}
 	else {
@@ -525,11 +550,11 @@ int send_apdu_cmd(int type)
 
 static int load_cosimg_appdata_ddr(void)
 {
-	char *buff_virt;
+	char *buff_virt = NULL;
 	unsigned int i;
 	unsigned int rpmb_cos = HISEE_MIN_RPMB_COS_NUMBER;
 	phys_addr_t buff_phy = 0;
-	atf_message_header *p_message_header;
+	atf_message_header *p_message_header = NULL;
 	int ret = HISEE_OK;
 	int image_size = 0;
 
@@ -539,7 +564,7 @@ static int load_cosimg_appdata_ddr(void)
 		pr_err("%s(): dma_alloc_coherent failed\n", __func__);
 		set_errno_and_return(HISEE_NO_RESOURCES);
 	}
-	memset(buff_virt, 0, SIZE_1K * 4);
+	(void)memset_s(buff_virt, SIZE_1K * 4, 0, SIZE_1K * 4);
 	p_message_header = (atf_message_header *)buff_virt;
 	set_message_header(p_message_header, CMD_PRESAVE_COS_APPDATA);
 	image_size = HISEE_ATF_MESSAGE_HEADER_LEN;
@@ -561,9 +586,9 @@ static int hisee_wait_partition_ready(void)
 	unsigned int timeout = 500;
 	int  ret;
 
-	ret = flash_find_ptn(HISEE_IMAGE_PARTITION_NAME, fullpath);
+	ret = flash_find_ptn_s(HISEE_IMAGE_PARTITION_NAME, fullpath, sizeof(fullpath));
 	if (0 != ret) {
-		pr_err("%s():flash_find_ptn fail\n", __func__);
+		pr_err("%s():flash_find_ptn_s fail\n", __func__);
 		return ret;
 	}
 	do {
@@ -633,7 +658,7 @@ static int set_lpmcu_nfc_irq(void)
 	int irq_gpio;
 
 	pn547_nfc_dev = of_find_compatible_node(NULL, NULL, "hisilicon,pn547_nfc");
-	if (!pn547_nfc_dev) {
+	if (pn547_nfc_dev == NULL) {
 		pr_err("%s pn547_nfc not found\n", __func__);
 		return HISEE_OK;
 	}
@@ -686,7 +711,7 @@ int cos_image_upgrade_by_self(void)
 	unsigned int cos_id;
 	char buf_para[MAX_CMD_BUFF_PARAM_LEN] = {0};
 
-	wake_lock(&g_hisee_data.wake_lock);
+	__pm_stay_awake(&g_hisee_data.wake_lock);
 	if (!get_rpmb_key_status()) {
 		pr_err("hisee:%s() rpmb key is not ready. cos upgrade bypassed", __func__);
 		goto exit;
@@ -720,12 +745,13 @@ int cos_image_upgrade_by_self(void)
 		}
 	}
 exit:
-	wake_unlock(&g_hisee_data.wake_lock);
+	__pm_relax(&g_hisee_data.wake_lock);
 	g_cos_image_upgrade_done = 1;
 	check_and_print_result();
 	return ret;
 }
 
+#ifdef CONFIG_HICOS_MISCIMG_PATCH
 static void hisee_cos_patch_load(void)
 {
 	int ret = HISEE_OK;
@@ -744,7 +770,9 @@ static void hisee_cos_patch_load(void)
 
 	return ;
 }
+#endif
 
+#ifdef CONFIG_HISI_SMX_PROCESS
 static int smx_process_config(void)
 {
 	int ret;
@@ -780,6 +808,7 @@ smx_fail:
 	mutex_unlock(&g_hisee_data.hisee_mutex);
 	return HISEE_ERROR;
 }
+#endif
 
 static int rpmb_ready_body(void *arg)
 {
@@ -792,8 +821,6 @@ static int rpmb_ready_body(void *arg)
 
 	misc_version.img_version_num[0] = 0;
 
-	/*the task sleep 16 second until the kernel init completed */
-	//msleep(16000);
 	/*poll rpmb module ready status about 90 seconds*/
 	do {
 		if (get_rpmb_init_status()) {
@@ -841,12 +868,16 @@ static int rpmb_ready_body(void *arg)
 		pr_err("hisee rpmb cos read failed!\n");
 	}
 
+#ifdef CONFIG_HICOS_MISCIMG_PATCH
 	/* cos patch upgrade only supported in this function */
 	hisee_cos_patch_load();
+#endif
 
+#ifdef CONFIG_HISI_SMX_PROCESS
 	if (HISEE_OK != smx_process_config()) {
 		pr_err("%s ERROR:hisee force boot and power down\n", __func__);
 	}
+#endif
 
 	check_and_print_result();
 	g_cos_image_upgrade_done = 1;
@@ -910,7 +941,7 @@ tag_finish:
 
 int hisee_check_secdebug_flash_otp1(void)
 {
-	bool b_disabled;
+	bool b_disabled = false;
 	int ret;
 
 	if (PREPARED != hisee_chiptest_get_otp1_status()) {
@@ -933,16 +964,48 @@ static void show_hisee_module_status(char *buff)
 {
 	char counter_value[12] = {0};
 	char *index_name = "rpmb_is_ready=";
+	int ret;
 
-	snprintf(counter_value, sizeof(counter_value), "%d\n", g_hisee_data.rpmb_is_ready);
-	strncpy(buff, index_name, strlen(index_name));
-	strncpy(buff + strlen(buff), counter_value, strlen(counter_value));
+	ret = snprintf_s(counter_value, sizeof(counter_value),
+		sizeof(counter_value) - 1, "%d\n", g_hisee_data.rpmb_is_ready);
+	if (ret == HISEE_SECLIB_ERROR) {
+		pr_err("%s snprintf1 err.\n", __func__);
+		return;
+	}
+	ret = strncpy_s(buff, HISEE_CMD_NAME_LEN, index_name, strlen(index_name));
+	if (ret != EOK) {
+		pr_err("%s strncpy1 err.\n", __func__);
+		return;
+	}
+	ret = strncpy_s(buff + strlen(buff), HISEE_CMD_NAME_LEN - strlen(buff),
+		counter_value, strlen(counter_value));
+	if (ret != EOK) {
+		pr_err("%s strncpy2 err.\n", __func__);
+		return;
+	}
 
-	memset(counter_value, 0, 12);
+	(void)memset_s(counter_value, sizeof(counter_value), 0, sizeof(counter_value));
 	index_name = "smc_cmd_running=";
-	snprintf(counter_value, sizeof(counter_value), "%d\n", g_hisee_data.smc_cmd_running);
-	strncpy(buff + strlen(buff), index_name, strlen(index_name));
-	strncpy(buff + strlen(buff), counter_value, strlen(counter_value));
+	ret = snprintf_s(counter_value, sizeof(counter_value),
+			 sizeof(counter_value) - 1,
+			 "%d\n", g_hisee_data.smc_cmd_running);
+	if (ret == HISEE_SECLIB_ERROR) {
+		pr_err("%s snprintf2 err.\n", __func__);
+		return;
+	}
+
+	ret = strncpy_s(buff + strlen(buff), HISEE_CMD_NAME_LEN - strlen(buff), index_name, strlen(index_name));
+	if (ret != EOK) {
+		pr_err("%s strncpy3 err.\n", __func__);
+		return;
+	}
+
+	ret = strncpy_s(buff + strlen(buff), HISEE_CMD_NAME_LEN - strlen(buff), counter_value, strlen(counter_value));
+	if (ret != EOK) {
+		pr_err("%s strncpy4 err.\n", __func__);
+		return;
+	}
+
 	return;
 }
 
@@ -961,18 +1024,29 @@ static ssize_t hisee_powerctrl_show(struct device *dev, struct device_attribute 
 		pr_err("%s buf paramters is null\n", __func__);
 		set_errno_and_return(HISEE_INVALID_PARAMS);
 	}
-	memset(buff, 0, HISEE_ERROR_DESCRIPTION_MAX);
 	status = hisee_get_power_status();
 	switch (status) {
 	case HISEE_POWER_STATUS_ON:
-		strncat(buff, "1", HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff));
+		ret = strncat_s(buff, HISEE_ERROR_DESCRIPTION_MAX, "1", HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff));
+		if (ret != EOK) {
+			pr_err("%s(): strncat1 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 		break;
 	case HISEE_POWER_STATUS_OFF:
-		strncat(buff, "2", HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff));
+		ret = strncat_s(buff, HISEE_ERROR_DESCRIPTION_MAX, "2", HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff));
+		if (ret != EOK) {
+			pr_err("%s(): strncat2 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 		break;
 	default:
 		pr_err("%s(): invalid powerctrl status\n", __func__);
-		strncpy(buf, "0", sizeof("0"));
+		ret = strncpy_s(buf, HISEE_BUF_SHOW_LEN, "0", sizeof("0"));
+		if (ret != EOK) {
+			pr_err("%s(): strncpy err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 		return strlen(buf);
 	}
 	/*save error no in the buf of user.*/
@@ -983,15 +1057,39 @@ static ssize_t hisee_powerctrl_show(struct device *dev, struct device_attribute 
 				break;
 			}
 		}
-		snprintf((buff +  strlen(buff)), HISEE_PWR_ERRNO_PRINT_SIZE, " %d,", err_code);
+		ret = snprintf_s((buff +  strlen(buff)), HISEE_ERROR_DESCRIPTION_MAX - strlen(buff),
+						HISEE_PWR_ERRNO_PRINT_SIZE, " %d,", err_code);
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s snprintf err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
+
 		if (i == ARRAY_SIZE(g_errcode_items_des)) {
 			pr_err("%s(): can't find errcode=%d definition\n", __func__, err_code);
-			strncat((buff +  strlen(buff)), "undefined err", (unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));
+			ret = strncat_s((buff +  strlen(buff)),
+							HISEE_ERROR_DESCRIPTION_MAX - strlen(buff),
+							"undefined err",
+							(unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));
+			if (ret != EOK) {
+				pr_err("%s(): strncat3 err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
 		}else {
-			strncat((buff +  strlen(buff)), g_errcode_items_des[i].err_description, (unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));/* lint !e834 */
+			ret = strncat_s((buff +  strlen(buff)),
+							HISEE_ERROR_DESCRIPTION_MAX - strlen(buff),
+							g_errcode_items_des[i].err_description,
+							(unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));/* lint !e834 */
+			if (ret != EOK) {
+				pr_err("%s(): strncat4 err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
 		}
 	}
-	memcpy(buf, buff, HISEE_ERROR_DESCRIPTION_MAX);
+	ret = memcpy_s(buf, HISEE_BUF_SHOW_LEN, buff, HISEE_ERROR_DESCRIPTION_MAX);
+	if (ret != EOK) {
+		pr_err("%s(): memcpy err.\n", __func__);
+		set_errno_and_return(HISEE_SECUREC_ERR);
+	}
 	pr_err("%s(): success.\n", __func__);
 	return strlen(buf);
 }/*lint !e715*/
@@ -1020,7 +1118,7 @@ static int hisee_powerctrl_store_params_check(const char *buf, size_t count, uns
 		i++;
 		ptr_name = g_hisee_lpm3_function_list[i].function_name;
 	}
-	if (!ptr_name) {
+	if (ptr_name == NULL) {
 		pr_err("%s cmd=%s invalid\n", __func__, buf);
 		set_errno_and_return(HISEE_INVALID_PARAMS); /*lint !e1058*/
 	}
@@ -1044,7 +1142,9 @@ static ssize_t hisee_powerctrl_store(struct device *dev, struct device_attribute
 	}
 	if (!g_hisee_data.rpmb_is_ready) {
 		pr_err("%s rpmb is not ready now\n", __func__);
+#ifdef CONFIG_HUAWEI_DSM
 		record_hisee_log_by_dmd(DSM_HISEE_POWER_ON_OFF_ERROR_NO, HISEE_RPMB_MODULE_INIT_ERROR);
+#endif
 		set_errno_and_return(HISEE_RPMB_MODULE_INIT_ERROR); /*lint !e1058*/
 	}
 
@@ -1065,10 +1165,12 @@ static ssize_t hisee_powerctrl_store(struct device *dev, struct device_attribute
 		access_hisee_image_partition((char *)&upgrade_run_flg, COS_UPGRADE_RUN_WRITE_TYPE);
 	}
 
-	ret = g_hisee_lpm3_function_list[cmd_index].function_ptr((void *)(buf + strlen(g_hisee_lpm3_function_list[cmd_index].function_name)), (int)(long)dev);
+	ret = g_hisee_lpm3_function_list[cmd_index].function_ptr((void *)(buf + strlen(g_hisee_lpm3_function_list[cmd_index].function_name)), (int)(uintptr_t)dev);
 	if (ret !=  HISEE_OK) {
 		pr_err("%s powerctrl_cmd:%s failed, retcode=%d\n", __func__, g_hisee_lpm3_function_list[cmd_index].function_name, ret);
+#ifdef CONFIG_HUAWEI_DSM
 		record_hisee_log_by_dmd(DSM_HISEE_POWER_ON_OFF_ERROR_NO, ret);
+#endif
 		set_errno_and_return(HISEE_INVALID_PARAMS);
 	} else {
 		pr_err("%s :%s success\n", __func__, g_hisee_lpm3_function_list[cmd_index].function_name);
@@ -1095,7 +1197,7 @@ static ssize_t hisee_ioctl_show(struct device *dev, struct device_attribute *att
 		pr_err("%s buf paramters is null\n", __func__);
 		set_errno_and_return(HISEE_INVALID_PARAMS); /*lint !e1058*/
 	}
-	memset(buff, 0, HISEE_CMD_NAME_LEN);
+	(void)memset_s(buff, HISEE_CMD_NAME_LEN, 0, HISEE_CMD_NAME_LEN);
 	err_code = atomic_read(&g_hisee_errno);
 	for (i = 0; i < ARRAY_SIZE(g_errcode_items_des); i++) {
 		if (err_code == g_errcode_items_des[i].err_code) {
@@ -1104,33 +1206,90 @@ static ssize_t hisee_ioctl_show(struct device *dev, struct device_attribute *att
 	}
 	if (i == ARRAY_SIZE(g_errcode_items_des)) {
 		pr_err("%s(): can't find errcode=%d definition\n", __func__, err_code);
-		strncpy(buf, "-1,failed!", sizeof("-1,failed!"));
+		ret = strncpy_s(buf, HISEE_BUF_SHOW_LEN, "-1,failed!", sizeof("-1,failed!"));
+		if (ret != EOK) {
+			pr_err("%s(): strncpy err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 		return strlen(buf);
 	}
 	if (HISEE_OK == err_code) {
 		if (HISEE_FACTORY_TEST_NORUNNING == g_hisee_data.factory_test_state) {
-			snprintf(buff, 8, "%d,", 2);
-			strncat(buff, "no running", (unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+			ret = snprintf_s(buff, HISEE_CMD_NAME_LEN, 8, "%d,", 2);
+			if (ret == HISEE_SECLIB_ERROR) {
+				pr_err("%s snprintf1 err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
+			ret = strncat_s(buff, HISEE_CMD_NAME_LEN, "no running",
+							(unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+			if (ret != EOK) {
+				pr_err("%s(): strncat1 err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
 		} else if (HISEE_FACTORY_TEST_RUNNING == g_hisee_data.factory_test_state ||
 			true == hisee_chiptest_otp1_is_runing()) {
-			snprintf(buff, 8, "%d,", 1);
-			strncat(buff, "running", (unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+			ret = snprintf_s(buff, HISEE_CMD_NAME_LEN, 8, "%d,", 1);
+			if (ret == HISEE_SECLIB_ERROR) {
+				pr_err("%s snprintf2 err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
+			ret = strncat_s(buff, HISEE_CMD_NAME_LEN, "running",
+							(unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+			if (ret != EOK) {
+				pr_err("%s(): strncat2 err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
 		} else if (HISEE_FACTORY_TEST_SUCCESS == g_hisee_data.factory_test_state) {
 			if (HISEE_OK == hisee_check_secdebug_flash_otp1()) {
-				snprintf(buff, 8, "%d,", 0);
-				strncat(buff, "no error", (unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+				ret = snprintf_s(buff, HISEE_CMD_NAME_LEN, 8, "%d,", 0);
+				if (ret == HISEE_SECLIB_ERROR) {
+					pr_err("%s snprintf3 err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
+				ret = strncat_s(buff, HISEE_CMD_NAME_LEN, "no error",
+								(unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+				if (ret != EOK) {
+					pr_err("%s(): strncat3 err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
 			} else {
-				snprintf(buff, 8, "%d,", HISEE_OTP1_WRITE_FAIL);
-				strncat(buff, "OTP1 write fail", (unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+				ret = snprintf_s(buff, HISEE_CMD_NAME_LEN, 8, "%d,", HISEE_OTP1_WRITE_FAIL);
+				if (ret == HISEE_SECLIB_ERROR) {
+					pr_err("%s snprintf4 err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
+				ret = strncat_s(buff, HISEE_CMD_NAME_LEN, "OTP1 write fail",
+								(unsigned long)(HISEE_ERROR_DESCRIPTION_MAX - 1 - strlen(buff)));
+				if (ret != EOK) {
+					pr_err("%s(): strncat4 err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
 			}
 		}
 	} else {
-		snprintf(buff, 8, "%d,", err_code);
-		strncat(buff, g_errcode_items_des[i].err_description, (unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));/* lint !e834 */
+		ret = snprintf_s(buff, HISEE_CMD_NAME_LEN, 8, "%d,", err_code);
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s snprintf5 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
+		ret = strncat_s(buff, HISEE_CMD_NAME_LEN, g_errcode_items_des[i].err_description,
+						(unsigned long)((HISEE_ERROR_DESCRIPTION_MAX - 1) - strlen(buff)));/* lint !e834 */
+		if (ret != EOK) {
+			pr_err("%s(): strncat5 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 	}
-	memcpy(buf, buff, HISEE_ERROR_DESCRIPTION_MAX);/*lint !e747*/
+	ret = memcpy_s(buf, HISEE_BUF_SHOW_LEN, buff, HISEE_ERROR_DESCRIPTION_MAX);/*lint !e747*/
+	if (ret != EOK) {
+		pr_err("%s(): memcpy err.\n", __func__);
+		set_errno_and_return(HISEE_SECUREC_ERR);
+	}
 
-	memset(buff, 0, (unsigned long)HISEE_CMD_NAME_LEN);/*lint !e747*/
+	ret = memset_s(buff, HISEE_CMD_NAME_LEN, 0, (unsigned long)HISEE_CMD_NAME_LEN);/*lint !e747*/
+	if (ret != EOK) {
+		pr_err("%s(): memset_s err.\n", __func__);
+		set_errno_and_return(HISEE_SECUREC_ERR);
+	}
 	show_hisee_module_status(buff);
 	pr_err("%s\n", buff);
 
@@ -1167,13 +1326,13 @@ static ssize_t hisee_ioctl_store (struct device *dev, struct device_attribute *a
 		i++;
 		ptr_name = g_hisee_atf_function_list[i].function_name;
 	}
-	if (!ptr_name) {
+	if (ptr_name == NULL) {
 		pr_err("%s cmd=%s invalid\n", __func__, buf);
 		set_errno_and_return(HISEE_INVALID_PARAMS); /*lint !e1058*/
 	}
 
 	ret = g_hisee_atf_function_list[cmd_index].function_ptr((void *)(buf + strlen(g_hisee_atf_function_list[cmd_index].function_name)),
-															(int)(long)dev);
+															(int)(uintptr_t)dev);
 	if (ret !=  HISEE_OK) {
 		pr_err("%s ioctl_cmd:%s failed, retcode=%d\n", __func__, g_hisee_atf_function_list[cmd_index].function_name, ret);
 		return HISEE_INVALID_PARAMS;
@@ -1189,6 +1348,7 @@ static ssize_t hisee_ioctl_store (struct device *dev, struct device_attribute *a
 static ssize_t hisee_apdu_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	ssize_t ret_len;
+	int ret;
 
 	if (NULL == buf) {
 		pr_err("%s buf paramters is null\n", __func__);
@@ -1205,7 +1365,12 @@ static ssize_t hisee_apdu_show(struct device *dev, struct device_attribute *attr
 		ret_len = 0;
 	}
 	if (ret_len) {
-		memcpy(buf, g_hisee_data.apdu_ack.ack_buf, ret_len);
+		ret = memcpy_s(buf, ret_len, g_hisee_data.apdu_ack.ack_buf, ret_len);
+		if (ret != EOK) {
+			pr_err("%s memcpy error.\n", __func__);
+			mutex_unlock(&hisee_apdu_mutex);
+			return (ssize_t)0;
+		}
 		g_hisee_data.apdu_ack.ack_len = 0;
 	}
 
@@ -1252,9 +1417,11 @@ static ssize_t hisee_apdu_store(struct device *dev, struct device_attribute *att
 */
 static ssize_t hisee_power_debug_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
+#ifdef CONFIG_HISI_HISEE_MNTN
 	char buff[HISEE_BUF_SHOW_LEN] = {0};
 	u32	vote_lpm3;
 	u32	vote_atf;
+	int ret;
 
 	if (NULL == buf) {
 		pr_err("%s buf paramters is null\n", __func__);
@@ -1264,11 +1431,23 @@ static ssize_t hisee_power_debug_show(struct device *dev, struct device_attribut
 	hisee_mntn_collect_vote_value_cmd();
 	vote_lpm3 = hisee_mntn_get_vote_val_lpm3();
 	vote_atf = hisee_mntn_get_vote_val_atf();
-	snprintf(buff, HISEE_BUF_SHOW_LEN, "lpm3 0x%08x atf 0x%08x kernel 0x%lx cos_id 0x%x\n",
+	ret = snprintf_s(buff, HISEE_BUF_SHOW_LEN, HISEE_BUF_SHOW_LEN - 1,
+			"lpm3 0x%08x atf 0x%08x kernel 0x%lx cos_id 0x%x\n",
 			vote_lpm3, vote_atf, g_power_vote_status.value, g_runtime_cosid);
-	memcpy(buf, buff, HISEE_BUF_SHOW_LEN);
+	if (ret == HISEE_SECLIB_ERROR) {
+		pr_err("%s snprintf err.\n", __func__);
+		return HISEE_SECUREC_ERR;
+	}
+	ret = memcpy_s(buf, HISEE_BUF_SHOW_LEN, buff, HISEE_BUF_SHOW_LEN);
+	if (ret != EOK) {
+		pr_err("%s memcpy err.\n", __func__);
+		return HISEE_SECUREC_ERR;
+	}
 	pr_err("%s(): success.\n", __func__);
 	return strlen(buf);
+#else
+	return 0;
+#endif
 }/*lint !e715*/
 
 /* only root permissions can access this sysfs node */
@@ -1295,7 +1474,7 @@ static DEVICE_ATTR(hisee_at_result, (S_IRUSR | S_IRGRP), hisee_at_result_show, N
 static int hisee_remove(struct platform_device *pdev)
 {
 	int ret = HISEE_OK;
-	if (g_hisee_data.cma_device) {
+	if (g_hisee_data.cma_device != NULL) {
 		device_remove_file(g_hisee_data.cma_device, &dev_attr_hisee_ioctl);
 		device_remove_file(g_hisee_data.cma_device, &dev_attr_hisee_power);
 		device_remove_file(g_hisee_data.cma_device, &dev_attr_hisee_apdu);
@@ -1442,10 +1621,10 @@ static int hisee_probe_second_stage(struct platform_device *pdev)
 	g_hisee_data.factory_test_state = HISEE_FACTORY_TEST_NORUNNING;
 
 	hisee_power_ctrl_init();
-	wake_lock_init(&g_hisee_data.wake_lock, WAKE_LOCK_SUSPEND, "hisi-hisee"); /*used in rpmb_ready_task*/
+	wakeup_source_init(&g_hisee_data.wake_lock, "hisi-hisee"); /*used in rpmb_ready_task*/
 
 	rpmb_ready_task = kthread_run(rpmb_ready_body, NULL, "rpmb_ready_task");
-	if (!rpmb_ready_task) {
+	if (rpmb_ready_task == NULL) {
 		ret = HISEE_THREAD_CREATE_ERROR;
 		pr_err("hisee err create rpmb_ready_task failed\n");
 		goto err_device_remove_file_end;
@@ -1484,7 +1663,7 @@ static int __init hisee_probe(struct platform_device *pdev)
 	struct device *pdevice = &(pdev->dev);
 	int ret = HISEE_OK;
 
-	memset((void *)&g_hisee_data, 0, sizeof(g_hisee_data));
+	(void)memset_s((void *)&g_hisee_data, sizeof(g_hisee_data), 0, sizeof(g_hisee_data));
 	ret = of_reserved_mem_device_init(pdevice);
 	if (ret != HISEE_OK) {
 		pr_err("hisee shared cma pool with ATF registered failed!\n");

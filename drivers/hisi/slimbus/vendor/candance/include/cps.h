@@ -17,47 +17,6 @@
  * Types
  ***************************************************************************/
 
-/** A lock handle */
-typedef void* CPS_LockHandle;
-
-/****************************************************************************
- * Prototypes
- ***************************************************************************/
-
-/**
- * Check that sufficient locks are available
- * @param[in] lockCount number of locks requested
- * @return 0 on success (locks available)
- * @return ENOENT if insufficient locks are available
- */
-extern uint32_t CPS_ProbeLocks(uint32_t lockCount);
-
-/**
- * Initialize a lock
- * @param[out] lock where to store the allocated, initialized lock
- * @return 0 on success (lock is allocated and initialized)
- * @return ENOENT if insufficient locks are available
- */
-extern uint32_t CPS_InitLock(CPS_LockHandle* lock);
-
-/**
- * Free a lock
- * @param[in] lock the lock
- */
-extern void CPS_FreeLock(CPS_LockHandle lock);
-
-/**
- * Lock a lock, pending the current thread/task if necessary until the lock is available
- * @param[in] lock the lock
- */
-extern uint32_t CPS_Lock(CPS_LockHandle lock);
-
-/**
- * Unlock a lock, readying the next highest-priority thread/task pended on it if any
- * @param[in] lock the lock
- */
-extern uint32_t CPS_Unlock(CPS_LockHandle lock);
-
 /**
  * Read a byte, bypassing the cache
  * @param[in] address the address
@@ -117,51 +76,4 @@ extern void CPS_WritePhysAddress32(volatile uint32_t* location, uint32_t addrVal
  * @param[in] size size of the copy
  */
 extern void CPS_BufferCopy(volatile uint8_t *dst, volatile uint8_t *src, uint32_t size);
-
-/**
-* Invalidate the cache for the specified memory region.
-* This function may be stubbed out if caching is disabled for memory regions
-* as described in the driver documentation, or if the driver configuration does
-* not require this function.
-* @param[in] address Virtual address of memory region. (If an MMU is not in use,
-* this will be equivalent to the physical address.) This address should be
-* rounded down to the nearest cache line boundary.
-* @param[in] size  size of memory in bytes.  This size should be rounded up to
-* the nearest cache line boundary.	Use size UINTPTR_MAX to invalidate all
-* memory cache.  A size of 0 should be ignored and the function should return
-* immediately with no effect.
-* @param[in] devInfo   This parameter can be used to pass implementation specific
-* data to this function.  The content and use of this parameter is up to the
-* implementor of this function to determine, and if not required it may be ignored.
-*  For example, under Linux it can be used to pass a pointer to
-* the device struct to be used in a call to dma_sync_single_for_device().  If
-* used, the parameter should be passed to the core driver at initialisation as
-* part of the configurationInfo struct.  Please
-* see the core driver documentation for details of how to do this.
-*/
-extern void CPS_CacheInvalidate(uintptr_t address, size_t size, uintptr_t devInfo);
-
-/**
-* Flush the cache for the specified memory region
-* This function may be stubbed out if caching is disabled for memory regions
-* as described in the driver documentation, or if the driver configuration does
-* not require this function.
-* @param[in] address Virtual address of memory region. (If an MMU is not in use,
-* this will be equivalent to the physical address.) This address should be
-* rounded down to the nearest cache line boundary.
-* @param[in] size  size of memory in bytes.  This size should be rounded up to
-* the nearest cache line boundary.	Use size UINTPTR_MAX to flush all
-* memory cache.  A size of 0 should be ignored and the function should return
-* immediately with no effect.
-* @param[in] devInfo   This parameter can be used to pass implementation specific
-* data to this function.  The content and use of this parameter is up to the
-* implementor of this function to determine, and if not required it may be ignored.
-*  For example, under Linux it can be used to pass a pointer to
-* the device struct to be used in a call to dma_sync_single_for_device().  If
-* used, the parameter should be passed to the core driver at initialisation as
-* part of the configurationInfo struct.  Please
-* see the core driver documentation for details of how to do this.
-*/
-extern void CPS_CacheFlush(uintptr_t address, size_t size, uintptr_t devInfo);
-
 #endif /* multiple inclusion protection */

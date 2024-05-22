@@ -50,7 +50,7 @@ error_exit:
 		s_utils_config = NULL;
 	}
 
-	return 0;
+	return -EFAULT;
 }
 EXPORT_SYMBOL(hi64xx_utils_init);
 
@@ -63,10 +63,12 @@ void hi64xx_utils_deinit(void)
 }
 EXPORT_SYMBOL(hi64xx_utils_deinit);
 
+#ifdef CONFIG_HISI_DIEID
 int hisi_codec_get_dieid(char *dieid, unsigned int len)
 {
 	return -1;
 }
+#endif
 
 MODULE_DESCRIPTION("hi64xx util");
 MODULE_AUTHOR("liujinhong <liujinhong@hisilicon.com>");

@@ -138,7 +138,7 @@ void sdhci_retry_req(struct sdhci_host *host,struct mmc_request *mrq)
 		&& ((mrq->cmd && mrq->cmd->error)
 			|| (mrq->sbc && mrq->sbc->error)
 			|| (mrq->data && (mrq->data->error || (mrq->data->stop && mrq->data->stop->error))))
-		&& (!(host->flags & SDHCI_EXE_SOFT_TUNING))
+		&& (!((unsigned int)(host->flags) & SDHCI_EXE_SOFT_TUNING))
 		&& (host->mmc->ios.timing >= MMC_TIMING_MMC_HS200)
 		&& host->ops->tuning_move) {
 			if ((mrq->data && mrq->data->error && (host->mmc->ios.timing == MMC_TIMING_MMC_HS400))

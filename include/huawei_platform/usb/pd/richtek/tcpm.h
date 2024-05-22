@@ -57,8 +57,11 @@ enum typec_attach_type {
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC
 	TYPEC_ATTACHED_CUSTOM_SRC,		/* Same Rp */
 #endif	/* CONFIG_TYPEC_CAP_CUSTOM_SRC */
-	TYPEC_ATTACHED_VBUS_ONLY,
-	TYPEC_UNATTACHED_VBUS_ONLY,
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+/* CONFIG_TYPEC_CAP_NORP_SRC */
+	TYPEC_ATTACHED_NORP_SRC,	/* No Rp */
+#endif	/* CONFIG_TYPEC_CAP_NORP_SRC */
+
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
 	TYPEC_ATTACHED_CUSTOM_SRC2,     /* Same Rp 1.5 or 3A with CableVDO */
 #endif  /* CONFIG_TYPEC_CAP_CUSTOM_SRC2 */
@@ -545,6 +548,7 @@ extern int tcpm_send_uvdm(struct tcpc_device *tcpc_dev,
 #ifdef CONFIG_POGO_PIN
 extern int tcpm_typec_disable_function(
         struct tcpc_device *tcpc_dev, bool disable);
-#endif
+extern int tcpm_typec_vbus_detect(struct tcpc_device *tcpc_dev);
+#endif /* CONFIG_POGO_PIN */
 
 #endif /* TCPM_H_ */

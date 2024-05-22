@@ -1379,6 +1379,7 @@ VOS_UINT8 TAF_STD_TransformBcdImsi1112ToDeciDigit(
     return (VOS_UINT8)usImsi1112;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT16 TAF_STD_TransformCLBcdMncToDeciDigit(
     VOS_UINT16                          usBcdMnc
@@ -1397,6 +1398,7 @@ VOS_UINT16 TAF_STD_TransformCLBcdMncToDeciDigit(
     return usMnc;
 }
 
+#endif
 
 VOS_UINT32 TAF_STD_TransformDeciDigitToBcdMcc(
     VOS_UINT32                          ulDeciDigitMcc
@@ -1813,6 +1815,189 @@ VOS_UINT32 TAF_STD_Convert8BitToUcs2(
     return ulUcs2Len;
 }
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+
+VOS_UINT32 TAF_STD_ConvertStrToUcs2(
+    TAF_STD_STR_WITH_ENCODING_TYPE_STRU            *pstSrcStr,
+    VOS_UINT16                                     *pusUcs2Str,
+    VOS_UINT32                                      ulUcs2BuffLen,
+    VOS_UINT32                                     *pulUcs2Len
+)
+{
+    VOS_UINT8                                      *pucUnpackBuff       = VOS_NULL_PTR;
+    MODEM_ID_ENUM_UINT16                            enModemId;
+
+    if ((VOS_NULL_PTR == pstSrcStr )
+     || (VOS_NULL_PTR == pusUcs2Str)
+     || (VOS_NULL_PTR == pulUcs2Len)
+     || (VOS_NULL_PTR == pstSrcStr->pucStr))
+    {
+        return TAF_ERR_NULL_PTR;
+    }
+
+    MN_INFO_LOG1("TAF_STD_ConvertStrToUcs2: encoding", pstSrcStr->enCoding);
+
+    switch (pstSrcStr->enCoding)
+    {
+        case TAF_STD_ENCODING_7BIT:
+            /* 7bit: 先解码成8bit,再将8bit变为16bit的UCS2 */
+            enModemId   = NAS_MULTIINSTANCE_GetCurrInstanceModemId(WUEPS_PID_TAF);
+
+            pucUnpackBuff   = (VOS_UINT8*)NAS_MULTIINSTANCE_MemAlloc(enModemId, WUEPS_PID_TAF, ulUcs2BuffLen * sizeof(VOS_UINT8));
+
+            if (VOS_NULL_PTR == pucUnpackBuff)
+            {
+                return TAF_ERR_ERROR;
+            }
+
+            if (VOS_ERR == TAF_STD_UnPack7Bit(pstSrcStr->pucStr, ulUcs2BuffLen, 0, pucUnpackBuff))
+            {
+                NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pucUnpackBuff);
+                MN_ERR_LOG("TAF_STD_ConvertStrToUcs2: Unpack fail");
+                return TAF_ERR_ERROR;
+            }
+
+            *pulUcs2Len = ulUcs2BuffLen;
+
+            /* 去除7Bit压缩时填充位 */
+            if (0x0d == (pucUnpackBuff[*pulUcs2Len - 1]))
+            {
+                (*pulUcs2Len)--;
+            }
+
+            /* DefaultAlpha->Ascii */
+            TAF_STD_ConvertDefAlphaToAscii(pucUnpackBuff, *pulUcs2Len, pucUnpackBuff, pulUcs2Len);
+
+            /* 单字节转双字节 */
+            *pulUcs2Len = TAF_STD_Convert8BitToUcs2(pucUnpackBuff, *pulUcs2Len, pusUcs2Str, ulUcs2BuffLen);
+
+            NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pucUnpackBuff);
+            break;
+
+        case TAF_STD_ENCODING_8BIT:
+            TAF_STD_Convert8BitToUcs2(pstSrcStr->pucStr, ulUcs2BuffLen, pusUcs2Str, ulUcs2BuffLen);
+            *pulUcs2Len = pstSrcStr->ulLen;
+            break;
+
+        case TAF_STD_ENCODING_UCS2:
+            TAF_MEM_CPY_S(pusUcs2Str, ulUcs2BuffLen, pstSrcStr->pucStr, ulUcs2BuffLen);
+
+            /* 输入为大端 内部为小端，需要转换 */
+            (VOS_VOID)TAF_STD_ChangeEndian((VOS_UINT8*)pusUcs2Str, ulUcs2BuffLen, (VOS_UINT8*)pusUcs2Str, sizeof(VOS_UINT16));
+
+            /* Ucs2Len指UINT16的UCS2码的个数， pstSrcStr->ulLen指码流字节数 */
+            *pulUcs2Len = pstSrcStr->ulLen / 2;
+            break;
+
+        case TAF_STD_ENCODING_UTF8:
+            /* 增加编码转换失败原因值 */
+            return TAF_STD_ConvertUtf8ToUcs2(pstSrcStr->pucStr, pstSrcStr->ulLen, pusUcs2Str, ulUcs2BuffLen, pulUcs2Len);
+
+        default:
+            return TAF_ERR_ERROR;
+    }
+
+    return TAF_ERR_NO_ERROR;
+}
+
+
+VOS_UINT32 TAF_STD_ConvertUcs2ToStr(
+    TAF_STD_STR_WITH_ENCODING_TYPE_STRU            *pstDstStr,
+    VOS_UINT16                                     *pusUcs2Str,
+    VOS_UINT32                                      ulUcs2Len,
+    VOS_UINT32                                      ulDstStrBuffLen
+)
+{
+    VOS_UINT8                          *pucBuffStr  = VOS_NULL_PTR;
+    VOS_UINT32                          ulUcs2BuffLen;
+    VOS_UINT32                          ulAllocBuffLen;
+    VOS_UINT32                          ul8BitLen;
+    VOS_UINT32                          ulRslt;
+    MODEM_ID_ENUM_UINT16                enModemId;
+
+    if ((VOS_NULL_PTR == pstDstStr )
+     || (VOS_NULL_PTR == pusUcs2Str)
+     || (VOS_NULL_PTR == pstDstStr->pucStr))
+    {
+        return TAF_ERR_NULL_PTR;
+    }
+
+    MN_INFO_LOG1("TAF_STD_ConvertUcs2ToStr: encoding", pstDstStr->enCoding);
+
+    pstDstStr->ulLen = 0;
+    TAF_MEM_SET_S(pstDstStr->pucStr, ulDstStrBuffLen, 0, ulDstStrBuffLen);
+
+    switch (pstDstStr->enCoding)
+    {
+        case TAF_STD_ENCODING_UCS2:
+            pstDstStr->ulLen = TAF_MIN((ulUcs2Len * sizeof(VOS_UINT16)), ulDstStrBuffLen);
+            TAF_MEM_CPY_S(pstDstStr->pucStr, ulDstStrBuffLen, pusUcs2Str, pstDstStr->ulLen);
+
+            /* TODO: 增加CHR上报 */
+            /* 内部是小端序，拷贝输出时候需要转成大端序 */
+            ulRslt = TAF_STD_ChangeEndian(pstDstStr->pucStr, pstDstStr->ulLen, pstDstStr->pucStr, sizeof(VOS_UINT16));
+
+            return ulRslt;
+
+        case TAF_STD_ENCODING_8BIT:
+            pstDstStr->ulLen = TAF_STD_ConvertUcs2To8Bit(pusUcs2Str, ulUcs2Len, pstDstStr->pucStr, ulDstStrBuffLen);
+            break;
+
+        case TAF_STD_ENCODING_7BIT:
+            /* 7Bit支持扩展表后最多用2个字节表示一个Unicode */
+            ul8BitLen      = 0;
+            ulUcs2BuffLen  = ulUcs2Len * 2;
+            ulAllocBuffLen = ulUcs2BuffLen * 2;
+
+            enModemId   = NAS_MULTIINSTANCE_GetCurrInstanceModemId(WUEPS_PID_TAF);
+
+            /* 申请2倍缓存分开使用 */
+            pucBuffStr    = (VOS_UINT8*)NAS_MULTIINSTANCE_MemAlloc(enModemId, WUEPS_PID_TAF, ulAllocBuffLen * sizeof(VOS_UINT8));
+            if (VOS_NULL_PTR == pucBuffStr)
+            {
+                return TAF_ERR_ERROR;
+            }
+            TAF_MEM_SET_S(pucBuffStr, ulUcs2BuffLen * sizeof(VOS_UINT8), 0, ulUcs2Len * sizeof(VOS_UINT8));
+
+            /* 先转成8Bit编码 */
+            ulUcs2Len = TAF_STD_ConvertUcs2To8Bit(pusUcs2Str, ulUcs2Len, pucBuffStr, ulUcs2BuffLen);
+
+            /* 转成DefaultAlpha，使用后半段缓存 */
+            if (MN_ERR_NO_ERROR != TAF_STD_ConvertAsciiToDefAlpha(pucBuffStr, ulUcs2Len, pucBuffStr + ulUcs2BuffLen, &ul8BitLen, ulUcs2BuffLen))
+            {
+                NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pucBuffStr);
+                MN_ERR_LOG("TAF_STD_ConvertUcs2ToStr: Ascii->DefAlpha fail");
+                return TAF_ERR_ERROR;
+            }
+
+            /* 压缩成7Bit编码 */
+            if (VOS_OK != TAF_STD_Pack7Bit(pucBuffStr + ulUcs2BuffLen, ul8BitLen, 0, pstDstStr->pucStr, &(pstDstStr->ulLen)))
+            {
+                NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pucBuffStr);
+                MN_ERR_LOG("TAF_STD_ConvertUcs2ToStr: pack fail");
+                return TAF_ERR_ERROR;
+            }
+
+            /* 23038 6.1.2.3.1，最后7Bit如果没有数据需要填CR以免被识别成@ */
+            if (7 == ul8BitLen % 8)
+            {
+                *(pstDstStr->pucStr + pstDstStr->ulLen - 1) |= 0x1A;
+            }
+
+            NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pucBuffStr);
+            break;
+
+        case TAF_STD_ENCODING_UTF8:
+            pstDstStr->ulLen = TAF_STD_ConvertUcs2ToUtf8(pusUcs2Str, ulUcs2Len, pstDstStr->pucStr, ulDstStrBuffLen);
+            break;
+
+        default:
+            return TAF_ERR_ERROR;
+    }
+
+    return TAF_ERR_NO_ERROR;
+}
+#endif
 
 
 VOS_UINT32 TAF_STD_IsSuitableEncodeForUcs2(
@@ -1876,6 +2061,81 @@ VOS_UINT32 TAF_STD_IsSuitableEncodeForUcs2(
     return TAF_ERR_NO_ERROR;
 }
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+
+VOS_UINT32 TAF_STD_ConvertStrEncodingType(
+    TAF_STD_STR_WITH_ENCODING_TYPE_STRU            *pstSrcStr,
+    TAF_STD_ENCODING_TYPE_ENUM_U8                   enDstCoding,
+    VOS_UINT32                                      ulDstBuffLen,
+    TAF_STD_STR_WITH_ENCODING_TYPE_STRU            *pstDstStr
+)
+{
+    VOS_UINT16                                     *pusUcs2Str      = VOS_NULL_PTR;
+    VOS_UINT32                                      ulUcs2Len;
+    VOS_UINT32                                      ulUcs2BuffLen;
+    VOS_UINT32                                      ulRslt;
+    MODEM_ID_ENUM_UINT16                            enModemId;
+
+    enModemId   = NAS_MULTIINSTANCE_GetCurrInstanceModemId(WUEPS_PID_TAF);
+
+    if ((VOS_NULL_PTR == pstSrcStr)
+     || (VOS_NULL_PTR == pstDstStr)
+     || (VOS_NULL_PTR == pstSrcStr->pucStr)
+     || (VOS_NULL_PTR == pstDstStr->pucStr))
+    {
+        return TAF_ERR_NULL_PTR;
+    }
+
+    /* 计算申请Unicode内存大小 */
+    /* pstSrcStr->Len指字节数， ulUcs2Len指UCS2编码数， 前者UINT8 后者UINT16 */
+    if (TAF_STD_ENCODING_7BIT == pstSrcStr->enCoding)
+    {
+        ulUcs2Len = pstSrcStr->ulLen * 8 / 7;
+    }
+    else
+    {
+        ulUcs2Len = pstSrcStr->ulLen;
+    }
+    ulUcs2BuffLen = ulUcs2Len;
+
+    pusUcs2Str    = (VOS_UINT16*)NAS_MULTIINSTANCE_MemAlloc(enModemId, WUEPS_PID_TAF, ulUcs2BuffLen * sizeof(VOS_UINT16));
+    if (VOS_NULL_PTR == pusUcs2Str)
+    {
+        return TAF_ERR_ERROR;
+    }
+    TAF_MEM_SET_S(pusUcs2Str, ulUcs2BuffLen * sizeof(VOS_UINT16), 0, ulUcs2BuffLen * sizeof(VOS_UINT16));
+
+    /* 将输入码流转为Unicode(UCS2)格式 */
+    ulRslt = TAF_STD_ConvertStrToUcs2(pstSrcStr, pusUcs2Str, ulUcs2BuffLen, &ulUcs2Len);
+
+    if (TAF_ERR_NO_ERROR != ulRslt)
+    {
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pusUcs2Str);/*lint !e516 */
+        return ulRslt;
+    }
+
+    /* 是否能转成目标编码 */
+    if (TAF_ERR_NO_ERROR != TAF_STD_IsSuitableEncodeForUcs2(pusUcs2Str, ulUcs2Len, enDstCoding))
+    {
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pusUcs2Str);/*lint !e516 */
+        MN_INFO_LOG("TAF_STD_ConvertStrEncodingType Dst Encoding cannot be");
+        return TAF_ERR_PARA_ERROR;
+    }
+    pstDstStr->enCoding = enDstCoding;
+
+    /* 将Unicode(UCS2)码流转到指定格式 */
+    ulRslt = TAF_STD_ConvertUcs2ToStr(pstDstStr, pusUcs2Str, ulUcs2Len, ulDstBuffLen);
+
+    if (TAF_ERR_NO_ERROR != ulRslt)
+    {
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pusUcs2Str);/*lint !e516 */
+        return ulRslt;
+    }
+
+    NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pusUcs2Str);/*lint !e516 */
+    return TAF_ERR_NO_ERROR;
+}
+#endif
 
 
 

@@ -1,3 +1,4 @@
+#include "hisi_subpmu.h"
 #include <asm/compiler.h>
 #include <linux/compiler.h>
 #include <linux/err.h>
@@ -16,8 +17,9 @@
 #include <asm/memory.h>
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/delay.h>
-#include "hisi_subpmu.h"
+#include <securec.h>
 
+#ifdef CONFIG_HISI_DIEID
 
 #define PMUSSI0_BASE_ADDR			(0xFFF34000)
 #define PMUSSI_ADDR(ch, offset)     ((char *)PMUSSI0_BASE_ADDR + (ch) * 0x2000 + ((offset) << 2))
@@ -223,9 +225,10 @@ static int dieid_package(struct pmu_para *pmu_info, int idx, char *pmu_buf)
 	char tmp[HISI_PMU_TMP_BUF] = {0};
 	unsigned char ip[HISI_PMU_IP_SIZE] = {0};
 
-	ret = snprintf(pmu_buf, HISI_PMU_BUF_SIZE, "\r\n%s_PMU%d:0x", pmu_info->pmu_type, idx);/* [false alarm]:snprintf is safe  *//* unsafe_function_ignore: snprintf */
+	ret = snprintf_s(pmu_buf, HISI_PMU_TMP_BUF, HISI_PMU_TMP_BUF - 1,
+	                 "\r\n%s_PMU%d:0x", pmu_info->pmu_type, idx);
 	if (ret < 0) {
-		pr_err("%s:snprintf error!\n", __func__);
+		pr_err("%s:snprintf_s_1 error!\n", __func__);
 		return ret;
 	}
 
@@ -234,16 +237,24 @@ static int dieid_package(struct pmu_para *pmu_info, int idx, char *pmu_buf)
 		return -1;
 
 	for (i = HISI_PMU_IP_SIZE - 1; i >= 0; i--) {
-		ret = snprintf(tmp, sizeof(tmp), "%02x", ip[i]);/* unsafe_function_ignore: snprintf */
+		ret = snprintf_s(tmp, HISI_PMU_TMP_BUF, HISI_PMU_TMP_BUF - 1, "%02x", ip[i]);
 		if (ret < 0) {
-			pr_err("%s:snprintf error!\n", __func__);
+			pr_err("%s:snprintf_s_2 error!\n", __func__);
 			return ret;
 		}
-		strncat(pmu_buf, tmp, strlen(tmp));/* unsafe_function_ignore: strncat */
-		memset(tmp, 0, strlen(tmp));/* unsafe_function_ignore: memset */
+		ret = strncat_s(pmu_buf, HISI_PMU_TMP_BUF, tmp, strlen(tmp));
+		if (ret != EOK) {
+			pr_err("%s:strncat_s_1 error!\n", __func__);
+			return ret;
+		}
+		(void)memset_s(tmp, HISI_PMU_TMP_BUF, 0, strlen(tmp));
 	}
 
-	strncat(pmu_buf, "\r\n", strlen("\r\n"));/* unsafe_function_ignore: strncat */
+	ret = strncat_s(pmu_buf, HISI_PMU_TMP_BUF, "\r\n", strlen("\r\n"));
+	if (ret != EOK) {
+		pr_err("%s:strncat_s_2 error!\n", __func__);
+		return ret;
+	}
 	return 0;
 }
 
@@ -285,21 +296,26 @@ int hisi_subpmu_get_dieid(char *dieid, unsigned int len)
 			goto out;
 		}
 
-		strncat(dieid_buf, pmu_buf, strlen(pmu_buf));/* unsafe_function_ignore: strncat */
-		memset(pmu_buf, 0, HISI_PMU_TMP_BUF);/* unsafe_function_ignore: memset */
+		ret = strncat_s(dieid_buf, HISI_PMU_BUF_SIZE, pmu_buf, strlen(pmu_buf));
+		if (ret != EOK) {
+			pr_err("%s:strncat_s_1 error!\n", __func__);
+			goto out;
+		}
+		(void)memset_s(pmu_buf, HISI_PMU_TMP_BUF, 0, HISI_PMU_TMP_BUF);
 		pmu_idx++;
 	}
 
-	if(len >= strlen(dieid_buf)) {
-		strncpy(dieid, dieid_buf, strlen(dieid_buf));/* unsafe_function_ignore: strncpy */
-		ret = 0;
-	}else{
+	if (len >= strlen(dieid_buf)) {
+		ret = strncpy_s(dieid, len, dieid_buf, strlen(dieid_buf));
+		if (ret != EOK)
+			pr_err("%s:strncpy_s error!\n", __func__);
+	} else {
 		pr_err("%s:dieid length is not enough!\n", __func__);
 		ret = strlen(dieid_buf);
 	}
 
 out:
 	kfree(subpmu.pmu_info);
-	subpmu.pmu_info = NULL;
 	return ret;
 }
+#endif

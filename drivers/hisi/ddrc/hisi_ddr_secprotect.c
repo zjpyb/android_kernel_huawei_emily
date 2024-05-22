@@ -33,11 +33,16 @@
 #include <linux/hisi/util.h>
 #include <linux/hisi/hisi_ddr.h>
 #include <linux/hisi/rdr_hisi_platform.h>
+#ifdef CONFIG_DRMDRIVER
 #include <linux/hisi/hisi_drmdriver.h>
+#endif
 
 #define DMR_SHARE_MEM_PHY_BASE (HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE + DRM_SHARE_MEM_OFFSET)
+#define DMSS_OPTI_SHARE_MEM_SIZE     (0x8)
+#define INTRSRC_MASK                 (0xFF)
 
-u64 *g_dmss_intr_fiq;
+u64 *g_dmss_intr_fiq = NULL;
+u64 *g_dmss_intr = NULL;
 
 
 struct semaphore modemddrc_happen_sem;
@@ -59,7 +64,7 @@ int modemddrc_happen(void *arg)
 
 void fiq_print_src(u64 intrsrc)
 {
-	unsigned int intr = intrsrc & 0xFF;
+	unsigned int intr = intrsrc & INTRSRC_MASK;
 
 	/* check with FIQ number */
 	if (IRQ_WDT_INTR_FIQ == intr) {
@@ -77,7 +82,7 @@ void dmss_fiq_handler(void)
 {
 	if (NULL == g_dmss_intr_fiq) {
 		printk(KERN_ERR "fiq_handler intr ptr is null.\n");
-		g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, 8);
+		g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, DMSS_OPTI_SHARE_MEM_SIZE);
 		if (NULL == g_dmss_intr_fiq) {
 			printk(KERN_ERR "fiq_handler ioremap_nocache fail\n");
 			return;
@@ -95,6 +100,7 @@ void dmss_fiq_handler(void)
 }
 
 
+#ifdef CONFIG_DRMDRIVER
 int hisi_sec_ddr_set(DRM_SEC_CFG *sec_cfg, DYNAMIC_DDR_SEC_TYPE type)
 {
 	int ret;
@@ -119,15 +125,17 @@ int hisi_sec_ddr_clr(DYNAMIC_DDR_SEC_TYPE type)
 	return atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
 		(u64)DMR_SHARE_MEM_PHY_BASE, (u64)type, ACCESS_REGISTER_FN_SUB_ID_DDR_DRM_CLR);
 }
+#endif
 
 static int hisi_ddr_secprotect_probe(struct platform_device *pdev)
 {
 
-    g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, 8);
-    if (NULL == g_dmss_intr_fiq) {
+    g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, DMSS_OPTI_SHARE_MEM_SIZE);
+    if (g_dmss_intr_fiq == NULL) {
         printk(" ddr ioremap_nocache fail\n");
         return -ENOMEM;
     }
+
 
     sema_init(&modemddrc_happen_sem, 0);
 
@@ -145,14 +153,23 @@ static int hisi_ddr_secprotect_remove(struct platform_device *pdev)
 		iounmap(g_dmss_intr_fiq);
 	}
 	g_dmss_intr_fiq = NULL;
+
+	if (g_dmss_intr)
+	{
+		iounmap(g_dmss_intr);
+	}
+	g_dmss_intr = NULL;
+
 	return 0;
 }
 
+#ifdef CONFIG_OF
 static const struct of_device_id hs_ddr_of_match[] = {
 	{ .compatible = "hisilicon,ddr_secprotect", },
 	{},
 };
 MODULE_DEVICE_TABLE(of, hs_ddr_of_match);
+#endif
 
 static struct platform_driver hisi_ddr_secprotect_driver = {
 	.probe		= hisi_ddr_secprotect_probe,

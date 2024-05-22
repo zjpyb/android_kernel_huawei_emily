@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM power
 
@@ -195,13 +196,6 @@ TRACE_EVENT(cpu_frequency_limits,
 		  (unsigned long)__entry->min_freq,
 		  (unsigned long)__entry->max_freq,
 		  (unsigned long)__entry->cpu_id)
-);
-
-DEFINE_EVENT(cpu, cpu_capacity,
-
-	TP_PROTO(unsigned int capacity, unsigned int cpu_id),
-
-	TP_ARGS(capacity, cpu_id)
 );
 
 TRACE_EVENT(device_pm_callback_start,
@@ -647,6 +641,39 @@ TRACE_EVENT(memlat_dev_update,
 		__entry->mem,
 		__entry->freq,
 		__entry->vote)
+);
+#endif
+
+#ifdef CONFIG_HISI_DEVFREQ_DEVBW
+TRACE_EVENT(memlat_set_ddr_freq,
+
+	TP_PROTO(const char *reason, int cpu,
+		 unsigned long min_core_freq, unsigned long cpu_freq, unsigned long new_ddr_freq),
+
+	TP_ARGS(reason, cpu, min_core_freq, cpu_freq, new_ddr_freq),
+
+	TP_STRUCT__entry(
+		__string(reason, reason)
+		__field(int, cpu)
+		__field(unsigned long, min_core_freq)
+		__field(unsigned long, cpu_freq)
+		__field(unsigned long, new_ddr_freq)
+	),
+
+	TP_fast_assign(
+		__assign_str(reason, reason);
+		__entry->cpu = cpu;
+		__entry->min_core_freq = min_core_freq;
+		__entry->cpu_freq = cpu_freq;
+		__entry->new_ddr_freq = new_ddr_freq;
+	),
+
+	TP_printk("reason=%s  cpu=%d min_core_freq=%lu cpu_freq=%lu new_ddr_freq=%lu",
+		__get_str(reason),
+		__entry->cpu,
+		__entry->min_core_freq,
+		__entry->cpu_freq,
+		__entry->new_ddr_freq)
 );
 #endif
 

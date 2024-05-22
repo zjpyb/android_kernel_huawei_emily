@@ -1,5 +1,5 @@
 #include <linux/io.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/hisi/rdr_pub.h>
@@ -58,6 +58,9 @@ static u32 g_subtype;
 #undef __HISEE_EXC_SUBTYPE_MAP
 #define __HISEE_EXC_SUBTYPE_MAP(x, y, z) {x, #y, #z, z},
 
+#undef __IVP_EXC_SUBTYPE_MAP
+#define __IVP_EXC_SUBTYPE_MAP(x, y, z) {x, #y, #z, z},
+
 struct exp_subtype exp_subtype_map[] = {
 	#include <mntn_subtype_exception_map.h>
 };
@@ -75,6 +78,7 @@ struct exp_subtype exp_subtype_map[] = {
 #undef __NPU_EXC_SUBTYPE_MAP
 #undef __CONN_EXC_SUBTYPE_MAP
 #undef __HISEE_EXC_SUBTYPE_MAP
+#undef __IVP_EXC_SUBTYPE_MAP
 
 u32 get_exception_subtype_map_size(void)
 {
@@ -201,9 +205,8 @@ static int __init early_parse_exec_subtype_cmdline(char *exec_subtype_cmdline)
 	int i;
 
 	if (EOK != memset_s(g_subtype_name, RDR_REBOOT_REASON_LEN, 0x0, RDR_REBOOT_REASON_LEN)) {
-		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		pr_err("[%s:%d]: memset_s err\n", __func__, __LINE__);
 	}
-
 	if (memcpy_s(g_subtype_name, RDR_REBOOT_REASON_LEN, exec_subtype_cmdline,
                 RDR_REBOOT_REASON_LEN - 1)) {
 		BB_PRINT_ERR("failed to memcpy_s exception subtype.\n");

@@ -42,8 +42,7 @@ struct kb_dev_ops {
 
 /* function from kbhub */
 extern int kernel_send_kb_cmd(unsigned int cmd, int val);
-extern int kernel_send_kb_report_event(unsigned int cmd,
-	void *buffer, int size);
+extern int kernel_send_kb_report_event(unsigned int cmd, void *buffer, int size);
 extern int kbhb_get_hall_value(void);
 extern int kbdev_proxy_register(struct kb_dev_ops *ops);
 

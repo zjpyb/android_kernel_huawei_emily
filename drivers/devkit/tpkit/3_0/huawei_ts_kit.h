@@ -1,10 +1,19 @@
 /*
- * Huawei Touchpanel driver
+ * Huawei Touchscreen Driver
  *
- * Copyright (C) 2013 Huawei Device Co.Ltd
- * License terms: GNU General Public License (GPL) version 2
+ * Copyright (c) 2013-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
+
 #ifndef __HUAWEI_TS_KIT_H_
 #define __HUAWEI_TS_KIT_H_
 
@@ -19,27 +28,27 @@
 #include <linux/debugfs.h>
 #include <linux/platform_device.h>
 #include <huawei_platform/log/hw_log.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/semaphore.h>
 #include <lcd_kit_core.h>
 
 #define NO_ERR 0
 #define RESULT_ERR (-1)
-#define NO_SYNC_TIMEOUT		0
-#define SHORT_SYNC_TIMEOUT		5
-#define LONG_SYNC_TIMEOUT		10
-#define LONG_LONG_SYNC_TIMEOUT	50
+#define NO_SYNC_TIMEOUT 0
+#define SHORT_SYNC_TIMEOUT 5
+#define LONG_SYNC_TIMEOUT 10
+#define LONG_LONG_SYNC_TIMEOUT 50
 
 #define TS_RAWDATA_BUFF_MAX 11000
 
-#define TS_RAWDATA_DEVINFO_MAX	80
-#define TS_RAWDATA_RESULT_MAX	200
+#define TS_RAWDATA_DEVINFO_MAX 80
+#define TS_RAWDATA_RESULT_MAX 200
 #define MAX_CAP_DATA_SIZE 8
 #define DELTA_TEST_TITLE_LEN 6
 #define TX_RX_BUF_MAX 3000
-#define PART_ONE_LIMIT_LENGTH	11
-#define EESHORT_PRINT_SHIFT_LENGTH	1
-#define MAX_CAP_DATA_SIZE_FOR_EESHORT	8
+#define PART_ONE_LIMIT_LENGTH 11
+#define EESHORT_PRINT_SHIFT_LENGTH 1
+#define MAX_CAP_DATA_SIZE_FOR_EESHORT 8
 
 #define TS_CHIP_TYPE_MAX_SIZE 300
 #define TS_GAMMA_DATA_MAX_SIZE 500
@@ -55,22 +64,22 @@
 #define TS_CHIP_READ_ERROR 1
 #define TS_CHIP_READ_OEM_INFO_ERROR 4
 
-#define I2C_RW_TRIES 3		//retry 3 times
+#define I2C_RW_TRIES 3
 
 #define TS_MAX_REG_VALUE_NUM 80
 
 
 /* ts switch func begin */
-#define TS_SWITCH_TYPE_DOZE	(1 << 0)
-#define TS_SWITCH_TYPE_GAME	(1 << 1)
-#define TS_SWITCH_TYPE_SCENE	(1 << 2)
+#define TS_SWITCH_TYPE_DOZE (1 << 0)
+#define TS_SWITCH_TYPE_GAME (1 << 1)
+#define TS_SWITCH_TYPE_SCENE (1 << 2)
 
-#define TS_SWITCH_DOZE_ENABLE	1
-#define TS_SWITCH_DOZE_DISABLE	2
-#define TS_SWITCH_GAME_ENABLE	3
-#define TS_SWITCH_GAME_DISABLE	4
-#define TS_SWITCH_SCENE_ENTER	3
-#define TS_SWITCH_SCENE_EXIT	4
+#define TS_SWITCH_DOZE_ENABLE 1
+#define TS_SWITCH_DOZE_DISABLE 2
+#define TS_SWITCH_GAME_ENABLE 3
+#define TS_SWITCH_GAME_DISABLE 4
+#define TS_SWITCH_SCENE_ENTER 3
+#define TS_SWITCH_SCENE_EXIT 4
 
 enum ts_scene_code {
 	TS_SWITCH_SCENE_3 = 3,
@@ -92,11 +101,15 @@ enum ts_scene_code {
 	TS_SWITCH_SCENE_19,
 	TS_SWITCH_SCENE_20
 };
+/* if add new scene, please check this number of SCENE_SUPPORT_MAX! */
+#define SCENE_SUPPORT_MAX 22
+#define SCENC_MODE_ORIGINAL 0 /* default */
+#define SCENC_MODE_POWERGENIUS 1 /* most used beijing */
+#define SCENE_MODE_ITOUCH 2 /* most used shanghai */
 
-#define TS_SWITCH_FACE_DETECT		22
-#define TS_SWITCH_FACE_DCT_ENABLE	1
-#define TS_SWITCH_FACE_DCT_DISABLE	2
-/* ts switch func end */
+#define TS_SWITCH_FACE_DETECT 22
+#define TS_SWITCH_FACE_DCT_ENABLE 1
+#define TS_SWITCH_FACE_DCT_DISABLE 2 /* ts switch func end */
 
 #define MAX_STR_LEN 32
 #define TS_CAP_TEST_TYPE_LEN 100
@@ -109,37 +122,39 @@ enum ts_scene_code {
 #define TD43XX_EE_SHORT_TEST_PASS "-5P"
 #define CAP_TEST_FORCEKEY_VALUE_NUM 2
 
-#define CHIP_INFO_LENGTH	16
+#define CHIP_INFO_LENGTH 16
 #define RAWDATA_NUM 16
 #define MAX_POSITION_NUMS 6
 
-#define TS_BOOT_DETECTION_SUPPORT  1
+#define TS_BOOT_DETECTION_SUPPORT 1
 
-#define ROI_HEAD_DATA_LENGTH		4
-#define ROI_DATA_READ_LENGTH		102
-#define ROI_DATA_SEND_LENGTH		(ROI_DATA_READ_LENGTH-ROI_HEAD_DATA_LENGTH)
-#define ROI_CTRL_DEFAULT_ADDR		0x0446
-#define ROI_DATA_DEFAULT_ADDR		0x0418
+#define ROI_HEAD_DATA_LENGTH 4
+#define ROI_DATA_READ_LENGTH 102
+#define ROI_DATA_SEND_LENGTH (ROI_DATA_READ_LENGTH-ROI_HEAD_DATA_LENGTH)
+#define ROI_CTRL_DEFAULT_ADDR 0x0446
+#define ROI_DATA_DEFAULT_ADDR 0x0418
 #define CALIBRATION_DATA_SIZE 6144
 
-#define DIFF_DATA_MAX_LEN		100
+#define DIFF_DATA_MAX_LEN 100
 
-#define TP_I2C_HWSPIN_LOCK_CODE   28
+#define TP_I2C_HWSPIN_LOCK_CODE 28
 #define GET_HARDWARE_TIMEOUT 100000
 
 #define TS_MAX_FINGER 10
+#define TS_FOLD_MAX_FINGER 20
 #define TS_MAX_PEN_BUTTON 2
+#define TP_IC_CMD_MAX_LEN 32
 
 extern u8 g_ts_kit_log_cfg;
-#define HWLOG_TAG	TS_KIT
+#define HWLOG_TAG TS_KIT
 HWLOG_REGIST();
-#define TS_LOG_INFO(x...)		_hwlog_info(HWLOG_TAG, ##x)
-#define TS_LOG_ERR(x...)		_hwlog_err(HWLOG_TAG, ##x)
-#define TS_LOG_DEBUG(x...)	\
+#define TS_LOG_INFO(x...) _hwlog_info(HWLOG_TAG, ##x)
+#define TS_LOG_ERR(x...) _hwlog_err(HWLOG_TAG, ##x)
+#define TS_LOG_DEBUG(x...) \
 	do { \
-		if (g_ts_kit_log_cfg)	\
-			_hwlog_info(HWLOG_TAG, ##x);	\
-	}while(0)
+		if (g_ts_kit_log_cfg) \
+			_hwlog_info(HWLOG_TAG, ##x); \
+	} while (0)
 /*
  * +-------+--------+---------+----------------------------------------------+
  * | BIT7  |  BIT6  |  BIT5   |                 BIT4~BIT0                    |
@@ -148,52 +163,49 @@ HWLOG_REGIST();
  * +----------------+---------+----------------------------------------------+
  */
 
-/* event status begin*/
-#define TS_FINGER_RELEASE	(1 << 5)
-#define TS_FINGER_PRESS		(1 << 6)
-/* event status end */
+/* event status begin */
+#define TS_FINGER_RELEASE (1 << 5)
+#define TS_FINGER_PRESS (1 << 6) /* event status end */
 
 /* event type begin */
-#define TP_NONE_FINGER	0
-#define TP_FINGER 	1
-#define TP_STYLUS	2
-#define TP_GLOVE 	6
-/* event type end */
+#define TP_NONE_FINGER 0
+#define TP_FINGER 1
+#define TP_STYLUS 2
+#define TP_GLOVE 6 /* event type end */
 
+#define FILTER_GLOVE_NUMBER 4
 
-
-#define FILTER_GLOVE_NUMBER	4
-
-#define GPIO_HIGH        1
+#define GPIO_HIGH 1
 
 #define TS_CMD_CHECK_KEY 0X8080
 
-#define TS_RAWDATA_FAILED_REASON_LEN	20
-#define TS_RAWDATA_STATISTICS_DATA_LEN  32
-#define TS_RAWDATA_TEST_NAME_LEN	50
-#define TS_RAWDATA_RESULT_CODE_LEN	5
-#define TS_CMD_QUEUE_SIZE  20
+#define TS_RAWDATA_FAILED_REASON_LEN 20
+#define TS_RAWDATA_STATISTICS_DATA_LEN 32
+#define TS_RAWDATA_TEST_NAME_LEN 50
+#define TS_RAWDATA_RESULT_CODE_LEN 5
+#define TS_CMD_QUEUE_SIZE 20
 
 #define FW_UPDATE_TO_HIGH 1
 #define FW_UPDATE_DIFF 0
+#define TS_KEY_PRESSED 1
+#define TS_KEY_RELEASE 0
 
 enum TP_ic_type {
-	ONCELL = 0,		//lcd & tp have separate regulator
-	HYBRID,			//lcd &tp share 1.8V
-	TDDI,			//lcd ctrl all the regulator
-	AMOLED,			//Amoled need to set 1.8 and 3.3 for itself.
+	ONCELL = 0, /* lcd & tp have separate regulator */
+	HYBRID, /* lcd &tp share 1.8V */
+	TDDI, /* lcd ctrl all the regulator */
+	AMOLED, /* Amoled need to set 1.8 and 3.3 for itself */
 	TP_IC_TYPE_MAX = 255,
 };
 
 enum TP_state_machine {
 	INIT_STATE = 0,
-	ZERO_STATE = 1,		//switch finger to glove
-	FINGER_STATE = 2,	//finger state
-	GLOVE_STATE = 3		//glove state
-};
-/* external varible*/
+	ZERO_STATE = 1, /* switch finger to glove */
+	FINGER_STATE = 2, /* finger state */
+	GLOVE_STATE = 3 /* glove state */
+}; /* external varible */
 
-/* struct define*/
+/* struct define */
 enum ts_cmd;
 enum ts_bus_type;
 enum ts_irq_config;
@@ -266,6 +278,9 @@ enum ts_cmd {
 	TS_PALM_KEY,
 	TS_GAMMA_INFO_SWITCH,
 	TS_REPORT_KEY,
+	TS_SET_TP_IC_CMD,
+	TS_SET_RECOVERY_WINDOW,
+	TS_REPORT_FINGERS_PEN,
 	TS_INVAILD_CMD = 255,
 };
 
@@ -322,23 +337,38 @@ enum STYLUS_WAKEUP_CTRL {
 #define KEY_FACE_CLOSE 227
 #define KEY_FACE_AWAY 228
 enum ts_gesture_num {
-	TS_DOUBLE_CLICK = KEY_F1,    /*0.Double tap:KEY_F1 */
-	TS_SLIDE_L2R = KEY_F2,    /*1.Single finger slide from left to right:KEY_F2 */
-	TS_SLIDE_R2L = KEY_F3,    /*2.Single finger slide from right to left:KEY_F3 */
-	TS_SLIDE_T2B = KEY_F4,    /*3.Single finger slide from top to bottom:KEY_F4 */
-	TS_SLIDE_B2T = KEY_F5,    /*4.Single finger slide from bottom to top:KEY_F5 */
-	TS_CIRCLE_SLIDE = KEY_F7,    /*5.Single finger slide circle:KEY_F7 */
-	TS_LETTER_c = KEY_F8,    /*6.Single finger write letter c*:KEY_F8 */
-	TS_LETTER_e = KEY_F9,	    /*7.Single finger write letter e:KEY_F9 */
-	TS_LETTER_m = KEY_F10,    /*8.Single finger write letter m:KEY_F10 */
-	TS_LETTER_w = KEY_F11,    /*9.Single finger write letter w:KEY_F11 */
-	TS_PALM_COVERED = KEY_F12,    /*10.Palm off screen:KEY_F12 */
-	TS_KEY_IRON = KEY_F26,    /* ESD_avoiding to report KEY_F26(196) */
+	/* 0.Double tap:KEY_F1 */
+	TS_DOUBLE_CLICK = KEY_F1,
+	/* 1.Single finger slide from left to right:KEY_F2 */
+	TS_SLIDE_L2R = KEY_F2,
+	/* 2.Single finger slide from right to left:KEY_F3 */
+	TS_SLIDE_R2L = KEY_F3,
+	/* 3.Single finger slide from top to bottom:KEY_F4 */
+	TS_SLIDE_T2B = KEY_F4,
+	/* 4.Single finger slide from bottom to top:KEY_F5 */
+	TS_SLIDE_B2T = KEY_F5,
+	/* 5.Single finger slide circle:KEY_F7 */
+	TS_CIRCLE_SLIDE = KEY_F7,
+	/* 6.Single finger write letter c*:KEY_F8 */
+	TS_LETTER_c = KEY_F8,
+	/* 7.Single finger write letter e:KEY_F9 */
+	TS_LETTER_e = KEY_F9,
+	/* 8.Single finger write letter m:KEY_F10 */
+	TS_LETTER_m = KEY_F10,
+	/* 9.Single finger write letter w:KEY_F11 */
+	TS_LETTER_w = KEY_F11,
+	/* 10.Palm off screen:KEY_F12 */
+	TS_PALM_COVERED = KEY_F12,
+	/* ESD_avoiding to report KEY_F26(196) */
+	TS_KEY_IRON = KEY_F26,
 	TS_STYLUS_WAKEUP_TO_MEMO = KEY_F27,
 	TS_STYLUS_WAKEUP_SCREEN_ON = KEY_F28,
-	TS_FACE_STATE_CLOSE = KEY_FACE_CLOSE, /* face close to panel: keycode 227 */
-	TS_FACE_STATE_FAR_AWAY = KEY_FACE_AWAY, /* face away from panel: keycode 228 */
-	TS_GESTURE_INVALID = 0xFF,	/*FF.No gesture */
+	/* face close to panel: keycode 227 */
+	TS_FACE_STATE_CLOSE = KEY_FACE_CLOSE,
+	/* face away from panel: keycode 228 */
+	TS_FACE_STATE_FAR_AWAY = KEY_FACE_AWAY,
+	/* FF.No gesture */
+	TS_GESTURE_INVALID = 0xFF,
 };
 
 enum ts_gesture_enable_bit {
@@ -372,7 +402,7 @@ enum ts_rawdata_debug_type {
 	READ_CB_DATA,
 	READ_FORCE_DATA,
 };
-#if defined (CONFIG_TEE_TUI)
+#if defined(CONFIG_TEE_TUI)
 struct ts_tui_data {
 	char device_name[11];
 };
@@ -382,11 +412,11 @@ enum ts_charger_state {
 	USB_PIUG_IN,
 };
 typedef enum {
-	TS_PEN_OUT_RANGE = 0,	/* pen out of range */
-	TS_PEN_IN_RANGE,	/* pen in range */
+	TS_PEN_OUT_RANGE = 0, /* pen out of range */
+	TS_PEN_IN_RANGE, /* pen in range */
 
 	/* add event before here */
-	TS_EVENT_MAX,		/* max event type */
+	TS_EVENT_MAX, /* max event type */
 } ts_notify_event_type;
 
 struct ts_unique_capacitance_test {
@@ -402,7 +432,7 @@ struct ts_rawdata_limit_tab {
 	struct ts_unique_capacitance_test *unique_test;
 };
 struct ts_finger {
-	int status;
+	unsigned int status;
 	int x;
 	int y;
 	int area;
@@ -421,6 +451,15 @@ struct ts_finger {
 };
 
 struct ts_fingers {
+	struct ts_finger fingers[TS_FOLD_MAX_FINGER];
+	int cur_finger_number;
+	unsigned int gesture_wakeup_value;
+	unsigned int special_button_key;
+	unsigned int special_button_flag;
+	unsigned int add_release_flag;
+};
+
+struct ts_normal_fingers {
 	struct ts_finger fingers[TS_MAX_FINGER];
 	int cur_finger_number;
 	unsigned int gesture_wakeup_value;
@@ -437,12 +476,12 @@ struct ts_tool {
 	int pressure;
 	signed char tilt_x;
 	signed char tilt_y;
-	int tool_type;		// BTN_TOOL_RUBBER  BTN_TOOL_PEN
+	int tool_type; /* BTN_TOOL_RUBBER  BTN_TOOL_PEN */
 };
 
 struct ts_button {
 	int status;
-	int key;		//BTN_STYLUS
+	int key; /* BTN_STYLUS */
 };
 
 struct ts_pens {
@@ -451,12 +490,12 @@ struct ts_pens {
 };
 
 struct ts_algo_func {
-	int algo_index;		//from 0 to max
+	int algo_index; /* from 0 to max */
 	char *algo_name;
 	struct list_head node;
-	int (*chip_algo_func) (struct ts_kit_device_data * dev_data,
-			       struct ts_fingers * in_info,
-			       struct ts_fingers * out_info);
+	int (*chip_algo_func)(struct ts_kit_device_data *dev_data,
+			struct ts_fingers *in_info,
+			struct ts_fingers *out_info);
 };
 
 struct algo_param {
@@ -465,12 +504,27 @@ struct algo_param {
 };
 
 struct fw_param {
-	char fw_name[MAX_STR_LEN * 4];	//firmware name contain 4 parts
+	char fw_name[MAX_STR_LEN * 4]; /* firmware name contain 4 parts */
 };
 
-/*
- New data format for rawdata
-*/
+struct ts_fold_info {
+	unsigned char fold_status;
+	unsigned char flip_switch;
+};
+
+enum ts_ic_command_type {
+	SCREEN_CALIBRATE = 0,
+	SCREEN_FOLD = 1,
+	SCREEN_FLIP = 2,
+};
+
+struct tp_ic_command {
+	enum ts_ic_command_type type;
+	unsigned char length;
+	unsigned char *data;
+};
+
+/*New data format for rawdata*/
 #define RAWDATA_TEST_FAIL_CHAR 'F'
 #define RAWDATA_TEST_PASS_CHAR 'P'
 
@@ -494,13 +548,15 @@ enum ts_raw_data_type {
 };
 struct ts_rawdata_newnodeinfo {
 	struct list_head node;
-	u8 typeindex;		/* enum ts_raw_data_type */
-	char testresult;	/* 'P' o 'F' */
+	u8 typeindex; /* enum ts_raw_data_type */
+	char testresult; /* 'P' o 'F' */
 	int *values;
 	size_t size;
 	char test_name[TS_RAWDATA_TEST_NAME_LEN];
-	char statistics_data[TS_RAWDATA_STATISTICS_DATA_LEN];	/* [%d,%d,%d] */
-	char tptestfailedreason[TS_RAWDATA_FAILED_REASON_LEN];	/* "-panel_reason" o "-software reason" */
+	/* [%d,%d,%d] */
+	char statistics_data[TS_RAWDATA_STATISTICS_DATA_LEN];
+	/* "-panel_reason" o "-software reason" */
+	char tptestfailedreason[TS_RAWDATA_FAILED_REASON_LEN];
 };
 
 struct ts_rawdata_info_new {
@@ -508,17 +564,21 @@ struct ts_rawdata_info_new {
 	int rx;
 	int tx;
 	ktime_t time_stamp;
-	char deviceinfo[TS_RAWDATA_DEVINFO_MAX];	/* ic info */
-	char i2cinfo[TS_RAWDATA_RESULT_CODE_LEN];	/* i2c test result:0P or 0F */
-	char i2cerrinfo[TS_RAWDATA_FAILED_REASON_LEN];	/* i2c test fail reason */
+	/* ic info */
+	char deviceinfo[TS_RAWDATA_DEVINFO_MAX];
+	/* i2c test result:0P or 0F */
+	char i2cinfo[TS_RAWDATA_RESULT_CODE_LEN];
+	/* i2c test fail reason */
+	char i2cerrinfo[TS_RAWDATA_FAILED_REASON_LEN];
 	int listnodenum;
-	struct list_head rawdata_head;	//ts_rawdata_newnodeinfo  list
+	/* ts_rawdata_newnodeinfo list */
+	struct list_head rawdata_head;
 };
 
 struct ts_rawdata_info {
 	int status;
 	int op_action;
-	int used_size;		// fill in rawdata size
+	int used_size; /* fill in rawdata size */
 	int used_synaptics_self_cap_size;
 	int used_size_3d;
 	int used_sharp_selcap_single_ended_delta_size;
@@ -676,7 +736,7 @@ struct ts_test_type_info {
 	int status;
 };
 
-#if defined (CONFIG_HUAWEI_DSM)
+#if defined(CONFIG_HUAWEI_DSM)
 struct ts_dsm_info {
 	char fw_update_result[8];
 	unsigned char constraints_LDO17_status;
@@ -705,30 +765,39 @@ struct ts_feature_info {
 	struct ts_roi_info roi_info;
 	struct ts_charger_info charger_info;
 	struct ts_pen_info pen_info;
+	struct ts_fold_info fold_info;
 };
 
-#define TS_KEY_ACTION_PRESS	(1 << 0)
-#define TS_KEY_ACTION_RELEASE	(1 << 1)
+#define TS_KEY_ACTION_PRESS (1 << 0)
+#define TS_KEY_ACTION_RELEASE (1 << 1)
 
 struct ts_key_info {
 	unsigned int key_code;
-	unsigned int action; // bit0-press bit1-release
+	unsigned int action; /* bit0-press bit1-release */
 };
+
+struct ts_finger_pen_info {
+	u32 algo_order;
+	struct ts_fingers report_finger_info;
+	struct ts_pens report_pen_info;
+}; /* report pen and fingers together */
 
 struct ts_cmd_param {
 	union {
-		struct algo_param algo_param;	//algo cal
-		struct ts_fingers report_info;	//report input
-		struct ts_pens report_pen_info;	//report pen
-		struct fw_param firmware_info;	//firmware update
+		struct algo_param algo_param; /* algo cal */
+		struct ts_fingers report_info; /* report input */
+		struct ts_pens report_pen_info; /* report pen */
+		struct ts_finger_pen_info report_touch_info;
+		struct fw_param firmware_info; /* firmware update */
 		enum lcd_kit_ts_pm_type pm_type;
 		struct ts_kit_device_data *chip_data;
+		struct tp_ic_command ic_cmd;
 		int sensibility_cfg;
 		unsigned int ts_key;
 		struct ts_key_info key_info;
 	} pub_params;
 	void *prv_params;
-	void (*ts_cmd_freehook) (void *);
+	void (*ts_cmd_freehook)(void *);
 };
 
 enum ts_timeout_flag {
@@ -801,13 +870,13 @@ struct ts_device_ops {
 	int (*chip_init) (void);
 	int (*chip_get_brightness_info) (void);
 	int (*chip_parse_config) (struct device_node * device,
-				  struct ts_kit_device_data * data);
+				 struct ts_kit_device_data * data);
 	int (*chip_input_config) (struct input_dev * input_dev);
 	int (*chip_input_pen_config) (struct input_dev * input_dev);
 	int (*chip_register_algo) (struct ts_kit_device_data * data);
 	int (*chip_irq_top_half) (struct ts_cmd_node * cmd);
 	int (*chip_irq_bottom_half) (struct ts_cmd_node * in_cmd,
-				     struct ts_cmd_node * out_cmd);
+				 struct ts_cmd_node * out_cmd);
 	int (*chip_reset) (void);
 	int (*chip_debug_switch) (u8 loglevel);
 	void (*chip_shutdown) (void);
@@ -823,9 +892,9 @@ struct ts_device_ops {
 	int (*chip_get_rawdata) (struct ts_rawdata_info * info,
 				 struct ts_cmd_node * out_cmd);
 	int (*chip_get_calibration_data) (struct ts_calibration_data_info *
-					  info, struct ts_cmd_node * out_cmd);
+					 info, struct ts_cmd_node * out_cmd);
 	int (*chip_get_calibration_info) (struct ts_calibration_info_param *
-					  info, struct ts_cmd_node * out_cmd);
+					 info, struct ts_cmd_node * out_cmd);
 	int (*chip_glove_switch) (struct ts_glove_info * info);
 	int (*chip_palm_switch) (struct ts_palm_info * info);
 	int (*chip_single_touch_switch) (struct ts_single_touch_info * info);
@@ -839,21 +908,26 @@ struct ts_device_ops {
 	int (*chip_suspend) (void);
 	int (*chip_resume) (void);
 	int (*chip_after_resume) (void *feature_info);
-	int (*chip_test) (struct ts_cmd_node * in_cmd, struct ts_cmd_node * out_cmd);
+	int (*chip_test) (struct ts_cmd_node * in_cmd,
+				struct ts_cmd_node * out_cmd);
 	int (*chip_check_status) (void);
 	int (*chip_hw_reset) (void);
 	int (*chip_regs_operate) (struct ts_regs_info * info);
 	int (*chip_get_capacitance_test_type) (struct ts_test_type_info * info);
-	int (*chip_get_debug_data) (struct ts_diff_data_info * info, struct ts_cmd_node * out_cmd);
+	int (*chip_get_debug_data) (struct ts_diff_data_info * info,
+				struct ts_cmd_node * out_cmd);
 	void (*chip_special_hardware_test_swtich) (unsigned int value);
 	int (*chip_special_hardware_test_result) (char *buf);
 	void (*chip_ghost_detect) (int value);
 	void (*chip_touch_switch) (void);
 	void (*chip_set_sensibility_cfg) (int value);
+	void (*chip_set_tp_ic_cmd)(struct tp_ic_command ic_cmd);
+	void (*chip_set_fold_status)(struct ts_fold_info info, int calibrate);
+	void (*chip_set_recovery_window)(void);
 	void (*chip_work_after_input) (void);
 	int (*chip_special_rawdata_proc_printf) (struct seq_file * m,
-						 struct ts_rawdata_info * info,
-						 int range_size, int row_size);
+				struct ts_rawdata_info * info,
+				int range_size, int row_size);
 	int (*chip_boot_detection) (void);
 };
 struct anti_false_touch_param {
@@ -891,12 +965,15 @@ struct anti_false_touch_param {
 	unsigned int feature_click_inhibition;
 	unsigned int min_click_time;
 
-	//for driver
+	/* for driver */
 	unsigned int drv_stop_width;
 	unsigned int sensor_x_width;
 	unsigned int sensor_y_width;
 
-	/* if x > drv_stop_width, and then the same finger x < drv_stop_width, report it */
+	/*
+	 * if x > drv_stop_width
+	 * and then the same finger x < drv_stop_width, report it
+	 */
 	unsigned int edge_status;
 };
 
@@ -909,6 +986,12 @@ enum ts_kit_power_type {
 	TS_KIT_POWER_GPIO = 2,
 	TS_KIT_POWER_PMIC = 3,
 	TS_KIT_POWER_INVALID_TYPE,
+};
+
+enum fold_status {
+	FULL_SCREEN = 0,
+	MAIN_SCREEN = 1,
+	MINOR_SCREEN = 2,
 };
 
 enum ts_kit_power_id {
@@ -936,7 +1019,7 @@ struct ts_kit_device_data {
 	struct device_node *cnode;
 	struct ts_device_ops *ops;
 	struct ts_easy_wakeup_info easy_wakeup_info;
-	struct list_head algo_head;	//algo function list
+	struct list_head algo_head; /* algo function list */
 	struct ts_kit_platform_data *ts_platform_data;
 	struct anti_false_touch_param anti_false_touch_param_data;
 	struct ts_regulator_contrl regulator_ctr;
@@ -950,6 +1033,7 @@ struct ts_kit_device_data {
 	const char *vendor_name;
 	char touch_switch_info[MAX_STR_LEN];
 	u8 reg_values[TS_MAX_REG_VALUE_NUM];
+	unsigned char ic_cmd_data[TP_IC_CMD_MAX_LEN];
 	unsigned int is_parade_solution;
 	unsigned int is_ic_rawdata_proc_printf;
 	unsigned int is_direct_proc_cmd;
@@ -970,7 +1054,8 @@ struct ts_kit_device_data {
 	unsigned int algo_size;
 	unsigned int algo_id;
 	unsigned int slave_addr;
-	unsigned int irq_config;		// 0 - LOW LEVEL  1 - HIGH LEVEL  2 - RAISE EDGE  3 - FALL EDGE
+	/* 0 - LOW LEVEL  1 - HIGH LEVEL  2 - RAISE EDGE  3 - FALL EDGE */
+	unsigned int irq_config;
 	unsigned int ic_type;
 	unsigned int projectid_len;
 	unsigned int rawdata_arrange_type;
@@ -981,11 +1066,19 @@ struct ts_kit_device_data {
 	unsigned int flip_x;
 	unsigned int flip_y;
 	unsigned int reg_num;
+	/* 1-doze 2-game 4-scene */
 	unsigned int touch_switch_flag;
 	unsigned short touch_switch_reg;
 	unsigned short touch_switch_hold_off_reg;
-	unsigned short touch_game_reg;//game mode config reg
+	/* game mode config reg */
+	unsigned short touch_game_reg;
 	unsigned short touch_scene_reg;
+	/* 0-default 1-beijing 2-shanghai */
+	unsigned int scene_type_mode;
+	/* support scene number */
+	unsigned int scene_type_num;
+	/* support scene type */
+	unsigned int scene_support_array[SCENE_SUPPORT_MAX];
 	unsigned int face_dct_support;
 	unsigned short face_dct_en_reg;
 	unsigned short face_dct_data_reg;
@@ -998,11 +1091,19 @@ struct ts_kit_device_data {
 	unsigned int get_brightness_info_flag;
 	unsigned int isbootupdate_finish;
 	unsigned int is_can_device_use_int;
-	unsigned int send_stylus_gesture_switch;//for stylus wakup,TS_WAKEUP_GESTURE_ENABLE will just be used in working mode,instead of be used in sleep mode.
+	/*
+	 * for stylus wakup,
+	 * TS_WAKEUP_GESTURE_ENABLE will just be used in working mode,
+	 * instead of be used in sleep mode.
+	 */
+	unsigned int send_stylus_gesture_switch;
 	unsigned int diff_data_report_supported;
 	unsigned int diff_data_len;
 	unsigned int diff_data_control_addr;
-	unsigned char * diff_data;
+	unsigned char *diff_data;
+	unsigned int fold_status_supported;
+	unsigned int fold_fingers_supported;
+	unsigned int recovery_window_supported;
 	int check_status_watchdog_timeout;
 	int rawdata_get_timeout;
 	int has_virtualkey;
@@ -1038,8 +1139,12 @@ struct ts_kit_device_data {
 	int support_gammadata_in_tp;
 	int rawdata_report_type;
 	int suspend_no_config;
-	u8 game_control_bit;//the mask bit of touch_game_reg.
-	u8 rawdata_newformatflag;	// 0 - old format   1 - new format
+	/* the mask bit of touch_game_reg. */
+	u8 game_control_bit;
+	/* 0 - old format   1 - new format */
+	u8 rawdata_newformatflag;
+	int support_notice_aft_gesture_mode;
+	int support_extra_key_event_input;
 	u8 tui_set_flag;
 	u8 provide_panel_id_support;
 	/* print all tr&rx difference cap data (TX*RX) */
@@ -1047,7 +1152,7 @@ struct ts_kit_device_data {
 	unsigned int boot_detection_addr;
 	unsigned int boot_detection_threshold;
 	u8 boot_detection_flag;
-#if defined (CONFIG_TEE_TUI)
+#if defined(CONFIG_TEE_TUI)
 	void *tui_data;
 #endif
 };
@@ -1055,8 +1160,8 @@ struct ts_kit_device_data {
 struct ts_bus_info {
 	enum ts_bus_type btype;
 	unsigned int bus_id;
-	int (*bus_write) (u8 * buf, u16 length);
-	int (*bus_read) (u8 * reg_addr, u16 reg_len, u8 * buf, u16 len);
+	int (*bus_write)(u8 *buf, u16 length);
+	int (*bus_read)(u8 *reg_addr, u16 reg_len, u8 *buf, u16 len);
 };
 struct ts_aft_algo_param {
 	int aft_enable_flag;
@@ -1078,7 +1183,8 @@ enum FACE_DCT_EN_STATE {
 struct ts_kit_platform_data {
 	char product_name[MAX_STR_LEN];
 	atomic_t state;
-	atomic_t power_state;	//only used in dmd report
+	/* only used in dmd report */
+	atomic_t power_state;
 	atomic_t ts_esd_state;
 	atomic_t register_flag;
 	atomic_t face_dct_en;
@@ -1096,6 +1202,7 @@ struct ts_kit_platform_data {
 	unsigned int spi_mode;
 	unsigned int cs_reset_low_delay;
 	unsigned int cs_reset_high_delay;
+	unsigned int max_fingers;
 	struct device_node *node;
 	struct i2c_client *client;
 	struct spi_device *spi;
@@ -1109,12 +1216,13 @@ struct ts_kit_platform_data {
 	struct ts_feature_info feature_info;
 	struct ts_chip_info_param chip_info;
 	struct ts_cmd_queue queue;
-	struct wake_lock ts_wake_lock;
+	struct wakeup_source ts_wake_lock;
 	struct ts_cmd_queue no_int_queue;
 	struct timer_list watchdog_timer;
 	struct work_struct watchdog_work;
 	struct input_dev *input_dev;
 	struct input_dev *pen_dev;
+	struct input_dev *keyevent_dev;
 	struct notifier_block lcdkit_notify;
 	struct ts_aft_algo_param aft_param;
 	struct ts_fingers fingers_send_aft_info;
@@ -1126,7 +1234,7 @@ struct ts_kit_platform_data {
 	atomic_t aft_in_slow_status;
 	atomic_t last_input_fingers_status;
 	atomic_t last_aft_filtered_fingers;
-#if defined (CONFIG_HUAWEI_DSM)
+#if defined(CONFIG_HUAWEI_DSM)
 	struct ts_dsm_info dsm_info;
 #endif
 	struct notifier_block charger_detect_notify;
@@ -1137,28 +1245,31 @@ struct ts_kit_platform_data {
 
 int ts_kit_put_one_cmd(struct ts_cmd_node *cmd, int timeout);
 int register_ts_algo_func(struct ts_kit_device_data *chip_data,
-			  struct ts_algo_func *fn);
+			struct ts_algo_func *fn);
 int huawei_ts_chip_register(struct ts_kit_device_data *chipdata);
 extern volatile bool ts_kit_gesture_func;
 #ifdef HUAWEI_TOUCHSCREEN_TEST
-int test_dbg_cmd_test(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd);
+int test_dbg_cmd_test(struct ts_cmd_node *in_cmd,
+			struct ts_cmd_node *out_cmd);
 #endif
 
-void ts_kit_rotate_rawdata_abcd2cbad(int row, int column, int *data_start,
-				     int rotate_type);
-int ts_kit_parse_csvfile(char *file_path, char *target_name, int32_t * data,
-			 int rows, int columns);
-#if defined (CONFIG_HUAWEI_DSM)
+void ts_kit_rotate_rawdata_abcd2cbad(int row, int column,
+			int *data_start,
+			int rotate_type);
+int ts_kit_parse_csvfile(char *file_path, char *target_name, int32_t *data,
+			int rows, int columns);
+#if defined(CONFIG_HUAWEI_DSM)
 extern void ts_dmd_report(int dmd_num, const char *pszFormat, ...);
 #endif
 int ts_event_notify(ts_notify_event_type event);
 int ts_change_spi_mode(struct spi_device *spi, u16 mode);
 
 int ts_parse_panel_specific_config(struct device_node *np,
-			       struct ts_kit_device_data *chip_data);
+			struct ts_kit_device_data *chip_data);
 int ts_kit_power_supply_get(enum ts_kit_power_id power_id);
 int ts_kit_power_supply_put(enum ts_kit_power_id power_id);
-int ts_kit_power_supply_ctrl(enum ts_kit_power_id power_id, int status, unsigned int delay_ms);
+int ts_kit_power_supply_ctrl(enum ts_kit_power_id power_id,
+			int status, unsigned int delay_ms);
 int ts_kit_get_pt_station_status(int *status);
 #endif
 

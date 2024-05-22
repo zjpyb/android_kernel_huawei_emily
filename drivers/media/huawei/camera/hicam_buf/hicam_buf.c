@@ -35,6 +35,12 @@
 #include <cam_log.h>
 #include <hicam_buf_priv.h>
 
+int hisp_sec_ta_enable(void);
+int hisp_sec_ta_disable(void);
+unsigned int hisp_sec_mem_set(int sharefd, unsigned int type, unsigned int size, unsigned int prot);
+int hisp_sec_mem_release(int sharefd, unsigned int type, unsigned int size, unsigned int da);
+
+
 struct hicam_buf_device {
 	struct miscdevice dev;
 	struct platform_device *pdev;
@@ -43,10 +49,12 @@ struct hicam_buf_device {
 };
 
 static struct hicam_buf_device *hicam_buf_dev = NULL;
+static int hicam_secmem_type = 0;
+static atomic_t hicam_secta_open = ATOMIC_INIT(0);;
 
 void* hicam_buf_map_kernel(int fd)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is null.", __func__);
 		return NULL;
@@ -63,7 +71,7 @@ void* hicam_buf_map_kernel(int fd)
 
 void hicam_buf_unmap_kernel(int fd)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is null.", __func__);
 		return ;
@@ -80,7 +88,7 @@ void hicam_buf_unmap_kernel(int fd)
 
 int hicam_buf_map_iommu(int fd, struct iommu_format *fmt)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is null.", __func__);
 		return -ENODEV;
@@ -97,7 +105,7 @@ int hicam_buf_map_iommu(int fd, struct iommu_format *fmt)
 
 void hicam_buf_unmap_iommu(int fd, struct iommu_format *fmt)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is null.", __func__);
 		return ;
@@ -114,7 +122,7 @@ void hicam_buf_unmap_iommu(int fd, struct iommu_format *fmt)
 
 int hicam_buf_get_phys(int fd, struct phys_format *fmt)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is null.", __func__);
 		return -ENODEV;
@@ -132,7 +140,7 @@ int hicam_buf_get_phys(int fd, struct phys_format *fmt)
 // return 0 if pgd_base get failed, caller check please
 phys_addr_t hicam_buf_get_pgd_base(void)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is null.", __func__);
 		return 0;
@@ -166,7 +174,7 @@ int hicam_buf_local_sync(int fd, struct local_sync_format *fmt)
 // please save ret ptr, and call put with it.
 struct sg_table* hicam_buf_get_sgtable(int fd)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is null.", __func__);
 		return ERR_PTR(-ENODEV);
@@ -182,7 +190,7 @@ struct sg_table* hicam_buf_get_sgtable(int fd)
 
 void hicam_buf_put_sgtable(struct sg_table *sgt)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
 		cam_err("%s: hicam_buf_dev is invalid.", __func__);
 		return ;
@@ -194,6 +202,58 @@ void hicam_buf_put_sgtable(struct sg_table *sgt)
 	}
 	dev = &hicam_buf_dev->pdev->dev;
 	hicam_internal_put_sgtable(dev, sgt);
+}
+
+int hicam_buf_open_security_ta(void)
+{
+	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) != 0)) {
+		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
+		return -EINVAL;
+	}
+
+	atomic_set(&hicam_secta_open, 1);
+	return hisp_sec_ta_enable();
+}
+
+int hicam_buf_close_security_ta(void)
+{
+	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) == 0)) {
+		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
+		return -EINVAL;
+	}
+
+	atomic_set(&hicam_secta_open, 0);
+	return hisp_sec_ta_disable();
+}
+
+int hicam_buf_set_memory_security(struct hicam_buf_cfg *cfg)
+{
+	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) == 0)) {
+		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
+		return -EINVAL;
+	}
+
+	cfg->iommu_format.iova = hisp_sec_mem_set(cfg->fd, cfg->sec_mem_format.type, cfg->sec_mem_format.size, cfg->sec_mem_format.prot);
+	if (cfg->iommu_format.iova == 0) {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int hicam_buf_reset_memory_security(struct hicam_buf_cfg *cfg)
+{
+	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) == 0)) {
+		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
+		return -EINVAL;
+	}
+
+	return hisp_sec_mem_release(cfg->fd, cfg->sec_mem_format.type, cfg->sec_mem_format.size, cfg->sec_mem_format.iova);
+}
+
+void hicam_buf_get_secmem_type(struct hicam_buf_cfg *cfg)
+{
+	cfg->secmemtype = hicam_secmem_type;
 }
 
 static long hicam_config(struct hicam_buf_cfg *cfg)
@@ -214,6 +274,21 @@ static long hicam_config(struct hicam_buf_cfg *cfg)
 		break;
 	case HICAM_BUF_GET_PHYS:
 		ret = hicam_buf_get_phys(cfg->fd, &cfg->phys_format);
+		break;
+	case HICAM_BUF_OPEN_SECURITY_TA:
+		ret =hicam_buf_open_security_ta();
+		break;
+	case HICAM_BUF_CLOSE_SECURITY_TA:
+		ret =hicam_buf_close_security_ta();
+		break;
+	case HICAM_BUF_SET_SECURITY:
+		ret =hicam_buf_set_memory_security(cfg);
+		break;
+	case HICAM_BUF_RESET_SECURITY:
+		ret =hicam_buf_reset_memory_security(cfg);
+		break;
+	case HICAM_BUF_GET_SECMEMTYPE:
+		hicam_buf_get_secmem_type(cfg);
 		break;
 	}
 
@@ -347,6 +422,36 @@ ssize_t hicam_buf_info_show(struct device *dev,
 DEVICE_ATTR_RO(hicam_buf_info);
 #endif /* CONFIG_HISI_DEBUG_FS */
 
+static int hicam_buf_get_dts(struct platform_device* pDev)
+{
+	int ret = 0;
+	struct device *pdev = NULL;
+	struct device_node *np = NULL;
+	int tmp = 0;
+
+	if (NULL == pDev) {
+		cam_err("%s: pDev NULL.", __func__);
+		return -1;
+	}
+
+	pdev = &(pDev->dev);
+
+	np = pdev->of_node;
+
+	if (NULL == np) {
+		cam_err("%s: of node NULL.", __func__);
+		return -1;
+	}
+
+	// get hicam_secmem_type
+	ret = of_property_read_u32(np, "secmemtype", &tmp);
+	if (ret == 0) {
+		hicam_secmem_type = tmp;
+	}
+
+	return 0;
+}
+
 static int32_t hicam_buf_probe(struct platform_device* pdev)
 {
 	int rc = 0;
@@ -362,6 +467,12 @@ static int32_t hicam_buf_probe(struct platform_device* pdev)
 		cam_err("%s: fail to create hicam ion device.", __func__);
 		rc = PTR_ERR(hicam_buf_dev);
 		goto err_create_device;
+	}
+
+	rc = hicam_buf_get_dts(pdev);
+	if (rc < 0) {
+		cam_err("[%s] Failed: hicam_buf_get_dts.%d\n", __func__, rc);
+		return rc;
 	}
 
 	rc = hicam_internal_init(&hicam_buf_dev->pdev->dev);

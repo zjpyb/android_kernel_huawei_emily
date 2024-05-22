@@ -17,14 +17,14 @@
 
 enum rdr_enable_mask
 {
-    RDR_LOG_TRACE       = 0x1,
-    RDR_LOG_LAST_WORD   = 0x2,
-    RDR_LOG_ALGO        = 0x4,
-    RDR_LOG_CVDR        = 0x8,
-    RDR_LOG_IRQ         = 0x10,
-    RDR_LOG_TASK        = 0x20,
-    RDR_LOG_CPUP        = 0x40,
-    RDR_LOG_MONITOR     = 0x80,
+	RDR_LOG_TRACE       = 0x1,
+	RDR_LOG_LAST_WORD   = 0x2,
+	RDR_LOG_ALGO        = 0x4,
+	RDR_LOG_CVDR        = 0x8,
+	RDR_LOG_IRQ         = 0x10,
+	RDR_LOG_TASK        = 0x20,
+	RDR_LOG_CPUP        = 0x40,
+	RDR_LOG_MONITOR     = 0x80,
 };
 #define ISPCPU_RDR_USE_APCTRL        (1UL << 31)
 #define ISPCPU_RDR_RESERVE_30        (1 << 30)
@@ -135,58 +135,60 @@ enum rdr_enable_mask
 #define IRQ_NUM             (64)
 
 #define MONITOR_CHAN_NUM    4
+#define CSI_NUM_MAX			3
 /*
  * struct rproc_shared_para - shared parameters for debug
  * @rdr_enable: the rdr function status
  */
 struct isp_plat_cfg {
-    unsigned int platform_id;
-    unsigned int isp_local_timer;
-    unsigned int perf_power;
+	unsigned int platform_id;
+	unsigned int isp_local_timer;
+	unsigned int perf_power;
 };
 
 struct bw_boot_status {
-    unsigned int entry:1;
-    unsigned int invalid_tlb:1;
-    unsigned int enable_mmu:1;
-    unsigned int reserved:29;
+	unsigned int entry:1;
+	unsigned int invalid_tlb:1;
+	unsigned int enable_mmu:1;
+	unsigned int reserved:29;
 };
 
 struct fw_boot_status {
-    unsigned int entry:1;
-    unsigned int hard_boot_init:1;
-    unsigned int hard_drv_init:1;
-    unsigned int app_init:1;
-    unsigned int reserved:28;
+	unsigned int entry:1;
+	unsigned int hard_boot_init:1;
+	unsigned int hard_drv_init:1;
+	unsigned int app_init:1;
+	unsigned int reserved:28;
 };
 
 struct rproc_shared_para {
-    struct isp_plat_cfg plat_cfg;
-    int rdr_enable;
-    unsigned int rdr_enable_type;
-    unsigned char irq[IRQ_NUM];
-    int log_flush_flag;
-    unsigned int log_head_size;
-    unsigned int log_cache_write;
-    struct bw_boot_status bw_stat;
-    struct fw_boot_status fw_stat;
-    unsigned int logx_switch;
-    u64 bootware_paddr;
-    u64 dynamic_pgtable_base;
-    unsigned long long  coresight_addr_da;
-    unsigned long long  coresight_addr_vir;
-    unsigned int perf_switch;
-    u64 perf_addr;
-    u32 coredump_addr;
-    u32 exc_flag;/*bit 0:exc cur ;bit 1:ion flag ; bit 2:rtos dump over  bit3:handle over*/
-    u64 mdc_pa_addr;
-    u64 sec_smmuerr_addr;
-    unsigned int monitor_addr[MONITOR_CHAN_NUM];
-    unsigned int monitor_ctrl;
-    unsigned int monitor_pa_va;
-    unsigned int monitor_hit_flag;
-    unsigned int clk_value[ISP_CLK_MAX];
-    unsigned char isp_efuse;
+	struct isp_plat_cfg plat_cfg;
+	int rdr_enable;
+	unsigned int rdr_enable_type;
+	unsigned char irq[IRQ_NUM];
+	int log_flush_flag;
+	unsigned int log_head_size;
+	unsigned int log_cache_write;
+	struct bw_boot_status bw_stat;
+	struct fw_boot_status fw_stat;
+	unsigned int logx_switch;
+	u64 bootware_paddr;
+	u64 dynamic_pgtable_base;
+	unsigned long long  coresight_addr_da;
+	unsigned long long  coresight_addr_vir;
+	unsigned int perf_switch;
+	u64 perf_addr;
+	u32 coredump_addr;
+	u32 exc_flag;/*bit 0:exc cur ;bit 1:ion flag ; bit 2:rtos dump over  bit3:handle over*/
+	u64 mdc_pa_addr;
+	u64 sec_smmuerr_addr;
+	unsigned int monitor_addr[MONITOR_CHAN_NUM];
+	unsigned int monitor_ctrl;
+	unsigned int monitor_pa_va;
+	unsigned int monitor_hit_flag;
+	unsigned int clk_value[ISP_CLK_MAX];
+	unsigned char isp_efuse;
+	unsigned int csi_ctrl[CSI_NUM_MAX + 1];
 };
 
 extern struct rproc_shared_para *isp_share_para;

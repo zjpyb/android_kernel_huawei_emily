@@ -651,8 +651,8 @@ static inline bool pd_process_dpm_msg_ack(
 static inline bool pd_process_dpm_msg_vdm_request(
 		pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	bool is_dfp;
-	bool is_attention;
+	bool is_dfp = false;
+	bool is_attention = false;
 
 	if (!pd_check_pe_state_ready(pd_port)) {
 		pd_update_dpm_request_state(pd_port, DPM_REQ_ERR_NOT_READY);

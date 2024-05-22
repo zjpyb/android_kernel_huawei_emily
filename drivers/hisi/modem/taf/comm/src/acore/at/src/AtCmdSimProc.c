@@ -120,7 +120,9 @@ VOS_UINT32 At_IsSimSlotAllowed(
 
 VOS_UINT32 At_SetSIMSlotPara(VOS_UINT8 ucIndex)
 {
+#if (MULTI_MODEM_NUMBER != 1)
     TAF_NV_SCI_CFG_STRU                 stSCICfg;
+#endif
     /* 参数检查 */
     if (AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
     {
@@ -141,12 +143,19 @@ VOS_UINT32 At_SetSIMSlotPara(VOS_UINT8 ucIndex)
     }
 
     /* 单modem不支持切换卡槽 */
+#if (MULTI_MODEM_NUMBER == 1)
+    return AT_CME_OPERATION_NOT_ALLOWED;
+#else
 
     /* 三卡形态第3个参数不能为空，其余形态默认为卡槽2 */
+#if (MULTI_MODEM_NUMBER == 3)
     if (0 == gastAtParaList[2].usParaLen)
     {
         return AT_CME_INCORRECT_PARAMETERS;
     }
+#else
+    gastAtParaList[2].ulParaValue = SI_PIH_CARD_SLOT_2;
+#endif
 
     /* 参数检查 */
     if (VOS_FALSE == At_IsSimSlotAllowed(gastAtParaList[0].ulParaValue,
@@ -190,8 +199,12 @@ VOS_UINT32 At_SetSIMSlotPara(VOS_UINT8 ucIndex)
     stSCICfg.bitCard1   = gastAtParaList[1].ulParaValue;
 
     /* 针对双卡形态增加保护，bitCard2使用NV默认值，与底软处理适配 */
+#if (MULTI_MODEM_NUMBER == 3)
     stSCICfg.bitCard2   = gastAtParaList[2].ulParaValue;
     stSCICfg.bitCardNum = 3;
+#else
+    stSCICfg.bitCardNum = 2;
+#endif
 
     stSCICfg.bitReserved0 = 0;
     stSCICfg.bitReserved1 = 0;
@@ -208,6 +221,7 @@ VOS_UINT32 At_SetSIMSlotPara(VOS_UINT8 ucIndex)
     }
 
     return AT_OK;
+ #endif
 }
 
 
@@ -237,11 +251,13 @@ VOS_UINT32 At_QrySIMSlotPara(VOS_UINT8 ucIndex)
                                       stSCICfg.bitCard0,
                                       stSCICfg.bitCard1);
 
+#if (MULTI_MODEM_NUMBER == 3)
     usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                        (VOS_CHAR *)pgucAtSndCodeAddr,
                                        (VOS_CHAR *)pgucAtSndCodeAddr + usLength,
                                        ",%d",
                                        stSCICfg.bitCard2);
+#endif
 
     gstAtSendData.usBufLen = usLength;
 
@@ -335,6 +351,7 @@ VOS_UINT32 At_SetHvsstPara(
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#if (FEATURE_ON == FEATURE_PHONE_SC)
 
 VOS_UINT32 At_SetSilentPin(
     VOS_UINT8                           ucIndex
@@ -481,6 +498,7 @@ VOS_UINT32 At_SetSilentPinInfo(
 
     return AT_WAIT_ASYNC_RETURN;
 }
+#endif
 
 
 VOS_UINT32 At_QryHvsstPara(
@@ -584,7 +602,9 @@ VOS_UINT32 At_SetSciChgPara(
     VOS_UINT8                           ucIndex
 )
 {
+ #if (MULTI_MODEM_NUMBER != 1)
     VOS_UINT32                          ulResult;
+#endif
     /* 命令类型检查 */
     if (AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
     {
@@ -605,8 +625,12 @@ VOS_UINT32 At_SetSciChgPara(
     }
 
     /* 单modem不支持卡槽切换 */
+#if (MULTI_MODEM_NUMBER == 1)
+    return AT_CME_OPERATION_NOT_ALLOWED;
+#else
 
     /* 三卡形态第3个参数不能为空，其余形态默认为卡槽2 */
+#if (MULTI_MODEM_NUMBER == 3)
     if (0 == gastAtParaList[2].usParaLen)
     {
         return AT_CME_INCORRECT_PARAMETERS;
@@ -619,6 +643,15 @@ VOS_UINT32 At_SetSciChgPara(
     {
         return AT_CME_INCORRECT_PARAMETERS;
     }
+#else
+    gastAtParaList[2].ulParaValue = SI_PIH_CARD_SLOT_2;
+
+    /* 任意两个Modem不能同时配置为同一卡槽 */
+    if ((gastAtParaList[0].ulParaValue == gastAtParaList[1].ulParaValue))
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+#endif
 
     ulResult = SI_PIH_SciCfgSet(gastAtClientTab[ucIndex].usClientId,
                                 gastAtClientTab[ucIndex].opId,
@@ -636,6 +669,7 @@ VOS_UINT32 At_SetSciChgPara(
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_SCICHG_SET;
 
     return AT_WAIT_ASYNC_RETURN;
+ #endif
 }
 
 
@@ -682,11 +716,13 @@ VOS_UINT32 At_SciCfgQueryCnf(
                                       pstEvent->PIHEvent.SciCfgCnf.enCard0Slot,
                                       pstEvent->PIHEvent.SciCfgCnf.enCard1Slot);
 
+#if (MULTI_MODEM_NUMBER == 3)
     (*pusLength) += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                        (VOS_CHAR *)pgucAtSndCodeAddr,
                                        (VOS_CHAR *)pgucAtSndCodeAddr + (*pusLength),
                                        ",%d",
                                        pstEvent->PIHEvent.SciCfgCnf.enCard2Slot);
+#endif
 
     return AT_OK;
 }
@@ -1176,6 +1212,8 @@ VOS_UINT32 At_ProcPihCcimiQryCnf(
 }
 
 
+#if (FEATURE_ON == FEATURE_VSIM)
+#if (FEATURE_ON == FEATURE_VSIM_ICC_SEC_CHANNEL)
 /*****************************************************************************
  Prototype      : At_Hex2Base16
  Description    : 将16进制转换BASE64编码
@@ -1241,7 +1279,10 @@ VOS_UINT32 At_QryHvCheckCardPara(
     return AT_ERROR;
 }
 
+#endif
+#endif  /*end of (FEATURE_VSIM == FEATURE_ON)*/
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_UINT32 AT_UiccAuthCnf(
     TAF_UINT8                           ucIndex,
@@ -1339,6 +1380,7 @@ VOS_UINT32 AT_UiccAccessFileCnf(
 
     return AT_OK;
 }
+#endif
 
 
 TAF_UINT32 At_CrlaFilePathCheck(
@@ -1874,6 +1916,7 @@ TAF_UINT32 At_SetPrivateCglaPara(TAF_UINT8 ucIndex)
     return AT_ERROR;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 TAF_UINT32 AT_SetPrfApp(
     AT_CARDAPP_ENUM_UINT32              enCardApp,
@@ -2309,7 +2352,9 @@ TAF_UINT32 At_TestUiccPrfAppPara(TAF_UINT8 ucIndex)
 
     return AT_OK;
 }
+#endif
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 TAF_UINT32 At_SetCCimiPara(TAF_UINT8 ucIndex)
 {
@@ -2331,6 +2376,7 @@ TAF_UINT32 At_SetCCimiPara(TAF_UINT8 ucIndex)
         return AT_ERROR;
     }
 }
+#endif
 
 TAF_UINT16 At_CardErrorInfoInd(
     TAF_UINT8                           ucIndex,

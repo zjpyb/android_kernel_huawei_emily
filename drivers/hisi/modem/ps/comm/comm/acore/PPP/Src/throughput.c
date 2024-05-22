@@ -37,6 +37,7 @@
 #define    THIS_FILE_ID        PS_FILE_ID_THROUGHPUT_C
 
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 void
 throughput_init(struct pppThroughput *t, int period)
@@ -164,4 +165,5 @@ throughput_callback(struct pppThroughput *t, void (*fn)(void *), void *data)
   t->callback.fn = fn;
   t->callback.data = data;
 }
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

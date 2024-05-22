@@ -24,47 +24,57 @@ static inline void print_frame_info(struct seq_file *m,
 	u64 now = ktime_get_ns();
 	u64 frame_end = grp->window_start;
 
-	SEQ_printf(m, "FRAME_INFO : QOS:%u#MARGIN:%d\n",
-			frame_info->qos_frame, frame_info->vload_margin);
-	SEQ_printf(m, "FRAME_INTERVAL : UPDATE:%ldms#INVALID:%ldms\n",
+	SEQ_printf(m, "FRAME_INFO      : QOS:%u#MARGIN:%dSTATE:%lu\n",
+			frame_info->qos_frame,
+			frame_info->vload_margin,
+			frame_info->status);
+	SEQ_printf(m, "FRAME_LOAD_MODE : %s/%s\n",
+			grp->mode.util_enabled ? "true" : "false",
+			grp->mode.freq_enabled ? "true" : "false");
+	SEQ_printf(m, "FRAME_INTERVAL  : UPDATE:%ldms#INVALID:%ldms\n",
 			grp->freq_update_interval / NSEC_PER_MSEC,
 			grp->util_invalid_interval / NSEC_PER_MSEC);
 	SEQ_printf(m, "FRAME_TIMESTAMP : timestamp:%llu#now:%llu#delta:%llu\n",
 			frame_end, now, now - frame_end);
 	SEQ_printf(m, "FRAME_LAST_TIME : %llu/%llu\n",
-			(unsigned long long)frame_info_rtg_load(frame_info)->prev_window_exec,
-			(unsigned long long)grp->prev_window_time);
-	SEQ_printf(m, "FRAME_CLUSTER : %d\n",
+			(unsigned long long)frame_info->prev_frame_exec,
+			(unsigned long long)frame_info->prev_frame_time);
+	SEQ_printf(m, "FRAME_CLUSTER   : %d\n",
 			grp->preferred_cluster ? grp->preferred_cluster->id : -1);
 }
 
-
-static const char frame_task_state_to_char[] = TASK_STATE_TO_CHAR_STR;
-
-static inline int frame_task_state_char(unsigned long state)
+static inline char frame_task_state_to_char(struct task_struct *tsk)
 {
-	int bit = state ? __ffs(state) + 1 : 0;
+	static const char state_char[] = "RSDTtXZPI";
+	unsigned int tsk_state = READ_ONCE(tsk->state);
+	unsigned int state = (tsk_state | tsk->exit_state) & TASK_REPORT;
 
-	return bit < sizeof(frame_task_state_to_char) - 1 ?
-		frame_task_state_to_char[bit] : '?';
+	BUILD_BUG_ON_NOT_POWER_OF_2(TASK_REPORT_MAX);
+	BUILD_BUG_ON(1 + ilog2(TASK_REPORT_MAX) != sizeof(state_char) - 1);
+
+	if (tsk_state == TASK_IDLE)
+		state = TASK_REPORT_IDLE;
+
+	return state_char[fls(state)];
 }
+
 
 static inline void
 print_frame_task_header(struct seq_file *m, char *header,
-		int nr)
+		int run, int nr)
 {
 	SEQ_printf(m,
-		"%s : %d\n"
+		"%s   : %d/%d\n"
 		"STATE		COMM	   PID	PRIO	CPU\n"
 		"---------------------------------------------------------\n",
-		header, nr);
+		header, run, nr);
 }
 
 static inline void
 print_frame_task(struct seq_file *m, struct task_struct *p)
 {
 	SEQ_printf(m, "%5c %15s %5d %5d %5d(%*pbl)\n",
-		frame_task_state_char(p->state), p->comm,
+		frame_task_state_to_char(p), p->comm,
 		p->pid, p->prio,
 		task_cpu(p), cpumask_pr_args(&p->cpus_allowed));
 }
@@ -79,15 +89,20 @@ print_frame_threads(struct seq_file *m,
 	list_for_each_entry(p, &grp->tasks, grp_list) {
 		nr_thread++;
 	}
-	print_frame_task_header(m, "FRAME_THREADS", nr_thread);
+	print_frame_task_header(m, "FRAME_THREADS", grp->nr_running, nr_thread);
 	list_for_each_entry(p, &grp->tasks, grp_list) {
+		if (!p)
+			continue;
+		get_task_struct(p);
 		print_frame_task(m, p);
+		put_task_struct(p);
 	}
 }
 
 static int sched_frame_debug_show(struct seq_file *m, void *v)
 {
 	struct related_thread_group *grp = NULL;
+	unsigned long flags;
 
 	grp = lookup_related_thread_group(DEFAULT_RT_FRAME_ID);
 	if (!grp) {
@@ -95,16 +110,16 @@ static int sched_frame_debug_show(struct seq_file *m, void *v)
 		return 0;
 	}
 
-	raw_spin_lock(&grp->lock);
+	raw_spin_lock_irqsave(&grp->lock, flags);
 	if (list_empty(&grp->tasks)) {
-		raw_spin_unlock(&grp->lock);
+		raw_spin_unlock_irqrestore(&grp->lock, flags);
 		SEQ_printf(m, "IPROVISION RTG tasklist empty\n");
 		return 0;
 	}
 
 	print_frame_info(m, grp);
 	print_frame_threads(m, grp);
-	raw_spin_unlock(&grp->lock);
+	raw_spin_unlock_irqrestore(&grp->lock, flags);
 
 	return 0;
 }

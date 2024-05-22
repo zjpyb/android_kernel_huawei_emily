@@ -126,6 +126,7 @@ struct spmi_controller_dev {
 	void __iomem		*base;
 	spinlock_t		lock;
 	u32			channel;
+	u32			nr;
 };
 
 static int spmi_controller_wait_for_done(struct spmi_controller_dev *ctrl_dev,
@@ -295,8 +296,8 @@ static int spmi_write_cmd(struct spmi_controller *ctrl,
 /*lint +e438 -esym(438,*)*/
 static int spmi_controller_probe(struct platform_device *pdev)
 {
-	struct spmi_controller_dev *spmi_controller;
-	struct resource *iores;
+	struct spmi_controller_dev *spmi_controller = NULL;
+	struct resource *iores = NULL;
 	int ret = 0;
 
 	printk(KERN_INFO "HISI SPMI probe\n");
@@ -330,6 +331,12 @@ static int spmi_controller_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "can not get chanel \n");
 		return -ENODEV; /*lint !e429*/
 	}
+	ret = of_property_read_u32(pdev->dev.of_node, "spmi-nr",
+			&spmi_controller->nr);/*lint !e838*/
+	if (ret) {
+		dev_err(&pdev->dev, "can not get nr \n");
+		spmi_controller->nr = spmi_controller->channel;
+	}
 
 	if (of_property_read_bool(pdev->dev.of_node, "spmi-always-sec")) {
 		dev_err(&pdev->dev, "spmi-always-sec enable! \n");
@@ -342,7 +349,7 @@ static int spmi_controller_probe(struct platform_device *pdev)
 	spin_lock_init(&spmi_controller->lock);
 	spin_lock_init(&spmi_controller->controller.sec_lock);
 
-	spmi_controller->controller.nr = spmi_controller->channel;
+	spmi_controller->controller.nr = spmi_controller->nr;
 	spmi_controller->controller.dev.parent = pdev->dev.parent;
 	spmi_controller->controller.dev.of_node = of_node_get(pdev->dev.of_node);
 
@@ -386,6 +393,10 @@ static struct of_device_id spmi_controller_match_table[] = {
 	{}/*lint !e785*/
 };
 
+static  const struct platform_device_id spmi_controller_id[] = {
+	{"spmi-controller", 0},
+	{}
+};
 static struct platform_driver spmi_controller_driver = {
 	.probe		= spmi_controller_probe,
 	.remove		= spmi_controller_remove,
@@ -394,6 +405,7 @@ static struct platform_driver spmi_controller_driver = {
 		.owner	= THIS_MODULE,/*lint !e64*/
 		.of_match_table = spmi_controller_match_table,
 	},/*lint !e785*/
+	.id_table = spmi_controller_id,
 };/*lint !e785*/
 /*lint -e528 -esym(528,*)*/
 STATIC int __init spmi_controller_init(void)

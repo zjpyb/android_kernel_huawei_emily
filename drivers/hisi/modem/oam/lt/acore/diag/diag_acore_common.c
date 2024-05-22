@@ -441,7 +441,9 @@ DIAG_TRANS_NODE_STRU* diag_AddTransInfoToList(VOS_UINT8 * pstReq, VOS_UINT32 ulR
     DIAG_TRANS_NODE_STRU* pNewNode = NULL;
     VOS_UINT32 ret, ulHigh32, ulLow32;
     VOS_UINT32 ulNodeSize = 0;
+#ifdef CONFIG_ARM64
     VOS_UINT_PTR ullAddr;
+#endif
 
     ulNodeSize = sizeof(DIAG_TRANS_NODE_STRU) + ulRcvlen;
 
@@ -457,10 +459,16 @@ DIAG_TRANS_NODE_STRU* diag_AddTransInfoToList(VOS_UINT8 * pstReq, VOS_UINT32 ulR
     (VOS_VOID)VOS_MemCpy_s(pNewNode->ucRcvData, ulRcvlen, pstReq, ulRcvlen);
 
     ulLow32 = (uintptr_t)pNewNode;
+#ifdef CONFIG_ARM64
     {
         ullAddr = (VOS_UINT_PTR)pNewNode;
         ulHigh32 = (VOS_UINT32)(ullAddr>>32);
     }
+#else
+    {
+        ulHigh32 = 0;
+    }
+#endif
 
     /* 启动定时器，以便没有回复时能够超时删除节点 */
     ret = VOS_StartRelTimer(&pNewNode->Timer, MSP_PID_DIAG_APP_AGENT, DIAG_TRANS_TIMEOUT_LEN, ulHigh32, \
@@ -493,7 +501,9 @@ VOS_UINT32 diag_TransReqProcEntry(DIAG_FRAME_INFO_STRU *pstReq, DIAG_TRANS_HEADE
     VOS_UINT32              ulCmdParasize;
     DIAG_TRANS_MSG_STRU     *pstSendReq = NULL;
     DIAG_TRANS_NODE_STRU    *pNode;
+#ifdef CONFIG_ARM64
     VOS_UINT_PTR            ullAddr;
+#endif
     DIAG_OSA_MSG_STRU       *pstMsg = NULL;
 
     mdrv_diag_PTR(EN_DIAG_PTR_MSGMSP_TRANS, 1, pstReq->ulCmdId, 0);
@@ -532,11 +542,13 @@ VOS_UINT32 diag_TransReqProcEntry(DIAG_FRAME_INFO_STRU *pstReq, DIAG_TRANS_HEADE
     pstSendReq->ulSN = (uintptr_t)pNode;
 
     /* 如果是64位CPU，需要把高32位也传过去 */
+#ifdef CONFIG_ARM64
     {
         ullAddr = (VOS_UINT_PTR)pNode;
         pstSendReq->usOriginalId    = (VOS_UINT16)((ullAddr>>32)&0x0000FFFF);
         pstSendReq->usTerminalId    = (VOS_UINT16)((ullAddr>>48)&0x0000FFFF);
     }
+#endif
 
     if(DIAG_DEBUG_TRANS & g_ulDebugCfg)
     {
@@ -606,15 +618,23 @@ VOS_VOID diag_TransTimeoutProc(REL_TIMER_MSG *pTimer)
 {
     DIAG_TRANS_NODE_STRU *pNode;
     DIAG_FRAME_INFO_STRU *pFrame;
+#ifdef CONFIG_ARM64
     VOS_UINT_PTR ullAddr;
+#endif
 
     /* 兼容64位 */
+#ifndef CONFIG_ARM64
+    {
+        pNode = (DIAG_TRANS_NODE_STRU *)pTimer->ulPara;
+    }
+#else
     {
         ullAddr = (VOS_UINT_PTR)pTimer->ulName;
         ullAddr = (ullAddr<<32) | pTimer->ulPara;
 
         pNode = (DIAG_TRANS_NODE_STRU *)ullAddr;
     }
+#endif
 
     pFrame = (DIAG_FRAME_INFO_STRU *)pNode->ucRcvData;
 
@@ -633,14 +653,20 @@ DIAG_TRANS_NODE_STRU * diag_IsTransCnf(DIAG_TRANS_MSG_STRU* pstPsCnf, DIAG_TRANS
     DIAG_TRANS_NODE_STRU    *pNode;
     DIAG_TRANS_NODE_STRU    *pTempNode;
     LIST_S                  *me = NULL;
+#ifdef CONFIG_ARM64
     VOS_UINT_PTR ullAddr;
+#endif
 
     /* 兼容64位 */
+#ifndef CONFIG_ARM64
+    pNode = (DIAG_TRANS_NODE_STRU *)pstPsCnf->ulSN;
+#else
     ullAddr = (VOS_UINT_PTR)pstPsCnf->usTerminalId;
     ullAddr = (ullAddr<<16) | pstPsCnf->usOriginalId;
     ullAddr = (ullAddr<<32) | pstPsCnf->ulSN;
 
     pNode = (DIAG_TRANS_NODE_STRU *)ullAddr;
+#endif
 
     /*添加信号量保护*/
     (VOS_VOID)VOS_SmP(pstHead->TransSem,0);

@@ -69,10 +69,10 @@ config SND_HI3XXX_HI6405
 	help
 	  Say y to enable sound support for Hi3XXX-Hi6405
 
-config SND_HI3xxx_HICODECLESS
-	tristate "hi3xxx-hicodecless sound support"
+config SND_HI3XXX_ASP_CODEC
+	tristate "hi3xxx asp codec sound support"
 	help
-	  Say y to enable sound support for hi3xxx-hicodecless
+	  Say y to enable sound support for hi3xxx asp codec
 
 config SND_SOC_PCM_HI6210
 	tristate "SoC Audio support for HI6210"

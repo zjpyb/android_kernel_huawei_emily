@@ -17,6 +17,10 @@
 #include <linux/f2fs_fs.h>
 #include <linux/sysfs.h>
 
+#ifdef CONFIG_HISI_BLK
+#include <linux/workqueue.h>
+#endif
+
 #include "f2fs.h"
 #include "segment.h"
 
@@ -60,7 +64,7 @@ void f2fs_print_raw_sb_info(struct f2fs_sb_info *sbi)
 
 	printk("\n");
 	printk("+--------------------------------------------------------+\n");
-	printk("| Super block                                            |\n");
+	printk("| Super block						 |\n");
 	printk("+--------------------------------------------------------+\n");
 
 	DISP_u32(sb, magic);
@@ -117,7 +121,7 @@ void f2fs_print_ckpt_info(struct f2fs_sb_info *sbi)
 
 	printk("\n");
 	printk("+--------------------------------------------------------+\n");
-	printk("| Checkpoint                                             |\n");
+	printk("| Checkpoint						 |\n");
 	printk("+--------------------------------------------------------+\n");
 
 	DISP_u64(cp, checkpoint_ver);
@@ -172,7 +176,7 @@ void f2fs_print_sbi_info(struct f2fs_sb_info *sbi)
 
 	f2fs_msg(sbi->sb, KERN_ALERT, "\n");
 	f2fs_msg(sbi->sb, KERN_ALERT, "+--------------------------------------------------------+\n");
-	f2fs_msg(sbi->sb, KERN_ALERT, "|       SBI(Real time dirty nodes/segments info)         |\n");
+	f2fs_msg(sbi->sb, KERN_ALERT, "|       SBI(Real time dirty nodes/segments info)		|\n");
 	f2fs_msg(sbi->sb, KERN_ALERT, "+--------------------------------------------------------+\n");
 
 	f2fs_msg(sbi->sb, KERN_ALERT, "ndirty_node: %lld\n", get_pages(sbi, F2FS_DIRTY_NODES));
@@ -248,7 +252,7 @@ void f2fs_print_inode(struct f2fs_inode *ri)
 
 	printk("\n");
 	printk("+--------------------------------------------------------+\n");
-	printk("| F2FS inode dump                                        |\n");
+	printk("| F2FS inode dump					 |\n");
 	printk("+--------------------------------------------------------+\n");
 
 	DISP_LE_u16(ri, i_mode);
@@ -271,3 +275,38 @@ void f2fs_print_inode(struct f2fs_inode *ri)
 	DISP_LE_u32(ri, i_namelen);
 	printk("\n\n");
 }
+
+#ifdef CONFIG_HISI_BLK
+static inline void __do_f2fs_print_frag_info(struct super_block *sb, void *arg)
+{
+	struct f2fs_sb_info *sbi = NULL;
+	unsigned long long total_size, free_size, undiscard_size;
+
+	if (sb->s_magic != F2FS_SUPER_MAGIC)
+		return;
+
+	sbi = F2FS_SB(sb);
+
+	total_size = blks_to_mb(sbi->user_block_count, sbi->blocksize);
+	free_size = blks_to_mb(sbi->user_block_count - valid_user_blocks(sbi),
+			sbi->blocksize);
+	undiscard_size = blks_to_mb(SM_I(sbi)->dcc_info->undiscard_blks,
+			sbi->blocksize);
+
+	pr_err("<f2fs> : size = %lluMB, free = %lluMB, undiscard = %lluMB, free_sec = %u\n",
+			total_size, free_size, undiscard_size,
+			free_sections(sbi));
+}
+
+static void do_f2fs_print_frag_info(struct work_struct *work)
+{
+	iterate_supers(__do_f2fs_print_frag_info, NULL);
+}
+
+static DECLARE_WORK(f2fs_print_frag_info_work, &do_f2fs_print_frag_info);
+
+void f2fs_print_frag_info(void)
+{
+	schedule_work(&f2fs_print_frag_info_work);
+}
+#endif

@@ -51,9 +51,10 @@ struct usb_ana_hs_mos_data {
 	int gpio_auxpand_switch;  /* H:sub1->aux padp, sub2->aux padn */
 	int gpio_fb;              /* H:connect to fb */
 	int gpio_mos_switch;      /* H:mos to hs, L:mos to usb */
+	int gpio_usb_lr;          /* H:usb disconnect, L:usb connect */
 	int mic_switch_delay_time;
 	int registed;             /* usb analog headset dev register flag */
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 	struct mutex mutex;
 	struct workqueue_struct *analog_hs_plugin_delay_wq;
 	struct delayed_work analog_hs_plugin_delay_work;
@@ -63,6 +64,7 @@ struct usb_ana_hs_mos_data {
 	void *private_data;      /* store codec description data */
 	int usb_analog_hs_in;
 	bool connect_linein_r;
+	bool phy_ldo_recheck;
 	struct platform_device *pdev;
 	struct device *dev;
 	struct regulator *mos_switch_phy_ldo;
@@ -106,9 +108,10 @@ static void usb_analog_hs_mos_set_gpio_state(int audio_auxpand, int mic_gnd,
 static void usb_analog_hs_plugin_work(struct work_struct *work)
 {
 	struct hw_comm_pmic_cfg_t audio_pmic_ldo_set;
+	int is_enabled = 0;
 
 	IN_FUNCTION;
-	wake_lock(&g_pdata_mos_switch->wake_lock);
+	__pm_stay_awake(&g_pdata_mos_switch->wake_lock);
 
 	/*
 	 * change codec hs resistence from 70ohm to 3Kohm,
@@ -120,7 +123,8 @@ static void usb_analog_hs_plugin_work(struct work_struct *work)
 	if (g_pdata_mos_switch->gpio_mos_switch > 0) {
 		usb_analog_hs_gpio_set_value(g_pdata_mos_switch->gpio_mos_switch, HIGH);
 	} else {
-		audio_pmic_ldo_set.pmic_num = 1;
+		audio_pmic_ldo_set.pmic_num =
+			(g_pdata_mos_switch->gpio_usb_lr > 0) ? 0 : 1;
 		audio_pmic_ldo_set.pmic_power_type = VOUT_BOOST_EN;
 		audio_pmic_ldo_set.pmic_power_voltage = USB_PMIC_VOLTAGE;
 		audio_pmic_ldo_set.pmic_power_state = LOW;
@@ -132,7 +136,10 @@ static void usb_analog_hs_plugin_work(struct work_struct *work)
 			return;
 		}
 
-		if (regulator_enable(g_pdata_mos_switch->mos_switch_phy_ldo)) {
+		if (g_pdata_mos_switch->phy_ldo_recheck)
+			is_enabled = regulator_is_enabled(g_pdata_mos_switch->mos_switch_phy_ldo);
+
+		if ((is_enabled == 0) && regulator_enable(g_pdata_mos_switch->mos_switch_phy_ldo)) {
 			hwlog_err("error: regulator enable failed\n");
 			audio_pmic_ldo_set.pmic_power_state = HIGH;
 			hw_pmic_power_cfg(AUDIO_PMIC_REQ, &audio_pmic_ldo_set);
@@ -143,6 +150,8 @@ static void usb_analog_hs_plugin_work(struct work_struct *work)
 	usb_analog_hs_gpio_set_value(g_pdata_mos_switch->gpio_audio_auxpand, 0);
 	usb_analog_hs_gpio_set_value(g_pdata_mos_switch->gpio_fb, 1);
 	usb_analog_hs_gpio_set_value(g_pdata_mos_switch->gpio_auxpand_switch, 0);
+	if (g_pdata_mos_switch->gpio_usb_lr > 0)
+		usb_analog_hs_gpio_set_value(g_pdata_mos_switch->gpio_usb_lr, 1);
 
 	msleep(DEFLAUT_SLEEP_TIME_20MS);
 	g_pdata_mos_switch->codec_ops_dev->ops.plug_in_detect(
@@ -153,7 +162,7 @@ static void usb_analog_hs_plugin_work(struct work_struct *work)
 	/* recovery codec hs resistence to 70ohm. */
 	g_pdata_mos_switch->codec_ops_dev->ops.hs_high_resistence_enable(
 		g_pdata_mos_switch->private_data, false);
-	wake_unlock(&g_pdata_mos_switch->wake_lock);
+	__pm_relax(&g_pdata_mos_switch->wake_lock);
 
 	OUT_FUNCTION;
 }
@@ -161,10 +170,11 @@ static void usb_analog_hs_plugin_work(struct work_struct *work)
 static void usb_analog_hs_plugout_work(struct work_struct *work)
 {
 	struct hw_comm_pmic_cfg_t audio_pmic_ldo_set;
+	int is_enabled = 1;
 
 	IN_FUNCTION;
 
-	wake_lock(&g_pdata_mos_switch->wake_lock);
+	__pm_stay_awake(&g_pdata_mos_switch->wake_lock);
 	if (g_pdata_mos_switch->analog_hs_plugin_delay_wq) {
 		cancel_delayed_work(
 			&g_pdata_mos_switch->analog_hs_plugin_delay_work);
@@ -187,12 +197,16 @@ static void usb_analog_hs_plugout_work(struct work_struct *work)
 					__func__);
 				return;
 			}
+			if (g_pdata_mos_switch->phy_ldo_recheck)
+				is_enabled = regulator_is_enabled(g_pdata_mos_switch->mos_switch_phy_ldo);
 
-			if (regulator_disable(g_pdata_mos_switch->mos_switch_phy_ldo)) {
-				hwlog_err("error: regulator enable failed\n");
+			if ((is_enabled > 0) && regulator_disable(g_pdata_mos_switch->mos_switch_phy_ldo)) {
+				hwlog_err("error: regulator disable failed\n");
 				return;
 			}
-			audio_pmic_ldo_set.pmic_num = 1;
+
+			audio_pmic_ldo_set.pmic_num =
+				(g_pdata_mos_switch->gpio_usb_lr > 0) ? 0 : 1;
 			audio_pmic_ldo_set.pmic_power_type = VOUT_BOOST_EN;
 			audio_pmic_ldo_set.pmic_power_voltage = USB_PMIC_VOLTAGE;
 			audio_pmic_ldo_set.pmic_power_state = HIGH;
@@ -206,8 +220,11 @@ static void usb_analog_hs_plugout_work(struct work_struct *work)
 			g_pdata_mos_switch->gpio_auxpand_switch, 0);
 		if (usb_analog_hs_gpio_get_value(g_pdata_mos_switch->gpio_mic_gnd) == HIGH)
 			usb_analog_hs_gpio_set_value(g_pdata_mos_switch->gpio_mic_gnd, LOW);
+		if (g_pdata_mos_switch->gpio_usb_lr > 0)
+			usb_analog_hs_gpio_set_value(
+				g_pdata_mos_switch->gpio_usb_lr, 0);
 	}
-	wake_unlock(&g_pdata_mos_switch->wake_lock);
+	__pm_relax(&g_pdata_mos_switch->wake_lock);
 
 	OUT_FUNCTION;
 }
@@ -300,8 +317,8 @@ void usb_ana_hs_mos_plug_in_out_handle(int hs_state)
 
 	IN_FUNCTION;
 
-	wake_lock_timeout(&g_pdata_mos_switch->wake_lock,
-		msecs_to_jiffies(WAKE_LOCK_TIMEOUT));
+	__pm_wakeup_event(&g_pdata_mos_switch->wake_lock,
+		WAKE_LOCK_TIMEOUT);
 
 	switch (hs_state) {
 	case USB_ANA_HS_PLUG_IN:
@@ -409,8 +426,16 @@ static int usb_ana_hs_mos_load_gpio_pdata(struct device *dev,
 	if (hs_load_gpio(dev, &(data->gpio_mos_switch), LOW,
 		"switch_mos_hs") < 0)
 		goto mos_switch_get_gpio_mos_err;
+
+	if (hs_load_gpio(dev, &(data->gpio_usb_lr), LOW,
+		"switch_usb_lr") < 0)
+		goto mos_switch_get_gpio_usb_lr_err;
+
 	return 0;
 
+mos_switch_get_gpio_usb_lr_err:
+	if (data->gpio_mos_switch > 0)
+		gpio_free(data->gpio_mos_switch);
 mos_switch_get_gpio_mos_err:
 	if (data->gpio_fb > 0)
 		gpio_free(data->gpio_fb);
@@ -445,6 +470,10 @@ static void usb_analog_hs_free_gpio(struct usb_ana_hs_mos_data *data)
 
 	if (data->gpio_mos_switch > 0)
 		gpio_free(data->gpio_mos_switch);
+
+	if (data->gpio_usb_lr > 0)
+		gpio_free(data->gpio_usb_lr);
+
 }
 
 #ifdef USB_ANALOG_HEADSET_DEBUG
@@ -472,7 +501,7 @@ static ssize_t usb_ana_hs_mos_mic_switch_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	int ret;
-	long val;
+	long val = 0;
 
 	if (!g_pdata_mos_switch) {
 		hwlog_err("%s:pdata is NULL\n", __func__);
@@ -518,7 +547,8 @@ static long usb_ana_hs_mos_ioctl(struct file *file, unsigned int cmd,
 {
 	int ret = 0;
 	int gpio_mic_sel_val = 0;
-	unsigned int __user *p_user = (unsigned int __user *) arg;
+	uintptr_t arg_tmp = (uintptr_t)arg;
+	unsigned int __user *p_user = (unsigned int __user *) arg_tmp;
 
 	if (!g_pdata_mos_switch)
 		return -EBUSY;
@@ -581,7 +611,7 @@ struct usb_analog_hs_ops usb_ana_hs_mos_ops = {
 	.usb_ana_hs_dev_register = usb_ana_hs_mos_dev_register,
 	.check_usb_ana_hs_support = check_usb_analog_hs_mos_support,
 	.usb_ana_hs_plug_in_out_handle = usb_ana_hs_mos_plug_in_out_handle,
-	.usb_ana_hs_mic_swtich_change_state =
+	.usb_ana_hs_mic_switch_change_state =
 		usb_ana_hs_mos_mic_switch_change_state,
 };
 
@@ -625,7 +655,7 @@ static int read_property_value(struct device *dev,
 	const char *property_name, int default_value)
 {
 	int ret;
-	int value;
+	int value = 0;
 
 	ret = of_property_read_u32(dev->of_node, property_name, &value);
 	if (ret)
@@ -638,7 +668,7 @@ static bool read_property_setting(struct device *dev,
 	const char *property_name, bool default_setting)
 {
 	bool setting = false;
-	int val;
+	int val = 0;
 
 	if (!of_property_read_u32(dev->of_node, property_name, &val)) {
 		if (val == 0)
@@ -700,7 +730,9 @@ static int usb_ana_hs_mos_probe(struct platform_device *pdev)
 		"mic_switch_delay", DEFAULT_MIC_SWITCH_DELAY_TIME);
 	g_pdata_mos_switch->connect_linein_r = read_property_setting(dev,
 		"connect_linein_r", true);
-	wake_lock_init(&g_pdata_mos_switch->wake_lock, WAKE_LOCK_SUSPEND,
+	g_pdata_mos_switch->phy_ldo_recheck = read_property_setting(dev,
+		"phy_ldo_recheck", false);
+	wakeup_source_init(&g_pdata_mos_switch->wake_lock,
 		"usb_analog_hs");
 	mutex_init(&g_pdata_mos_switch->mutex);
 	/* load dts config for board difference */
@@ -760,7 +792,7 @@ mos_switch_err_plugin_delay_wq:
 			g_pdata_mos_switch->analog_hs_plugin_delay_wq);
 	}
 mos_switch_err_regulator_get:
-	wake_lock_destroy(&g_pdata_mos_switch->wake_lock);
+	wakeup_source_trash(&g_pdata_mos_switch->wake_lock);
 	usb_analog_hs_free_gpio(g_pdata_mos_switch);
 mos_switch_err_out:
 	kfree(g_pdata_mos_switch);

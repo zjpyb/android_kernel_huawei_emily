@@ -1,18 +1,23 @@
+/*
+ * headset_debug.h
+ *
+ * headset debug driver
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #ifndef __HEADSET_DEBUG_H__
 #define __HEADSET_DEBUG_H__
-
-#ifdef __cplusplus
-#if __cplusplus
-extern "C" {
-#endif
-#endif
-struct headset_debug {
-	struct snd_soc_jack *jack;
-	struct switch_dev *sdev;
-	struct input_dev *input_dev;
-	struct dentry * df_dir;
-	atomic_t state;
-};
+#include <sound/soc.h>
 
 enum headset_debug_jack_type {
 	HEADSET_DEBUG_JACK_BIT_NONE = 0,
@@ -33,40 +38,35 @@ enum headset_debug_key_type {
 	HEADSET_DEBUG_KEY_5,
 };
 
-/* Debug info */
-#define ERROR_LEVEL     1
-#define INFO_LEVEL      1
-#define DEBUG_LEVEL     0
-
-#if INFO_LEVEL
-#define logi(fmt, ...) pr_info(LOG_TAG"[I]:%s:%d: "fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#ifdef CONFIG_HUAWEI_HEADSET_DEBUG
+#ifdef CONFIG_HUAWEI_HEADSET_DEBUG_SWITCH
+void headset_debug_init(struct snd_soc_jack *jack, struct switch_dev *sdev);
 #else
-#define logi(fmt, ...)
+void headset_debug_init(struct snd_soc_jack *jack);
 #endif
-
-#if DEBUG_LEVEL
-#define logd(fmt, ...) pr_info(LOG_TAG"[D]:%s:%d: "fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+void headset_debug_set_state(int state, bool use_input);
+void headset_debug_uninit(void);
+void headset_debug_input_init(struct input_dev *accdet_input_dev);
+void headset_debug_input_set_state(int state, bool use_input);
+void headset_debug_input_uninit(void);
 #else
-#define logd(fmt, ...)
-#endif
-
-#if ERROR_LEVEL
-#define loge(fmt, ...) pr_err(LOG_TAG"[E]:%s:%d: "fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#ifdef CONFIG_HUAWEI_HEADSET_DEBUG_SWITCH
+static inline void headset_debug_init(struct snd_soc_jack *jack,
+		struct switch_dev *sdev)
 #else
-#define loge(fmt, ...)
+static inline void headset_debug_init(struct snd_soc_jack *jack);
 #endif
+{}
+static inline void headset_debug_set_state(int state, bool use_input)
+{}
+static inline void headset_debug_uninit(void)
+{}
+static inline void headset_debug_input_init(struct input_dev *accdet_input_dev)
+{}
+static inline void headset_debug_input_set_state(int state, bool use_input)
+{}
+static inline void headset_debug_input_uninit(void)
+{}
+#endif // !CONFIG_HUAWEI_HEADSET_DEBUG
 
-extern void headset_debug_init(struct snd_soc_jack *jack, struct switch_dev *sdev);
-extern void headset_debug_set_state(int state, bool use_input);
-extern void headset_debug_uninit(void);
-extern void headset_debug_input_init(struct input_dev *accdet_input_dev);
-extern void headset_debug_input_set_state(int state, bool use_input);
-extern void headset_debug_input_uninit(void);
-
-#ifdef __cplusplus
-#if __cplusplus
-}
-#endif
-#endif
-
-#endif
+#endif // __HEADSET_DEBUG_H__

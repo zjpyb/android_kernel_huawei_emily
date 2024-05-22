@@ -118,15 +118,6 @@ void ufs_soc_init(struct ufs_hba *hba)
 		ufs_sys_ctrl_writel(host, MASK_UFS_DEVICE_RESET | 0,
 				    UFS_DEVICE_RESET_CTRL); /* reset device */
 		ufshcd_vops_vcc_power_on_off(hba);
-		/* To improve the ref clock jitter, use PMU's output directly */
-		/* change the PMU's device ref clk to 38.4Mhz, if after onchiprom's
-		* linkstartup's PA_MaxRxHSGear = 0x4 */
-		/* close the device clk */
-		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
-		/* choose the device clk 19.2Mhz */
-		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 0);
-		/* open the device clk */
-		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 
 		mdelay(1);
 
@@ -220,10 +211,6 @@ int ufs_kirin_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 
 	if (!host->in_suspend)
 		return 0;
-	if (hba->is_hs_gear4_dev)
-		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 1);
-	else
-		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 0);
 	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 	/* 250us to ensure the clk stable */
 	udelay(250);
@@ -258,8 +245,23 @@ static void mphy_amplitude_glitch_workaround(struct ufs_hba *hba)
 	uint16_t value3 = 0;
 	uint16_t value4 = 0;
 	uint32_t reg;
-	uint16_t table[11][2] = {
+	struct ufs_kirin_host *host = hba->priv;
+	uint16_t (*table)[2] = NULL;
+	uint16_t table_0DB[11][2] = {
 			/* tx_ana_ctrl_leg_pull_en, tx_ana_ctrl_post */
+			{252, 0},
+			{252, 0},
+			{252, 0},
+			{255, 0},
+			{255, 0},
+			{1020, 0},
+			{1020, 0},
+			{1023, 0},
+			{1023, 0},
+			{4092, 0},
+			{4092, 0}
+	};
+	uint16_t table_35DB[11][2] = {
 			{252, 3},
 			{252, 3},
 			{252, 3},
@@ -272,10 +274,30 @@ static void mphy_amplitude_glitch_workaround(struct ufs_hba *hba)
 			{4092, 6},
 			{4092, 7}
 	};
+	uint16_t table_60DB[11][2] = {
+			{252, 6},
+			{252, 7},
+			{252, 7},
+			{255, 7},
+			{255, 14},
+			{1020, 14},
+			{1020, 14},
+			{1023, 14},
+			{1023, 15},
+			{4092, 15},
+			{4092, 15}
+	};
+
+	table = &table_35DB[0];
+	if (0 == host->tx_equalizer) {
+		table = &table_0DB[0];
+	} else if (60 == host->tx_equalizer) {
+		table = &table_60DB[0];
+	}
 
 	reg = ufs_kirin_mphy_read(hba, 0x200C);
 	reg = reg & 0xF; /* RAWCMN_DIG_TX_CAL_CODE[3:0] */
-	if (reg >= sizeof(table)/sizeof(table[0]))
+	if (reg >= sizeof(table_35DB) / sizeof(table_35DB[0]))
 		reg = 0;
 	value3 = table[reg][0]<<1;
 	value4 = table[reg][1];
@@ -400,6 +422,12 @@ int ufs_kirin_dme_setup_snps_asic_mphy(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x008c, 0x5), 0xF); /* Gear1 Synclength */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD085, 0x0), 0x1); /* Unipro VS_MphyCfgUpdt */
 
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x15d4, 0x0), 0x3); /* PA_TxHsAdaptType: no adapt */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x15d5, 0x0), 0x3); /* PA_TxHsAdaptTypeInPa_Init: no adapt */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0005, 0x0), 0x2); /* only LA */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0005, 0x1), 0x2); /* only LA */
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD085, 0x0), 0x1); /* Unipro VS_MphyCfgUpdt */
+
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0092, 0x4), 0xA);/* RX_Hibern8Time_Capability*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0092, 0x5), 0xA);/* RX_Hibern8Time_Capability*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x008f, 0x4), 0xA);/* RX_Min_ActivateTime */
@@ -473,7 +501,7 @@ int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd086, 0x0), 0xF0); /* Unipro VS_AdjustTrailingClocks */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd0a0, 0x0), 0x3); /* Unipro VS_DebugSaveConfigTime */
 	/* Unipro PA_AdaptAfterLRSTInPA_INIT, use PA_PeerRxHsAdaptInitial value */
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0x15D5, 0x0), 0x1);
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0x15D5, 0x0), 0x3);
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xD0AB, 0x0), 0x0); /* close Unipro VS_Mk2ExtnSupport */
 	ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(0xD0AB, 0x0), &value);
@@ -528,28 +556,19 @@ static void hisi_mphy_link_post_config(struct ufs_hba *hba,
 
 void set_device_clk(struct ufs_hba *hba)
 {
-	uint32_t max_rx_hsgear = 0;
-	/* Read PA_MaxRxHSGear(0x1587) to see if it is UFS3.0 device
-	which supports HS gear 4, this checking must be done after linkstartup */
-	ufshcd_dme_get(hba, UIC_ARG_MIB(0x1587), &max_rx_hsgear);
-	if (max_rx_hsgear >= 0x4) {
-		/*The B_REFCLK_FREQ was changed to 38.4MHz in
-		the xloader*/
+	/* 0: 19.2M, 1: 38.4M */
+	int ufs_refclk_val = 0;
 
-		hba->is_hs_gear4_dev = 1;
+	dev_info(hba->dev, "ref clk %s\n", ufs_refclk_val ? "38.4M" : "19.2M");
 
-		/* close the device clk */
-		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
-		/* choose the device clk 38.4Mhz */
-		hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), 1);
-		/* open the device clk */
-		hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
+	/* close the device clk */
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 0);
+	/* choose the device clk 19.2Mhz when device spec is 3.0*/
+	hisi_pmic_reg_write(PMIC_CLK_UFS_FRE_CTRL1_ADDR(0), ufs_refclk_val);
+	/* open the device clk */
+	hisi_pmic_reg_write(PMIC_CLK_UFS_EN_ADDR(0), 1);
 
-		mdelay(2);
-	}
-	else {
-		hba->is_hs_gear4_dev = 0;
-	}
+	mdelay(2);
 }
 
 int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
@@ -582,25 +601,37 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 	return 0;
 }
 
-void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
+void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba, struct ufs_pa_layer_attr *dev_req_params)
 {
 	uint32_t value;
+	u32 equalizer;
+	struct ufs_kirin_host *host = hba->priv;
+
 	pr_info("%s ++\n", __func__);
 #ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
 #endif
+
+	equalizer = (dev_req_params->gear_tx == 4) ? 0 : 35;
+	sel_equalizer_by_device(hba, &equalizer);
+	if (host->tx_equalizer != equalizer) {
+		host->tx_equalizer = equalizer;
+		if (likely(!hba->host->is_emulator))
+			mphy_amplitude_glitch_workaround(hba);
+	}
+
 	/*ARIES platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1554), 0x4f); /* g2 sync length */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1556), 0x4f); /* g3 sync length */
-	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a7), 0xA); /* PA_Hibern8Time */
+
+	ufshcd_dme_get(hba, UIC_ARG_MIB(0x15A7), &value);
+	if (value < 0xA)
+		ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a7),
+			0xA); /* PA_Hibern8Time */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a8), 0xA); /* PA_Tactivate */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xd085, 0x0), 0x01);
-
-	ufshcd_dme_get(hba, UIC_ARG_MIB(0x15A8), &value);
-	if (value < 0x7)
-		ufshcd_dme_set(hba, UIC_ARG_MIB(0x15A8), 0x7); /* update PaTactive */
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0x155c), 0x0); /* PA_TxSkip */
 
@@ -628,7 +659,6 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xd045), 65535);
 	/*DME_AFC1ReqTimeOutVal = 32767, default is 0*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xd046), 32767);
-
 
 	pr_info("%s --\n", __func__);
 	return;

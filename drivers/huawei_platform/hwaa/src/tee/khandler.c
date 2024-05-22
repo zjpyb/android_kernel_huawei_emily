@@ -34,7 +34,7 @@ static s32 get_phase1_key_from_map(u64 profile_id, u8 **phase1_key,
 {
 	u8 *data = NULL;
 	u32 data_size = 0;
-	u8 *phase1_key_map;
+	u8 *phase1_key_map = NULL;
 	s32 err_code;
 
 	read_lock(&g_phase1_key_lock);

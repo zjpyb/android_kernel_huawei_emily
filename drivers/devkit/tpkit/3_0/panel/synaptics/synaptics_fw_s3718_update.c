@@ -707,21 +707,6 @@ static void convert_to_little_endian(unsigned char *dest, unsigned long src)
 	return;
 }
 
-static inline int secure_memcpy(unsigned char *dest, unsigned int dest_size,
-				const unsigned char *src, unsigned int src_size,
-				unsigned int count)
-{
-	if (dest == NULL || src == NULL)
-		return -EINVAL;
-
-	if (count > dest_size || count > src_size)
-		return -EINVAL;
-
-	memcpy((void *)dest, (const void *)src, count);
-
-	return 0;
-}
-
 static unsigned int le_to_uint(const unsigned char *ptr)
 {
 	return (unsigned int)ptr[0] +
@@ -1134,7 +1119,6 @@ static int fwu_parse_image_header_10(void)
 
 static int fwu_parse_image_header_05_06(void)
 {
-	int retval = 0;
 	const unsigned char *image = NULL;
 	struct image_header_05_06 *header = NULL;
 
@@ -1192,15 +1176,15 @@ static int fwu_parse_image_header_05_06(void)
 		fwu->img.dp_config.size = le_to_uint(header->dsp_cfg_size);
 		fwu->img.dp_config.data = image + fwu->img.disp_config_offset;
 	} else {
-		retval =
-		    secure_memcpy(fwu->img.cstmr_product_id,
-				  sizeof(fwu->img.cstmr_product_id),
-				  header->cstmr_product_id,
-				  sizeof(header->cstmr_product_id),
-				  PRODUCT_ID_SIZE);
-		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to copy custom product ID string\n",__func__);
-		}
+
+		if ((sizeof(fwu->img.cstmr_product_id) < PRODUCT_ID_SIZE) ||
+			(sizeof(header->cstmr_product_id) < PRODUCT_ID_SIZE))
+			TS_LOG_ERR("%s: Failed to copy custom product ID string\n",
+				__func__);
+		else
+			memcpy((void *)fwu->img.cstmr_product_id,
+				(const void *)header->cstmr_product_id,
+				PRODUCT_ID_SIZE);
 		fwu->img.cstmr_product_id[PRODUCT_ID_SIZE] = 0;
 	}
 
@@ -1208,13 +1192,13 @@ static int fwu_parse_image_header_05_06(void)
 	if (fwu->img.contains_firmware_id)
 		fwu->img.firmware_id = le_to_uint(header->firmware_id);
 
-	retval = secure_memcpy(fwu->img.product_id,
-			       sizeof(fwu->img.product_id),
-			       header->product_id,
-			       sizeof(header->product_id), PRODUCT_ID_SIZE);
-	if (retval < 0) {
+	if ((sizeof(fwu->img.product_id) < PRODUCT_ID_SIZE) ||
+		(sizeof(header->product_id) < PRODUCT_ID_SIZE))
 		TS_LOG_ERR("%s: Failed to copy product ID string\n", __func__);
-	}
+	else
+		memcpy((void *)fwu->img.product_id,
+			(const void *)header->product_id,
+			PRODUCT_ID_SIZE);
 	fwu->img.product_id[PRODUCT_ID_SIZE] = 0;
 
 	fwu->img.lockdown.size = LOCKDOWN_SIZE;
@@ -3072,15 +3056,14 @@ static int fwu_write_utility_parameter(void)
 	memset(fwu->read_config_buf, 0x00, utility_param_size);
 
 	if (fwu->img.force_param.size) {
-		retval = secure_memcpy(fwu->read_config_buf,
-				       utility_param_size - 4,
-				       fwu->img.force_param.data,
-				       fwu->img.force_param.size,
-				       fwu->img.force_param.size);
-		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to copy force parameter data\n",__func__);
-			return retval;
+		if (fwu->img.force_param.size > (utility_param_size - 4)) {
+			TS_LOG_ERR("%s: Failed to copy force parameter data\n",
+				__func__);
+			return -EINVAL;
 		}
+		memcpy((void *)fwu->read_config_buf,
+			(const void *)fwu->img.force_param.data,
+			fwu->img.force_param.size);
 	}
 
 	calculate_checksum((unsigned short *)fwu->read_config_buf,
@@ -3774,12 +3757,14 @@ static int fwu_recovery_write_chunk(void)
 			chunk_size = F35_CHUNK_SIZE;
 
 		memset(buf, 0x00, F35_CHUNK_SIZE);
-		retval = secure_memcpy(buf, sizeof(buf), chunk_ptr,
-				fwu->image_size - bytes_written, chunk_size);
-		if (retval) {
-			TS_LOG_ERR("%s: Failed to copy data \n", __func__);
-			return retval;
+
+		if ((chunk_size > sizeof(buf)) ||
+			(chunk_size > (fwu->image_size - bytes_written))) {
+			TS_LOG_ERR("%s: Failed to copy data\n", __func__);
+			return -EINVAL;
+
 		}
+		memcpy((void *)buf, (const void *)chunk_ptr, chunk_size);
 
 		retval =
 		    fwu->fn_ptr->write(rmi4_data, base + F35_CHUNK_DATA_OFFSET,

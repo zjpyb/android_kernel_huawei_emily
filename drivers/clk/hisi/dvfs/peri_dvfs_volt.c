@@ -58,7 +58,7 @@ unsigned int __peri_get_volt(struct peri_volt_poll *pvp)
 
 struct peri_volt_poll *__perivolt_lookup(unsigned int dev_id, const char *name)
 {
-	struct peri_volt_poll *pvp;
+	struct peri_volt_poll *pvp = NULL;
 
 	if (name) {
 		list_for_each_entry(pvp, &perivolt_list, node)
@@ -92,7 +92,7 @@ EXPORT_SYMBOL_GPL(__peri_poll_stat);
 
 struct peri_volt_poll *peri_volt_poll_get(unsigned int dev_id, const char *name)
 {
-	struct peri_volt_poll *pvp;
+	struct peri_volt_poll *pvp = NULL;
 
 	if (!dev_id  && NULL == name)
 		return NULL;
@@ -211,6 +211,51 @@ int peri_get_temperature(struct peri_volt_poll *pvp)
 }
 EXPORT_SYMBOL_GPL(peri_get_temperature);
 
+/**
+ * peri_set_avs - set avs poll for pvp
+ * @pvp: the peri_volt_poll whose avs poll will changed
+ * @avs: the new avs poll set for pvp
+ *
+ * Returns 0 on success, -EERROR otherwise.
+ */
+int peri_set_avs(struct peri_volt_poll *pvp, unsigned int avs)
+{
+	int ret = 0;
+
+	if (IS_ERR_OR_NULL(pvp))
+		return -EINVAL;
+
+	perivolt_lock();
+	if (pvp->ops->set_avs)
+		ret = pvp->ops->set_avs(pvp, avs);
+	perivolt_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(peri_set_avs);
+
+/**
+ * peri_wait_avs_update - wait avs status updated
+ * @pvp: the peri_volt_poll whose avs poll will changed
+ *
+ * Returns 0 on success, -EERROR otherwise.
+ */
+int peri_wait_avs_update(struct peri_volt_poll *pvp)
+{
+	int ret = 0;
+
+	if (IS_ERR_OR_NULL(pvp))
+		return -EINVAL;
+
+	perivolt_lock();
+	if (pvp->ops->wait_avs_update)
+		ret = pvp->ops->wait_avs_update(pvp);
+	perivolt_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(peri_wait_avs_update);
+
 int __perivolt_init(struct device *dev, struct peri_volt_poll *pvp)
 {
 	int ret = 0;
@@ -254,10 +299,10 @@ int perivolt_register(struct device *dev, struct peri_volt_poll *pvp)
 	}
 
 	perivolt->name = kstrdup(pvp->name, GFP_KERNEL);
-	if (!perivolt->name) {
+	if (perivolt->name == NULL) {
 		pr_err("%s: could not allocate pvp->name\n", __func__);
 		ret = -ENOMEM;
-		goto fail_name;
+		goto fail_pvp;
 	}
 	perivolt->dev_id = pvp->dev_id;
 	perivolt->perivolt_avs_ip = pvp->perivolt_avs_ip;
@@ -275,9 +320,11 @@ int perivolt_register(struct device *dev, struct peri_volt_poll *pvp)
 	ret = __perivolt_init(dev, perivolt);
 	if (!ret)
 		return ret;
-fail_name:
+
+	kfree(perivolt->name);
+	perivolt->name = NULL;
+fail_pvp:
 	kfree(perivolt);
-	perivolt = NULL;
 fail_out:
 	return ret;
 }

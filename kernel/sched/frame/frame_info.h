@@ -8,9 +8,17 @@
 #include "frame.h"
 
 
-#define FRAME_END		(1 << 0)
-#define FRAME_SETTIME		(FRAME_END)
+#define FRAME_START		(1 << 0)
+#define FRAME_END		(1 << 1)
+#define FRAME_INVALID		(1 << 2)
+//#define FRAME_RESET_UTIL_MODE	(1 << 3)
+#define FRAME_USE_MARGIN_IMME	(1 << 4)
+#define FRAME_TIMESTAMP_SKIP_START	(1 << 5)
+#define FRAME_TIMESTAMP_SKIP_END	(1 << 6)
+#define FRAME_SETTIME		(FRAME_START | FRAME_END | \
+				FRAME_USE_MARGIN_IMME)
 #define FRAME_SETTIME_PARAM	-1
+
 
 struct frame_info {
 	/*
@@ -39,10 +47,21 @@ struct frame_info {
 	int vload_margin;
 	int max_vload_time;
 
-	u64 frame_last_load_util;
+	unsigned long prev_fake_load_util;
+	unsigned long prev_frame_load_util;
+	unsigned long prev_frame_time;
+	unsigned long prev_frame_exec;
+	unsigned long prev_frame_load;
+
 	u64 frame_util;
 
-	bool frame_invalid;
+	unsigned long status;
+	int frame_max_util;
+	int frame_min_util;
+	int frame_boost_min_util;
+
+	bool margin_imme;
+	bool timestamp_skipped;
 };
 
 struct related_thread_group*
@@ -52,7 +71,6 @@ static inline struct related_thread_group *
 frame_info_rtg(struct frame_info *frame_info)
 {
 	return frame_info->rtg;
-	//return frame_rtg(); TODO
 }
 
 static inline struct group_time *

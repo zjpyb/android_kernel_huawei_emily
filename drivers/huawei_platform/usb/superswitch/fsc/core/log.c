@@ -79,7 +79,7 @@ FSC_BOOL FUSB3601_WritePDToken(struct Log *obj, FSC_BOOL transmitter,
   }
   obj->pd_writeindex_ = (obj->pd_writeindex_ + 1) % FSC_LOG_SIZE;
 
-  obj->pd_data_[obj->pd_writeindex_] = token & 0x0F;
+	obj->pd_data_[obj->pd_writeindex_] = ((unsigned int)token) & 0x0F;
   obj->pd_writeindex_ = (obj->pd_writeindex_ + 1) % FSC_LOG_SIZE;
 
   return TRUE;

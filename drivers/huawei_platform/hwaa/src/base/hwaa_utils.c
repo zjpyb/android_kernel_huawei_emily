@@ -11,6 +11,8 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/rcupdate.h>
+#include <linux/sched/task.h>
+#include <linux/sched/mm.h>
 #include <securec.h>
 #include "inc/base/macros.h"
 #include "huawei_platform/hwaa/hwaa_limits.h"
@@ -48,7 +50,7 @@ static void do_turn_byte_into_hex(const u8 *in, s8 *out, s32 size, s32 sizeOut)
 s8 *turn_byte_into_hex(u8 *in, s32 size)
 {
 	s32 sizeOut;
-	s8 *out;
+	s8 *out = NULL;
 	// this check is useless for the caller len
 	// is fixed and much less than this
 	if (!in || (size > HWAA_MAX_BUFFER / HEX_STR_PER_BYTE))
@@ -199,7 +201,7 @@ static s32 get_app_data(u8 *app_data, s32 app_data_length,
 {
 	s32 ret = 0;
 	u8 *shuid_bytes = NULL;
-	u8 *name_bytes;
+	u8 *name_bytes = NULL;
 	u32 shuid_bytes_len = 0;
 	u32 name_bytes_len = pinfo->name_len / HEX_STR_PER_BYTE;
 
@@ -288,11 +290,11 @@ static bool hwaa_utils_exe_check_without_check_para(const s8 *exe_path,
 	s32 exe_path_len, pid_t pid)
 {
 	bool is_matched = false;
-	s8 *buf;
-	s8 *path;
-	struct file *exe_file;
-	struct mm_struct *mm;
-	struct task_struct *task;
+	s8 *buf = NULL;
+	s8 *path = NULL;
+	struct file *exe_file = NULL;
+	struct mm_struct *mm = NULL;
+	struct task_struct *task = NULL;
 	rcu_read_lock();
 	task = find_task_by_vpid(pid);
 	if (!task) {
@@ -333,9 +335,9 @@ done_mmput:
 
 s8 *get_cmdline_value(const s8 *cmdline)
 {
-	s8 *start;
-	s8 *end;
-	s8 *result;
+	s8 *start = NULL;
+	s8 *end = NULL;
+	s8 *result = NULL;
 	u32 len;
 	if (!cmdline)
 		return NULL;
@@ -551,7 +553,7 @@ s64 hwaa_utils_get_ausn(uid_t uid)
 
 static s8 *hwaa_utils_get_json_start_str(const s8 *str, const s8 *key)
 {
-	s8 *pc_start_buf;
+	s8 *pc_start_buf = NULL;
 	// no need to check key
 	if (!str || (strlen(str) > MAX_JSON_STR_LEN) ||
 		(strlen(str) == 0))
@@ -566,12 +568,12 @@ static s8 *hwaa_utils_get_json_start_str(const s8 *str, const s8 *key)
 
 s8 *hwaa_utils_get_json_str(const s8 *str, const s8 *key, u32 *out_len)
 {
-	s8 *pc_end_buf;
+	s8 *pc_end_buf = NULL;
 	s8 *pc_key_str_end = (s8 *)"\"";
 	u32 ui_conten_len;
 	u32 ui_offset;
 	s8 ch;
-	s8 *pc_content;
+	s8 *pc_content = NULL;
 	s32 len;
 
 	s8 *pc_start_buf = hwaa_utils_get_json_start_str(str, key);

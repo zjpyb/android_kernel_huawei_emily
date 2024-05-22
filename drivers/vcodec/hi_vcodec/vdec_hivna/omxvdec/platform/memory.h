@@ -9,28 +9,23 @@ typedef enum {
 	SCENE_VIDEO,
 	SCENE_HEIF,
 	SCENE_BUTT
-} VDEC_SCENE;
+} vdec_scene;
 
 typedef struct {
-	HI_U8      u8IsMapVirtual;
-	HI_U8      u8IsMapped;
-	HI_U32     u32ShareFd;
-	UADDR      startPhyAddr;
-	HI_U32     u32Size;
-	VDEC_SCENE scene;
-	HI_VOID    *pStartVirAddr;
-} MEM_BUFFER_S;
+	hi_u8      is_map_virtual;
+	hi_u8      is_mapped;
+	hi_u32     share_fd;
+	UADDR      start_phy_addr;
+	hi_u32     size;
+	vdec_scene scene;
+	hi_void    *p_start_vir_addr;
+} mem_buffer_s;
 
-HI_S32   VDEC_MEM_Probe(HI_VOID);
-HI_S32   VDEC_MEM_Init(HI_VOID);
-HI_S32   VDEC_MEM_Exit(HI_VOID);
-HI_S32   VDEC_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S *psMBuf);
-HI_S32   VDEC_MEM_UnmapKernel(MEM_BUFFER_S *psMBuf);
-
-HI_S32   VDEC_MEM_GetMapInfo(HI_S32 share_fd, MEM_BUFFER_S *psMBuf);
-HI_S32   VDEC_MEM_PutMapInfo(MEM_BUFFER_S *psMBuf);
-HI_S32   VDEC_MEM_IommuMap(HI_S32 share_fd, HI_U32 size, UADDR *iova);
-HI_S32   VDEC_MEM_IommuUnmap(HI_S32 share_fd, UADDR iova);
+hi_s32   vdec_mem_probe(void);
+hi_s32   vdec_mem_get_map_info(hi_s32 share_fd, mem_buffer_s *ps_m_buf);
+hi_s32   vdec_mem_put_map_info(mem_buffer_s *ps_m_buf);
+hi_s32   vdec_mem_iommu_map(hi_s32 share_fd, UADDR *iova);
+hi_s32   vdec_mem_iommu_unmap(hi_s32 share_fd, UADDR iova);
 
 #endif
 

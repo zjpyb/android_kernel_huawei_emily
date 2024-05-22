@@ -16,3 +16,4 @@ int get_ro_secure(void)
 	return RO_NORMAL;
 #endif
 }
+

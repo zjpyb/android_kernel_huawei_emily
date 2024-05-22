@@ -21,3 +21,12 @@ config HISI_LB_TST
 	  and need disable hisi lb debug
 
 	  if unsure, say N here
+
+config HISI_LB_PMU
+	bool "HISI lb pmu"
+	depends on HISI_LB
+	help
+	  Enable last buffer ip test
+	  and need disable hisi lb debug
+
+	  if unsure, say N here

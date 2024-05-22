@@ -25,8 +25,13 @@
 #include <linux/of.h>
 
 #include "core.h"
+#include "card.h"
 #include "sdio_cis.h"
 #include "sdio_bus.h"
+
+#ifdef CONFIG_MMC_EMBEDDED_SDIO
+#include <linux/mmc/host.h>
+#endif
 
 #define to_sdio_driver(d)	container_of(d, struct sdio_driver, drv)
 
@@ -39,11 +44,10 @@ field##_show(struct device *dev, struct device_attribute *attr, char *buf)				\
 	struct sdio_func *func;						\
 									\
 	func = dev_to_sdio_func (dev);					\
-	/*cppcheck-suppress * */                         \
+	/*cppcheck-suppress * */				\
 	return sprintf (buf, format_string, func->field);		\
 }									\
 static DEVICE_ATTR_RO(field)
-
 
 /*lint -save -e421*/
 sdio_config_attr(class, "0x%02x\n");
@@ -53,7 +57,6 @@ sdio_config_attr(device, "0x%04x\n");
 static ssize_t modalias_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct sdio_func *func = dev_to_sdio_func (dev);
-
 	/*cppcheck-suppress * */
 	return sprintf(buf, "sdio:c%02Xv%04Xd%04X\n",
 			func->class, func->vendor, func->device);

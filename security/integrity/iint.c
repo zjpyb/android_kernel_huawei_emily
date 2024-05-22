@@ -32,7 +32,7 @@ static struct kmem_cache *iint_cache __read_mostly;
  */
 static struct integrity_iint_cache *__integrity_iint_find(struct inode *inode)
 {
-	struct integrity_iint_cache *iint = NULL;
+	struct integrity_iint_cache *iint;
 	struct rb_node *n = integrity_iint_tree.rb_node;
 
 	while (n) {
@@ -182,7 +182,7 @@ security_initcall(integrity_iintcache_init);
  *
  */
 int integrity_kernel_read(struct file *file, loff_t offset,
-			  char *addr, unsigned long count)
+			  void *addr, unsigned long count)
 {
 	mm_segment_t old_fs;
 	char __user *buf = (char __user *)addr;

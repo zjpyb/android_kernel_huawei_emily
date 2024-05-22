@@ -58,6 +58,7 @@
 ******************************************************************************/
 
 
+#if (FEATURE_ON == FEATURE_PPP)
 /******************************************************************************
    4 全局变量定义
 ******************************************************************************/
@@ -374,7 +375,12 @@ VOS_VOID PPP_Get16ByteSerial
     VOS_UINT32                          ulTaskId    = VOS_GetCurrentTaskID();
     VOS_UINT32                          ulStatSum;
 
+#if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+    ulStatSum   = PPP_HDLC_HARD_MntnGetCurrentStatSum();
+    ulStatSum   = (0x00UL != ulStatSum) ? ulStatSum : 0xECA8642F;
+#else
     ulStatSum   = 0xECA8642F;
+#endif
 
     /* 如果系统数据为0，用特殊序列替代 */
     ulTick = (0x00UL != ulTick) ? ulTick : 0x12345678;
@@ -487,6 +493,16 @@ VOS_VOID PPP_GetSecurityRand
     return;
 }
 
+#else
+VOS_VOID PPP_MemFree(PPP_ZC_STRU *pstMem)
+{
+    /* 释放零拷贝内存 */
+    PPP_ZC_MEM_FREE(pstMem);
+
+    return;
+}
+
+#endif
 
 
 

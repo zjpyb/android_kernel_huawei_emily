@@ -1020,10 +1020,27 @@ VOS_UINT32 atQryFRSSIParaCnfProc(VOS_UINT8 ucClientId, VOS_VOID *pMsgBlock)
     usLength = 0;
 
     /* 适配V7R5版本4RX接收，GU只报一个值，其他报0，L根据FTM上报结果，支持4RX接收上报4个值，不支持时上报1个值 */
+#if (FEATURE_ON == FEATURE_LTE_4RX)
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR *)pgucLAtSndCodeAddr,
+                                       (VOS_CHAR *)pgucLAtSndCodeAddr + usLength,
+                                        "^FRSSI:%d,%d,%d,%d",
+                                        pstCnf->lValue1,
+                                        pstCnf->lValue2,
+                                        pstCnf->lValue3,
+                                        pstCnf->lValue4);
+#elif (FEATURE_LTE_8RX == FEATURE_ON)
+        usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR *)pgucLAtSndCodeAddr,
+                                       (VOS_CHAR *)pgucLAtSndCodeAddr + usLength,
+                                        "^FRSSI:%d",
+                                        pstCnf->lValue1);
+#else
     usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                        (VOS_CHAR *)pgucLAtSndCodeAddr,
                                        (VOS_CHAR *)pgucLAtSndCodeAddr + usLength,
                                         "^FRSSI:%d", pstCnf->lValue1);
+#endif
 
     CmdErrProc(ucClientId, pstCnf->ulErrCode,usLength, pgucLAtSndCodeAddr);
     return AT_FW_CLIENT_STATUS_READY;

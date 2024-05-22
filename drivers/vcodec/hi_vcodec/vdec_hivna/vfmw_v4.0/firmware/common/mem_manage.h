@@ -1,34 +1,38 @@
+
+
 #ifndef _VFMW_MEM_MANAGE_HEAD_
 #define _VFMW_MEM_MANAGE_HEAD_
 
 #include "vfmw.h"
 
-#define MEM_MAN_ERR  -1
+#define MEM_MAN_ERR  (-1)
 #define MEM_MAN_OK    0
 
 typedef struct {
-	UADDR PhyAddr;
-	UINT32 Length;
-	SINT32 IsSecMem;
-	UINT8 *VirAddr;
-} MEM_RECORD_S;
+	UADDR phy_addr;
+	UINT32 length;
+	SINT32 is_sec_mem;
+	UINT8 *vir_addr;
+} mem_record_s;
 
-VOID MEM_InitMemManager(VOID);
+VOID mem_init_mem_manager(void);
 
-SINT32 MEM_AddMemRecord(UADDR PhyAddr, VOID *VirAddr, UINT32 Length);
+SINT32 mem_add_mem_record(UADDR phy_addr, VOID *vir_addr, UINT32 length);
 
-SINT32 MEM_DelMemRecord(UADDR PhyAddr, VOID *VirAddr, UINT32 Length);
+SINT32 mem_del_mem_record(UADDR phy_addr, const VOID *vir_addr, UINT32 length);
 
-VOID *MEM_Phy2Vir(UADDR PhyAddr);
+VOID *mem_phy_2_vir(UADDR phy_addr);
 
-UADDR MEM_Vir2Phy(UINT8 *VirAddr);
+UADDR mem_vir_2_phy(UINT8 *vir_addr);
 
-VOID MEM_WritePhyWord(UADDR PhyAddr, UINT32 Data32);
+VOID mem_write_phy_word(UADDR phy_addr, UINT32 data_32);
 
-UINT32 MEM_ReadPhyWord(UADDR PhyAddr);
+UINT32 mem_read_phy_word(UADDR phy_addr);
 
-SINT32 MEM_MapRegisterAddr(UADDR RegStartPhyAddr, UINT32 RegByteLen, MEM_RECORD_S *pMemRecord);
+SINT32 mem_map_register_addr(
+	UADDR reg_start_phy_addr, UINT32 reg_byte_len,
+	mem_record_s *p_mem_record);
 
-VOID MEM_UnmapRegisterAddr(UADDR PhyAddr, UINT8 *VirAddr, UINT32 Size);
+VOID mem_unmap_register_addr(UADDR phy_addr, UINT8 *vir_addr, UINT32 size);
 
 #endif

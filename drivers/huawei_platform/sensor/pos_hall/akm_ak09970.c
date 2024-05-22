@@ -28,7 +28,9 @@
 #include <dsm/dsm_pub.h>
 #endif
 #include <huawei_platform/log/hw_log.h>
-
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+#include <huawei_platform/devdetect/hw_dev_dec.h>
+#endif
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
 #endif
@@ -147,6 +149,8 @@ HWLOG_REGIST();
 #define AK09970_RETCODE_FST_VAR_L_FAIL (-9)
 #define AK09970_RETCODE_FST_VAR_H_FAILED (-10)
 #define AK09970_RETCODE_NULL_POINT_ERR (-11)
+#define AK09970_OPEN_SELF_ERR (-12)
+#define AK09970_CLOSE_SELF_ERR (-13)
 
 #define AK09970_CNTL1_CONFIG (AK09970_DRDY_PIN_CONFIG | \
 	AK09970_SW_FUNC_CONFIG | AK09970_ERRXY_CONFIG | \
@@ -199,6 +203,7 @@ HWLOG_REGIST();
 #define AK09970_FST_STEP_2_8 0x0208
 #define AK09970_FST_STEP_2_9 0x0209
 #define AK09970_FST_STEP_2_A 0x020A
+#define AK09970_SELF_TEST_PARA_COUNT 6
 
 struct type_nv_data {
 	int close_x;
@@ -250,6 +255,17 @@ struct type_calibration_info {
 	int close_avg_mag[AXIS_COUNT];
 	int step_avg_mag[STEP_COUNT][AXIS_COUNT];
 };
+
+struct self_test_info {
+	/* 0 is fail, 1 is success, 2 is open fail, 3 is close fail */
+	int open_result;
+	int close_result;
+	int open_self_flag;
+	int close_self_flag;
+	int close_diff[AXIS_COUNT];
+	int open_diff[AXIS_COUNT];
+};
+static struct self_test_info self_test_data;
 
 #ifdef CONFIG_HUAWEI_DSM
 static struct dsm_dev dsm_vibrator = {
@@ -700,8 +716,7 @@ static int ak09970_check_chip_id(const struct i2c_client *client)
 
 	chip_id = make_u16(reg_wia[1], reg_wia[0]);
 	if (chip_id != AK09970_WIA_VALUE) {
-		hwlog_err("%s: invalid device id, chip_id = 0x%x\n",
-			__func__, chip_id);
+		hwlog_err("%s: invalid device id\n", __func__);
 		return AK09970_RETCODE_ID_CHECK_FAIL;
 	}
 	return AK09970_RETCODE_SUCCESS;
@@ -1080,8 +1095,8 @@ static int check_calibration_data(
 
 	for (i = 0; i < AXIS_COUNT; i++) {
 		info->close_avg_mag[i] =
-			info->step_avg_mag[STEP_START_CLOSE][i] / 2 +
-			info->step_avg_mag[STEP_STOP_CLOSE][i] / 2;
+			info->step_avg_mag[STEP_START_CLOSE][i] / 2
+			+ info->step_avg_mag[STEP_STOP_CLOSE][i] / 2;
 		info->open_avg_mag[i] = info->step_avg_mag[STEP_INTER_OPEN][i];
 		hwlog_info("%s: close_data = %d, open_data = %d", __func__,
 			info->close_avg_mag[i] / THRESHOLD_SCALE,
@@ -1116,9 +1131,13 @@ static int read_averge_mag_data(struct type_device_data *akm_ak09970,
 	long long int sum_mag_data[AXIS_COUNT] = {0};
 	int ret;
 
-	if (akm_ak09970 == NULL || mag_data == NULL ||
-		data_size != AXIS_COUNT) {
+	if (akm_ak09970 == NULL || mag_data == NULL
+		|| data_size != AXIS_COUNT) {
 		hwlog_err("%s: invalid value\n", __func__);
+		return AK09970_RETCODE_COMMON_ERR;
+	}
+	if (nums == 0) {
+		hwlog_err("%s: invalid nums\n", __func__);
 		return AK09970_RETCODE_COMMON_ERR;
 	}
 
@@ -1192,7 +1211,7 @@ static int calibration_process(struct type_device_data *akm_ak09970,
 		if (ret < 0) {
 			hwlog_err("%s: read_averge_mag_data failed\n",
 				__func__);
-			info->result = 0; // fail
+			info->result = 0; //fail
 			return ret;
 		}
 		break;
@@ -1202,7 +1221,7 @@ static int calibration_process(struct type_device_data *akm_ak09970,
 		if (ret < 0) {
 			hwlog_err("%s: read_averge_mag_data failed\n",
 				__func__);
-			info->result = 0; // fail
+			info->result = 0; //fail
 			return ret;
 		}
 		break;
@@ -1212,26 +1231,26 @@ static int calibration_process(struct type_device_data *akm_ak09970,
 		if (ret < 0) {
 			hwlog_err("%s: read_averge_mag_data failed\n",
 				__func__);
-			info->result = 0; // fail
+			info->result = 0; //fail
 			return ret;
 		}
 		ret = check_calibration_data(akm_ak09970, info);
 		if (ret < 0) {
 			hwlog_err("%s: check_calibration_data failed\n",
 				__func__);
-			info->result = 0; // fail
+			info->result = 0; //fail
 			return ret;
 		}
 		ret = write_calibration_data(akm_ak09970, info);
 		if (ret < 0) {
 			hwlog_err("%s: check_calibration_data failed\n",
 				__func__);
-			info->result = 0; // fail
+			info->result = 0; //fail
 			return ret;
 		}
 		hwlog_info("%s: step_hall calibration succ!\n",
 			__func__);
-		info->result = 1; // succ
+		info->result = 1;//succ
 		break;
 	}
 	return AK09970_RETCODE_SUCCESS;
@@ -1271,6 +1290,9 @@ static int self_test_process(struct type_device_data *akm_ak09970,
 	struct type_nv_data nv_para;
 	static bool get_threashold;
 
+	self_test_data.open_self_flag = 0;
+	self_test_data.close_self_flag = 0;
+
 	if (akm_ak09970 == NULL || step > STEP_COUNT) {
 		hwlog_err("%s: invalid value\n", __func__);
 		return AK09970_RETCODE_COMMON_ERR;
@@ -1301,24 +1323,63 @@ static int self_test_process(struct type_device_data *akm_ak09970,
 		mag_gap_data[AXIS_X] = fabs(mag_data[AXIS_X] - nv_para.close_x);
 		mag_gap_data[AXIS_Y] = fabs(mag_data[AXIS_Y] - nv_para.close_y);
 		mag_gap_data[AXIS_Z] = fabs(mag_data[AXIS_Z] - nv_para.close_z);
+
+		memset(self_test_data.close_diff, 0,
+			sizeof(self_test_data.close_diff));
+		memcpy(self_test_data.close_diff, mag_gap_data,
+			sizeof(mag_gap_data));
+		self_test_data.close_self_flag = 1; // close hall self
 		break;
 	case STEP_INTER_OPEN:
 		mag_gap_data[AXIS_X] = fabs(mag_data[AXIS_X] - nv_para.open_x);
 		mag_gap_data[AXIS_Y] = fabs(mag_data[AXIS_Y] - nv_para.open_y);
 		mag_gap_data[AXIS_Z] = fabs(mag_data[AXIS_Z] - nv_para.open_z);
+
+		memset(self_test_data.open_diff, 0,
+			sizeof(self_test_data.open_diff));
+		memcpy(self_test_data.open_diff,
+			mag_gap_data, sizeof(mag_gap_data));
+		self_test_data.open_self_flag = 1; // open hall self
 		break;
 	}
+	for (i = 0; i < AXIS_COUNT; i++) {
+		hwlog_info("%s: self_test_data.open_diff_%d = %d\n",
+			__func__, i, self_test_data.open_diff[i] / THRESHOLD_SCALE);
+		hwlog_info("%s: self_test_data.close_diff_%d = %d\n",
+			__func__, i, self_test_data.close_diff[i] / THRESHOLD_SCALE);
+	}
+
 	for (i = 0; i < AXIS_COUNT; i++) {
 		hwlog_info("%s: mag_data = %d, mag_gap_data = %d, threshold = %d\n",
 			__func__,
 			mag_data[i] / THRESHOLD_SCALE,
 			mag_gap_data[i] / THRESHOLD_SCALE,
 			self_test_threshold[step][i]);
-		if ((mag_gap_data[i] / THRESHOLD_SCALE) >
-			self_test_threshold[step][i]) {
-			hwlog_err("%s: check self threshold failed\n",
-				__func__);
-			return AK09970_RETCODE_COMMON_ERR;
+		if (self_test_data.open_self_flag) {
+			self_test_data.open_self_flag = 0;
+			// open hall self success
+			self_test_data.open_result = 1;
+			if ((mag_gap_data[i] / THRESHOLD_SCALE) >
+				self_test_threshold[step][i]) {
+				hwlog_err("%s: check open self threshold failed\n",
+					__func__);
+				self_test_data.open_result =
+					AK09970_OPEN_SELF_ERR;
+				return AK09970_RETCODE_COMMON_ERR;
+			}
+		}
+		if (self_test_data.close_self_flag) {
+			self_test_data.close_self_flag = 0;
+			// close hall self success
+			self_test_data.close_result = 1;
+			if ((mag_gap_data[i] / THRESHOLD_SCALE) >
+				self_test_threshold[step][i]) {
+				hwlog_err("%s: check close self threshold failed\n",
+					__func__);
+				self_test_data.close_result =
+					AK09970_CLOSE_SELF_ERR;
+				return AK09970_RETCODE_COMMON_ERR;
+			}
 		}
 	}
 	hwlog_info("%s: step_hall self test succ! step = %ld\n",
@@ -1503,39 +1564,38 @@ static ssize_t ak09970_self_test_show(struct device *dev,
 	struct device_attribute *attr,
 	char *buf)
 {
-	struct type_device_data *akm_ak09970 = NULL;
-	bool enable = false;
-	int ret;
-	int result = 0;
+	int self_result = 1; // hall self success
+	struct self_test_info info;
 
 	if ((dev == NULL) || (attr == NULL) || (buf == NULL)) {
-		hwlog_err("%s: input NULL!! \n", __func__);
+		hwlog_err("%s: input NULL!!\n", __func__);
 		return -EINVAL;
 	}
 
-	akm_ak09970 = dev_get_drvdata(dev);
-	if (akm_ak09970 == NULL) {
-		hwlog_err("%s: akm_ak09970 NULL!! \n", __func__);
-		return -EINVAL;
+	memcpy(&info, &self_test_data, sizeof(self_test_data));
+	if ((self_test_data.open_result <= 0) &&
+		(self_test_data.close_result <= 0)) {
+		self_result = 0; // hall self fail
+		memset(&info, 0, sizeof(info));
+	} else if ((self_test_data.open_result == AK09970_OPEN_SELF_ERR) &&
+		(self_test_data.close_result == 1)) {
+		self_result = 2; // open hall self fail
+		memset(info.open_diff, 0, sizeof(info.open_diff));
+	} else if ((self_test_data.open_result == 1) &&
+		(self_test_data.close_result == AK09970_CLOSE_SELF_ERR)) {
+		self_result = 3; // close hall self fail
+		memset(info.close_diff, 0, sizeof(info.close_diff));
 	}
-
-	hwlog_info("%s: called\n", __func__);
-
-	enable = akm_ak09970->enable_flag;
-	if (enable) {
-		hwlog_info("%s: stop sensor running for self-test\n", __func__);
-		mutex_lock(&akm_ak09970->val_mutex);
-		akm_ak09970->enable_flag = false;
-		mutex_unlock(&akm_ak09970->val_mutex);
-
-		ak09970_enable_set(akm_ak09970);
-	}
-
-	ret = ak09970_fst_run(akm_ak09970);
-	if (ret != AK09970_RETCODE_SUCCESS)
-		result = AK09970_RETCODE_FST_FAIL;
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", result);
+	memset(&self_test_data, 0, sizeof(self_test_data));
+	return scnprintf(buf, PAGE_SIZE,
+		"%d, %d, %d, %d, %d, %d, %d, %d\n",
+		self_result, AK09970_SELF_TEST_PARA_COUNT,
+		info.open_diff[AXIS_X] / THRESHOLD_SCALE,
+		info.open_diff[AXIS_Y] / THRESHOLD_SCALE,
+		info.open_diff[AXIS_Z] / THRESHOLD_SCALE,
+		info.close_diff[AXIS_X] / THRESHOLD_SCALE,
+		info.close_diff[AXIS_Y] / THRESHOLD_SCALE,
+		info.close_diff[AXIS_Z] / THRESHOLD_SCALE);
 }
 
 static ssize_t ak09970_self_test_store(struct device *dev,
@@ -2040,7 +2100,9 @@ int ak09970_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 			"init_ak09970_device fail\n");
 		return ret;
 	}
-
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+	set_hw_dev_flag(DEV_I2C_STEP_HALL);
+#endif
 	ak09970_dev_data = kzalloc(sizeof(*ak09970_dev_data), GFP_KERNEL);
 	if (ak09970_dev_data == NULL) {
 		hwlog_err("%s: memory allocation failed\n", __func__);
@@ -2066,6 +2128,7 @@ int ak09970_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 	return AK09970_RETCODE_SUCCESS;
 ak09970_struct_init_fail:
 	kfree(ak09970_dev_data);
+	ak09970_dev_data = NULL;
 ak09970_malloc_fail:
 	deinit_ak09970_device(client);
 	return ret;
@@ -2085,6 +2148,7 @@ int ak09970_remove(struct i2c_client *client)
 	remove_sysfs_interfaces(akm_ak09970);
 	deinit_ak09970_struct(client);
 	kfree(ak09970_dev_data);
+	ak09970_dev_data = NULL;
 	deinit_ak09970_device(client);
 
 	return AK09970_RETCODE_SUCCESS;

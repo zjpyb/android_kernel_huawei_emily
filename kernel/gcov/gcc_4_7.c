@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  This code provides functions to handle gcc's profiling data format
  *  introduced with gcc 4.7.
@@ -21,9 +22,9 @@
 #if (__GNUC__ >= 7)
 #define GCOV_COUNTERS			9
 #elif (__GNUC__ > 5) || (__GNUC__ == 5 && __GNUC_MINOR__ >= 1)
-#define GCOV_COUNTERS			11
+#define GCOV_COUNTERS			10
 #elif __GNUC__ == 4 && __GNUC_MINOR__ >= 9
-#define GCOV_COUNTERS			11
+#define GCOV_COUNTERS			9
 #else
 #define GCOV_COUNTERS			8
 #endif
@@ -85,11 +86,9 @@ struct gcov_fn_info {
  */
 struct gcov_info {
 	unsigned int version;
-	void *mod_info;
 	struct gcov_info *next;
 	unsigned int stamp;
 	const char *filename;
-	unsigned int eof_pos;
 	void (*merge[GCOV_COUNTERS])(gcov_type *, unsigned int);
 	unsigned int n_functions;
 	struct gcov_fn_info **functions;
@@ -149,6 +148,18 @@ void gcov_info_unlink(struct gcov_info *prev, struct gcov_info *info)
 		prev->next = info->next;
 	else
 		gcov_info_head = info->next;
+}
+
+/**
+ * gcov_info_within_module - check if a profiling data set belongs to a module
+ * @info: profiling data set
+ * @mod: module
+ *
+ * Returns true if profiling data belongs module, false otherwise.
+ */
+bool gcov_info_within_module(struct gcov_info *info, struct module *mod)
+{
+	return within_module((unsigned long)info, mod);
 }
 
 /* Symbolic links to be created for each profiling data file. */
@@ -480,6 +491,7 @@ static size_t convert_to_gcda(char *buffer, struct gcov_info *info)
 struct gcov_iterator *gcov_iter_new(struct gcov_info *info)
 {
 	struct gcov_iterator *iter;
+
 	iter = kzalloc(sizeof(struct gcov_iterator), GFP_KERNEL);
 	if (!iter)
 		goto err_free;
@@ -492,44 +504,6 @@ struct gcov_iterator *gcov_iter_new(struct gcov_info *info)
 		goto err_free;
 
 	convert_to_gcda(iter->buffer, info);
-
-	return iter;
-
-err_free:
-	kfree(iter);
-	return NULL;
-}
-extern void *gcov_gcda_malloc_ptr;
-extern void *gcov_gcda_malloc_ptr_curr;
-extern unsigned int  g_count_gcda;
-
-struct gcov_iterator *gcov_iter_new_gcov_get_panic_gcda(struct gcov_info *info)
-{
-	struct gcov_iterator *iter;
-	int i;
-	iter = kzalloc(sizeof(struct gcov_iterator), GFP_KERNEL);
-	if (!iter)
-		goto err_free;
-	iter->info = info;
-
-	/* Dry-run to get the actual buffer size. */
-	iter->size = convert_to_gcda(NULL, info);
-	*(unsigned int*)(gcov_gcda_malloc_ptr_curr) = iter->size;
-	gcov_gcda_malloc_ptr_curr+=4;
-
-	*(unsigned int*)(gcov_gcda_malloc_ptr_curr) = strlen(info->filename);
-	gcov_gcda_malloc_ptr_curr+=4;
-
-
-	snprintf(gcov_gcda_malloc_ptr_curr,strlen(info->filename)+1,"%s",info->filename);
-	gcov_gcda_malloc_ptr_curr+=strlen(info->filename)+1;
-
-	iter->buffer = gcov_gcda_malloc_ptr_curr;
-	convert_to_gcda(iter->buffer, info);
-	gcov_gcda_malloc_ptr_curr += iter->size;
-
-
-	g_count_gcda++;
 
 	return iter;
 

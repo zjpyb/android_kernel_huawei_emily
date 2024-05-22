@@ -6,7 +6,7 @@ endif
 
 EXTRA_CFLAGS += -Idrivers/video/hisi/dss \
 	-Idrivers/video/fbdev/hisi/dss \
-	-Idrivers/hisi/tzdriver/libhwsecurec \
+	-I$(srctree)/lib/libc_sec/securec_v2/include/ \
 
 hisijpu-objs := \
 	hisi_jpu.o \

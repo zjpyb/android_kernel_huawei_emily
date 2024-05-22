@@ -4458,10 +4458,17 @@ static ssize_t attr_ps_calibrate_write(struct device *dev,
 	else
 	{
 		//hwlog_info("ps calibrate  success, data len=%d\n", pkg_mcu.data_length);
-		ps_calib_data[ps_calib_state] = *((int32_t *)pkg_mcu.data);
-		hwlog_info("ps calibrate success, data=%d, len=%d\n",
-			ps_calib_data[ps_calib_state],pkg_mcu.data_length);
-		ps_calib_state++;
+		if ((ps_calib_state < 3) && (ps_calib_state >= 0)) {
+			ps_calib_data[ps_calib_state] =
+						*((int32_t *)pkg_mcu.data);
+			hwlog_info("ps calibrate success, data=%d, len=%d\n",
+			    ps_calib_data[ps_calib_state], pkg_mcu.data_length);
+			ps_calib_state++;
+		} else {
+			hwlog_err("set ps calibrate happens error, ps_calib_state=%lu\n",
+			    ps_calib_state);
+			return count;
+		}
 	}
 
 	if(val == 2){

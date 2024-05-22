@@ -1,4 +1,18 @@
-
+/*
+ * Huawei Touchscreen Driver
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM touch
 
@@ -51,9 +65,9 @@ TRACE_EVENT(touch,
 
 	TP_ARGS(task, phase, string),
 	TP_STRUCT__entry(
-		__field(	int,	task		)
-		__field(	int,	phase		)
-		__string(	str,	string		)
+		__field(int, task)
+		__field(int, phase)
+		__string(str, string)
 	),
 
 	TP_fast_assign(
@@ -61,30 +75,29 @@ TRACE_EVENT(touch,
 		__entry->phase = phase;
 		__assign_str(str, string);
 	),
+
 	TP_printk("touch_trace: %s %s %s",
-		  __print_symbolic(__entry->task,
-				   { TOUCH_TRACE_IRQ_TOP, "irq top" },
-				   { TOUCH_TRACE_IRQ_BOTTOM, "irq bottom" },
-				   { TOUCH_TRACE_I2C, "i2c trans" },
-				   { TOUCH_TRACE_SPI, "spi trans" },
-				   { TOUCH_TRACE_INPUT, "input report" },
-				   { TOUCH_TRACE_DATA2ALGO, "raw info to algo buferr" },
-				   { TOUCH_TRACE_ALGO_GET_DATA, "algo get event" },
-				   { TOUCH_TRACE_ALGO_SET_EVENT, "algo set event" },
-				   { TOUCH_TRACE_GET_FRAME, "daemon get farme" },
-				   { TOUCH_TRACE_PEN_REPORT, "pen report" },
-				   { TOUCH_TRACE_DIFF_DATA_TO_DEAMON, "read diff tp deamon" },
-				   { TOUCH_TRACE_GET_ROI_OR_DIFF_DATA, "get ROI or diff data" }),
+		__print_symbolic(__entry->task,
+				{ TOUCH_TRACE_IRQ_TOP, "irq top" },
+				{ TOUCH_TRACE_IRQ_BOTTOM, "irq bottom" },
+				{ TOUCH_TRACE_I2C, "i2c trans" },
+				{ TOUCH_TRACE_SPI, "spi trans" },
+				{ TOUCH_TRACE_INPUT, "input report" },
+				{ TOUCH_TRACE_DATA2ALGO, "raw info to algo buferr" },
+				{ TOUCH_TRACE_ALGO_GET_DATA, "algo get event" },
+				{ TOUCH_TRACE_ALGO_SET_EVENT, "algo set event" },
+				{ TOUCH_TRACE_GET_FRAME, "daemon get farme" },
+				{ TOUCH_TRACE_PEN_REPORT, "pen report" },
+				{ TOUCH_TRACE_DIFF_DATA_TO_DEAMON, "read diff tp deamon" },
+				{ TOUCH_TRACE_GET_ROI_OR_DIFF_DATA, "get ROI or diff data" }),
 		__print_symbolic(__entry->phase,
-		  		   { TOUCH_TRACE_FUNC_IN, "in" },
-				   { TOUCH_TRACE_IRQ_BOTTOM, "out" }),
+				{ TOUCH_TRACE_FUNC_IN, "in" },
+				{ TOUCH_TRACE_IRQ_BOTTOM, "out" }),
 		__get_str(str))
 );
 
 #endif
-
 /***** NOTICE! The #if protection ends here. *****/
-
 #undef TRACE_INCLUDE_PATH
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_PATH .

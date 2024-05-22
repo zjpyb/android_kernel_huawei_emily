@@ -81,6 +81,7 @@ enum {
 /* dcs read/write */
 #define DTYPE_DCS_WRITE		0x05	/* short write, 0 parameter */
 #define DTYPE_DCS_WRITE1	0x15	/* short write, 1 parameter */
+#define DTYPE_DCS_WRITE2	0x07	/* short write, 1 parameter */
 #define DTYPE_DCS_READ		0x06	/* read */
 #define DTYPE_DCS_LWRITE	0x39	/* long write */
 #define DTYPE_DSC_LWRITE	0x0A	/* dsc dsi1.2 vase3x long write */
@@ -201,6 +202,7 @@ int mipi_dsi_clk_enable(struct hisi_fb_data_type *hisifd);
 int mipi_dsi_clk_disable(struct hisi_fb_data_type *hisifd);
 int mipi_dsi_bit_clk_upt_isr_handler(struct hisi_fb_data_type *hisifd);
 void mipi_dsi_reset(struct hisi_fb_data_type *hisifd);
+int mipi_dsi_reset_underflow_clear(struct hisi_fb_data_type *hisifd);
 void mipi_init(struct hisi_fb_data_type *hisifd, char __iomem *mipi_dsi_base);
 
 int mipi_dsi_cmds_tx_with_check_fifo(struct dsi_cmd_desc *cmds, int cnt, char __iomem *dsi_base);

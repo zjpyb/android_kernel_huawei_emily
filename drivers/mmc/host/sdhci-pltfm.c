@@ -69,12 +69,13 @@ static bool sdhci_of_wp_inverted(struct device_node *np)
 	return false;
 #endif /* CONFIG_PPC */
 }
+
 void sdhci_get_of_property(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct sdhci_host *host = platform_get_drvdata(pdev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
-	const __be32 *clk;
+	const __be32 *clk = NULL;
 	u32 bus_width = 0;
 	int size;
 	int runmode_normal;
@@ -167,13 +168,9 @@ void sdhci_get_of_property(struct platform_device *pdev)
 
 #ifdef CONFIG_HISI_COUL
 		batterystate_exist = is_hisi_battery_exist();
-#ifdef CONFIG_HLTHERM_RUNTEST
-		batterystate_exist = 1;
-		dev_info(&pdev->dev, "CONFIG_HLTHERM_RUNTEST is enable, set the batterystate_exist to 1\n");
-#endif
-#else 
+#else
 		batterystate_exist = 0;
-#endif	
+#endif
 		dev_info(&pdev->dev, "runmode_normal = %d batterystate_exist = %d\n", runmode_normal, batterystate_exist);
 
 		if (of_find_property(np, "caps2-mmc-cache-ctrl", NULL))
@@ -227,7 +224,6 @@ void sdhci_get_of_property(struct platform_device *pdev)
 			host->mmc->caps2 |= MMC_CAP2_HC_ERASE_SZ;
 	}
 }
-
 #else
 void sdhci_get_of_property(struct platform_device *pdev) {}
 #endif /* CONFIG_OF */
@@ -237,9 +233,9 @@ struct sdhci_host *sdhci_pltfm_init(struct platform_device *pdev,
 				    const struct sdhci_pltfm_data *pdata,
 				    size_t priv_size)
 {
-	struct sdhci_host *host;
-	struct resource *iomem;
-	void __iomem *ioaddr;
+	struct sdhci_host *host = NULL;
+	struct resource *iomem = NULL;
+	void __iomem *ioaddr = NULL;
 	int irq, ret;
 
 	iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -317,9 +313,11 @@ EXPORT_SYMBOL_GPL(sdhci_pltfm_register);
 int sdhci_pltfm_unregister(struct platform_device *pdev)
 {
 	struct sdhci_host *host = platform_get_drvdata(pdev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	int dead = (readl(host->ioaddr + SDHCI_INT_STATUS) == 0xffffffff);
 
 	sdhci_remove_host(host, dead);
+	clk_disable_unprepare(pltfm_host->clk);
 	sdhci_pltfm_free(pdev);
 
 	return 0;
@@ -327,19 +325,42 @@ int sdhci_pltfm_unregister(struct platform_device *pdev)
 EXPORT_SYMBOL_GPL(sdhci_pltfm_unregister);
 
 #ifdef CONFIG_PM_SLEEP
-static int sdhci_pltfm_suspend(struct device *dev)
+int sdhci_pltfm_suspend(struct device *dev)
 {
 	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	int ret;
 
-	return sdhci_suspend_host(host);
+	if (host->tuning_mode != SDHCI_TUNING_MODE_3)
+		mmc_retune_needed(host->mmc);
+
+	ret = sdhci_suspend_host(host);
+	if (ret)
+		return ret;
+
+	clk_disable_unprepare(pltfm_host->clk);
+
+	return 0;
 }
+EXPORT_SYMBOL_GPL(sdhci_pltfm_suspend);
 
-static int sdhci_pltfm_resume(struct device *dev)
+int sdhci_pltfm_resume(struct device *dev)
 {
 	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	int ret;
 
-	return sdhci_resume_host(host);
+	ret = clk_prepare_enable(pltfm_host->clk);
+	if (ret)
+		return ret;
+
+	ret = sdhci_resume_host(host);
+	if (ret)
+		clk_disable_unprepare(pltfm_host->clk);
+
+	return ret;
 }
+EXPORT_SYMBOL_GPL(sdhci_pltfm_resume);
 #endif
 
 const struct dev_pm_ops sdhci_pltfm_pmops = {

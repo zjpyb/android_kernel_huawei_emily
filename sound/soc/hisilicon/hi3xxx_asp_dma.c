@@ -27,6 +27,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/hwspinlock.h>
 #include <linux/pm_runtime.h>
+#include <linux/types.h>
 #include <sound/core.h>
 #include <sound/dmaengine_pcm.h>
 #include <sound/pcm.h>
@@ -510,7 +511,7 @@ static int hi3xxx_intr_dmac_check(struct hi3xxx_asp_dmac_runtime_data *prtd, uns
 
 static int hi3xxx_intr_dmac_handle(unsigned short int_type, unsigned long para, unsigned int dma_channel)
 {
-	struct snd_pcm_substream *substream = (struct snd_pcm_substream *)para;
+	struct snd_pcm_substream *substream = (struct snd_pcm_substream *)(uintptr_t)para;
 	struct snd_pcm_runtime *runtime = NULL;
 	struct hi3xxx_asp_dmac_runtime_data *prtd = NULL;
 	snd_pcm_uframes_t avail = 0;
@@ -624,7 +625,7 @@ static int hi3xxx_asp_dmac_prepare(struct snd_pcm_substream *substream)
 	for (port_index = 0; port_index < ports_cnt; port_index++) {
 		hi3xxx_asp_dmac_get_dma_cfg(substream, port_index);
 		asp_dma_lli_cfg(substream, port_index);
-		asp_dma_config(prtd->dma_cfg[port_index].channel, prtd->pdma_lli_cfg[port_index], callback, (unsigned long)substream);
+		asp_dma_config(prtd->dma_cfg[port_index].channel, prtd->pdma_lli_cfg[port_index], callback, (uintptr_t)substream);
 	}
 
 	mutex_unlock(&prtd->mutex);
@@ -908,8 +909,8 @@ static int preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 
 static void dma_free_buffer(struct snd_pcm *pcm, int stream)
 {
-	struct snd_pcm_substream *substream;
-	struct snd_dma_buffer *buf;
+	struct snd_pcm_substream *substream = NULL;
+	struct snd_dma_buffer *buf = NULL;
 
 	substream = pcm->streams[stream].substream;
 	if (!substream)
@@ -962,7 +963,10 @@ static int hi3xxx_asp_dmac_new(struct snd_soc_pcm_runtime *rtd)
 
 static void hi3xxx_asp_dmac_free(struct snd_pcm *pcm)
 {
-	WARN_ON(NULL == pcm);
+	if (pcm == NULL) {
+		pr_err("[%s:%d] pcm is null\n", __FUNCTION__, __LINE__);
+		return;
+	}
 
 	if (pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream) {
 		dma_free_buffer(pcm, SNDRV_PCM_STREAM_PLAYBACK);
@@ -997,7 +1001,7 @@ static void  hi3xxx_asp_dmac_monitor_work_handle(struct work_struct *work)
 		if (pEventObj) {
 			imonitor_set_param(pEventObj, 0 /*EXCEPTION_EEVENTLEVEL_INT*/, (long)3 /*MEDIA_LOG_ERROR*/);
 			imonitor_set_param(pEventObj, 1 /*EXCEPTION_SUBTYPE_INT*/, (long)0);
-			imonitor_set_param(pEventObj, 2 /*EXCEPTION_REASON_VARCHAR*/, (long)"dma period err");
+			imonitor_set_param(pEventObj, 2 /*EXCEPTION_REASON_VARCHAR*/, (long)(uintptr_t)"dma period err");
 			imonitor_set_param(pEventObj, 4 /*EXCEPTION_COUNT_INT*/, (long)dmaPeriodErrCount);
 			imonitor_set_param(pEventObj, 5 /*EXCEPTION_PARAINT_INT*/, (long)dmaPeriodIntervalMs);
 			imonitor_send_event(pEventObj);

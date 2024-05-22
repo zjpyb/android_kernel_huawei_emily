@@ -44,6 +44,10 @@ static void get_lcd_ldo_info_for_rt(void)
 			{
 				LCDKIT_ERR("Getting lcd_ldo_name from platform dts is failed!\n");
 			}
+			if (strlen(ldo_name) >= LDO_NAME_LEN_MAX) {
+				LCDKIT_ERR("Getting lcd_ldo_name overflow!\n");
+				return;
+			}
 			strncpy(g_lcd_ldo_info.lcd_ldo_name[i], ldo_name, strlen(ldo_name));
 		}
 	}

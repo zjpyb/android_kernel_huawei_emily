@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _BLK_CGROUP_H
 #define _BLK_CGROUP_H
 /*
@@ -52,11 +53,6 @@ enum blkg_rwstat_type {
 	BLKG_RWSTAT_TOTAL = BLKG_RWSTAT_NR,
 };
 
-enum blkcg_attach_notify{
-	BLKG_ATTACH_NOTIFY_BY_TGID,
-	BLKG_ATTACH_NOTIFY_BY_PID,
-	BLKG_ATTACH_NOTIFY_NR,
-};
 struct blkcg_gq;
 
 struct blkcg {
@@ -67,16 +63,16 @@ struct blkcg {
 	struct blkcg_gq	__rcu		*blkg_hint;
 	struct hlist_head		blkg_list;
 
-	unsigned int                    weight;
-#ifdef CONFIG_BLK_DEV_THROTTLING
-	int                             max_inflights;
-	unsigned int			type;
-#endif
 	struct blkcg_policy_data	*cpd[BLKCG_MAX_POLS];
 
 	struct list_head		all_blkcgs_node;
 #ifdef CONFIG_CGROUP_WRITEBACK
 	struct list_head		cgwb_list;
+#endif
+	unsigned int			weight;
+#ifdef CONFIG_BLK_DEV_THROTTLING
+	int				max_inflights;
+	unsigned int			type;
 #endif
 };
 
@@ -148,20 +144,20 @@ struct blkcg_gq {
 	/* reference count */
 	atomic_t			refcnt;
 
-	atomic_t                        writers;
+	atomic_t			writers;
 
 	/* is this blkg online? protected by both blkcg and q locks */
 	bool				online;
 
-	unsigned int                    weight;
-
 	struct blkg_rwstat		stat_bytes;
 	struct blkg_rwstat		stat_ios;
+
+	unsigned int			weight;
 
 	struct blkg_policy_data		*pd[BLKCG_MAX_POLS];
 
 	struct rcu_head			rcu_head;
-	struct percpu_counter           nr_dirtied;
+	struct percpu_counter		nr_dirtied;
 };
 
 typedef struct blkcg_policy_data *(blkcg_pol_alloc_cpd_fn)(gfp_t gfp);
@@ -206,13 +202,6 @@ int blkcg_init_queue(struct request_queue *q);
 void blkcg_drain_queue(struct request_queue *q);
 void blkcg_exit_queue(struct request_queue *q);
 
-#ifdef CONFIG_BLK_DEV_THROTTLING
-int blkcg_attach_notify_register(enum blkcg_attach_notify type, struct notifier_block *n);
-int blkcg_attach_notify_unregister(enum blkcg_attach_notify type, struct notifier_block *n);
-#else
-static inline int blkcg_attach_notify_register(enum blkcg_attach_notify type, struct notifier_block *n){ return 0; }
-static inline int blkcg_attach_notify_unregister(enum blkcg_attach_notify type, struct notifier_block *n){ return 0; }
-#endif
 /* Blkio controller policy registration */
 int blkcg_policy_register(struct blkcg_policy *pol);
 void blkcg_policy_unregister(struct blkcg_policy *pol);
@@ -308,9 +297,7 @@ static inline struct blkcg_gq *__blkg_lookup(struct blkcg *blkcg,
 	if (blkcg == &blkcg_root)
 		return q->root_blkg;
 
-	/*lint -save -e50 -e64 -e529 -e1058*/
 	blkg = rcu_dereference(blkcg->blkg_hint);
-	/*lint -restore*/
 	if (blkg && blkg->q == q)
 		return blkg;
 
@@ -329,13 +316,11 @@ static inline struct blkcg_gq *__blkg_lookup(struct blkcg *blkcg,
 static inline struct blkcg_gq *blkg_lookup(struct blkcg *blkcg,
 					   struct request_queue *q)
 {
-	/*lint -save -e727 -e730 -e747*/
 	WARN_ON_ONCE(!rcu_read_lock_held());
 
 	if (unlikely(blk_queue_bypass(q)))
 		return NULL;
 	return __blkg_lookup(blkcg, q, false);
-	/*lint -restore*/
 }
 
 /**
@@ -558,7 +543,7 @@ static inline void blkg_stat_exit(struct blkg_stat *stat)
  */
 static inline void blkg_stat_add(struct blkg_stat *stat, uint64_t val)
 {
-	__percpu_counter_add(&stat->cpu_cnt, val, BLKG_STAT_CPU_BATCH);
+	percpu_counter_add_batch(&stat->cpu_cnt, val, BLKG_STAT_CPU_BATCH);
 }
 
 /**
@@ -621,15 +606,14 @@ static inline void blkg_rwstat_exit(struct blkg_rwstat *rwstat)
 /**
  * blkg_rwstat_add - add a value to a blkg_rwstat
  * @rwstat: target blkg_rwstat
- * @op: REQ_OP
- * @op_flags: rq_flag_bits
+ * @op: REQ_OP and flags
  * @val: value to add
  *
  * Add @val to @rwstat.  The counters are chosen according to @rw.  The
  * caller is responsible for synchronizing calls to this function.
  */
 static inline void blkg_rwstat_add(struct blkg_rwstat *rwstat,
-				   int op, int op_flags, uint64_t val)
+				   unsigned int op, uint64_t val)
 {
 	struct percpu_counter *cnt;
 
@@ -638,14 +622,14 @@ static inline void blkg_rwstat_add(struct blkg_rwstat *rwstat,
 	else
 		cnt = &rwstat->cpu_cnt[BLKG_RWSTAT_READ];
 
-	__percpu_counter_add(cnt, val, BLKG_STAT_CPU_BATCH);
+	percpu_counter_add_batch(cnt, val, BLKG_STAT_CPU_BATCH);
 
-	if (op_flags & REQ_SYNC)
+	if (op_is_sync(op))
 		cnt = &rwstat->cpu_cnt[BLKG_RWSTAT_SYNC];
 	else
 		cnt = &rwstat->cpu_cnt[BLKG_RWSTAT_ASYNC];
 
-	__percpu_counter_add(cnt, val, BLKG_STAT_CPU_BATCH);
+	percpu_counter_add_batch(cnt, val, BLKG_STAT_CPU_BATCH);
 }
 
 /**
@@ -732,6 +716,9 @@ static inline bool blkcg_bio_issue_check(struct request_queue *q,
 	rcu_read_lock();
 	blkcg = bio_blkcg(bio);
 
+	/* associate blkcg if bio hasn't attached one */
+	bio_associate_blkcg(bio, &blkcg->css);
+
 	blkg = blkg_lookup(blkcg, q);
 	if (unlikely(!blkg)) {
 		spin_lock_irq(q->queue_lock);
@@ -745,9 +732,9 @@ static inline bool blkcg_bio_issue_check(struct request_queue *q,
 
 	if (!throtl) {
 		blkg = blkg ?: q->root_blkg;
-		blkg_rwstat_add(&blkg->stat_bytes, bio_op(bio), bio->bi_opf,
+		blkg_rwstat_add(&blkg->stat_bytes, bio->bi_opf,
 				bio->bi_iter.bi_size);
-		blkg_rwstat_add(&blkg->stat_ios, bio_op(bio), bio->bi_opf, 1);
+		blkg_rwstat_add(&blkg->stat_ios, bio->bi_opf, 1);
 	}
 
 	rcu_read_unlock();
@@ -811,7 +798,6 @@ static inline struct blkcg_gq *task_blkcg_gq(struct task_struct *tsk,
 	blkcg = task_blkcg(tsk);
 
 	blkg = blkg_lookup(blkcg, q);
-
 	return blkg;
 }
 
@@ -895,11 +881,7 @@ task_get_blkcg_css(struct task_struct *task)
 }
 
 #ifdef CONFIG_BLOCK
-enum blkcg_attach_notify{
-	BLKG_ATTACH_NOTIFY_BY_TGID,
-	BLKG_ATTACH_NOTIFY_BY_PID,
-	BLKG_ATTACH_NOTIFY_NR,
-};
+
 static inline struct blkcg_gq *blkg_lookup(struct blkcg *blkcg, void *key) { return NULL; }
 static inline int blkcg_init_queue(struct request_queue *q) { return 0; }
 static inline void blkcg_drain_queue(struct request_queue *q) { }
@@ -934,8 +916,6 @@ static inline bool blkcg_bio_issue_check(struct request_queue *q,
 
 #endif	/* CONFIG_BLOCK */
 
-static inline int blkcg_attach_notify_register(enum blkcg_attach_notify type, struct notifier_block *n){ return 0; }
-static inline int blkcg_attach_notify_unregister(enum blkcg_attach_notify type, struct notifier_block *n){ return 0; }
 #ifndef CONFIG_BLK_DEV_THROTTLING
 static inline struct blkcg_gq *task_blkcg_gq(struct task_struct *tsk,
 					     struct block_device *bdev)

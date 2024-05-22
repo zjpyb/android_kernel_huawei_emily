@@ -25,10 +25,12 @@ struct hisi_tcpc_reg_ops {
 #ifdef CONFIG_HISI_TCPC
 void hisi_tcpc_reg_ops_register(struct i2c_client *client, struct hisi_tcpc_reg_ops *reg_ops);
 void hisi_tcpc_irq_gpio_register(struct i2c_client *client, int irq_gpio);
+void hisi_tcpc_set_vusb_uv_det_sts(bool en);
 #else
 static inline void hisi_tcpc_reg_ops_register(struct i2c_client *client,
 		struct hisi_tcpc_reg_ops *reg_ops){}
 static inline void hisi_tcpc_irq_gpio_register(struct i2c_client *client, int irq_gpio){}
+static inline void hisi_tcpc_set_vusb_uv_det_sts(bool en){}
 #endif
 
 #endif /* _HISI_TCPC_REG_OPS_H_ */

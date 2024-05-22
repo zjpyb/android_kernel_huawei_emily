@@ -695,6 +695,7 @@ void socp_show_enc_dst_chan_all(void)
 
     return;
 }
+#ifdef SOCP_DECODE_ENABLE
 /*****************************************************************************
 * 函 数 名   : socp_show_dec_src_chan_cur
 *
@@ -941,6 +942,7 @@ EXPORT_SYMBOL(socp_show_dec_src_chan_all);
 EXPORT_SYMBOL(socp_show_dec_dst_chan_cur);
 EXPORT_SYMBOL(socp_show_dec_dst_chan_add);
 EXPORT_SYMBOL(socp_show_dec_dst_chan_all);
+#endif
 
 /*****************************************************************************
 * 函 数 名   : socp_debug_cnt_show
@@ -958,8 +960,10 @@ void socp_debug_cnt_show(void)
     socp_show_debug_gbl();
     socp_show_enc_src_chan_all();
     socp_show_enc_dst_chan_all();
+#ifdef SOCP_DECODE_ENABLE    
     socp_show_dec_src_chan_all();
     socp_show_dec_dst_chan_all();
+#endif
 }
 
 void socp_debug_set_trace(u32 v)

@@ -5,6 +5,7 @@
 /*****************************************************************************
   1 其他头文件包含
 *****************************************************************************/
+#include <net/sock.h>
 
 /*****************************************************************************
   2 宏定义
@@ -46,7 +47,7 @@
 
 #define BST_FG_SetFlag(var, idx)	((var) |= (0x01<<(idx)))
 #define BST_FG_ClrFlag(var)	((var)  = 0U)
-#define BST_FG_IsUidValid(uid)	((uid) > 10000)
+#define BST_FG_IsUidValid(uid) ((uid) > 0)
 #define BST_FG_IsFlagValid(var, flag)	((var) == (flag))
 #define BST_FG_IsAppIdxValid(idx)	((idx) < (BST_FG_MAX_APP_NUMBER))
 #define BST_FG_IsKwdIdxValid(idx)	((idx) < (BST_FG_MAX_KW_NUMBER))

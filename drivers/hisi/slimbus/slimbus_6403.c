@@ -46,6 +46,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                        /* debug */
 				{0, 0},                     /* direct play*/
 				{0, 0},                     /* fast play*/
+				{0, 0},                     /* kws*/
 			},
 			/* 6.144M play*/
 			{
@@ -59,6 +60,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug */
 				{0, 0},                                         /* direct play*/
 				{0, 0},                                         /* fast play*/
+				{0, 0},                                         /* kws*/
 
 			},
 			/* 6.144M call*/
@@ -73,6 +75,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug */
 				{0, 0},                                         /* direct play*/
 				{0, 0},                                         /* fast play*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 24.576M normal*/
 			{
@@ -86,6 +89,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{8},                                            /* debug */
 				{0, 0},                                         /* direct play*/
 				{0, 0},                                         /* fast play*/
+				{4, 4},                                         /* kws*/
 			},
 			/* 24.576M anc call*/
 			{
@@ -99,6 +103,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{8, 8},                                         /* debug */
 				{0, 0},                                         /* direct play*/
 				{0, 0},                                         /* fast play*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 24.576M hires play*/
 			{
@@ -112,6 +117,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug */
 				{6, 6},                                         /* direct play */
 				{0, 0},                                         /* fast play*/
+				{4, 4},                                         /* kws*/
 			},
 			/* image load */
 			{
@@ -125,6 +131,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                             /* debug */
 				{0, 0},                                          /* direct play */
 				{0, 0},                                          /* fast play*/
+				{0, 0},                                          /* kws*/
 			},
 			/* 24.576M fast play*/
 			{
@@ -138,6 +145,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                             /* debug */
 				{0, 0},                                          /* direct play */
 				{6, 6},                                          /* fast play*/
+				{0, 0},                                          /* kws*/
 			},
 			/* 24.576M fast play & record*/
 			{
@@ -151,6 +159,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                             /* debug */
 				{6, 6},                                          /* direct play */
 				{6, 6},                                          /* fast play*/
+				{0, 0},                                          /* kws*/
 			},
 			/* 24.576M fast play & st*/
 			{
@@ -164,6 +173,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                             /* debug */
 				{6, 6},                                          /* direct play */
 				{6, 6},                                          /* fast play*/
+				{0, 0},                                          /* kws*/
 			},
 			/* 12.288M call*/
 			{
@@ -177,6 +187,7 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug */
 				{0, 0},                                         /* direct play*/
 				{0, 0},                                         /* fast play*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 6.144M soundtrigger enhance*/
 			{
@@ -186,26 +197,12 @@ static uint16_t sl_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0, 0, 0, 0},                                   /* voice up */
 				{5},                                            /* image download */
 				{6, 6},                                         /* EC_REF */
-				{4, 4},                                         /* sound trigger */
+				{0, 0},                                         /* sound trigger */
 				{0},                                            /* debug */
 				{0, 0},                                         /* direct play*/
 				{0, 0},                                         /* fast play*/
+				{4, 4},                                         /* kws*/
 			},
-};
-
-static uint16_t sl_soundtrigger_16k[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_CHANNELS_MAX] = {
-			{0},                                                    /* 6.144M fpga */
-			{0},                                                    /* 6.144M play */
-			{0},                                                    /* 6.144M call */
-			{4, 4},                                                 /* 24.576M normal */
-			{0},                                                    /* 24.576M anc call */
-			{4, 4},                                                 /* 24.576M direct play */
-			{0},                                                    /* image */
-			{0},                                                    /* 6.144M fast play */
-			{0},                                                    /* 24.576M fast play & rec*/
-			{4, 4},                                                 /* 24.576M fast play & st*/
-			{0},                                                    /* 12.288M call */
-			{4, 4},                                                 /* 6.144M soundtrigger enhance */
 };
 
 /* presence rate */
@@ -215,6 +212,7 @@ static slimbus_presence_rate_t pr_table[SLIMBUS_TRACK_MAX] = {
 			SLIMBUS_PR_768K, SLIMBUS_PR_48K,
 			SLIMBUS_PR_192K, SLIMBUS_PR_192K,
 			SLIMBUS_PR_192K, SLIMBUS_PR_48K,
+			SLIMBUS_PR_16K
 };
 
 /* channel index */
@@ -229,6 +227,7 @@ static uint8_t cn_table[SLIMBUS_TRACK_MAX][SLIMBUS_CHANNELS_MAX] = {
 			{DEBUG_LEFT, DEBUG_RIGHT},
 			{AUDIO_PLAY_CHANNEL_LEFT, AUDIO_PLAY_CHANNEL_RIGHT},
 			{VOICE_DOWN_CHANNEL_LEFT, VOICE_DOWN_CHANNEL_RIGHT},
+			{VOICE_UP_CHANNEL_MIC3, VOICE_UP_CHANNEL_MIC4},/*kws*/
 };
 
 
@@ -244,6 +243,7 @@ static uint8_t source_pn_table[SLIMBUS_TRACK_MAX][SLIMBUS_CHANNELS_MAX] = {
 			{BT_CAPTURE_64XX_LEFT_PORT, BT_CAPTURE_64XX_RIGHT_PORT},
 			{AUDIO_PLAY_SOC_LEFT_PORT, AUDIO_PLAY_SOC_RIGHT_PORT},
 			{VOICE_DOWN_SOC_LEFT_PORT, VOICE_DOWN_SOC_RIGHT_PORT},
+			{VOICE_UP_64XX_MIC3_PORT, VOICE_UP_64XX_MIC4_PORT},/*kws*/
 };
 
 /* sink port number */
@@ -258,6 +258,7 @@ static uint8_t sink_pn_table[SLIMBUS_TRACK_MAX][SLIMBUS_CHANNELS_MAX] = {
 			{BT_CAPTURE_SOC_LEFT_PORT, BT_CAPTURE_SOC_RIGHT_PORT},
 			{AUDIO_PLAY_64XX_LEFT_PORT, AUDIO_PLAY_64XX_RIGHT_PORT},
 			{IMAGE_DOWNLOAD_64XX_PORT, SUPER_PLAY_64XX_PORT},
+			{VOICE_UP_SOC_MIC3_PORT, VOICE_UP_SOC_MIC4_PORT},/*kws*/
 };
 
 /* segment distribution */
@@ -274,6 +275,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K*/
 				{0},                                            /* direct play 192k*/
 				{0},                                            /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 6.144M play */
 			{
@@ -287,6 +289,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K*/
 				{0},                                            /* direct play 192k*/
 				{0},                                            /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 6.144M call*/
 			{
@@ -300,6 +303,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K*/
 				{0},                                            /* direct play 192k*/
 				{0},                                            /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 24.576M normal */
 			{
@@ -313,6 +317,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0xC33},                                        /* debug 192K*/
 				{0},                                            /* direct play 192k*/
 				{0},                                            /* fast play 48k*/
+				{0x93, 0x97},                                   /* kws*/
 			},
 			/*24.576M anc call*/
 			{
@@ -326,6 +331,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0xC2D, 0xC35},                                 /* debug 192K*/
 				{0},                                            /* direct play 192k*/
 				{0},                                            /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/*24.576M direct play*/
 			{
@@ -339,6 +345,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K */
 				{0xC30,0xC36},                                  /* direct play 192k */
 				{0},                                            /* fast play 48k*/
+				{0x9C, 0xBC},                                   /* kws*/
 			},
 			/*image load*/
 			{
@@ -352,6 +359,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0, 0},                                         /* debug 192K*/
 				{0},                                            /* direct play 192k*/
 				{0},                                            /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/*6.144M fast play*/
 			{
@@ -365,6 +373,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K */
 				{0, 0},                                         /* direct play 192k */
 				{0xC28, 0xC2E},                                 /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/*24.576M fast play & rec*/
 			{
@@ -378,6 +387,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K */
 				{0xC2E, 0xC34},                                 /* direct play 192k */
 				{0xC9A, 0xCBA},                                 /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/*24.576M fast play & st*/
 			{
@@ -391,6 +401,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K */
 				{0xC30,0xC36},                                  /* direct play 192k */
 				{0xC8A, 0xCAA},                                 /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 12.288M call*/
 			{
@@ -404,6 +415,7 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0},                                            /* debug 192K*/
 				{0},                                            /* direct play 192k*/
 				{0},                                            /* fast play 48k*/
+				{0, 0},                                         /* kws*/
 			},
 			/* 6.144M soundtrigger enhance*/
 			{
@@ -413,10 +425,11 @@ static uint16_t sd_table[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_TRACK_MAX][SLIMBUS_CH
 				{0, 0, 0, 0},                                   /* voice up */
 				{0xC0B},                                        /* image download */
 				{0xC34, 0xC3A},                                 /* EC_REF */
-				{0x24, 0x424},                                  /* sound trigger */
+				{0, 0},                                        /* sound trigger */
 				{0},                                            /* debug */
 				{0, 0},                                         /* direct play*/
 				{0, 0},                                         /* fast play*/
+				{0x24, 0x424},                                  /* kws*/
 			},
 };
 
@@ -494,22 +507,6 @@ static uint16_t sd_soundtrigger_48k[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_CHANNELS_M
 			{0},                                                /* 12.288M call */
 			{0},                                                /* 6.144M soundtrigger enhance */
 };
-
-static uint16_t sd_soundtrigger_16k[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_CHANNELS_MAX] = {
-			{0},                                                /* 6.144M fpga */
-			{0},                                                /* 6.144M play */
-			{0},                                                /* 6.144M call */
-			{0x93, 0xB3},                                       /* 24.576M normal */
-			{0},                                                /* 24.576M anc call */
-			{0x82, 0xA2},                                       /* 24.576M direct play */
-			{0},                                                /* image */
-			{0},                                                /* 6.144M fast play */
-			{0},                                                /* 24.576M fast play & rec*/
-			{0x98, 0xB8},                                       /* 24.576M fast play & st*/
-			{0},                                                /* 12.288M call */
-			{0x24, 0x424},                                      /* 6.144M soundtrigger enhance */
-};
-
 
 static uint16_t sd_debug_192k[SLIMBUS_SCENE_CONFIG_MAX][SLIMBUS_CHANNELS_MAX] = {
 			{0},                                                /* 6.144M fpga */
@@ -592,9 +589,7 @@ static void slimbus_hi6403_set_para_sd(
 		}
 		break;
 	case SLIMBUS_TRACK_SOUND_TRIGGER:
-		if (pr == SLIMBUS_PR_16K) {
-			*sd = sd_soundtrigger_16k[scene_type][ch];
-		} else if (pr == SLIMBUS_PR_48K) {
+		if (pr == SLIMBUS_PR_48K) {
 			*sd = sd_soundtrigger_48k[scene_type][ch];
 		}
 		break;
@@ -611,32 +606,6 @@ static void slimbus_hi6403_set_para_sd(
 	return;
 }
 
-static void slimbus_hi6403_param_update_sl(
-				int   track_type,
-				slimbus_scene_config_type_t scene_type,
-				uint32_t ch,
-				slimbus_presence_rate_t pr,
-				uint16_t *sl)
-{
-	if (track_type >= SLIMBUS_TRACK_MAX) {
-		pr_err("track type is invalid, track_type:%d\n", track_type);
-		return;
-	}
-
-	*sl = sl_table[scene_type][track_type][ch];
-
-	switch(track_type) {
-	case SLIMBUS_TRACK_SOUND_TRIGGER:
-		if (pr == SLIMBUS_PR_16K) {
-			*sl = sl_soundtrigger_16k[scene_type][ch];
-		}
-		break;
-	default:
-		break;
-	}
-
-	return;
-}
 
 void slimbus_hi6403_param_init(slimbus_device_info_t *dev)
 {
@@ -709,8 +678,6 @@ void slimbus_hi6403_param_init(slimbus_device_info_t *dev)
 			slimbus_hi6403_set_para_sd(track,
 				scene_type, ch, pchprop->pr, &(pchprop->sd));
 
-			slimbus_hi6403_param_update_sl(track, scene_type, ch, pchprop->pr, &(pchprop->sl));
-
 			if (SLIMBUS_TP_PUSHED == tp) {
 				pchprop->dl = pchprop->sl - 1;
 			} else {
@@ -781,7 +748,6 @@ int slimbus_hi6403_param_set(
 
 			slimbus_hi6403_set_para_sd(track_type, scene_type,
 				ch, pchprop->pr, &(pchprop->sd));
-			slimbus_hi6403_param_update_sl(track_type, scene_type, ch, pchprop->pr, &(pchprop->sl));
 
 			pchprop++;
 		}

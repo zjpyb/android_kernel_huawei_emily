@@ -38,7 +38,6 @@
 #include <linux/hisi/usb/hisi_usb.h>
 #include <huawei_platform/audio/usb_audio_power.h>
 #include <huawei_platform/audio/usb_audio_power_v600.h>
-#include <linux/wakelock.h>
 
 #include "usbaudio.h"
 #include "card.h"
@@ -139,7 +138,7 @@ void usbaudio_ctrl_wake_up(bool wake_up)
 
 bool usbaudio_ctrl_controller_switch(struct usb_device *dev, u32 usb_id, struct usb_host_interface *ctrl_intf, int ctrlif)
 {
-	bool ret;
+	bool ret = false;
 	mutex_lock(&connect_mutex);
 	if (!usbaudio_hifi) {
 		ret = false;
@@ -312,7 +311,7 @@ static int usbaudio_ctrl_typeC_log_upload(void *data)
 	}
 	info = (struct snd_usb_audio *)data;
 	insert_times++;
-	pr_info("typeC headset bcdDevice %0x, times %d\n",info->dev->descriptor.bcdDevice, insert_times);
+	pr_info("typeC headset bcdDevice %0x, times %d\n",info->dev->descriptor.bcdDevice, insert_times);/*lint !e567*/
 
 	obj = imonitor_create_eventobj(USB_AUDIO_TYPEC_INFO_EVENT_ID);
 	if(!obj){
@@ -324,7 +323,8 @@ static int usbaudio_ctrl_typeC_log_upload(void *data)
 	imonitor_set_param_string_v2(obj, "module", info->card->shortname);
 	imonitor_set_param_string_v2(obj, "isn", info->dev->serial);
 	imonitor_set_param_integer_v2(obj, "times", insert_times);
-	imonitor_set_param_integer_v2(obj, "ver", info->dev->descriptor.bcdDevice);
+	imonitor_set_param_integer_v2(obj, "ver",
+		info->dev->descriptor.bcdDevice);
 	ret = imonitor_send_event(obj);
 	if(obj){
 		imonitor_destroy_eventobj(obj);
@@ -336,7 +336,7 @@ void usbaudio_ctrl_set_chip(struct snd_usb_audio *chip)
 	mutex_lock(&connect_mutex);
 	if (usbaudio_hifi && chip) {
 		usbaudio_hifi->wake_up = true;
-		if (chip->card && chip->dev->serial && chip->card->shortname && (sizeof(chip->card->shortname) <= 256)){
+		if (chip->card && chip->dev->serial) {
 			#ifdef CONFIG_HUAWEI_DSM
 			if (hisi_usb_using_hifi_usb(chip->dev))
 				audio_dsm_report_info(AUDIO_CODEC, DSM_USBAUDIO_INFO, "usbid %x usbphy %s \n", chip->usb_id, "hifi");
@@ -364,8 +364,8 @@ void usbaudio_ctrl_set_chip(struct snd_usb_audio *chip)
 			&& ((!strncmp(chip->card->shortname, HUAWEI_USB_HEADSET_PRENAME, strlen(HUAWEI_USB_HEADSET_PRENAME)))
 				|| (!strncmp(chip->card->shortname, BBIITT_USB_HEADSET_PRENAME, strlen(BBIITT_USB_HEADSET_PRENAME))))) {
 			usb_audio_power_buckboost();
-			set_otg_switch_enable_v600();
 			usb_headset_plug_in();
+			set_otg_switch_enable_v600();
 		}
 	}
 

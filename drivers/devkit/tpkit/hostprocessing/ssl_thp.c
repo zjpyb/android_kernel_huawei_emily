@@ -48,7 +48,7 @@
 #define SPI_INVALID_CRC          0x08
 #define SPI_APP_HEADER_LEN       6
 #define SPI_BOOTL_HEADER_LEN     2
-#define T117_BYTES_READ_LIMIT    1505 // 7 x 215 (T117 size)
+#define T117_BYTES_READ_LIMIT    1505 /* 7 x 215 (T117 size) */
 #define WRITE_DUMMY_BYTE         400
 #define READ_DUMMY_BYTE          400
 #define FRAME_READ_DUMMY_BYTE    400
@@ -58,11 +58,19 @@
 				WRITE_DUMMY_BYTE)
 #define SPI_APP_BUF_SIZE_READ    (NUMBER_OF_HEADER * SPI_APP_HEADER_LEN +\
 				T117_BYTES_READ_LIMIT + FRAME_READ_DUMMY_BYTE)
-#define MXT_OBJECT_START         0x07 // after struct mxt_info
-#define MXT_INFO_CHECKSUM_SIZE   3 // after list of struct mxt_object
+/* for tp ic mxt3662 */
+#define MXT3562_FAMILY_ID 166
+#define MXT3562_VARIANT_ID 24
+#define MXT3662_FAMILY_ID 169
+#define MXT3662_VARIANT_ID 01
+#define WRITE_DUMMY_BYTE_FOR_MXT3662 600
+#define READ_DUMMY_BYTE_FOR_MXT3662 600
+#define BOOTLOADER_READ_LEN_FOR_MXT3662 40
+#define MXT_OBJECT_START         0x07 /* after struct mxt_info */
+#define MXT_INFO_CHECKSUM_SIZE   3    /* after list of struct mxt_object */
 #define GETPDSDATA_COMMAND       0x81
 #define MXT_T6_DIAGNOSTIC_OFFSET 0x05
-#define READ_ID_RETRY_TIMES      3
+#define READ_ID_RETRY_TIMES 3
 
 #define SSL_T117_ADDR            117
 #define SSL_T7_ADDR              7
@@ -74,9 +82,8 @@
 #define SSL_T8_ADDR              8
 #define SSL_T145_ADDR            145
 
-#define SSL_SYNC_DATA_REG_DEFALUT_ADDR  238
 #define THP_BOOTLOADER_SPI_FREQ_HZ      100000U
-#define BOOTLOADER_READ_CNT             2
+#define BOOTLOADER_READ_CNT 2
 #define BOOTLOADER_READ_LEN             1
 #define BOOTLOADER_CRC_ERROR_CODE       0x60
 #define BOOTLOADER_WAITING_CMD_MODE_0   0xC0
@@ -102,6 +109,9 @@
 #define MOVE_8BIT                       8
 #define MOVE_16BIT                      16
 #define MOVE_24BIT                      24
+#define SSL_SYNC_DATA_REG_DEFAULT_ADDR 238
+#define CHIP_IDENTIFIED_START_ADDR 0
+#define OVERRIDE_LIMIT_VALUE 0
 
 struct mxt_info {
 	u8 family_id;
@@ -121,6 +131,11 @@ struct mxt_object {
 	u8 num_report_ids;
 } __packed;
 
+enum ssl_ic_type {
+	MXT680U2,
+	MXT3662 = 1,
+};
+
 static uint16_t t117_address;
 static uint16_t t7_address;
 static uint16_t t6_address;
@@ -132,10 +147,11 @@ static uint16_t t8_address;
 static uint16_t t145_address;
 
 static u8 is_bootloader_mode;
-static unsigned int g_thp_udfp_stauts;
+static unsigned int g_thp_udfp_status;
 
 static int ssl_wakeup_gesture_enable_switch(struct thp_device *tdev,
 				u8 switch_value);
+static void thp_ssl_exit(struct thp_device *tdev);
 
 static u8 get_crc8_iter(u8 crc, u8 data)
 {
@@ -184,6 +200,100 @@ static void spi_prepare_header(u8 *header, u8 opcode,
 	header[5] = get_header_crc(header);
 }
 
+/*
+ * The BL protocol header is always 0x00, 0x00.
+ * The LSBit of the LSByte is zero to
+ * indicate a write. For frame data this is also
+ * the case and frame size is embedded
+ * in the frame data and is the first 2 bytes of the payload
+ */
+
+#define BOOT_XFER_DELAY 18
+#define BOOT_HEAD_LEN 4
+#define READ_BOOT_HEAD_COUNT 5
+static int bootloader_one_byte_transfer(
+	struct thp_device *tdev, const char * const tx_buf,
+	char * const rx_buf, const unsigned int buf_len)
+{
+	struct spi_message msg;
+	struct spi_device *sdev = NULL;
+	struct spi_transfer *xfer = NULL;
+	int rc;
+	int i;
+
+	THP_LOG_INFO("%s call\n", __func__);
+	if ((!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev) ||
+		(!tx_buf) || (!rx_buf) || (!buf_len)) {
+		THP_LOG_ERR("%s: point null\n", __func__);
+		return -EINVAL;
+	}
+	sdev = tdev->thp_core->sdev;
+	if (tdev->thp_core->suspended) {
+		THP_LOG_ERR("%s: suspended\n", __func__);
+		return 0;
+	}
+	xfer = kzalloc(buf_len * sizeof(*xfer), GFP_KERNEL);
+	if (xfer == NULL) {
+		THP_LOG_ERR("%s: kzalloc failed\n", __func__);
+		return -EIO;
+	}
+	spi_message_init(&msg);
+	for (i = 0; i < buf_len; i++) {
+		xfer[i].tx_buf = &tx_buf[i];
+		xfer[i].rx_buf = &rx_buf[i];
+		/* one byte len */
+		xfer[i].len = 1;
+		xfer[i].delay_usecs = tdev->timing_config.spi_transfer_delay_us;
+		spi_message_add_tail(&xfer[i], &msg);
+	}
+	rc = thp_bus_lock();
+	if (rc < 0) {
+		THP_LOG_ERR("%s:get lock failed:%d\n", __func__, rc);
+		kfree(xfer);
+		return rc;
+	}
+	rc = thp_spi_sync(sdev, &msg);
+	thp_bus_unlock();
+	kfree(xfer);
+	return rc;
+}
+
+static int mxt_bootloader_write(struct thp_device *tdev,
+	struct spi_device *client, unsigned char const *buf, int count)
+{
+	unsigned char op_header[] = { 0U, 0U };
+	int ret_val;
+	struct spi_message spimsg;
+	struct spi_transfer spitr;
+
+	if ((tdev == NULL) || (client == NULL) || (buf == NULL) ||
+		(tdev->tx_buff == NULL) || (tdev->rx_buff == NULL) ||
+		(count == 0)) {
+		THP_LOG_ERR("%s: point null\n", __func__);
+		return -EINVAL;
+	}
+	spi_message_init(&spimsg);
+
+	memset(&spitr, 0, sizeof(spitr));
+	spitr.tx_buf = tdev->tx_buff;
+	spitr.rx_buf = tdev->rx_buff;
+	spitr.len = sizeof(op_header) + count;
+	memcpy(tdev->tx_buff, op_header, sizeof(op_header));
+	memcpy(tdev->tx_buff + sizeof(op_header), buf, count);
+	spi_message_add_tail(&spitr, &spimsg);
+	ret_val = thp_bus_lock();
+	if (ret_val) {
+		THP_LOG_ERR("%s: get lock failed\n", __func__);
+		return -EINVAL;
+	}
+	ret_val = spi_sync(client, &spimsg);
+	thp_bus_unlock();
+	if (ret_val < 0)
+		THP_LOG_ERR("%s:Error reading from spi %d\n",
+			__func__, ret_val);
+	return ret_val;
+}
+
 static int mxt_bootloader_read(struct thp_device *tdev,
 		struct spi_device *client, unsigned char *buf, int count)
 {
@@ -206,9 +316,16 @@ static int mxt_bootloader_read(struct thp_device *tdev,
 	transfer.len = sizeof(op_header) + count;
 	memcpy(tdev->tx_buff, op_header, sizeof(op_header));
 	spi_message_add_tail(&transfer, &spi_msg);
+	ret_val = thp_bus_lock();
+	if (ret_val) {
+		THP_LOG_ERR("%s: get lock failed\n", __func__);
+		return -EINVAL;
+	}
 	ret_val = spi_sync(client, &spi_msg);
+	thp_bus_unlock();
 	if (ret_val < 0) {
-		THP_LOG_ERR("%s: Error reading from spi ret = %d\n", __func__, ret_val);
+		THP_LOG_ERR("%s: Error reading from spi ret = %d\n",
+			__func__, ret_val);
 		return ret_val;
 	}
 	memcpy(buf, tdev->rx_buff + sizeof(op_header), count);
@@ -234,6 +351,84 @@ static int mxt_wait_for_chg_is_low(struct thp_device *tdev)
 	return ret_val;
 }
 
+#define PDS_DELIMITER_BYTE_1 0xDE
+#define PDS_DELIMITER_BYTE_2 0xAD
+#define PDS_DELIMITER_BYTE_3 0xAD
+#define PDS_DELIMITER_BYTE_4 0xDA
+#define BOOTLOADER_STATUS_BYTE_LEN 8
+static int mxt_check_bootloader_status(struct thp_device *tdev,
+	u8 const *status_byte, int status_byte_size)
+{
+	int i;
+	/* 4:project id delimiter size */
+	int check_head_offset = (status_byte_size - 4 - THP_PROJECT_ID_LEN);
+
+	if (status_byte_size < BOOTLOADER_STATUS_BYTE_LEN + THP_PROJECT_ID_LEN)
+		return -EINVAL;
+	/* 0x60: CRC error  0xE0: waiting cmd mode */
+	if ((status_byte[0] == 0xE0) || (status_byte[0] == 0x60)) {
+		THP_LOG_INFO("bootloader mode found status byte is 0x%x\n",
+			status_byte[0]);
+		for (i = 0; i < check_head_offset; i++) {
+			/* 1~4:project id delimiter offset */
+			if ((status_byte[i] == PDS_DELIMITER_BYTE_1) &&
+				(status_byte[i + 1] == PDS_DELIMITER_BYTE_2) &&
+				(status_byte[i + 2] == PDS_DELIMITER_BYTE_3) &&
+				(status_byte[i + 3] == PDS_DELIMITER_BYTE_4)) {
+				memcpy(&tdev->thp_core->project_id,
+					(status_byte + i + 4),
+					THP_PROJECT_ID_LEN);
+				tdev->thp_core->project_id[THP_PROJECT_ID_LEN] = '\0';
+				THP_LOG_INFO("projectid %s\n",
+					tdev->thp_core->project_id);
+				break;
+			}
+		}
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int mxt_check_is_bootloader_for_mxt3662(
+	struct thp_device *tdev)
+{
+	u8 status_byte[BOOTLOADER_READ_LEN_FOR_MXT3662] = {0};
+	int ret_value = 0;
+	int bootloader_read_cnt = BOOTLOADER_READ_CNT;
+	int max_thp_spi_clock = tdev->thp_core->sdev->max_speed_hz;
+	int ret;
+	/* option header command ,0x01 0x00 */
+	static const char op_header[] = { 0x01, 0x00 };
+
+	THP_LOG_INFO("%s:max thp spi clock= %d\n", __func__, max_thp_spi_clock);
+	tdev->thp_core->sdev->max_speed_hz = THP_BOOTLOADER_SPI_FREQ_HZ;
+	THP_LOG_INFO("%s:set max thp spi clock= %d\n",
+		__func__, tdev->thp_core->sdev->max_speed_hz);
+	do {
+		THP_LOG_INFO("%s:call bootloader_one_byte_transfer\n",
+			__func__);
+		memcpy(tdev->tx_buff, op_header, sizeof(op_header));
+		ret = bootloader_one_byte_transfer(tdev, tdev->tx_buff,
+			tdev->rx_buff, BOOTLOADER_READ_LEN_FOR_MXT3662);
+		if (ret)
+			THP_LOG_ERR("%s: transfer failed\n", __func__);
+		memcpy(status_byte, tdev->rx_buff,
+			BOOTLOADER_READ_LEN_FOR_MXT3662);
+		THP_LOG_INFO("%s:status_byte %*ph\n", __func__,
+			BOOTLOADER_READ_LEN_FOR_MXT3662,
+			status_byte);
+		ret = mxt_check_bootloader_status(tdev, status_byte,
+			BOOTLOADER_READ_LEN_FOR_MXT3662);
+		if (ret == 0) {
+			/* it is bootloader mode ,return 1 */
+			ret_value = 1;
+			break;
+		}
+	} while (bootloader_read_cnt-- > 0);
+	tdev->thp_core->sdev->max_speed_hz = max_thp_spi_clock;
+	THP_LOG_INFO("%s:call end ret_value = %d\n", __func__, ret_value);
+	return ret_value;
+}
 
 static int mxt_check_is_bootloader(struct thp_device *tdev)
 {
@@ -242,11 +437,17 @@ static int mxt_check_is_bootloader(struct thp_device *tdev)
 	int bootloader_read_cnt = BOOTLOADER_READ_CNT;
 	int max_thp_spi_clock;
 	int ret;
+	struct thp_core_data *cd = NULL;
 
-	if (tdev == NULL) {
+	if (tdev == NULL || tdev->thp_core == NULL ||
+		(tdev->thp_core->sdev == NULL)) {
 		THP_LOG_ERR("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
+	cd = tdev->thp_core;
+	if (cd->support_vendor_ic_type == MXT3662)
+		return mxt_check_is_bootloader_for_mxt3662(tdev);
+
 	max_thp_spi_clock = tdev->thp_core->sdev->max_speed_hz;
 	THP_LOG_INFO("max thp spi clock= %d\n", max_thp_spi_clock);
 	tdev->thp_core->sdev->max_speed_hz = THP_BOOTLOADER_SPI_FREQ_HZ;
@@ -257,35 +458,27 @@ static int mxt_check_is_bootloader(struct thp_device *tdev)
 		if (mxt_wait_for_chg_is_low(tdev) < 0) {
 			THP_LOG_ERR("%s:CHG doesn't change to LOW\n", __func__);
 		} else {
-			ret = thp_bus_lock();
-			if (ret) {
-				THP_LOG_ERR("%s: get lock failed\n", __func__);
-				continue;
-			}
 			ret = mxt_bootloader_read(tdev, tdev->thp_core->sdev,
-					&status_byte, BOOTLOADER_READ_LEN);
-			thp_bus_unlock();
+				&status_byte, BOOTLOADER_READ_LEN);
 			if (ret)
-				THP_LOG_ERR("%s: mxt_bootloader_readfailed\n",
-						__func__);
+				THP_LOG_ERR("%s: mxt_bootloader_read failed\n",
+					__func__);
 			THP_LOG_INFO("the bootloader status byte is %d\n",
-					status_byte);
+				status_byte);
 			if ((status_byte == BOOTLOADER_CRC_ERROR_CODE) ||
 				(status_byte == BOOTLOADER_WAITING_CMD_MODE_0) ||
 				(status_byte == BOOTLOADER_WAITING_CMD_MODE_1)) {
-				// 0x60: CRC error  0xE0: waiting cmd mode
+				/* 0x60: CRC error  0xE0: waiting cmd mode */
 				THP_LOG_INFO("bootloader mode found -status is 0x%x\n",
-						status_byte);
+					status_byte);
 				ret_value = 1;
 				break;
 			}
 		}
 	} while (bootloader_read_cnt-- > 0);
 	tdev->thp_core->sdev->max_speed_hz = max_thp_spi_clock;
-
 	return ret_value;
 }
-
 
 static int __mxt_read_reg(struct thp_device *tdev,
 		struct spi_device *client, u16 start_register, u16 len, u8 *val)
@@ -297,24 +490,29 @@ static int __mxt_read_reg(struct thp_device *tdev,
 	int dummy_offset = 0;
 	u8 *rx_buf = NULL;
 	u8 *tx_buf = NULL;
-
 	struct spi_message  spi_msg;
 	struct spi_transfer transfer;
+	struct thp_core_data *cd = NULL;
 
 	if ((tdev == NULL) || (client == NULL) || (val == NULL) ||
-		(tdev->rx_buff == NULL) || (tdev->tx_buff == NULL)) {
+		(tdev->rx_buff == NULL) || (tdev->tx_buff == NULL) ||
+		(tdev->thp_core == NULL)) {
 		THP_LOG_ERR("%s: tdev or client or val null\n", __func__);
 		return -EINVAL;
 	}
+	cd = tdev->thp_core;
 
 	rx_buf = tdev->rx_buff;
 	tx_buf = tdev->tx_buff;
 
-	if (len == T117_BYTES_READ_LIMIT)
-		dummy_byte = FRAME_READ_DUMMY_BYTE;
-	else
-		dummy_byte = READ_DUMMY_BYTE;
-
+	if (cd->support_vendor_ic_type == MXT3662) {
+		dummy_byte = READ_DUMMY_BYTE_FOR_MXT3662;
+	} else {
+		if (len == T117_BYTES_READ_LIMIT)
+			dummy_byte = FRAME_READ_DUMMY_BYTE;
+		else
+			dummy_byte = READ_DUMMY_BYTE;
+	}
 	do {
 		attempt++;
 		if (attempt > 1) {
@@ -323,7 +521,7 @@ static int __mxt_read_reg(struct thp_device *tdev,
 				return -EIO;
 			}
 			if (len < T117_BYTES_READ_LIMIT)
-				// SPI2 need some delay time
+				/* SPI2 need some delay time */
 				mdelay(MXT_WAKEUP_TIME);
 			else
 				return  -EINVAL;
@@ -338,17 +536,14 @@ static int __mxt_read_reg(struct thp_device *tdev,
 		transfer.tx_buf = tx_buf;
 		transfer.rx_buf = rx_buf;
 		transfer.len = NUMBER_OF_HEADER * SPI_APP_HEADER_LEN +
-				dummy_byte + len;
+			dummy_byte + len;
 		spi_message_add_tail(&transfer, &spi_msg);
-
 		ret_val = spi_sync(client, &spi_msg);
-
 		if (ret_val < 0) {
 			THP_LOG_ERR("%s: Error reading from spi ret = %d\n",
 				__func__, ret_val);
 			return ret_val;
 		}
-
 		for (i = 0; i < dummy_byte; i++) {
 			if (rx_buf[SPI_APP_HEADER_LEN + i] == SPI_READ_OK) {
 				dummy_offset = i + SPI_APP_HEADER_LEN;
@@ -359,33 +554,37 @@ static int __mxt_read_reg(struct thp_device *tdev,
 			}
 		}
 		if (dummy_offset == 0) {
-			THP_LOG_ERR(" cannot find dummy byte offset- read address =%d\n",
+			THP_LOG_ERR("cannot find dummy byte offset %u\n",
 				start_register);
 			if (len == T117_BYTES_READ_LIMIT)
 				return -EINVAL;
 		} else {
-			// tx[1] or rx[1] :LSB of start register address
-			// tx[2] or rx[2] :MSB of start register address
-			// tx[3] or rx[3] :LSB of len
-			// tx[4] or rx[4] :MSB of len
+			/* tx[1] or rx[1] :LSB of start register address
+			 * tx[2] or rx[2] :MSB of start register address
+			 * tx[3] or rx[3] :LSB of len
+			 * tx[4] or rx[4] :MSB of len
+			 */
 			if ((tx_buf[1] != rx_buf[1 + dummy_offset]) ||
 				(tx_buf[2] != rx_buf[2 + dummy_offset])) {
-				THP_LOG_ERR("%s:Unexpected address %d != %d reading from spi\n",
+				THP_LOG_ERR("%s: Unexpected offset %u != %u\n",
 					__func__,
-					rx_buf[1 + dummy_offset] | (rx_buf[2 + dummy_offset] << 8),
+					(rx_buf[1 + dummy_offset] |
+					(rx_buf[2 + dummy_offset] << 8)),
 					start_register);
-				if (len < T117_BYTES_READ_LIMIT) // normal register read retry
+				/* normal register read retry */
+				if (len < T117_BYTES_READ_LIMIT)
 					dummy_offset = 0;
-				else   // T117 should not retry
+				else   /* T117 should not retry */
 					return -EINVAL;
 			} else if ((tx_buf[3] != rx_buf[3 + dummy_offset]) ||
 					(tx_buf[4] != rx_buf[4 + dummy_offset])) {
 				THP_LOG_ERR("%s: Unexpected count %d != %d reading from spi\n",
 					__func__,
 					rx_buf[3 + dummy_offset] | (rx_buf[4 + dummy_offset] << 8), len);
-				if (len < T117_BYTES_READ_LIMIT) // normal register read retry
+				/* normal register read retry */
+				if (len < T117_BYTES_READ_LIMIT)
 					dummy_offset = 0;
-				else   // T117 should not retry
+				else   /* T117 should not retry */
 					return -EINVAL;
 			}
 		}
@@ -410,12 +609,18 @@ static int __mxt_write_reg(struct thp_device *tdev,
 	u8 *tx_buf = NULL;
 	int dummy_byte = WRITE_DUMMY_BYTE;
 	int dummy_offset = 0;
+	struct thp_core_data *cd = NULL;
 
 	if ((tdev == NULL) || (client == NULL) || (val == NULL) ||
-		(tdev->rx_buff == NULL) || (tdev->tx_buff == NULL)) {
+		(tdev->rx_buff == NULL) || (tdev->tx_buff == NULL) ||
+		(tdev->thp_core == NULL)) {
 		THP_LOG_ERR("%s:point is  null\n", __func__);
 		return -EINVAL;
 	}
+	cd = tdev->thp_core;
+	if (cd->support_vendor_ic_type == MXT3662)
+		dummy_byte = WRITE_DUMMY_BYTE_FOR_MXT3662;
+
 	rx_buf = tdev->rx_buff;
 	tx_buf = tdev->tx_buff;
 
@@ -426,8 +631,8 @@ static int __mxt_write_reg(struct thp_device *tdev,
 				THP_LOG_ERR("Too many spi write Retries\n");
 				return -EIO;
 			}
-			THP_LOG_INFO("__mxt_write_reg retry %d after write fail\n",
-				attempt - 1);
+			THP_LOG_INFO("%s: retry %d after write fail\n",
+				__func__, attempt - 1);
 			mdelay(MXT_WAKEUP_TIME);
 		}
 
@@ -444,14 +649,7 @@ static int __mxt_write_reg(struct thp_device *tdev,
 		transfer.len = NUMBER_OF_HEADER * SPI_APP_HEADER_LEN +
 			dummy_byte + len;
 		spi_message_add_tail(&transfer, &spi_msg);
-
-		ret_val = thp_bus_lock();
-		if (ret_val < 0) {
-			THP_LOG_ERR("%s:get lock failed\n", __func__);
-			continue;
-		}
 		ret_val = spi_sync(client, &spi_msg);
-		thp_bus_unlock();
 		if (ret_val < 0) {
 			THP_LOG_ERR("%s:Error writing to spi\n", __func__);
 			continue;
@@ -462,7 +660,7 @@ static int __mxt_write_reg(struct thp_device *tdev,
 				dummy_offset = i + SPI_APP_HEADER_LEN;
 				if (dummy_offset > WRITE_DUMMY_BYTE / 2)
 					THP_LOG_INFO("Found big write dummy offset %d\n",
-							dummy_offset);
+						dummy_offset);
 				break;
 			}
 		}
@@ -474,10 +672,10 @@ static int __mxt_write_reg(struct thp_device *tdev,
 			// tx[4] or rx[4] :MSB of len
 			if ((tx_buf[1] != rx_buf[1 + dummy_offset]) ||
 				(tx_buf[2] != rx_buf[2 + dummy_offset])) {
-				THP_LOG_ERR("Unexpected address %d != %d reading from spi\n",
-						(rx_buf[1 + dummy_offset] |
-						(rx_buf[2 + dummy_offset] << MOVE_8BIT)),
-						start_register);
+				THP_LOG_ERR("Unexpected register %u != %u\n",
+					(rx_buf[1 + dummy_offset] |
+					(rx_buf[2 + dummy_offset] << MOVE_8BIT)),
+					start_register);
 				dummy_offset = 0;
 			} else if ((tx_buf[3] != rx_buf[3 + dummy_offset]) ||
 					(tx_buf[4] != rx_buf[4 + dummy_offset])) {
@@ -488,8 +686,8 @@ static int __mxt_write_reg(struct thp_device *tdev,
 				dummy_offset = 0;
 			}
 		} else {
-			THP_LOG_ERR("mxt write-Cannot found write dummy offset address = %d\n",
-				start_register);
+			THP_LOG_ERR("%s: Cannot found write dummy offset %u\n",
+				__func__, start_register);
 		}
 	} while ((get_header_crc(rx_buf + dummy_offset) !=
 		rx_buf[SPI_APP_HEADER_LEN - 1 + dummy_offset]) ||
@@ -509,7 +707,6 @@ static int mxt_read_blks(struct thp_device *tdev,
 		THP_LOG_ERR("%s:point is  null\n", __func__);
 		return -EINVAL;
 	}
-
 	ret_val = thp_bus_lock();
 	if (ret_val < 0) {
 		THP_LOG_ERR("%s:get lock failed\n", __func__);
@@ -521,16 +718,14 @@ static int mxt_read_blks(struct thp_device *tdev,
 		else
 			size = min(override_limit, (u16)(count - offset));
 		ret_val = __mxt_read_reg(tdev, client, (start + offset),
-					size, (buf + offset));
+			size, (buf + offset));
 		if (ret_val)
 			break;
 		offset += size;
 	}
 	thp_bus_unlock();
-
 	return ret_val;
 }
-
 
 static int mxt_write_blks(struct thp_device *tdev,
 		struct spi_device *client,
@@ -544,7 +739,11 @@ static int mxt_write_blks(struct thp_device *tdev,
 		THP_LOG_ERR("%s:point is  null\n", __func__);
 		return -EINVAL;
 	}
-
+	ret_val = thp_bus_lock();
+	if (ret_val < 0) {
+		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		return -EINVAL;
+	}
 	while (offset < count) {
 		size = min(SPI_APP_DATA_MAX_LEN, count - offset);
 
@@ -554,7 +753,7 @@ static int mxt_write_blks(struct thp_device *tdev,
 			break;
 		offset += size;
 	}
-
+	thp_bus_unlock();
 	return ret_val;
 }
 
@@ -615,21 +814,28 @@ static int thp_ssl_get_project_id(struct thp_device *tdev, char *buf,
 
 	memset(buff, 0, sizeof(buff));
 
-	if ((tdev == NULL) || (buf == NULL)) {
+	if ((tdev == NULL) || (buf == NULL) || (tdev->thp_core == NULL)) {
 		THP_LOG_ERR("%s:tdev or buf is  null\n", __func__);
 		return -EINVAL;
 	}
 	cd = tdev->thp_core;
+
 	if (is_bootloader_mode) {
-		project_id = cd->project_id_dummy;
-		memcpy(buf, project_id, len);
-		THP_LOG_INFO("The project id is set to %s in bootloader mode\n", project_id);
+		if (cd->support_vendor_ic_type == MXT3662) {
+			memcpy(buf, cd->project_id, len);
+		} else {
+			project_id = cd->project_id_dummy;
+			memcpy(buf, project_id, len);
+		}
+		THP_LOG_INFO("The project id is set to %s in bootloader mode\n",
+			buf);
 		return 0;
 	}
 
 	if ((t37_address == 0) || (t6_address == 0) ||
 		(len > (sizeof(buff) - PDS_HEADER_OFFSET - 1))) {
-		THP_LOG_ERR("project ID address or size check fail,read len=%d\n", len);
+		THP_LOG_ERR("%s: condition check fail, read len = %u\n",
+			__func__, len);
 		return ret;
 	}
 	do {
@@ -720,15 +926,16 @@ static int thp_ssl_update_obj_addr(struct thp_device *tdev)
 
 	curr_size = MXT_OBJECT_START;
 
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, 0, curr_size,
-				(u8 *)&mxtinfo, 0);
+	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+		CHIP_IDENTIFIED_START_ADDR, curr_size,
+		(u8 *)&mxtinfo, OVERRIDE_LIMIT_VALUE);
 	if (ret_val) {
 		THP_LOG_ERR("mxt_read_blks--info block reading error\n");
 		return -EINVAL;
 	}
 
 	curr_size += mxtinfo.object_num * sizeof(struct mxt_object) +
-			MXT_INFO_CHECKSUM_SIZE;
+		MXT_INFO_CHECKSUM_SIZE;
 	buff = (u8 *)kzalloc(curr_size, GFP_KERNEL);
 	if (buff == NULL) {
 		THP_LOG_ERR("%s:buff alloc faild\n", __func__);
@@ -736,7 +943,7 @@ static int thp_ssl_update_obj_addr(struct thp_device *tdev)
 	}
 
 	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
-				MXT_OBJECT_START, curr_size, buff, 0);
+		MXT_OBJECT_START, curr_size, buff, OVERRIDE_LIMIT_VALUE);
 
 	if (ret_val) {
 		THP_LOG_ERR("mxt_read_blks--info block reading error\n");
@@ -750,7 +957,7 @@ static int thp_ssl_update_obj_addr(struct thp_device *tdev)
 		le16_to_cpus(&object->start_address);
 		thp_ssl_update_addr(object);
 	}
-	THP_LOG_INFO("t117_address updated [%d]\n", t117_address);
+
 	tdev->thp_core->frame_data_addr = t117_address;
 	THP_LOG_INFO("%s:frame_data_addr %d\n", __func__,
 			tdev->thp_core->frame_data_addr);
@@ -770,11 +977,57 @@ static int mxt_power_init(struct thp_device *tdev)
 		return -EINVAL;
 	}
 	ret = thp_power_supply_get(THP_VCC);
-	ret |= thp_power_supply_get(THP_IOVDD);
 	if (ret)
-		THP_LOG_ERR("%s: fail to get power\n", __func__);
-
+		THP_LOG_ERR("%s: failed to get vcc\n", __func__);
+	ret = thp_power_supply_get(THP_IOVDD);
+	if (ret)
+		THP_LOG_ERR("%s: failed to get vddio\n", __func__);
 	return 0;
+}
+
+static int mxt_power_on_for_mxt3662(struct thp_device *tdev)
+{
+	int ret;
+
+	if (tdev == NULL) {
+		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		return -EINVAL;
+	}
+	gpio_direction_output(tdev->gpios->cs_gpio, GPIO_HIGH);
+	THP_LOG_INFO("%s call cs high\n", __func__);
+	gpio_direction_output(tdev->gpios->rst_gpio, GPIO_HIGH);
+	THP_LOG_INFO("%s call reset high\n", __func__);
+
+	gpio_direction_output(tdev->gpios->rst_gpio, GPIO_LOW);
+	THP_LOG_INFO("%s call reset low\n", __func__);
+	thp_do_time_delay(tdev->timing_config.boot_reset_low_delay_ms);
+	THP_LOG_INFO("%s call delay %dms\n", __func__,
+		tdev->timing_config.boot_reset_low_delay_ms);
+
+	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_ON, 0); /* 0ms */
+	if (ret)
+		THP_LOG_ERR("%s:power on ctrl vcc failed\n", __func__);
+
+	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_ON, 0); /* 0ms */
+	if (ret)
+		THP_LOG_ERR("%s:power on ctrl vddio failed\n", __func__);
+
+	thp_do_time_delay(tdev->timing_config.boot_vddio_on_after_delay_ms);
+	THP_LOG_INFO("%s call delay %dms\n", __func__,
+		tdev->timing_config.boot_vddio_on_after_delay_ms);
+
+	THP_LOG_INFO("%s pull up tp ic reset\n", __func__);
+	gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
+	thp_do_time_delay(tdev->timing_config.boot_reset_hi_delay_ms);
+	THP_LOG_INFO("%s call delay %dms\n", __func__,
+		tdev->timing_config.boot_reset_hi_delay_ms);
+	return ret;
+}
+
+static void mxt_power_release(void)
+{
+	thp_power_supply_put(THP_VCC);
+	thp_power_supply_put(THP_IOVDD);
 }
 
 static int mxt_power_on(struct thp_device *tdev)
@@ -787,10 +1040,12 @@ static int mxt_power_on(struct thp_device *tdev)
 	}
 	gpio_direction_output(tdev->gpios->rst_gpio, GPIO_LOW);
 	mdelay(1);
-	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_ON, 1);
-	ret |= thp_power_supply_ctrl(THP_VCC, THP_POWER_ON, 1);
+	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_ON, 1); /* 1ms */
 	if (ret)
-		THP_LOG_ERR("%s:power on ctrl fail\n", __func__);
+		THP_LOG_ERR("%s:power on ctrl vddio failed\n", __func__);
+	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_ON, 1); /* 1ms */
+	if (ret)
+		THP_LOG_ERR("%s:power on ctrl vcc failed\n", __func__);
 	THP_LOG_INFO("%s pull up tp ic reset\n", __func__);
 	gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
 	return ret;
@@ -807,22 +1062,198 @@ static int mxt_power_off(struct thp_device *tdev)
 	THP_LOG_INFO("%s pull down tp ic reset\n", __func__);
 	gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
 	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_OFF, 0);
-	ret |= thp_power_supply_ctrl(THP_VCC, THP_POWER_OFF, 1);
 	if (ret)
-		THP_LOG_ERR("%s:power off ctrl fail\n", __func__);
+		THP_LOG_ERR("%s:power off ctrl vddio failed\n", __func__);
+	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_OFF, 1); /* 1ms */
+	if (ret)
+		THP_LOG_ERR("%s:power off ctrl vcc failed\n", __func__);
 	return ret;
+}
+
+#define BOOTLOADER_MODE_STATUS 0xC0
+#define BOOTLOADER_NEXT_FRAME_STATUS 0xC0
+#define APP_MODE_CMD_LEN 2
+static int set_bootloader_to_normal_mode(
+	struct thp_device *tdev)
+{
+	u8 status_byte;
+	int ret;
+	/* app mode cmd */
+	u8 appmode_sequence[APP_MODE_CMD_LEN] = { 0x00, 0x00 };
+
+	THP_LOG_INFO("%s call\n", __func__);
+	/*
+	 * Try to kick the device out of bootloader mode
+	 * Do another bootloader read (ensure 0xE0 state
+	 * rather than 0x60)
+	 */
+	ret = mxt_bootloader_read(tdev, tdev->thp_core->sdev, &status_byte, 1);
+	if (ret)
+		THP_LOG_INFO("%s:bootloader read failed\n", __func__);
+	THP_LOG_INFO("%s:status_byte = %d\n", __func__, status_byte);
+	if ((status_byte & BOOTLOADER_MODE_STATUS) == BOOTLOADER_MODE_STATUS) {
+		/* Reset the device into application mode */
+		ret = mxt_bootloader_write(tdev, tdev->thp_core->sdev,
+			appmode_sequence, APP_MODE_CMD_LEN);
+		if (ret)
+			THP_LOG_INFO("%s:bootloader write failed\n", __func__);
+		/* delay 1.2s for bootloader mode at 0x60 */
+		msleep(1200);
+	}
+	THP_LOG_INFO("%s call end\n", __func__);
+	return ret;
+}
+
+static int mxt_is_support_ic_type(const struct mxt_info *mxtinfo)
+{
+	if (((mxtinfo->family_id == MXT680U2_FAMILY_ID) &&
+		(mxtinfo->variant_id == MXT680U2_VARIANT_ID)) ||
+		((mxtinfo->family_id == MXT3562_FAMILY_ID) &&
+		(mxtinfo->variant_id == MXT3562_VARIANT_ID)) ||
+		((mxtinfo->family_id == MXT3662_FAMILY_ID) &&
+		(mxtinfo->variant_id == MXT3662_VARIANT_ID)))
+		return true;
+	else
+		return false;
+}
+
+#define SUPPORT_IC_TYPE 1
+#define IS_BOOTLOADE_MODE 0
+#define NOT_SSL_DEVICE (-1)
+static int mxt_check_boot_mode(struct thp_device *tdev,
+	struct mxt_info *mxtinfo)
+{
+	int ret_val;
+	u8 status_byte = 0;
+
+	if (mxt_is_support_ic_type(mxtinfo)) {
+		THP_LOG_INFO("%s: support ic,unnecessary check boot mode\n",
+			__func__);
+		return SUPPORT_IC_TYPE;
+	}
+	THP_LOG_ERR("%s:chip is not identified, try to check bootloader mode\n",
+		__func__);
+	if (mxt_check_is_bootloader(tdev)) {
+		if (tdev->thp_core->support_vendor_ic_type == MXT3662) {
+			ret_val = set_bootloader_to_normal_mode(tdev);
+			if (ret_val)
+				THP_LOG_ERR("%s:set_bootloader_to_normal_mode failed\n",
+					__func__);
+			ret_val = mxt_bootloader_read(tdev,
+				tdev->thp_core->sdev,
+				&status_byte, 1); /* 1: status_byte len */
+			if (ret_val)
+				THP_LOG_INFO("%s:bootloader read failed\n",
+					__func__);
+			THP_LOG_INFO("%s status_byte = %u\n", __func__,
+				status_byte);
+			if (status_byte == BOOTLOADER_CRC_ERROR_CODE ||
+				status_byte == BOOTLOADER_WAITING_CMD_MODE_1) {
+				/* 1: bootloader mode flag */
+				is_bootloader_mode = 1;
+				/* set default value */
+				t117_address = SSL_SYNC_DATA_REG_DEFAULT_ADDR;
+				return IS_BOOTLOADE_MODE;
+			}
+		} else {
+			/* 1: bootloader mode flag */
+			is_bootloader_mode = 1;
+			/* set default value */
+			t117_address = SSL_SYNC_DATA_REG_DEFAULT_ADDR;
+			return IS_BOOTLOADE_MODE;
+		}
+	}
+	THP_LOG_ERR("chip is not identified return no dev\n");
+	ret_val = mxt_power_off(tdev);
+	if (ret_val)
+		THP_LOG_ERR("%s:power_off failed\n", __func__);
+	mxt_power_release();
+	return NOT_SSL_DEVICE;
+}
+
+static void mxt_chip_identified(struct thp_device *tdev,
+	struct mxt_info *mxtinfo)
+{
+	int ret_val;
+	int retry_time = READ_ID_RETRY_TIMES;
+
+	THP_LOG_INFO("%s call\n", __func__);
+	do {
+		ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+			CHIP_IDENTIFIED_START_ADDR,
+			sizeof(*mxtinfo), (u8 *)mxtinfo, OVERRIDE_LIMIT_VALUE);
+		if (ret_val) {
+			THP_LOG_ERR("%s:read device ID failed\n", __func__);
+			continue;
+		}
+		if (mxt_is_support_ic_type(mxtinfo)) {
+			THP_LOG_INFO("%s: Chip is identified OK %d, %d\n",
+				__func__, mxtinfo->family_id,
+				mxtinfo->variant_id);
+			break;
+		}
+		THP_LOG_INFO("%s:retry time is %d\n", __func__, retry_time);
+	} while (retry_time-- > 0);
+	THP_LOG_INFO("%s call end\n", __func__);
+}
+
+static int mxt_read_obj_addr(struct thp_device *tdev,
+	size_t curr_size, const struct mxt_info *mxtinfo)
+{
+	int ret_val;
+	int i;
+	u8 *buff = NULL;
+	struct mxt_object *object = NULL;
+	struct mxt_object *object_table = NULL;
+
+	THP_LOG_INFO("%s call\n", __func__);
+
+	curr_size += mxtinfo->object_num * sizeof(*object) +
+		MXT_INFO_CHECKSUM_SIZE;
+	buff = (u8 *)kzalloc(curr_size, GFP_KERNEL);
+	if (buff == NULL) {
+		THP_LOG_ERR("%s:buff alloc failed\n", __func__);
+		ret_val = -ENOMEM;
+		goto error_free;
+	}
+	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+		MXT_OBJECT_START, curr_size, buff, OVERRIDE_LIMIT_VALUE);
+	if (ret_val) {
+		THP_LOG_ERR("%s:info block reading error\n", __func__);
+		goto error_free;
+	}
+	object_table = (struct mxt_object *)(buff);
+	for (i = 0; i < mxtinfo->object_num; i++) {
+		object = object_table + i;
+		/*
+		 * object start_address from little endian
+		 * to local CPU endianness **IN PLACE**
+		 * IMPORTANT: this is only for the first
+		 * loop through the object table
+		 */
+		le16_to_cpus(&object->start_address);
+		thp_ssl_update_addr(object);
+	}
+	/* 0:invalid addr */
+	if (t117_address == 0) {
+		t117_address = SSL_SYNC_DATA_REG_DEFAULT_ADDR;
+		THP_LOG_ERR("%s: get t117 reg failed, set to default\n",
+			__func__);
+	}
+	tdev->thp_core->frame_data_addr = t117_address;
+	THP_LOG_INFO("%s:tui_tp_addr %d\n", __func__,
+		tdev->thp_core->frame_data_addr);
+error_free:
+	kfree(buff);
+	THP_LOG_INFO("%s call end\n", __func__);
+	return ret_val;
 }
 
 static int thp_ssl_chip_detect(struct thp_device *tdev)
 {
 	int ret_val;
-	int i;
 	struct mxt_info mxtinfo;
-	u8 *buff = NULL;
 	size_t curr_size;
-	struct mxt_object *object_table = NULL;
-	int retry_time = READ_ID_RETRY_TIMES;
-	struct mxt_object *object = NULL;
 
 	if (tdev == NULL) {
 		THP_LOG_ERR("%s: tdev is  null\n", __func__);
@@ -832,95 +1263,72 @@ static int thp_ssl_chip_detect(struct thp_device *tdev)
 	THP_LOG_INFO("%s: called\n", __func__);
 	ret_val = mxt_power_init(tdev);
 	if (ret_val)
-		THP_LOG_ERR("mxt_power_init fails\n");
+		THP_LOG_ERR("%s:mxt_power_init failed\n", __func__);
 	curr_size = MXT_OBJECT_START;
-	ret_val = mxt_power_on(tdev);
+
+	if (tdev->thp_core->support_vendor_ic_type == MXT3662)
+		ret_val = mxt_power_on_for_mxt3662(tdev);
+	else
+		ret_val = mxt_power_on(tdev);
+
 	if (ret_val)
-		THP_LOG_ERR("mxt_power_on fails\n");
+		THP_LOG_ERR("%s:mxt_power_on failed\n", __func__);
 
 	thp_do_time_delay(tdev->timing_config.boot_reset_after_delay_ms);
-
-	do {
-		ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, 0,
-					sizeof(mxtinfo), (u8 *)&mxtinfo, 0);
-
-		if (ret_val) {
-			THP_LOG_ERR("mxt_read_blks info- read device ID fails\n");
-			continue;
-		}
-
-		if ((mxtinfo.family_id != MXT680U2_FAMILY_ID) ||
-			(mxtinfo.variant_id != MXT680U2_VARIANT_ID)) {
-			THP_LOG_ERR("%s: chip is not identified %d, %d\n",
-				__func__, mxtinfo.family_id, mxtinfo.variant_id);
-			THP_LOG_INFO("retry time is %d\n", retry_time);
-		} else {
-			THP_LOG_INFO("%s: Chip is identified OK!!! %d, %d\n",
-				__func__, mxtinfo.family_id, mxtinfo.variant_id);
-		}
-
-	} while ((retry_time-- > 0) &&
-		(mxtinfo.family_id != MXT680U2_FAMILY_ID));
-
-
-	if ((mxtinfo.family_id != MXT680U2_FAMILY_ID) ||
-		(mxtinfo.variant_id != MXT680U2_VARIANT_ID)) {
-		if (mxt_check_is_bootloader(tdev)) {
-			is_bootloader_mode = 1;
-			t117_address = SSL_SYNC_DATA_REG_DEFALUT_ADDR; // set default value
-			return 0;
-		}
-		THP_LOG_ERR("chip is not identified, try to check bootloader mode\n");
-		return -ENODEV;
+	mxt_chip_identified(tdev, &mxtinfo);
+	ret_val = mxt_check_boot_mode(tdev, &mxtinfo);
+	/* 0:bootloader mode,-ENODEV: no device ,need return */
+	if (ret_val == NOT_SSL_DEVICE) {
+		thp_ssl_exit(tdev);
+		return ret_val;
 	}
-
-	curr_size += mxtinfo.object_num * sizeof(struct mxt_object) +
-			MXT_INFO_CHECKSUM_SIZE;
-	buff = (u8 *)kzalloc(curr_size, GFP_KERNEL);
-
-	if (buff == NULL) {
-		THP_LOG_ERR("%s:buff  alloc faild\n", __func__);
-		ret_val = -ENOMEM;
-		goto error_free;
+	if (ret_val == IS_BOOTLOADE_MODE) {
+		THP_LOG_INFO("%s:bootloader mode,update fw\n", __func__);
+		return ret_val;
 	}
+	ret_val = mxt_read_obj_addr(tdev, curr_size, &mxtinfo);
+	if (ret_val)
+		THP_LOG_ERR("%s:read obj addr failed\n", __func__);
+	THP_LOG_INFO("%s call end\n", __func__);
+	return ret_val;
+}
+
+#define T117_HEADER_DATA_READ_LEN 13
+#define T117_PAYLOAD_LEN_MSB_OFFSET 11
+#define T117_PAYLOAD_LEN_LSB_OFFSET 12
+static int thp_ssl_get_frame_for_mxt3662(
+	struct thp_device *tdev, char *buf)
+{
+	int ret_val;
+	unsigned int payload_len;
+
+	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, t117_address,
+		T117_HEADER_DATA_READ_LEN, buf, 0);
+	if (ret_val)
+		THP_LOG_ERR("%s:read len failed\n", __func__);
+	payload_len = (buf[T117_PAYLOAD_LEN_MSB_OFFSET] << MOVE_8BIT);
+	payload_len |= buf[T117_PAYLOAD_LEN_LSB_OFFSET];
+	THP_LOG_DEBUG("%s:T117 2stage SPI Read payload len %d %x %x\n",
+		__func__, payload_len, buf[T117_PAYLOAD_LEN_MSB_OFFSET],
+		buf[T117_PAYLOAD_LEN_LSB_OFFSET]);
 	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
-				MXT_OBJECT_START, curr_size, buff, 0);
-	if (ret_val) {
-		THP_LOG_ERR("mxt_read_blks--info block reading error\n");
-		goto error_free;
-	}
+		t117_address + T117_HEADER_DATA_READ_LEN, payload_len,
+		(buf + T117_HEADER_DATA_READ_LEN),
+		T117_BYTES_READ_LIMIT);
+	if (ret_val)
+		THP_LOG_ERR("%s:read frame failed\n", __func__);
 
-	object_table = (struct mxt_object *)(buff);
-	for (i = 0; i < mxtinfo.object_num; i++) {
-		object = object_table + i;
-		// object start_address from little endian to local CPU
-		// endianness **IN PLACE**
-		// IMPORTANT: this is only for the first loop through
-		// the object table
-		le16_to_cpus(&object->start_address);
-		thp_ssl_update_addr(object);
-	}
-
-	if (t117_address == 0) {
-		t117_address = SSL_SYNC_DATA_REG_DEFALUT_ADDR;
-		THP_LOG_ERR("Got t117_address fails, set to default value %d\n",
-			t117_address);
-	}
-
-	tdev->thp_core->frame_data_addr = t117_address;
-	THP_LOG_INFO("%s tui_tp_addr %d\n", __func__,
-		tdev->thp_core->frame_data_addr);
-
-error_free:
-	kfree(buff);
 	return ret_val;
 }
 
 static int thp_ssl_get_frame(struct thp_device *tdev, char *buf, unsigned int len)
 {
 	int ret_val;
+	struct thp_core_data *cd = NULL;
 
-	if ((tdev == NULL) || (buf == NULL)) {
+	if ((tdev == NULL) || (buf == NULL) ||
+		(tdev->thp_core == NULL) ||
+		(tdev->thp_core->sdev == NULL)) {
 		THP_LOG_INFO("%s: input dev or buf null\n", __func__);
 		return -ENOMEM;
 	}
@@ -929,10 +1337,14 @@ static int thp_ssl_get_frame(struct thp_device *tdev, char *buf, unsigned int le
 		THP_LOG_INFO("%s: read len illegal\n", __func__);
 		return -ENOMEM;
 	}
+	cd = tdev->thp_core;
+	if (cd->support_vendor_ic_type == MXT3662)
+		return thp_ssl_get_frame_for_mxt3662(tdev, buf);
 	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, t117_address, len,
 				buf, T117_BYTES_READ_LIMIT);
 	return ret_val;
 }
+
 static int thp_ssl_set_screen_off_mode(struct thp_device *tdev)
 {
 	int ret_val;
@@ -993,7 +1405,7 @@ static int thp_ssl_get_active_idle_timer(struct thp_device *tdev,
 	*dozing_time = (buf[4] << MOVE_24BIT) | (buf[5] << MOVE_16BIT) |
 			(buf[6] << MOVE_8BIT) | buf[7];
 
-	THP_LOG_INFO("%s: Active time[%d], Dozing time[%d]\n", __func__,
+	THP_LOG_INFO("%s: Active time%d, Dozing time %d\n", __func__,
 		*active_time, *dozing_time);
 	return ret_val;
 }
@@ -1004,7 +1416,6 @@ static int thp_ssl_resume(struct thp_device *tdev)
 	uint32_t active_time = 0;
 	uint32_t dozing_time = 0;
 
-	THP_LOG_INFO("%s: called\n", __func__);
 	if (tdev == NULL) {
 		THP_LOG_ERR("%s: tdev is  null\n", __func__);
 		return -EINVAL;
@@ -1013,7 +1424,7 @@ static int thp_ssl_resume(struct thp_device *tdev)
 		gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
 		mdelay(tdev->timing_config.resume_reset_after_delay_ms);
 		gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
-	} else if (g_thp_udfp_stauts ||
+	} else if (g_thp_udfp_status || tdev->thp_core->support_ring_feature ||
 		(tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE)) {
 		THP_LOG_INFO("get_active_idle_timer\n");
 		ret = thp_ssl_get_active_idle_timer(tdev, &active_time,
@@ -1031,7 +1442,10 @@ static int thp_ssl_resume(struct thp_device *tdev)
 		mdelay(tdev->timing_config.resume_reset_after_delay_ms);
 		gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
 	} else {
-		ret = mxt_power_on(tdev);
+		if (tdev->thp_core->support_vendor_ic_type == MXT3662)
+			ret = mxt_power_on_for_mxt3662(tdev);
+		else
+			ret = mxt_power_on(tdev);
 	}
 	THP_LOG_INFO("%s: called end\n", __func__);
 	return ret;
@@ -1046,7 +1460,7 @@ static int thp_ssl_after_resume(struct thp_device *tdev)
 		THP_LOG_ERR("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
-	if (!g_thp_udfp_stauts)
+	if (!g_thp_udfp_status)
 		thp_do_time_delay(tdev->timing_config.boot_reset_after_delay_ms);
 	return ret;
 }
@@ -1054,7 +1468,7 @@ static int thp_ssl_after_resume(struct thp_device *tdev)
 static int pt_mode_set(struct thp_device *tdev)
 {
 	int ret;
-	u8 t7_active[SSL_T7_COMMAMD_LEN] = { 8, 8 }; // pt station cmd
+	u8 t7_active[SSL_T7_COMMAMD_LEN] = { 8, 8 }; /* pt station cmd */
 
 	if (tdev == NULL) {
 		THP_LOG_ERR("%s: tdev null\n", __func__);
@@ -1077,21 +1491,19 @@ static int thp_ssl_suspend(struct thp_device *tdev)
 {
 	int ret = -EINVAL;
 
-	THP_LOG_INFO("%s: called\n", __func__);
-
 	if (tdev == NULL) {
 		THP_LOG_ERR("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
-
-	g_thp_udfp_stauts = thp_get_status(THP_STAUTS_UDFP);
-
+	g_thp_udfp_status = thp_get_status(THP_STATUS_UDFP);
+	THP_LOG_INFO("%s: called udfp_status = %u\n",
+		__func__, g_thp_udfp_status);
 	if (is_pt_test_mode(tdev)) {
 		THP_LOG_INFO("%s: suspend PT mode\n", __func__);
 		ret = pt_mode_set(tdev);
 		if (ret != 0)
 			THP_LOG_ERR("Failed to send T7 always active command\n");
-	} else if (g_thp_udfp_stauts ||
+	} else if (g_thp_udfp_status || tdev->thp_core->support_ring_feature ||
 		(tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE)) {
 		if (tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) {
 			THP_LOG_INFO("%s TS_GESTURE_MODE\n", __func__);
@@ -1112,8 +1524,6 @@ static int thp_ssl_suspend(struct thp_device *tdev)
 	THP_LOG_INFO("%s: called end\n", __func__);
 	return ret;
 }
-
-
 
 static void thp_ssl_exit(struct thp_device *tdev)
 {
@@ -1214,7 +1624,7 @@ int thp_ssl_check_gesture_event(struct thp_device *tdev,
 		return -ENOMEM;
 	}
 
-	THP_LOG_INFO("[%s]\n", __func__);
+	THP_LOG_INFO("%s\n", __func__);
 	/* wait spi bus resume */
 	msleep(SSL_WAIT_FOR_SPI_BUS_RESUMED_DELAY);
 	for (i = 0; i < GESTRUE_EVENT_RETRY_TIME; i++) {
@@ -1242,7 +1652,7 @@ int thp_ssl_check_gesture_event(struct thp_device *tdev,
 			}
 			mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
 		} else {
-			THP_LOG_ERR("NO gesture event found status[%x, %x]\n",
+			THP_LOG_ERR("NO gesture event found status %x,%x\n",
 				buffer[T117_HEADER_STATUS_OFFSET],
 				buffer[T117_HEADER_STATUS_OFFSET + 1]);
 			thp_ssl_check_screen_off_mode(tdev);
@@ -1276,7 +1686,7 @@ static int ssl_wakeup_gesture_enable_switch(struct thp_device *tdev,
 			(t24_ctrl & (~T24_GESTURE_ON_MASK));
 		ret_val |= mxt_write_blks(tdev, tdev->thp_core->sdev,
 					t24_address, 1, &t24_ctrl);
-		THP_LOG_INFO("[%s] t24_ctrl-> 0x%x|switch_value = %d\n",
+		THP_LOG_INFO("%s t24_ctrl is 0x%x,switch_value is %d\n",
 				__func__, t24_ctrl, switch_value);
 		if (ret_val == 0)
 			break;
@@ -1312,6 +1722,70 @@ static int ssl_gesture_report(struct thp_device *tdev,
 	return 0;
 }
 
+#define BOOT_HEAD_LEN 4
+#define READ_BOOT_HEAD_COUNT 5
+static int ssl_spi_transfer_one_byte_bootloader(struct thp_device *tdev,
+	const char * const tx_buf, char * const rx_buf,
+	const unsigned int buf_len)
+{
+	register unsigned int idx;
+	struct spi_message msg;
+	struct spi_device *sdev = NULL;
+	struct spi_transfer *xfer = NULL;
+	int rc;
+	int i;
+
+	if ((!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev) ||
+		(!tx_buf) || (!rx_buf) || (!buf_len)) {
+		THP_LOG_ERR("%s: point null\n", __func__);
+		return -EINVAL;
+	}
+	sdev = tdev->thp_core->sdev;
+	if (tdev->thp_core->suspended) {
+		THP_LOG_ERR("%s - suspended\n", __func__);
+		return 0;
+	}
+
+	xfer = kzalloc(buf_len * sizeof(*xfer), GFP_KERNEL);
+	if (xfer == NULL) {
+		THP_LOG_INFO("%s -> zalloc failed\n", __func__);
+		return -EIO;
+	}
+	spi_message_init(&msg);
+	/* Solomon firmware upgrade process is very special 1:use ssl mxt3662 only */
+	if (tdev->thp_core->support_vendor_ic_type == MXT3662) {
+		for (idx = 0; idx < READ_BOOT_HEAD_COUNT; idx++) {
+			xfer[idx].tx_buf = &tx_buf[idx];
+			xfer[idx].rx_buf = &rx_buf[idx];
+			if ((idx == BOOT_HEAD_LEN) &&
+				(buf_len > READ_BOOT_HEAD_COUNT))
+				xfer[idx].len = buf_len - BOOT_HEAD_LEN;
+			else
+				xfer[idx].len = 1;
+			xfer[idx].delay_usecs =
+				tdev->timing_config.spi_transfer_delay_us;
+			spi_message_add_tail(&xfer[idx], &msg);
+		}
+	} else {
+		for (i = 0; i < buf_len; i++) {
+			xfer[i].tx_buf = &tx_buf[i];
+			xfer[i].rx_buf = &rx_buf[i];
+			xfer[i].len = 1;
+			xfer[i].delay_usecs = DELAY_AFTER_NINE_BYTE;
+			spi_message_add_tail(&xfer[i], &msg);
+		}
+	}
+	rc = thp_bus_lock();
+	if (rc < 0) {
+		THP_LOG_ERR("%s:get lock failed:%d\n", __func__, rc);
+		kfree(xfer);
+		return rc;
+	}
+	rc = thp_spi_sync(sdev, &msg);
+	thp_bus_unlock();
+	kfree(xfer);
+	return rc;
+}
 
 struct thp_device_ops ssl_dev_ops = {
 	.init = thp_ssl_init,
@@ -1327,12 +1801,15 @@ struct thp_device_ops ssl_dev_ops = {
 	.chip_wakeup_gesture_enable_switch = ssl_wakeup_gesture_enable_switch,
 	.chip_wrong_touch = ssl_wrong_touch,
 	.chip_gesture_report = ssl_gesture_report,
+	.spi_transfer_one_byte_bootloader =
+		ssl_spi_transfer_one_byte_bootloader,
 };
 
 static int __init thp_ssl_module_init(void)
 {
 	int rc;
 	struct thp_device *dev = NULL;
+	struct thp_core_data *cd = thp_get_core_data();
 
 	THP_LOG_INFO("%s: called\n", __func__);
 	dev = kzalloc(sizeof(struct thp_device), GFP_KERNEL);
@@ -1351,7 +1828,15 @@ static int __init thp_ssl_module_init(void)
 
 	dev->ic_name = SSL_IC_NAME;
 	dev->ops = &ssl_dev_ops;
-
+	if (cd && cd->fast_booting_solution) {
+		thp_send_detect_cmd(dev, NO_SYNC_TIMEOUT);
+		/*
+		 * The thp_register_dev will be called later to complete
+		 * the real detect action.If it fails, the detect function will
+		 * release the resources requested here.
+		 */
+		return 0;
+	}
 	rc = thp_register_dev(dev);
 	if (rc) {
 		THP_LOG_ERR("%s: register fail\n", __func__);

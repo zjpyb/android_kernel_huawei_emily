@@ -116,8 +116,13 @@ static ssize_t st_i2c_wr_store(struct device *dev, struct device_attribute *attr
 	unsigned int data[8] = {0};
 	memset(data, 0x00, ARRAY_SIZE(data));
 	memset(info->cmd_wr_result, 0x00, ARRAY_SIZE(info->cmd_wr_result));
-	sscanf(buf, "%x %x %x %x %x %x %x %x ", (data+7), (data),(data+1),(data+2),(data+3),(data+4),(data+5),(data+6));
-
+	ret = sscanf(buf, "%x %x %x %x %x %x %x %x\n",
+		(data+7), (data), (data+1), (data+2),
+		(data+3), (data+4), (data+5), (data+6));
+	if (ret <= 0) {
+		TS_LOG_INFO("sscanf return invaild :%d\n", ret);
+		return -EINVAL;
+	}
 	byte_count = data[7];
 
 	/*if(sizeof(buf) != byte_count )
@@ -229,7 +234,13 @@ static ssize_t st_i2c_read_store(struct device *dev, struct device_attribute *at
 	byte_count_read = 0;
 	memset(data, 0x00, ARRAY_SIZE(data));
 	memset(info->cmd_read_result, 0x00, ARRAY_SIZE(info->cmd_read_result));
-	sscanf(buf, "%x %x %x %x %x %x %x %x ", (data+7), (data),(data+1),(data+2),(data+3),(data+4),(data+5),(data+6));
+	ret = sscanf(buf, "%x %x %x %x %x %x %x %x\n",
+		(data+7), (data), (data+1), (data+2),
+		(data+3), (data+4), (data+5), (data+6));
+	if (ret <= 0) {
+		TS_LOG_INFO("sscanf return invaild :%d\n", ret);
+		ret = -EINVAL;
+	}
 	byte_count = data[7];
 
 
@@ -302,7 +313,11 @@ static ssize_t st_i2c_write_store(struct device *dev, struct device_attribute *a
 	memset(data, 0x00, ARRAY_SIZE(data));
 	memset(pAddress_i2c, 0x00, ARRAY_SIZE(pAddress_i2c));
 	memset(info->cmd_write_result, 0x00, ARRAY_SIZE(info->cmd_write_result));
-	sscanf(buf, "%u %u", data ,(data + 1));
+	ret =  sscanf(buf, "%u %u", data, (data + 1));
+	if (ret <= 0) {
+		TS_LOG_INFO("sscanf return invaild :%d\n", ret);
+		return -EINVAL;
+	}
 	byte_count = data[0] << 8 | data[1];
 
 	if(byte_count <= ARRAY_SIZE(pAddress_i2c)){
@@ -312,13 +327,18 @@ static ssize_t st_i2c_write_store(struct device *dev, struct device_attribute *a
 			snprintf(info->cmd_write_result, sizeof(info->cmd_write_result), "{Write NOT OK}\n");
 		}*/
 		for(i=0; i < (byte_count);i++){
-			sscanf(&buf[3*(i+2)] , "%u ", (data+i));
+			ret = sscanf(&buf[3*(i+2)], "%u", (data+i));
+			if (ret <= 0) {
+				TS_LOG_INFO("sscanf return invaild :%d\n", ret);
+				return -EINVAL;
+			}
 		}
 	}else{
 #ifdef DEBUG
 		printk("%s : message size is more than allowed limit of 512 bytes\n",__func__);
 #endif
 		snprintf(info->cmd_write_result, sizeof(info->cmd_write_result), "{Write NOT OK}\n");
+		return -EINVAL;
 	}
 #ifdef DEBUG
 	printk(" \n");

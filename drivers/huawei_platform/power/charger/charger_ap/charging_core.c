@@ -1,15 +1,20 @@
 /*
- * drivers/power/huawei_charger/charging_core.c
+ * charging_core.c
  *
- *huawei charging core driver
+ * charging_core driver
  *
- * Copyright (C) 2012-2015 HUAWEI, Inc.
- * Author: HUAWEI, Inc.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
- * This package is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -28,6 +33,7 @@
 #endif
 #include <huawei_platform/power/battery_voltage.h>
 #include <huawei_platform/power/huawei_battery_temp.h>
+#include <charging_core_debug.h>
 
 #define HWLOG_TAG charging_core
 HWLOG_REGIST();
@@ -38,7 +44,6 @@ static u32 BASP_VOL_SEGMENT_PARA[BASP_PARA_LEVEL][BASP_VOL_SEGMENT_COLUMN - 1];
 
 static int vdpm_first_run = FIRST_RUN_TRUE;
 static int sbatt_running_first = 1;
-static int ccafc_run_status = CCAFC_RUN_DEFAULT;
 
 /**********************************************************
 *  Function:       stop_charging_core_config
@@ -50,7 +55,6 @@ void stop_charging_core_config(void)
 {
 	hwlog_info("%s\n",__func__);
 	vdpm_first_run = FIRST_RUN_TRUE;
-	ccafc_run_status = CCAFC_RUN_DEFAULT;
 }
 
 /**********************************************************
@@ -434,12 +438,6 @@ static void charge_core_sbatt_handler(int vbat,
 		return;
 	}
 
-	/*if support ccafc policy, not execute sbatt handler*/
-	if (is_ccafc_supported(&ccafc_run_status) == TRUE &&
-		ccafc_run_status != CCAFC_RUN_DEFAULT) {
-		return;
-	}
-
 	switch (data->segment_type) {
 	case SEGMENT_TYPE_BY_VBAT_ICHG:
 		hwlog_debug("case = SEGMENT_TYPE_BY_VBAT_ICHG. \n");
@@ -507,6 +505,34 @@ static void charge_core_protect_inductance_handler(int cbat,
 }
 /*lint -restore*/
 
+static void charge_core_soh_handler(struct charge_core_data *data)
+{
+	int fcc = hisi_battery_fcc_design();
+	int ichg_spec = 0;
+
+	hwlog_info("before, ichg:%d, vterm:%d, segment:%d\n",
+		data->ichg, data->vterm, segment_flag);
+
+	if (data->vterm_basp > 0)
+		data->vterm = data->vterm <= data->vterm_basp ?
+			data->vterm : data->vterm_basp;
+
+	if (data->ichg_bsoh > 0)
+		data->ichg = data->ichg <= data->ichg_bsoh ?
+			data->ichg : data->ichg_bsoh;
+	if ((segment_flag > 0) && (fcc > 0)) {
+		ichg_spec = fcc * MAX_BATT_CHARGE_CUR_RATIO /
+			BASP_PARA_SCALE;
+		data->ichg = data->ichg <= ichg_spec ?
+			data->ichg : ichg_spec;
+	}
+
+	hwlog_info("after, ichg:%d, vterm:%d,"
+		"ichg_bsoh:%d, ichg_spec:%d, vterm_basp:%d\n",
+		data->ichg, data->vterm, data->ichg_bsoh, ichg_spec,
+		data->vterm_basp);
+}
+
 /* apply battery aging safe policy */
 static void charge_core_safe_policy_handler(struct charge_core_data *data)
 {
@@ -516,12 +542,12 @@ static void charge_core_safe_policy_handler(struct charge_core_data *data)
     int ret = 0, change = 0;
     unsigned int tmp_ratio = 0;
 
-    ret = hisi_battery_aging_safe_policy(&asp);
-    if (ret)
-    {
-        hwlog_err(BASP_TAG"[%s], get basp fail, ret:%d!\n", __func__, ret);
-        return;
-    }
+	ret = hisi_battery_aging_safe_policy(&asp);
+	if (ret) {
+		charge_core_soh_handler(data);
+		return;
+	}
+
     if (asp.nondc_volt_dec != prev_asp.nondc_volt_dec || asp.cur_ratio != prev_asp.cur_ratio || asp.learned_fcc != prev_asp.learned_fcc)
     {
         change = 1;
@@ -631,86 +657,6 @@ static void charge_core_basp_policy_handler(struct charge_core_data *data)
     }
 }
 
-static void charge_core_ccafc_handler(int vbat, struct charge_core_data *data)
-{
-	int i;
-	static int last_i;
-	static int stage_change_flag;
-	struct ccafc_charge_pattern charge_pattern;
-	int ichg = -hisi_battery_current();
-
-	if (fcp_get_stage_status() != FCP_STAGE_SUCESS &&
-		fcp_get_stage_status() != FCP_STAGE_RESET_ADAPTOR) {
-		return;
-	}
-
-#ifdef CONFIG_TCPC_CLASS
-	if(pd_dpm_get_high_power_charging_status() != true) {
-		return;
-	}
-#endif
-
-	memset(&charge_pattern, 0, sizeof(charge_pattern));
-
-	if (is_ccafc_supported(&ccafc_run_status) == FALSE ||
-		get_ccafc_pattern(&charge_pattern) == FALSE ||
-		get_ccafc_sample_status() == TRUE) {
-		return;
-	}
-
-	if (ccafc_run_status == CCAFC_RUN_DEFAULT) {
-		ccafc_run_status = CCAFC_RUN_FIRST;
-		data->vterm = VTERM_MAX_DEFAULT_MV;
-		hwlog_info("%s: sbatt handler running, reset data->vterm to %d\n",
-					__func__, data->vterm);
-		return;
-	}
-	sbatt_running_first = 1;
-	segment_flag = 0;
-
-	/* choose index of ccafc charge pattern */
-	for (i = 0; i < CCAFC_PATTERN_SIZE; i++) {
-		if (vbat < charge_pattern.ccafc_voltage[i]) {
-			break;
-		}
-	}
-	hwlog_info("%s: compare voltage, ichg = %d, vbat = %d, last_i = %d, i = %d\n",
-				__func__, ichg, vbat, last_i, i);
-
-	if (i == CCAFC_PATTERN_SIZE) {
-		i = i - 1;
-	}
-
-	if (stage_change_flag == 1) {
-		i = last_i;
-		stage_change_flag = 0;
-		hwlog_info("%s: charging stage change completed, i = %d\n", __func__, i);
-	}
-
-	if (last_i == i || ccafc_run_status == CCAFC_RUN_FIRST) {
-		data->ichg = data->ichg < (unsigned int)charge_pattern.ccafc_current[i]
-                             ? data->ichg : (unsigned int)charge_pattern.ccafc_current[i];
-	} else {
-		if (last_i < i) {
-			data->ichg = 100;//set charge current to 100mA when stage changing
-			i = last_i + 1;
-			stage_change_flag = 1;
-			hwlog_info("%s: change charging stage from last_i = %d to i = %d\n",
-                                    __func__, last_i, i);
-		} else {
-			i = last_i;
-			data->ichg = data->ichg < (unsigned int)charge_pattern.ccafc_current[i]
-						? data->ichg : (unsigned int)charge_pattern.ccafc_current[i];
-		}
-	}
-
-	last_i = i;
-	ccafc_run_status = CCAFC_RUN_ALREADY;
-
-	hwlog_info("%s: selected i = %d, data->ichg = %d, ccafc_current[%d] = %d, data->vterm = %d\n",
-			__func__, i, data->ichg, i, charge_pattern.ccafc_current[i], data->vterm);
-}
-
 /**********************************************************
 *  Function:       charge_core_get_params
 *  Discription:    update update the charge parameters
@@ -730,16 +676,61 @@ struct charge_core_data *charge_core_get_params(void)
 		return NULL;
 	}
 
-	huawei_battery_temp_with_comp(BAT_TEMP_MIXED, &tbatt);
-	charge_core_tbatt_handler(vbatt, tbatt, di->temp_para, &di->data);
+	huawei_battery_temp_now(BAT_TEMP_MIXED, &tbatt);
+	if (hisi_coul_ntc_fitted_iqr())
+		charge_core_tbatt_handler(vbatt, tbatt, di->ntc_fit_temp_para,
+			&di->data);
+	else
+		charge_core_tbatt_handler(vbatt, tbatt, di->temp_para, &di->data);
 	charge_core_vbatt_handler(vbatt, di->volt_para, &di->data);
 	charge_core_vdpm_handler(cbatt,vbatt,di->vdpm_para,&di->data);
 	charge_core_sbatt_handler(vbatt,di->segment_para,&di->data);
-	charge_core_ccafc_handler(vbatt, &di->data);
 	charge_core_protect_inductance_handler(cbatt,di->inductance_para,&di->data);
 	charge_core_basp_policy_handler(&di->data);
 
 	return &di->data;
+}
+
+static void charge_core_ntc_fitted_battery_data(struct charge_core_info *di)
+{
+	int i;
+	int row_num;
+	struct chrg_para_lut *p_batt_data = NULL;
+
+	if (!di) {
+		hwlog_err("%s: di NULL\n", __func__);
+		return;
+	}
+
+	if (!hisi_coul_ntc_fit_supported())
+		return;
+
+	p_batt_data = hisi_coul_ntc_fit_temp_data();
+	if (!p_batt_data) {
+		hwlog_err("%s: fitted_tamp_data NULL\n", __func__);
+		return;
+	}
+
+	row_num = p_batt_data->temp_len / TEMP_PARA_TOTAL;
+	for (i = 0; i < row_num; i++) {
+		di->ntc_fit_temp_para[i].temp_min =
+			p_batt_data->temp_data[i][TEMP_PARA_TEMP_MIN];
+		di->ntc_fit_temp_para[i].temp_max =
+			p_batt_data->temp_data[i][TEMP_PARA_TEMP_MAX];
+		di->ntc_fit_temp_para[i].iin_temp =
+			p_batt_data->temp_data[i][TEMP_PARA_IIN];
+		di->ntc_fit_temp_para[i].ichg_temp =
+			p_batt_data->temp_data[i][TEMP_PARA_ICHG];
+		di->ntc_fit_temp_para[i].vterm_temp =
+			p_batt_data->temp_data[i][TEMP_PARA_VTERM];
+		di->ntc_fit_temp_para[i].temp_back =
+			p_batt_data->temp_data[i][TEMP_PARA_TEMP_BACK];
+
+		if (di->ntc_fit_temp_para[i].iin_temp == -1)
+			di->ntc_fit_temp_para[i].iin_temp =  di->data.iin_max;
+		if (di->ntc_fit_temp_para[i].ichg_temp == -1)
+			di->ntc_fit_temp_para[i].ichg_temp = di->data.ichg_max;
+	}
 }
 
 /**********************************************************
@@ -752,6 +743,8 @@ static int charge_core_battery_data(struct charge_core_info *di)
 {
 	int i;
 	struct chrg_para_lut *p_batt_data = NULL;
+
+	charge_core_ntc_fitted_battery_data(di);
 
 	p_batt_data = hisi_battery_charge_params();
 	if (NULL == p_batt_data) {
@@ -1056,7 +1049,7 @@ static int charging_core_parse_iterm(struct charge_core_info *di, struct device_
 {
 	int ret, i, array_len;
 	int iterm = 0;
-	const char *outstring;
+	const char *outstring = NULL;
 	char *batt_brand = hisi_battery_brand();
 	char buff[BATT_BRAND_STRING_MAX] = {0};
 
@@ -1177,6 +1170,15 @@ static int charge_core_parse_dts(struct device_node *np,
 		return -EINVAL;
 	}
 	hwlog_debug("ichg_nonstd = %d\n", di->data.ichg_nonstd);
+
+	/* normal charge current for abnormal scp adaptor */
+	if (of_property_read_u32(np, "iin_nor_scp", &di->data.iin_nor_scp))
+		di->data.iin_nor_scp = di->data.iin_ac;
+	hwlog_debug("iin_nor_scp = %d\n", di->data.iin_nor_scp);
+	if (of_property_read_u32(np, "ichg_nor_scp", &di->data.ichg_nor_scp))
+		di->data.ichg_nor_scp = di->data.ichg_ac;
+	hwlog_debug("ichg_nor_scp = %d\n", di->data.ichg_nor_scp);
+
 	/*Charging Downstream Port */
 	ret = of_property_read_u32(np, "iin_bc_usb", &(di->data.iin_bc_usb));
 	if (ret) {
@@ -1356,6 +1358,10 @@ static int charge_core_parse_dts(struct device_node *np,
 	if (di->data.ichg_wireless > di->data.ichg_max)
 		di->data.ichg_max = di->data.ichg_wireless;
 #endif
+	di->data.iin_max = di->data.iin_nor_scp > di->data.iin_max ?
+		di->data.iin_nor_scp : di->data.iin_max;
+	di->data.ichg_max = di->data.ichg_nor_scp > di->data.ichg_max ?
+		di->data.ichg_nor_scp : di->data.ichg_max;
 	hwlog_info("iin_max = %d mA,ichg_max %d mA\n", di->data.iin_max, di->data.ichg_max);
 	return 0;
 }
@@ -1402,6 +1408,7 @@ static int charge_core_probe(struct platform_device *pdev)
 		goto err_batt;
 	}
 
+	charging_core_dbg_register(di);
 	hwlog_info("charging core probe ok!\n");
 	return 0;
 err_batt:
@@ -1491,3 +1498,4 @@ module_exit(charge_core_exit);
 MODULE_AUTHOR("HUAWEI");
 MODULE_DESCRIPTION("charging core module driver");
 MODULE_LICENSE("GPL");
+

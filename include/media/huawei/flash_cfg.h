@@ -15,6 +15,7 @@
 #define CFG_FLASH_GET_FLASH_NAME	2
 #define CFG_FLASH_GET_FLASH_STATE	3
 #define CFG_FLASH_SET_POSITION		4 //use for mix flash
+#define CFG_FLASH_GET_FLASH_TYPE	5
 
 typedef enum {
 	STANDBY_MODE=0,
@@ -29,7 +30,8 @@ typedef enum {
 
 typedef enum {
 	LED_FLASH = 0,
-	XEON_FLASH,
+	XEON_FLASH = 1,
+	IR_FLASH = 2,
 } flash_type;
 
 struct flash_i2c_reg {

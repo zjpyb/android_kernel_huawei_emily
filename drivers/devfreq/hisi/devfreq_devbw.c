@@ -50,6 +50,7 @@ struct dev_data {
 	struct vote_reg hw_vote;
 	cpumask_t cpus;
 	spinlock_t vote_spinlock;
+	bool suspended;		/* if suspended do not set freq and votefreq */
 	struct devfreq *df;
 	struct devfreq_dev_profile dp;
 };
@@ -74,7 +75,7 @@ void set_hw_vote_reg(struct vote_reg *hw_vote, unsigned long value)
 
 void set_dev_freq(struct dev_data *d, unsigned long new_freq)
 {
-	if (new_freq == d->cur_dev_freq)
+	if (new_freq == d->cur_dev_freq || d->suspended == true)
 		return ;
 
 	set_hw_vote_reg(&d->hw_vote, new_freq);
@@ -90,7 +91,7 @@ void set_dev_votefreq(struct device *dev, unsigned long new_freq)
 	spin_lock(&d->vote_spinlock);
 	find_freq(&d->dp, &freq, 0);
 
-	if (freq == d->cur_dev_freq) {
+	if (freq == d->cur_dev_freq || d->suspended == true) {
 		spin_unlock(&d->vote_spinlock);
 		return ;
 	}
@@ -162,14 +163,14 @@ static int get_mask_from_dev_handle(struct platform_device *pdev,
 					cpumask_t *mask)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *dev_phandle;
-	struct device *cpu_dev;
+	struct device_node *dev_phandle = NULL;
+	struct device *cpu_dev = NULL;
 	int cpu, i = 0;
 	int ret = -ENOENT;
 
 	dev_phandle = of_parse_phandle(dev->of_node, "hisi,cpulist", i++);
 	while (dev_phandle) {
-		for_each_possible_cpu(cpu) {
+		for_each_possible_cpu(cpu) { //lint !e574
 			cpu_dev = get_cpu_device(cpu);
 			if (cpu_dev && cpu_dev->of_node == dev_phandle) {
 				cpumask_set_cpu(cpu, mask);
@@ -190,14 +191,14 @@ static int get_mask_from_dev_handle(struct platform_device *pdev,
 int devfreq_add_devbw(struct platform_device *pdev)
 {
 	struct device *dev=&pdev->dev;
-	struct dev_data *d;
-	struct devfreq_dev_profile *p;
-	u32 *data;
-	const char *gov_name;
+	struct dev_data *d = NULL;
+	struct devfreq_dev_profile *p = NULL;
+	u32 *data = NULL;
+	const char *gov_name = NULL;
 	int ret, len, i;
 	u32 temp[2] = {0}, reg_mask = 0, rsb = 0;
-	void __iomem *reg_base;
-	struct vote_reg *hw_vote;
+	void __iomem *reg_base = NULL;
+	struct vote_reg *hw_vote = NULL;
 	const char *name_str = NULL;
 
 	reg_base = of_iomap(dev->of_node, 0);
@@ -229,6 +230,7 @@ int devfreq_add_devbw(struct platform_device *pdev)
 	}
 
 	spin_lock_init(&d->vote_spinlock);
+	d->suspended = false;
 
 	hw_vote = &d->hw_vote;
 	if (of_property_read_u32_array(dev->of_node, "hisi,vote-reg",
@@ -343,16 +345,23 @@ int devfreq_suspend_devbw(struct device *dev)
 
 	spin_lock(&d->vote_spinlock);
 	set_dev_freq(d, freq);
+	d->suspended = true;
 	spin_unlock(&d->vote_spinlock);
 
-	return devfreq_suspend_device(d->df);
+	return 0;
 }
 
 int devfreq_resume_devbw(struct device *dev)
 {
 	struct dev_data *d = dev_get_drvdata(dev);
-	return devfreq_resume_device(d->df);
+
+	spin_lock(&d->vote_spinlock);
+	d->suspended = false;
+	spin_unlock(&d->vote_spinlock);
+
+	return 0;
 }
+static SIMPLE_DEV_PM_OPS(devfreq_devbw_pm, devfreq_suspend_devbw, devfreq_resume_devbw);
 
 static int devfreq_devbw_probe(struct platform_device *pdev)
 {
@@ -375,6 +384,7 @@ static struct platform_driver devbw_driver = {
 	.remove = devfreq_devbw_remove,
 	.driver = {
 		.name = "devbw",
+		.pm = &devfreq_devbw_pm,
 		.of_match_table = match_table,
 		.owner = THIS_MODULE,
 	},

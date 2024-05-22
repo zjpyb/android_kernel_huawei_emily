@@ -240,6 +240,9 @@ static struct tcp_congestion_ops mptcp_wvegas __read_mostly = {
 	.init		= mptcp_wvegas_init,
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= mptcp_wvegas_cong_avoid,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	.undo_cwnd	= tcp_reno_undo_cwnd,
+#endif
 	.pkts_acked	= mptcp_wvegas_pkts_acked,
 	.set_state	= mptcp_wvegas_state,
 	.cwnd_event	= mptcp_wvegas_cwnd_event,

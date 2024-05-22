@@ -1,12 +1,23 @@
 /*
- * drivers/antenna_board_match/antenna_board_adc_match.h
+ * antenna_board_adc_match.h
  *
- * huawei antenna board match driver
+ * Antenna boardid detect driver header file which use adc.
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
 
-#ifndef _ANTENNA_BOARD_ADC_MATCH
-#define _ANTENNA_BOARD_ADC_MATCH
+#ifndef KERNEL_INCLUDE_ANTENNA_BOARD_ADC_MATCH
+#define KERNEL_INCLUDE_ANTENNA_BOARD_ADC_MATCH
 #include <linux/device.h>
 
 #define DEFAULT_ANTENNA_BOARD_ADC_CHANNEL (7)

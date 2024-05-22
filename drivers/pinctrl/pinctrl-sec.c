@@ -33,8 +33,7 @@
 #include "core.h"
 #include "pinconf.h"
 #include "pinctrl-sec.h"
-#include "../hisi/tzdriver/libhwsecurec/securec.h"
-
+#include <securec.h>
 #include <asm/compiler.h>
 
 #define DRIVER_NAME			"pinctrl-sec"
@@ -299,7 +298,7 @@ static int pinctrl_sec_get_groups_count(struct pinctrl_dev *pctldev)
 static char *pinctrl_sec_get_group_name(struct pinctrl_dev *pctldev,
 					unsigned gselector)
 {
-	struct pinctrl_sec_device *pinctrl_sec;
+	struct pinctrl_sec_device *pinctrl_sec = NULL;
 	struct pinctrl_sec_pingroup *group;
 
 	pinctrl_sec = pinctrl_dev_get_drvdata(pctldev);
@@ -324,7 +323,7 @@ static int pinctrl_sec_get_group_pins(struct pinctrl_dev *pctldev,
 					const unsigned **pins,
 					unsigned *npins)
 {
-	struct pinctrl_sec_device *pinctrl_sec;
+	struct pinctrl_sec_device *pinctrl_sec = NULL;
 	struct pinctrl_sec_pingroup *group;
 
 	pinctrl_sec = pinctrl_dev_get_drvdata(pctldev);
@@ -375,7 +374,7 @@ static int pinctrl_sec_get_functions_count(struct pinctrl_dev *pctldev)
 static const char *pinctrl_sec_get_function_name(struct pinctrl_dev *pctldev,
 						unsigned fselector)
 {
-	struct pinctrl_sec_device *pinctrl_sec;
+	struct pinctrl_sec_device *pinctrl_sec = NULL;
 	struct pinctrl_sec_function *func;
 
 	pinctrl_sec = pinctrl_dev_get_drvdata(pctldev);
@@ -394,7 +393,7 @@ static int pinctrl_sec_get_function_groups(struct pinctrl_dev *pctldev,
 					const char * const **groups,
 					unsigned * const ngroups)
 {
-	struct pinctrl_sec_device *pinctrl_sec;
+	struct pinctrl_sec_device *pinctrl_sec = NULL;
 	struct pinctrl_sec_function *func;
 
 	pinctrl_sec = pinctrl_dev_get_drvdata(pctldev);
@@ -415,7 +414,7 @@ static int pinctrl_sec_get_function(struct pinctrl_dev *pctldev, unsigned pin,
 {
 	struct pinctrl_sec_device *pinctrl_sec = pinctrl_dev_get_drvdata(pctldev);
 	struct pin_desc *pdesc = pin_desc_get(pctldev, pin);
-	const struct pinctrl_setting_mux *setting;
+	const struct pinctrl_setting_mux *setting = NULL;
 	unsigned fselector;
 
 	if(!pdesc){
@@ -439,8 +438,8 @@ static int pinctrl_sec_get_function(struct pinctrl_dev *pctldev, unsigned pin,
 static int pinctrl_sec_set_mux(struct pinctrl_dev *pctldev, unsigned fselector,
 	unsigned group)
 {
-	struct pinctrl_sec_device *pinctrl_sec;
-	struct pinctrl_sec_function *func;
+	struct pinctrl_sec_device *pinctrl_sec = NULL;
+	struct pinctrl_sec_function *func = NULL;
 	int i, pin_id;
 
 	pinctrl_sec = pinctrl_dev_get_drvdata(pctldev);
@@ -513,11 +512,11 @@ static int pinctrl_sec_pinconf_set(struct pinctrl_dev *pctldev,
 				unsigned num_configs)
 {
 	struct pinctrl_sec_device *pinctrl_sec = pinctrl_dev_get_drvdata(pctldev);
-	struct pinctrl_sec_function *func;
+	struct pinctrl_sec_function *func = NULL;
 	unsigned shift = 0, i, data = 0, sec_mask = 0;
 	u16 arg;
 	int j, pin_id, ret;
-	char *name;
+	char *name = NULL;
 
 	ret = pinctrl_sec_get_function(pctldev, pin, &func);
 	if (ret)
@@ -575,7 +574,7 @@ static int pinctrl_sec_pinconf_group_set(struct pinctrl_dev *pctldev,
 				unsigned group, unsigned long *configs,
 				unsigned num_configs)
 {
-	const unsigned *pins;
+	const unsigned *pins = NULL;
 	unsigned npins;
 	int i, ret;
 
@@ -623,8 +622,8 @@ static const struct pinconf_ops pinctrl_sec_pinconf_ops = {
 static int pinctrl_sec_add_pin(struct pinctrl_sec_device *pinctrl_sec, unsigned offset,
 		unsigned pin_pos)
 {
-	struct pinctrl_pin_desc *pin;
-	struct pinctrl_sec_name *pn;
+	struct pinctrl_pin_desc *pin = NULL;
+	struct pinctrl_sec_name *pn = NULL;
 	int i;
 	int ret;
 
@@ -922,8 +921,9 @@ static int pinctrl_sec_parse_pinconf(struct pinctrl_sec_device *pinctrl_sec, str
 {
 	struct pinctrl_map *m = *map;
 	int i, nconfs = 0;
-	unsigned long *settings, *s;
-	struct pinctrl_sec_conf_vals *conf;
+	unsigned long *settings = NULL;
+	unsigned long *s = NULL;
+	struct pinctrl_sec_conf_vals *conf = NULL;
 	struct pinctrl_sec_conf_type prop2[] = {
 		{ "pinctrl-single,drive-strength", PIN_CONFIG_DRIVE_STRENGTH, },
 		{ "pinctrl-single,slew-rate", PIN_CONFIG_SLEW_RATE, },
@@ -1007,10 +1007,10 @@ static int pinctrl_sec_parse_one_pinctrl_entry(struct pinctrl_sec_device *pinctr
 						unsigned *num_maps,
 						const char **pgnames)
 {
-	struct pinctrl_sec_func_vals *vals;
-	const __be32 *mux;
-	int size, rows, *pins, index = 0, found = 0, res = -ENOMEM;
-	struct pinctrl_sec_function *function;
+	struct pinctrl_sec_func_vals *vals = NULL;
+	const __be32 *mux = NULL;
+	int size, rows, *pins = NULL, index = 0, found = 0, res = -ENOMEM;
+	struct pinctrl_sec_function *function = NULL;
 
 	mux = of_get_property(np, PCS_MUX_PINS_NAME, &size);
 	if ((!mux) || (size < (int)sizeof(*mux) * 2)) {
@@ -1095,11 +1095,11 @@ static int pinctrl_sec_parse_bits_in_pinctrl_entry(struct pinctrl_sec_device *pi
 						unsigned *num_maps,
 						const char **pgnames)
 {
-	struct pinctrl_sec_func_vals *vals;
-	const __be32 *mux;
-	int size, rows, *pins, index = 0, found = 0, res = -ENOMEM;
+	struct pinctrl_sec_func_vals *vals = NULL;
+	const __be32 *mux = NULL;
+	int size, rows, *pins = NULL, index = 0, found = 0, res = -ENOMEM;
 	int npins_in_row;
-	struct pinctrl_sec_function *function;
+	struct pinctrl_sec_function *function = NULL;
 
 	mux = of_get_property(np, PCS_MUX_BITS_NAME, &size);
 
@@ -1224,7 +1224,7 @@ static int pinctrl_sec_dt_node_to_map(struct pinctrl_dev *pctldev,
 				struct device_node *np_config,
 				struct pinctrl_map **map, unsigned *num_maps)
 {
-	struct pinctrl_sec_device *pinctrl_sec;
+	struct pinctrl_sec_device *pinctrl_sec = NULL;
 	const char **pgnames;
 	int ret;
 
@@ -1277,7 +1277,8 @@ free_map:
  */
 static void pinctrl_sec_free_funcs(struct pinctrl_sec_device *pinctrl_sec)
 {
-	struct list_head *pos, *tmp;
+	struct list_head *pos = NULL;
+	struct list_head *tmp = NULL;
 	int i;
 
 	mutex_lock(&pinctrl_sec->mutex);
@@ -1304,7 +1305,8 @@ static void pinctrl_sec_free_funcs(struct pinctrl_sec_device *pinctrl_sec)
  */
 static void pinctrl_sec_free_pingroups(struct pinctrl_sec_device *pinctrl_sec)
 {
-	struct list_head *pos, *tmp;
+	struct list_head *pos = NULL;
+	struct list_head *tmp = NULL;
 	int i;
 
 	mutex_lock(&pinctrl_sec->mutex);
@@ -1390,7 +1392,7 @@ static int pinctrl_sec_add_gpio_func(struct device_node *node, struct pinctrl_se
 	const char *propname = "pinctrl-single,gpio-range";
 	const char *cellname = "#pinctrl-single,gpio-range-cells";
 	struct of_phandle_args gpiospec;
-	struct pinctrl_sec_gpiofunc_range *range;
+	struct pinctrl_sec_gpiofunc_range *range = NULL;
 	int ret, i;
 
 	for (i = 0; ; i++) {
@@ -1419,10 +1421,10 @@ static int pinctrl_sec_add_gpio_func(struct device_node *node, struct pinctrl_se
 static int pinctrl_sec_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
-	const struct of_device_id *match;
-	struct resource *res;
-	struct pinctrl_sec_device *pinctrl_sec;
-	const struct pinctrl_sec_soc_data *soc;
+	const struct of_device_id *match = NULL;
+	struct resource *res = NULL;
+	struct pinctrl_sec_device *pinctrl_sec = NULL;
+	const struct pinctrl_sec_soc_data *soc = NULL;
 	int ret;
 	match = of_match_device(pinctrl_sec_of_match, &pdev->dev);
 	if (!match)
@@ -1564,7 +1566,6 @@ module_exit(pinctrl_sec_exit);
 /*lint -e528 +esym(528,*)*/
 
 /*lint -e753 -esym(753,*)*/
-MODULE_AUTHOR("w00347785<tony@atomide.com>");
 MODULE_DESCRIPTION("One-register-per-pin type device tree based pinctrl driver");
 MODULE_LICENSE("GPL v2");
 /*lint -e753 +esym(753,*)*/

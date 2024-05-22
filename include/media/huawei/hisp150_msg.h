@@ -1,4 +1,13 @@
-
+/**
+* @copyright    Copyright (c) 2014- Hisilicon Technologies CO., Ltd.
+* @file         hisp150_msg.h
+* @brief        Header file
+*
+* @version      1.0
+* @date         2016-03-26 15:24:09
+* @author
+* @change       initial draft
+*/
 
 
 #ifndef HISP150_MSG_H_INCLUDED

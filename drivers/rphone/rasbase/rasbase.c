@@ -875,25 +875,6 @@ void ras_sleep(unsigned long long ms)
 		udelay(ms * 1000);
 }
 
-static unsigned long
-ras_mktime(unsigned int year, unsigned int mon,
-	   unsigned int day, unsigned int hour,
-	   unsigned int min, unsigned int sec)
-{
-	int mon_temp = mon - 2;
-
-	if (0 >= mon_temp) {
-		mon_temp += 12;
-		year -= 1;
-	}
-
-	return ((((unsigned long)(year / 4 - year / 100
-		+ year / 400 + 367 * mon_temp/12 + day) + year*365 - 719499)*24
-		+ hour	/* now have hours */
-		) * 60 + min	/* now have minutes */
-		) * 60 + sec;	/* finally seconds */
-}
-
 int ras_check(void)
 {
 	char path[] = "/mnt/.pipe_androidfire/check_license";

@@ -61,6 +61,7 @@
 *****************************************************************************/
 #define    THIS_FILE_ID                 PS_FILE_ID_AT_CMD_IMS_PROC_C
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 /*****************************************************************************
   2 全局变量定义
@@ -5457,6 +5458,7 @@ VOS_UINT32 AT_RcvImsaImpuInd(VOS_VOID * pMsg)
 
     return VOS_OK;
 }
+#endif
 
 
 VOS_UINT32 At_SetEflociInfoPara(VOS_UINT8 ucIndex)
@@ -5946,6 +5948,7 @@ VOS_UINT32 AT_RcvImsaImsIpCapQryCnf(
 }
 
 
+#if(FEATURE_LTE == FEATURE_ON)
 
 LOCAL VOS_UINT32 AT_CheckCacdcPara(VOS_VOID)
 {
@@ -6162,6 +6165,7 @@ VOS_UINT32 AT_SetErrcCapQryPara(VOS_UINT8 ucIndex)
 
     return AT_ERROR;
 }
+#endif
 
 
 

@@ -3,7 +3,7 @@
  *
  * vbus channel driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,16 +16,9 @@
  *
  */
 
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/device.h>
-#include <linux/kernel.h>
-#include <linux/kobject.h>
-#include <linux/slab.h>
-
+#include <huawei_platform/power/vbus_channel/vbus_channel.h>
 #include <linux/power/hisi/hisi_bci_battery.h>
 #include <huawei_platform/log/hw_log.h>
-#include <huawei_platform/power/vbus_channel/vbus_channel.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -36,7 +29,7 @@ HWLOG_REGIST();
 
 static struct vbus_ch_dev *g_vbus_ch_dev;
 
-static const char * const vbus_ch_user_table[] = {
+static const char * const vbus_ch_user_table[VBUS_CH_USER_END] = {
 	[VBUS_CH_USER_WIRED_OTG] = "wired_otg",
 	[VBUS_CH_USER_WR_TX] = "wireless_tx",
 	[VBUS_CH_USER_DC] = "direct_charger",
@@ -44,9 +37,10 @@ static const char * const vbus_ch_user_table[] = {
 	[VBUS_CH_USER_AUDIO] = "audio",
 };
 
-static const char * const vbus_ch_type_table[] = {
+static const char * const vbus_ch_type_table[VBUS_CH_TYPE_END] = {
 	[VBUS_CH_TYPE_CHARGER] = "charger",
 	[VBUS_CH_TYPE_BOOST_GPIO] = "boost_gpio",
+	[VBUS_CH_TYPE_POGOPIN_BOOST] = "pogopin_boost",
 };
 
 static int vbus_ch_check_user(unsigned int index)
@@ -54,7 +48,7 @@ static int vbus_ch_check_user(unsigned int index)
 	if ((index >= VBUS_CH_USER_BEGIN) && (index < VBUS_CH_USER_END))
 		return 0;
 
-	hwlog_err("invalid user(%d)\n", index);
+	hwlog_err("invalid user=%d\n", index);
 	return -EINVAL;
 }
 
@@ -63,7 +57,7 @@ static int vbus_ch_check_type(unsigned int index)
 	if ((index >= VBUS_CH_TYPE_BEGIN) && (index < VBUS_CH_TYPE_END))
 		return 0;
 
-	hwlog_err("invalid type(%d)\n", index);
+	hwlog_err("invalid type=%d\n", index);
 	return -EINVAL;
 }
 
@@ -76,7 +70,7 @@ static int vbus_ch_get_type(const char *str)
 			return i;
 	}
 
-	hwlog_err("invalid type_str(%s)\n", str);
+	hwlog_err("invalid type_str=%s\n", str);
 	return -EINVAL;
 }
 
@@ -85,7 +79,7 @@ static const char *vbus_ch_get_user_name(unsigned int index)
 	if ((index >= VBUS_CH_USER_BEGIN) && (index < VBUS_CH_USER_END))
 		return vbus_ch_user_table[index];
 
-	return "illegal user";
+	return "invalid user";
 }
 
 static const char *vbus_ch_get_type_name(unsigned int index)
@@ -93,7 +87,7 @@ static const char *vbus_ch_get_type_name(unsigned int index)
 	if ((index >= VBUS_CH_TYPE_BEGIN) && (index < VBUS_CH_TYPE_END))
 		return vbus_ch_type_table[index];
 
-	return "illegal type";
+	return "invalid type";
 }
 
 static struct vbus_ch_dev *vbus_ch_get_dev(void)
@@ -121,7 +115,7 @@ static struct vbus_ch_ops *vbus_ch_get_ops(unsigned int user,
 	}
 
 	if (!g_vbus_ch_dev->p_ops[type]) {
-		hwlog_err("p_ops is null(%d)\n", type);
+		hwlog_err("type=%d p_ops is null\n", type);
 		return NULL;
 	}
 
@@ -130,9 +124,8 @@ static struct vbus_ch_ops *vbus_ch_get_ops(unsigned int user,
 
 static int vbus_ch_init_dev_data(void)
 {
-	struct vbus_ch_dev *l_dev = NULL;
+	struct vbus_ch_dev *l_dev = vbus_ch_get_dev();
 
-	l_dev = vbus_ch_get_dev();
 	if (!l_dev)
 		return -EINVAL;
 
@@ -162,7 +155,7 @@ int vbus_ch_ops_register(struct vbus_ch_ops *ops)
 	g_vbus_ch_dev->total_ops++;
 	g_vbus_ch_dev->support_type |= (1 << type);
 
-	hwlog_info("total_ops(%d) type(%d:%s) ops register ok\n",
+	hwlog_info("total_ops=%d type=%d:%s ops register ok\n",
 		g_vbus_ch_dev->total_ops, type, ops->type_name);
 
 	return 0;
@@ -170,9 +163,8 @@ int vbus_ch_ops_register(struct vbus_ch_ops *ops)
 
 int vbus_ch_open(unsigned int user, unsigned int type, int flag)
 {
-	struct vbus_ch_ops *l_ops = NULL;
+	struct vbus_ch_ops *l_ops = vbus_ch_get_ops(user, type);
 
-	l_ops = vbus_ch_get_ops(user, type);
 	if (!l_ops)
 		return -EINVAL;
 
@@ -181,7 +173,7 @@ int vbus_ch_open(unsigned int user, unsigned int type, int flag)
 		return -EINVAL;
 	}
 
-	hwlog_info("(%s:%s)open\n",
+	hwlog_info("user=%s type=%s open\n",
 		vbus_ch_get_user_name(user),
 		vbus_ch_get_type_name(type));
 
@@ -190,9 +182,8 @@ int vbus_ch_open(unsigned int user, unsigned int type, int flag)
 
 int vbus_ch_close(unsigned int user, unsigned int type, int flag, int force)
 {
-	struct vbus_ch_ops *l_ops = NULL;
+	struct vbus_ch_ops *l_ops = vbus_ch_get_ops(user, type);
 
-	l_ops = vbus_ch_get_ops(user, type);
 	if (!l_ops)
 		return -EINVAL;
 
@@ -201,7 +192,7 @@ int vbus_ch_close(unsigned int user, unsigned int type, int flag, int force)
 		return -EINVAL;
 	}
 
-	hwlog_info("(%s:%s)close\n",
+	hwlog_info("user=%s type=%s close\n",
 		vbus_ch_get_user_name(user),
 		vbus_ch_get_type_name(type));
 
@@ -210,10 +201,9 @@ int vbus_ch_close(unsigned int user, unsigned int type, int flag, int force)
 
 int vbus_ch_get_state(unsigned int user, unsigned int type, int *state)
 {
-	struct vbus_ch_ops *l_ops = NULL;
+	struct vbus_ch_ops *l_ops = vbus_ch_get_ops(user, type);
 
-	l_ops = vbus_ch_get_ops(user, type);
-	if (!l_ops)
+	if (!l_ops || !state)
 		return -EINVAL;
 
 	if (!l_ops->get_state) {
@@ -221,38 +211,33 @@ int vbus_ch_get_state(unsigned int user, unsigned int type, int *state)
 		return -EINVAL;
 	}
 
-	hwlog_info("(%s:%s)get_state\n",
+	hwlog_info("user=%s type=%s get_state\n",
 		vbus_ch_get_user_name(user),
 		vbus_ch_get_type_name(type));
 
 	return l_ops->get_state(user, state);
 }
+EXPORT_SYMBOL_GPL(vbus_ch_get_state);
 
 int vbus_ch_get_mode(unsigned int user, unsigned int type, int *mode)
 {
-	struct vbus_ch_ops *l_ops = NULL;
+	struct vbus_ch_ops *l_ops = vbus_ch_get_ops(user, type);
 
-	l_ops = vbus_ch_get_ops(user, type);
-	if (!l_ops)
+	if (!l_ops || !mode)
 		return -EINVAL;
 
-	if (!l_ops->get_state) {
-		hwlog_err("get_state is null\n");
+	if (!l_ops->get_mode) {
+		hwlog_err("get_mode is null\n");
 		return -EINVAL;
 	}
-
-	hwlog_info("(%s:%s)get_mode\n",
-		vbus_ch_get_user_name(user),
-		vbus_ch_get_type_name(type));
 
 	return l_ops->get_mode(user, mode);
 }
 
 int vbus_ch_set_switch_mode(unsigned int user, unsigned int type, int mode)
 {
-	struct vbus_ch_ops *l_ops = NULL;
+	struct vbus_ch_ops *l_ops = vbus_ch_get_ops(user, type);
 
-	l_ops = vbus_ch_get_ops(user, type);
 	if (!l_ops)
 		return -EINVAL;
 
@@ -261,7 +246,7 @@ int vbus_ch_set_switch_mode(unsigned int user, unsigned int type, int mode)
 		return -EINVAL;
 	}
 
-	hwlog_info("(%s:%s)set_switch_mode\n",
+	hwlog_info("user=%s type=%s set_switch_mode\n",
 		vbus_ch_get_user_name(user),
 		vbus_ch_get_type_name(type));
 
@@ -270,9 +255,8 @@ int vbus_ch_set_switch_mode(unsigned int user, unsigned int type, int mode)
 
 int vbus_ch_set_voltage(unsigned int user, unsigned int type, int volt)
 {
-	struct vbus_ch_ops *l_ops = NULL;
+	struct vbus_ch_ops *l_ops = vbus_ch_get_ops(user, type);
 
-	l_ops = vbus_ch_get_ops(user, type);
 	if (!l_ops)
 		return -EINVAL;
 
@@ -281,7 +265,7 @@ int vbus_ch_set_voltage(unsigned int user, unsigned int type, int volt)
 		return -EINVAL;
 	}
 
-	hwlog_info("(%s:%s)set_voltage\n",
+	hwlog_info("user=%s type=%s set_voltage\n",
 		vbus_ch_get_user_name(user),
 		vbus_ch_get_type_name(type));
 
@@ -290,10 +274,9 @@ int vbus_ch_set_voltage(unsigned int user, unsigned int type, int volt)
 
 int vbus_ch_get_voltage(unsigned int user, unsigned int type, int *volt)
 {
-	struct vbus_ch_ops *l_ops = NULL;
+	struct vbus_ch_ops *l_ops = vbus_ch_get_ops(user, type);
 
-	l_ops = vbus_ch_get_ops(user, type);
-	if (!l_ops)
+	if (!l_ops || !volt)
 		return -EINVAL;
 
 	if (!l_ops->get_voltage) {
@@ -301,7 +284,7 @@ int vbus_ch_get_voltage(unsigned int user, unsigned int type, int *volt)
 		return -EINVAL;
 	}
 
-	hwlog_info("(%s:%s)get_voltage\n",
+	hwlog_info("user=%s type=%s get_voltage\n",
 		vbus_ch_get_user_name(user),
 		vbus_ch_get_type_name(type));
 
@@ -316,7 +299,7 @@ int vbus_ch_get_voltage(unsigned int user, unsigned int type, int *volt)
 }
 
 #define VBUS_CH_SYSFS_FIELD_RO(_name, n) \
-	VBUS_CH_SYSFS_FIELD(_name, n, 0444, NULL)
+	VBUS_CH_SYSFS_FIELD(_name, n, 0440, NULL)
 
 struct vbus_ch_sysfs_field_info {
 	struct device_attribute attr;
@@ -370,11 +353,10 @@ static struct vbus_ch_sysfs_field_info *vbus_ch_sysfs_field_lookup(
 static ssize_t vbus_ch_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct vbus_ch_sysfs_field_info *info = NULL;
-	struct vbus_ch_dev *l_dev = NULL;
 	int len;
+	struct vbus_ch_sysfs_field_info *info = NULL;
+	struct vbus_ch_dev *l_dev = vbus_ch_get_dev();
 
-	l_dev = vbus_ch_get_dev();
 	if (!l_dev)
 		return -EINVAL;
 
@@ -389,9 +371,8 @@ static ssize_t vbus_ch_sysfs_show(struct device *dev,
 		len = scnprintf(buf, VBUS_CH_RD_BUF_SIZE, "%x\n",
 			l_dev->support_type);
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		len = 0;
 		break;
 	}
@@ -404,7 +385,9 @@ static int __init vbus_ch_init(void)
 {
 	int ret;
 	struct vbus_ch_dev *l_dev = NULL;
+#ifdef CONFIG_SYSFS
 	struct class *power_class = NULL;
+#endif /* CONFIG_SYSFS */
 
 	hwlog_info("probe begin\n");
 

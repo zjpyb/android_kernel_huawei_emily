@@ -103,6 +103,39 @@ int is_hisi_fcc_debounce(void)
 }
 
 /*******************************************************
+  Function:        hisi_get_polar_avg
+  Description:     get battery polar avg
+  Input:           NULL
+  Output:          NULL
+  Return:          0: no  other:success
+********************************************************/
+int hisi_get_polar_avg(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/*execute the operation of coul module */
+    HISI_EXEC_COUL_OP(get_polar_avg);
+	return 0;
+}
+
+/*******************************************************
+  Function:        hisi_get_polar_peak
+  Description:    get battery polar peak
+  Input:           NULL
+  Output:          NULL
+  Return:          0: no  other:success
+********************************************************/
+int hisi_get_polar_peak(void)
+{
+	/*declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/*execute the operation of coul module */
+    HISI_EXEC_COUL_OP(get_polar_avg);
+	return 0;
+}
+/*******************************************************
   Function:        hisi_battery_get_qmax
   Description:     get battery qmax
   Input:           NULL
@@ -118,6 +151,34 @@ int hisi_battery_get_qmax(void)
 	HISI_EXEC_COUL_OP(get_qmax);
 	return 0;
 }
+
+int hisi_battery_update_basp_policy(unsigned int level,
+	unsigned int nondc_volt_dec)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	 /* execute the operation of coul module */
+	if (ops && ops->update_basp_policy)
+		return ops->update_basp_policy(level,
+			nondc_volt_dec);
+
+	return -EPERM;
+}
+
+int hisi_battery_get_recrod_fcc(unsigned int size,
+	unsigned int *records)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	 /* execute the operation of coul module */
+	if (ops && ops->get_record_fcc)
+		return ops->get_record_fcc(size, records);
+
+	return -EPERM;
+}
+
 /*******************************************************
   Function:        hisi_coul_set_hltherm_flag
   Description:     set the flag for high or low temperature test
@@ -176,6 +237,88 @@ int is_hisi_battery_exist(void)
 	/*execute the operation of coul module */
 	HISI_EXEC_COUL_OP(is_battery_exist);
 
+	return 0;
+}
+
+/****************************************************************************
+ *  Function:     hisi_coul_ntc_fit_supported
+ *  Description:  check whether ntc fitting support
+ *  Input:        NA
+ *  Output:       NA
+ *  Return:        true: ntc fitting supported
+ *                false: ntc fitting unsupported
+ ****************************************************************************/
+bool hisi_coul_ntc_fit_supported(void)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+	/* execute the operation of coul module */
+	HISI_EXEC_COUL_OP(ntc_fit_supported_iqr);
+	return false;
+}
+
+/****************************************************************************
+ *  Function:     hisi_coul_ntc_fitted_dc_ilim
+ *  Description:  inqury Ibat_limit when ntc fitting happen
+ *  Input:        NA
+ *  Output:       NA
+ *  Return:       ntc_fitted_dc_ilim
+ ****************************************************************************/
+int hisi_coul_ntc_fitted_dc_ilim(void)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+	/* execute the operation of coul module */
+	HISI_EXEC_COUL_OP(ntc_fitted_dc_ilim);
+	return -EINVAL;
+}
+
+/****************************************************************************
+ *  Function:     hisi_coul_ntc_fit_temp_data
+ *  Description:  get temp para for ntc_fitting_temp
+ *  Input:        NA
+ *  Output:       NA
+ *  Return:       temp_para_ntc_fitted
+ ****************************************************************************/
+struct chrg_para_lut *hisi_coul_ntc_fit_temp_data(void)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+	/* execute the operation of coul module */
+	HISI_EXEC_COUL_OP(get_fitted_temp_data);
+	return NULL;
+}
+
+/****************************************************************************
+ *  Function:     hisi_coul_ntc_fitted_iqr
+ *  Description:  check whether temp is calculated by ntc fitting
+ *  Input:        NA
+ *  Output:       NA
+ *  Return:       false:  No
+ *                true :  Yes
+ ****************************************************************************/
+bool hisi_coul_ntc_fitted_iqr(void)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+	/* execute the operation of coul module */
+	HISI_EXEC_COUL_OP(ntc_fitted_iqr);
+	return false;
+}
+
+/****************************************************************************
+ *  Function:     hisi_coul_ntc_fit_case
+ *  Description:  check the case of ntc fitting
+ *  Input:        NA
+ *  Output:       NA
+ *  Return:       ntc fitting case
+ ****************************************************************************/
+int hisi_coul_ntc_fit_case(void)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+	/* execute the operation of coul module */
+	HISI_EXEC_COUL_OP(ntc_fit_case_iqr);
 	return 0;
 }
 
@@ -1042,6 +1185,54 @@ int hisi_coul_cal_uah_by_ocv(int ocv_uv, int *ocv_soc_uAh)
         return ops->cal_uah_by_ocv(ocv_uv, ocv_soc_uAh);
     }
     return -EPERM;
+}
+
+int hisi_coul_get_ocv_by_soc(int temp, int soc)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/* execute the operation of coul module */
+	if (ops && ops->get_ocv_by_soc)
+		return ops->get_ocv_by_soc(temp, soc);
+
+	return -EPERM;
+}
+
+int hisi_coul_get_soc_by_ocv(int temp, int ocv)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/* execute the operation of coul module */
+	if (ops && ops->get_soc_by_ocv)
+		return ops->get_soc_by_ocv(temp, ocv);
+
+	return -EPERM;
+}
+
+int hisi_coul_get_ocv(void)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/* execute the operation of coul module */
+	if (ops && ops->get_ocv)
+		return ops->get_ocv();
+
+	return -EPERM;
+}
+
+int hisi_coul_get_last_powerdown_soc(void)
+{
+	/* declare the local variable of struct hisi_coul_ops */
+	LOCAL_HISI_COUL_OPS();
+
+	/* execute the operation of coul module */
+	if (ops && ops->get_last_powerdown_soc)
+		return ops->get_last_powerdown_soc();
+
+	return -EPERM;
 }
 
 /****************************************************************************

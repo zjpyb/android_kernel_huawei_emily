@@ -53,27 +53,3 @@ void CPS_BufferCopy(volatile uint8_t *dst, volatile uint8_t *src, uint32_t size)
 	memcpy((void*)dst, (void*)src, size);
 }
 
-/* see cps.h */
-uint32_t CPS_InitLock(CPS_LockHandle* lock) {
-  return 0;
-}
-
-/* see cps.h */
-void CPS_FreeLock(CPS_LockHandle lock) {
-}
-
-/* see cps.h */
-uint32_t CPS_ProbeLocks(uint32_t lockCount) {
-  return 0;
-}
-
-/* Since this is a bare-metal system, with no MMU in place, we expect that there will be no cache enabled */
-
-void CPS_CacheInvalidate(uintptr_t address, size_t size, uintptr_t devInfo) {
-	return;
-}
-
-void CPS_CacheFlush(uintptr_t address, size_t size, uintptr_t devInfo) {
-	return;
-}
-

@@ -3,7 +3,7 @@
  *
  * bq25970 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -54,22 +54,22 @@ HWLOG_REGIST();
 static struct bq25970_device_info *g_bq25970_dev;
 
 static int g_get_id_time;
-static int tsbus_high_r_kohm = BQ2597X_RESISTORS_100KOHM;
-static int tsbus_low_r_kohm = BQ2597X_RESISTORS_100KOHM;
-static int switching_frequency = BQ2597X_SW_FREQ_550KHZ;
+static u32 tsbus_high_r_kohm = BQ2597X_RESISTORS_100KOHM;
+static u32 tsbus_low_r_kohm = BQ2597X_RESISTORS_100KOHM;
+static u32 switching_frequency = BQ2597X_SW_FREQ_550KHZ;
 static int bq25970_init_finish_flag = BQ2597X_NOT_INIT;
 static int bq25970_int_notify_enable_flag = BQ2597X_DISABLE_INT_NOTIFY;
 
-#define MSG_LEN                      (2)
+#define MSG_LEN                      2
 
 static int bq25970_write_block(struct bq25970_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[1];
-	int ret = 0;
+	int ret;
 
-	if (di == NULL || value == NULL) {
-		hwlog_err("di is null or value is null\n");
+	if (!di || !di->client || !value) {
+		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
 
@@ -103,11 +103,11 @@ static int bq25970_read_block(struct bq25970_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[MSG_LEN];
-	u8 buf = 0;
-	int ret = 0;
+	u8 buf;
+	int ret;
 
-	if (di == NULL || value == NULL) {
-		hwlog_err("di is null or value is null\n");
+	if (!di || !di->client || !value) {
+		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
 
@@ -162,7 +162,7 @@ static int bq25970_read_byte(u8 reg, u8 *value)
 
 static int bq25970_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = bq25970_read_byte(reg, &val);
@@ -172,15 +172,13 @@ static int bq25970_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 	val &= ~mask;
 	val |= ((value << shift) & mask);
 
-	ret = bq25970_write_byte(reg, val);
-
-	return ret;
+	return bq25970_write_byte(reg, val);
 }
 
 static void bq25970_dump_register(void)
 {
-	u8 i = 0;
-	int ret = 0;
+	u8 i;
+	int ret;
 	u8 val = 0;
 
 	for (i = 0; i < BQ2597X_DEGLITCH_REG; ++i) {
@@ -254,7 +252,7 @@ static int bq25970_discharge(int enable)
 static int bq25970_is_device_close(void)
 {
 	u8 reg = 0;
-	int ret = 0;
+	int ret;
 
 	ret = bq25970_read_byte(BQ2597X_CHRG_CTL_REG, &reg);
 	if (ret)
@@ -269,10 +267,10 @@ static int bq25970_is_device_close(void)
 static int bq25970_get_device_id(void)
 {
 	u8 part_info = 0;
-	int ret = 0;
+	int ret;
 	struct bq25970_device_info *di = g_bq25970_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -295,7 +293,6 @@ static int bq25970_get_device_id(void)
 	case BQ2597X_DEVICE_ID_BQ25970:
 		di->device_id = SWITCHCAP_TI_BQ25970;
 		break;
-
 	default:
 		di->device_id = -1;
 		hwlog_err("switchcap get dev_id fail\n");
@@ -309,9 +306,9 @@ static int bq25970_get_vbat_mv(void)
 {
 	u8 reg_high = 0;
 	u8 reg_low = 0;
-	s16 voltage = 0;
-	int ret = 0;
-	int vbat = 0;
+	s16 voltage;
+	int ret;
+	int vbat;
 
 	ret = bq25970_read_byte(BQ2597X_VBAT_ADC1_REG, &reg_high);
 	ret |= bq25970_read_byte(BQ2597X_VBAT_ADC0_REG, &reg_low);
@@ -328,10 +325,13 @@ static int bq25970_get_vbat_mv(void)
 
 static int bq25970_get_ibat_ma(int *ibat)
 {
-	int ret = 0;
+	int ret;
 	u8 reg_high = 0;
 	u8 reg_low = 0;
-	s16 curr = 0;
+	s16 curr;
+
+	if (!ibat)
+		return -1;
 
 	ret = bq25970_read_byte(BQ2597X_IBAT_ADC1_REG, &reg_high);
 	ret |= bq25970_read_byte(BQ2597X_IBAT_ADC0_REG, &reg_low);
@@ -353,6 +353,9 @@ static int bq25970_get_ibus_ma(int *ibus)
 	int ret;
 	s16 curr;
 
+	if (!ibus)
+		return -1;
+
 	ret = bq25970_read_byte(BQ2597X_IBUS_ADC1_REG, &reg_high);
 	ret |= bq25970_read_byte(BQ2597X_IBUS_ADC0_REG, &reg_low);
 	if (ret)
@@ -368,10 +371,13 @@ static int bq25970_get_ibus_ma(int *ibus)
 
 static int bq25970_get_vbus_mv(int *vbus)
 {
-	int ret = 0;
+	int ret;
 	u8 reg_high = 0;
 	u8 reg_low = 0;
-	s16 voltage = 0;
+	s16 voltage;
+
+	if (!vbus)
+		return -1;
 
 	ret = bq25970_read_byte(BQ2597X_VBUS_ADC1_REG, &reg_high);
 	ret |= bq25970_read_byte(BQ2597X_VBUS_ADC0_REG, &reg_low);
@@ -388,10 +394,10 @@ static int bq25970_get_vbus_mv(int *vbus)
 
 static int bq25970_get_tsbus_percentage(long *tsbus_per)
 {
-	int ret = 0;
+	int ret;
 	u8 reg_high = 0;
 	u8 reg_low = 0;
-	s16 adc_value = 0;
+	s16 adc_value;
 
 	ret = bq25970_read_byte(BQ2597X_TSBUS_ADC1_REG, &reg_high);
 	ret |= bq25970_read_byte(BQ2597X_TSBUS_ADC0_REG, &reg_low);
@@ -409,9 +415,9 @@ static int bq25970_get_tsbus_percentage(long *tsbus_per)
 
 static int bq25970_get_tsbus_ntc_resistor(int adc_channel, long *data)
 {
-	int ret = 0;
+	int ret;
 	long tsbus_per = 0;
-	long r_temp = 0;
+	long r_temp;
 
 	ret = bq25970_get_tsbus_percentage(&tsbus_per);
 	if (ret)
@@ -440,7 +446,7 @@ static int bq25970_get_tsbus_ntc_resistor(int adc_channel, long *data)
 static int bq25970_is_tsbat_disabled(void)
 {
 	u8 reg = 0;
-	int ret = 0;
+	int ret;
 
 	ret = bq25970_read_byte(BQ2597X_CHRG_CTL_REG, &reg);
 	if (ret)
@@ -460,6 +466,9 @@ static int bq25970_get_device_temp(int *temp)
 	u8 reg_low = 0;
 	s16 temperature;
 	int ret;
+
+	if (!temp)
+		return -1;
 
 	ret = bq25970_read_byte(BQ2597X_TDIE_ADC1_REG, &reg_high);
 	ret |= bq25970_read_byte(BQ2597X_TDIE_ADC0_REG, &reg_low);
@@ -511,7 +520,7 @@ static int bq25970_config_watchdog_ms(int time)
 static int bq25970_config_vbat_ovp_threshold_mv(int ovp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	if (ovp_threshold < BQ2597X_BAT_OVP_BASE_3500MV)
 		ovp_threshold = BQ2597X_BAT_OVP_BASE_3500MV;
@@ -536,7 +545,7 @@ static int bq25970_config_vbat_ovp_threshold_mv(int ovp_threshold)
 static int bq25970_config_ibat_ocp_threshold_ma(int ocp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	if (ocp_threshold < BQ2597X_BAT_OCP_BASE_2000MA)
 		ocp_threshold = BQ2597X_BAT_OCP_BASE_2000MA;
@@ -561,7 +570,7 @@ static int bq25970_config_ibat_ocp_threshold_ma(int ocp_threshold)
 static int bq25970_config_ac_ovp_threshold_mv(int ovp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	if (ovp_threshold < BQ2597X_AC_OVP_BASE_11000MV)
 		ovp_threshold = BQ2597X_AC_OVP_BASE_11000MV;
@@ -586,7 +595,7 @@ static int bq25970_config_ac_ovp_threshold_mv(int ovp_threshold)
 static int bq25970_config_vbus_ovp_threshold_mv(int ovp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	if (ovp_threshold < BQ2597X_BUS_OVP_BASE_6000MV)
 		ovp_threshold = BQ2597X_BUS_OVP_BASE_6000MV;
@@ -611,7 +620,7 @@ static int bq25970_config_vbus_ovp_threshold_mv(int ovp_threshold)
 static int bq25970_config_ibus_ocp_threshold_ma(int ocp_threshold)
 {
 	u8 value;
-	int ret = 0;
+	int ret;
 
 	if (ocp_threshold < BQ2597X_BUS_OCP_BASE_1000MA)
 		ocp_threshold = BQ2597X_BUS_OCP_BASE_1000MA;
@@ -635,41 +644,35 @@ static int bq25970_config_ibus_ocp_threshold_ma(int ocp_threshold)
 
 static int bq25970_config_switching_frequency(int data)
 {
-	int freq = 0;
-	int freq_shift = 0;
-	int ret = 0;
+	int freq;
+	int freq_shift;
+	int ret;
 
 	switch (data) {
 	case BQ2597X_SW_FREQ_450KHZ:
 		freq = BQ2597X_FSW_SET_SW_FREQ_500KHZ;
 		freq_shift = BQ2597X_SW_FREQ_SHIFT_M_P10;
 		break;
-
 	case BQ2597X_SW_FREQ_500KHZ:
 		freq = BQ2597X_FSW_SET_SW_FREQ_500KHZ;
 		freq_shift = BQ2597X_SW_FREQ_SHIFT_NORMAL;
 		break;
-
 	case BQ2597X_SW_FREQ_550KHZ:
 		freq = BQ2597X_FSW_SET_SW_FREQ_500KHZ;
 		freq_shift = BQ2597X_SW_FREQ_SHIFT_P_P10;
 		break;
-
 	case BQ2597X_SW_FREQ_675KHZ:
 		freq = BQ2597X_FSW_SET_SW_FREQ_750KHZ;
 		freq_shift = BQ2597X_SW_FREQ_SHIFT_M_P10;
 		break;
-
 	case BQ2597X_SW_FREQ_750KHZ:
 		freq = BQ2597X_FSW_SET_SW_FREQ_750KHZ;
 		freq_shift = BQ2597X_SW_FREQ_SHIFT_NORMAL;
 		break;
-
 	case BQ2597X_SW_FREQ_825KHZ:
 		freq = BQ2597X_FSW_SET_SW_FREQ_750KHZ;
 		freq_shift = BQ2597X_SW_FREQ_SHIFT_P_P10;
 		break;
-
 	default:
 		freq = BQ2597X_FSW_SET_SW_FREQ_500KHZ;
 		freq_shift = BQ2597X_SW_FREQ_SHIFT_P_P10;
@@ -703,7 +706,7 @@ static int bq25970_chip_init(void)
 
 static int bq25970_reg_init(void)
 {
-	int ret = 0;
+	int ret;
 
 	ret = bq25970_write_byte(BQ2597X_CONTROL_REG,
 		BQ2597X_CONTROL_REG_INIT);
@@ -756,7 +759,7 @@ static int bq25970_charge_init(void)
 {
 	struct bq25970_device_info *di = g_bq25970_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -776,10 +779,10 @@ static int bq25970_charge_init(void)
 
 static int bq25970_charge_exit(void)
 {
-	int ret = 0;
+	int ret;
 	struct bq25970_device_info *di = g_bq25970_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -801,7 +804,7 @@ static int bq25970_batinfo_exit(void)
 
 static int bq25970_batinfo_init(void)
 {
-	int ret = 0;
+	int ret;
 
 	ret = bq25970_chip_init();
 	if (ret) {
@@ -814,24 +817,36 @@ static int bq25970_batinfo_init(void)
 
 static void bq25970_interrupt_work(struct work_struct *work)
 {
-	struct bq25970_device_info *di;
-	struct nty_data *data;
-	struct atomic_notifier_head *direct_charge_fault_notifier_list;
-	u8 converter_state;
-	u8 fault_flag;
-	u8 ac_protection;
-	u8 ibus_ucp;
+	struct bq25970_device_info *di = NULL;
+	struct nty_data *data = NULL;
+	struct atomic_notifier_head *fault_notifier_list = NULL;
+	u8 converter_state = 0;
+	u8 fault_flag = 0;
+	u8 ac_protection = 0;
+	u8 ibus_ucp = 0;
 	int val = 0;
+	int ret;
+
+	if (!work) {
+		hwlog_err("work is null\n");
+		return;
+	}
 
 	di = container_of(work, struct bq25970_device_info, irq_work);
+	if (!di || !di->client) {
+		hwlog_err("di is null\n");
+		return;
+	}
+
 	data = &(di->nty_data);
+	sc_get_fault_notifier(&fault_notifier_list);
 
-	direct_charge_sc_get_fault_notifier(&direct_charge_fault_notifier_list);
-
-	bq25970_read_byte(BQ2597X_AC_OVP_REG, &ac_protection);
-	bq25970_read_byte(BQ2597X_BUS_OCP_UCP_REG, &ibus_ucp);
-	bq25970_read_byte(BQ2597X_FLT_FLAG_REG, &fault_flag);
-	bq25970_read_byte(BQ2597X_CONVERTER_STATE_REG, &converter_state);
+	ret = bq25970_read_byte(BQ2597X_AC_OVP_REG, &ac_protection);
+	ret |= bq25970_read_byte(BQ2597X_BUS_OCP_UCP_REG, &ibus_ucp);
+	ret |= bq25970_read_byte(BQ2597X_FLT_FLAG_REG, &fault_flag);
+	ret |= bq25970_read_byte(BQ2597X_CONVERTER_STATE_REG, &converter_state);
+	if (ret)
+		hwlog_err("irq_work read fail\n");
 
 	data->event1 = fault_flag;
 	data->event2 = ac_protection;
@@ -841,9 +856,8 @@ static void bq25970_interrupt_work(struct work_struct *work)
 		if (ac_protection & BQ2597X_AC_OVP_FLAG_MASK) {
 			hwlog_info("AC OVP happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_AC_OVP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_AC_OVP, data);
 		} else if (fault_flag & BQ2597X_BAT_OVP_FLT_FLAG_MASK) {
 			hwlog_info("BAT OVP happened\n");
 
@@ -851,9 +865,8 @@ static void bq25970_interrupt_work(struct work_struct *work)
 			if (val >= BQ2597X_VBAT_OVP_THRESHOLD_INIT) {
 				hwlog_info("BAT OVP happened [%d]\n", val);
 
-				atomic_notifier_call_chain(
-					direct_charge_fault_notifier_list,
-					DIRECT_CHARGE_FAULT_VBAT_OVP, data);
+				atomic_notifier_call_chain(fault_notifier_list,
+					DC_FAULT_VBAT_OVP, data);
 			}
 		} else if (fault_flag & BQ2597X_BAT_OCP_FLT_FLAG_MASK) {
 			hwlog_info("BAT OCP happened\n");
@@ -862,9 +875,8 @@ static void bq25970_interrupt_work(struct work_struct *work)
 			if (val >= BQ2597X_IBAT_OCP_THRESHOLD_INIT) {
 				hwlog_info("BAT OCP happened [%d]\n", val);
 
-				atomic_notifier_call_chain(
-					direct_charge_fault_notifier_list,
-					DIRECT_CHARGE_FAULT_IBAT_OCP, data);
+				atomic_notifier_call_chain(fault_notifier_list,
+					DC_FAULT_IBAT_OCP, data);
 			}
 		} else if (fault_flag & BQ2597X_BUS_OVP_FLT_FLAG_MASK) {
 			hwlog_info("BUS OVP happened\n");
@@ -873,9 +885,8 @@ static void bq25970_interrupt_work(struct work_struct *work)
 			if (val >= BQ2597X_VBUS_OVP_THRESHOLD_INIT) {
 				hwlog_info("BUS OVP happened [%d]\n", val);
 
-				atomic_notifier_call_chain(
-					direct_charge_fault_notifier_list,
-					DIRECT_CHARGE_FAULT_VBUS_OVP, data);
+				atomic_notifier_call_chain(fault_notifier_list,
+					DC_FAULT_VBUS_OVP, data);
 			}
 		} else if (fault_flag & BQ2597X_BUS_OCP_FLT_FLAG_MASK) {
 			hwlog_info("BUS OCP happened\n");
@@ -884,39 +895,32 @@ static void bq25970_interrupt_work(struct work_struct *work)
 			if (val >= BQ2597X_IBUS_OCP_THRESHOLD_INIT) {
 				hwlog_info("BUS OCP happened [%d]\n", val);
 
-				atomic_notifier_call_chain(
-					direct_charge_fault_notifier_list,
-					DIRECT_CHARGE_FAULT_IBUS_OCP, data);
+				atomic_notifier_call_chain(fault_notifier_list,
+					DC_FAULT_IBUS_OCP, data);
 			}
 		} else if (fault_flag & BQ2597X_TSBAT_FLT_FLAG_MASK) {
 			hwlog_info("BAT TEMP OTP happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_TSBAT_OTP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_TSBAT_OTP, data);
 		} else if (fault_flag & BQ2597X_TSBUS_FLT_FLAG_MASK) {
 			hwlog_info("BUS TEMP OTP happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_TSBUS_OTP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_TSBUS_OTP, data);
 		} else if (fault_flag & BQ2597X_TDIE_ALM_FLAG_MASK) {
 			hwlog_info("DIE TEMP OTP happened\n");
 
 			/*
-			 * atomic_notifier_call_chain(
-			 * direct_charge_fault_notifier_list,
-			 * DIRECT_CHARGE_FAULT_TDIE_OTP, data);
+			 * atomic_notifier_call_chain(fault_notifier_list,
+			 * DC_FAULT_TDIE_OTP, data);
 			 */
-		} else {
-			/* do nothing */
 		}
 
 		if (converter_state & BQ2597X_CONV_OCP_FLAG_MASK) {
 			hwlog_info("CONV OCP happened\n");
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_CONV_OCP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_CONV_OCP, data);
 		}
 
 		bq25970_dump_register();
@@ -939,7 +943,7 @@ static irqreturn_t bq25970_interrupt(int irq, void *_di)
 {
 	struct bq25970_device_info *di = _di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -950,7 +954,7 @@ static irqreturn_t bq25970_interrupt(int irq, void *_di)
 	if (bq25970_init_finish_flag == BQ2597X_INIT_FINISH)
 		bq25970_int_notify_enable_flag = BQ2597X_ENABLE_INT_NOTIFY;
 
-	hwlog_info("bq25970 int happened(%d)\n", bq25970_init_finish_flag);
+	hwlog_info("bq25970 int happened\n");
 
 	disable_irq_nosync(di->irq_int);
 	schedule_work(&di->irq_work);
@@ -961,31 +965,12 @@ static irqreturn_t bq25970_interrupt(int irq, void *_di)
 static void bq25970_parse_dts(struct device_node *np,
 	struct bq25970_device_info *di)
 {
-	int ret = 0;
-
-	ret = of_property_read_u32(np, "tsbus_high_r_kohm",
-		&tsbus_high_r_kohm);
-	if (ret) {
-		hwlog_err("tsbus_high_r_kohm dts read failed\n");
-		tsbus_high_r_kohm = BQ2597X_RESISTORS_100KOHM;
-	}
-	hwlog_info("tsbus_high_r_kohm=%d\n", tsbus_high_r_kohm);
-
-	ret = of_property_read_u32(np, "tsbus_low_r_kohm",
-		&tsbus_low_r_kohm);
-	if (ret) {
-		hwlog_err("tsbus_low_r_kohm dts read failed\n");
-		tsbus_low_r_kohm = BQ2597X_RESISTORS_100KOHM;
-	}
-	hwlog_info("tsbus_low_r_kohm=%d\n", tsbus_low_r_kohm);
-
-	ret = of_property_read_u32(np, "switching_frequency",
-		&switching_frequency);
-	if (ret) {
-		hwlog_err("switching_frequency dts read failed\n");
-		switching_frequency = BQ2597X_SW_FREQ_550KHZ;
-	}
-	hwlog_info("switching_frequency=%d\n", switching_frequency);
+	(void)power_dts_read_u32(np, "tsbus_high_r_kohm",
+		&tsbus_high_r_kohm, BQ2597X_RESISTORS_100KOHM);
+	(void)power_dts_read_u32(np, "tsbus_low_r_kohm",
+		&tsbus_low_r_kohm, BQ2597X_RESISTORS_100KOHM);
+	(void)power_dts_read_u32(np, "switching_frequency",
+		&switching_frequency, BQ2597X_SW_FREQ_550KHZ);
 }
 
 static struct loadswitch_ops bq25970_sysinfo_ops = {
@@ -1017,23 +1002,20 @@ static struct power_tz_ops bq25970_temp_sensing_ops = {
 static int bq25970_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret = 0;
+	int ret;
 	struct bq25970_device_info *di = NULL;
 	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
-	if (client == NULL || id == NULL) {
-		hwlog_err("client or id is null\n");
-		return -ENOMEM;
-	}
+	if (!client || !client->dev.of_node || !id)
+		return -ENODEV;
 
 	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_bq25970_dev = di;
-
 	di->dev = &client->dev;
 	np = di->dev->of_node;
 	di->client = client;
@@ -1046,26 +1028,26 @@ static int bq25970_probe(struct i2c_client *client,
 	hwlog_info("gpio_int=%d\n", di->gpio_int);
 
 	if (!gpio_is_valid(di->gpio_int)) {
-		hwlog_err("gpio(gpio_int) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto bq25970_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_int, "bq25970_gpio_int");
 	if (ret < 0) {
-		hwlog_err("gpio(gpio_int) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto bq25970_fail_0;
 	}
 
 	ret = gpio_direction_input(di->gpio_int);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) set input fail\n");
+		hwlog_err("gpio set input fail\n");
 		goto bq25970_fail_1;
 	}
 
 	di->irq_int = gpio_to_irq(di->gpio_int);
 	if (di->irq_int < 0) {
-		hwlog_err("gpio(gpio_int) map to irq fail\n");
+		hwlog_err("gpio map to irq fail\n");
 		ret = -EINVAL;
 		goto bq25970_fail_1;
 	}
@@ -1073,7 +1055,7 @@ static int bq25970_probe(struct i2c_client *client,
 	ret = request_irq(di->irq_int, bq25970_interrupt,
 		IRQF_TRIGGER_FALLING, "bq25970_int_irq", di);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) irq request fail\n");
+		hwlog_err("gpio irq request fail\n");
 		di->irq_int = -1;
 		goto bq25970_fail_1;
 	}
@@ -1084,7 +1066,7 @@ static int bq25970_probe(struct i2c_client *client,
 		goto bq25970_fail_2;
 	}
 
-	ret = batinfo_sc_ops_register(&bq25970_batinfo_ops);
+	ret = sc_batinfo_ops_register(&bq25970_batinfo_ops);
 	if (ret) {
 		hwlog_err("bq25970 batinfo ops register fail\n");
 		goto bq25970_fail_2;
@@ -1102,7 +1084,7 @@ static int bq25970_probe(struct i2c_client *client,
 		hwlog_err("bq25970 wireless_sc batinfo ops register fail\n");
 		goto bq25970_fail_2;
 	}
-#endif
+#endif /* CONFIG_WIRELESS_CHARGER */
 
 	ret = power_tz_ops_register(&bq25970_temp_sensing_ops, "bq25970");
 	if (ret)
@@ -1134,7 +1116,7 @@ bq25970_fail_1:
 bq25970_fail_0:
 	g_bq25970_dev = NULL;
 	devm_kfree(&client->dev, di);
-	np = NULL;
+
 	return ret;
 }
 
@@ -1143,6 +1125,9 @@ static int bq25970_remove(struct i2c_client *client)
 	struct bq25970_device_info *di = i2c_get_clientdata(client);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	if (di->irq_int)
 		free_irq(di->irq_int, di);
@@ -1169,7 +1154,7 @@ static const struct of_device_id bq25970_of_match[] = {
 };
 
 static const struct i2c_device_id bq25970_i2c_id[] = {
-	{"bq25970", 0}, {}
+	{ "bq25970", 0 }, {}
 };
 
 static struct i2c_driver bq25970_driver = {
@@ -1186,13 +1171,7 @@ static struct i2c_driver bq25970_driver = {
 
 static int __init bq25970_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&bq25970_driver);
-	if (ret)
-		hwlog_err("i2c_add_driver error\n");
-
-	return ret;
+	return i2c_add_driver(&bq25970_driver);
 }
 
 static void __exit bq25970_exit(void)

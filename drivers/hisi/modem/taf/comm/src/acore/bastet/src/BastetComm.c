@@ -35,7 +35,9 @@ struct bst_modem_rab_id {
 
 extern char cur_netdev_name[IFNAMSIZ];
 extern void ind_hisi_com(void *info, u32 len);
+#ifdef CONFIG_HUAWEI_EMCOM
 extern void Emcom_Ind_Modem_Support(u8 ucState);
+#endif
 
 int bastet_comm_write(u8 *msg, u32 len, u32 type)
 {
@@ -69,6 +71,7 @@ int bastet_comm_write(u8 *msg, u32 len, u32 type)
     return 0;
 }
 
+#ifdef CONFIG_HUAWEI_EMCOM
 int bastet_comm_keypsInfo_write(u32 ulState)
 {
     BST_KEY_PSINFO_STRU *pMsg = NULL;
@@ -95,6 +98,7 @@ int bastet_comm_keypsInfo_write(u32 ulState)
 
     return 0;
 }
+#endif
 
 
 void bastet_comm_recv(MsgBlock *pMsg)
@@ -124,12 +128,14 @@ void bastet_comm_recv(MsgBlock *pMsg)
             ind_hisi_com( pTmpMsg->aucValue, len );
             break;
         }
+        #ifdef CONFIG_HUAWEI_EMCOM
         case BST_ACORE_CORE_MSG_TYPE_EMCOM_SUPPORT:
         {
             BST_EMCOM_SUPPORT_STRU *pIndMsg = (BST_EMCOM_SUPPORT_STRU *)pMsg;
             Emcom_Ind_Modem_Support( pIndMsg->enState );
             break;
         }
+        #endif
         default:
             printk(KERN_ERR "pTmpMsg->enMsgType type error,state: %d\n", pTmpMsg->enMsgType);
             break;

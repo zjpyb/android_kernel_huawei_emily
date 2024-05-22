@@ -1,3 +1,13 @@
+/*
+ * usb_vendor.h -- Hisilicon usb notifier
+ *
+ * Copyright (C) 2015 by Hisilicon
+ * Author: Hisilicon
+ *
+ * This software is distributed under the terms of the GNU General
+ * Public License ("GPL") as published by the Free Software Foundation,
+ * either version 2 of that License or (at your option) any later version.
+ */
 
 
 #ifndef __USB_VENDOR_H__
@@ -5,27 +15,12 @@
 
 #include <linux/notifier.h>
 
+/*
+ * Normaltive defination for usb acm, used by both balong_acm and hw_acm.
+ */
+
 /* used for cdc flow control */
 #define USB_CDC_VENDOR_NTF_FLOW_CONTROL     0x01
-
-#define USB_NOTIF_PRIO_ADP		0	/* adp has lowest priority */
-#define USB_NOTIF_PRIO_FD		100	/* function drvier */
-#define USB_NOTIF_PRIO_CORE		200	/* usb core */
-#define USB_NOTIF_PRIO_HAL		300	/* hardware has highest priority */
-
-#define USB_BALONG_DEVICE_INSERT	1
-#define USB_BALONG_CHARGER_IDEN		2
-#define USB_BALONG_ENUM_DONE		3
-#define USB_BALONG_PERIP_INSERT		4
-#define USB_BALONG_PERIP_REMOVE		5
-#define USB_BALONG_DEVICE_REMOVE	0
-/* if the version is not support pmu detect
- * and all the device is disable, we assume that the usb is remove,
- */
-#define USB_BALONG_DEVICE_DISABLE	(0xF1)
-
-#define USB_FD_DEVICE_MAX		32
-#define USB_CDEV_NAME_MAX		64
 
 /*
  * interface descriptor for pnp2.1
@@ -57,11 +52,23 @@ typedef enum tagUSB_PID_UNIFY_IF_PROT_T {
 } USB_PID_UNIFY_IF_PROT_T;
 
 
-typedef struct usb_enum_stat {
-	char *fd_name;                  /* function drvier file name */
-	unsigned usb_intf_id;           /* usb interface id */
-	unsigned is_enum;               /* whether the dev is enum */
-} usb_enum_stat_t;
+/*
+ * The usb_vendor declarations.
+ */
+
+#define USB_NOTIF_PRIO_ADP		0	/* adp has lowest priority */
+#define USB_NOTIF_PRIO_FD		100	/* function drvier */
+#define USB_NOTIF_PRIO_CORE		200	/* usb core */
+#define USB_NOTIF_PRIO_HAL		300	/* hardware has highest priority */
+
+#define USB_BALONG_DEVICE_INSERT	1
+#define USB_BALONG_CHARGER_IDEN		2
+#define USB_BALONG_ENUM_DONE		3
+#define USB_BALONG_PERIP_INSERT		4
+#define USB_BALONG_PERIP_REMOVE		5
+#define USB_BALONG_DEVICE_REMOVE	0
+#define USB_BALONG_DEVICE_DISABLE	0xF1
+
 
 
 /* notify interface */
@@ -72,15 +79,8 @@ void bsp_usb_unregister_notify(struct notifier_block *nb);
 void bsp_usb_status_change(int status);
 
 /* usb enum done interface */
-int bsp_usb_is_all_enum(void);
-int bsp_usb_is_all_disable(void);
 void bsp_usb_add_setup_dev_fdname(unsigned intf_id, char *fd_name);
-static inline void bsp_usb_add_setup_dev(unsigned intf_id)
-{
-	bsp_usb_add_setup_dev_fdname(intf_id, __FILE__);
-}
 void bsp_usb_remove_setup_dev_fdname(void);
 void bsp_usb_set_enum_stat(unsigned intf_id, int enum_stat);
-void bsp_usb_set_last_cdev_name(const char *dev_name);
 
 #endif /* __USB_VENDOR_H__ */

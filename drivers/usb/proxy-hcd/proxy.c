@@ -18,8 +18,8 @@
 
 void proxy_port_status_change(struct proxy_hcd_client *client, __u32 port_bitmap)
 {
-	struct proxy_hcd *phcd;
-	struct usb_hcd *hcd;
+	struct proxy_hcd *phcd = NULL;
+	struct usb_hcd *hcd = NULL;
 	unsigned long flags;
 
 	INFO("+\n");
@@ -54,8 +54,8 @@ void proxy_port_status_change(struct proxy_hcd_client *client, __u32 port_bitmap
 
 void proxy_port_disconnect(struct proxy_hcd_client *client, __u32 port_bitmap)
 {
-	struct proxy_hcd *phcd;
-	struct usb_hcd *hcd;
+	struct proxy_hcd *phcd = NULL;
+	struct usb_hcd *hcd = NULL;
 	unsigned long flags;
 
 	INFO("+\n");

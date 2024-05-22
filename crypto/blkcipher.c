@@ -1,6 +1,6 @@
 /*
  * Block chaining cipher operations.
- * 
+ *
  * Generic encrypt/decrypt wrapper for ciphers, handles operations across
  * multiple page boundaries by using temporary blocks.  In user context,
  * the kernel is given a chance to schedule us once per page.
@@ -9,7 +9,7 @@
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 2 of the License, or (at your option) 
+ * Software Foundation; either version 2 of the License, or (at your option)
  * any later version.
  *
  */
@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/cryptouser.h>
+#include <linux/compiler.h>
 #include <net/netlink.h>
 
 #include "internal.h"
@@ -71,7 +72,7 @@ static inline u8 *blkcipher_get_spot(u8 *start, unsigned int len)
 }
 
 static inline void blkcipher_done_slow(struct blkcipher_walk *walk,
-					unsigned int bsize)
+				       unsigned int bsize)
 {
 	u8 *addr;
 
@@ -81,7 +82,7 @@ static inline void blkcipher_done_slow(struct blkcipher_walk *walk,
 }
 
 static inline void blkcipher_done_fast(struct blkcipher_walk *walk,
-					unsigned int n)
+				       unsigned int n)
 {
 	if (walk->flags & BLKCIPHER_WALK_COPY) {
 		blkcipher_map_dst(walk);
@@ -129,7 +130,6 @@ int blkcipher_walk_done(struct blkcipher_desc *desc,
 		return blkcipher_walk_next(desc, walk);
 	}
 	err = 0;
-
 finish:
 	walk->nbytes = 0;
 	if (walk->iv != desc->info)
@@ -138,7 +138,6 @@ finish:
 		kfree(walk->buffer);
 	if (walk->page)
 		free_page((unsigned long)walk->page);
-
 	return err;
 }
 EXPORT_SYMBOL_GPL(blkcipher_walk_done);
@@ -372,27 +371,6 @@ int blkcipher_aead_walk_virt_block(struct blkcipher_desc *desc,
 }
 EXPORT_SYMBOL_GPL(blkcipher_aead_walk_virt_block);
 
-/*
- * This function allows ablkcipher algorithms to use the blkcipher_walk API to
- * walk over their data.  The specified crypto_ablkcipher tfm is used to
- * initialize the struct blkcipher_walk, and the crypto_blkcipher specified in
- * desc->tfm is never used so it can be left NULL.  (Yes, this design is ugly,
- * but it parallels blkcipher_aead_walk_virt_block() above.  In the 4.10 kernel
- * this is starting to be cleaned up...)
- */
-int blkcipher_ablkcipher_walk_virt(struct blkcipher_desc *desc,
-				   struct blkcipher_walk *walk,
-				   struct crypto_ablkcipher *tfm)
-{
-	walk->flags &= ~BLKCIPHER_WALK_PHYS;
-	walk->walk_blocksize = crypto_ablkcipher_blocksize(tfm);
-	walk->cipher_blocksize = walk->walk_blocksize;
-	walk->ivsize = crypto_ablkcipher_ivsize(tfm);
-	walk->alignmask = crypto_ablkcipher_alignmask(tfm);
-	return blkcipher_walk_first(desc, walk);
-}
-EXPORT_SYMBOL_GPL(blkcipher_ablkcipher_walk_virt);
-
 static int setkey_unaligned(struct crypto_tfm *tfm, const u8 *key,
 			    unsigned int keylen)
 {
@@ -533,6 +511,7 @@ static int crypto_blkcipher_report(struct sk_buff *skb, struct crypto_alg *alg)
 	strncpy(rblkcipher.type, "blkcipher", sizeof(rblkcipher.type));
 	strncpy(rblkcipher.geniv, alg->cra_blkcipher.geniv ?: "<default>",
 		sizeof(rblkcipher.geniv));
+	rblkcipher.geniv[sizeof(rblkcipher.geniv) - 1] = '\0';
 
 	rblkcipher.blocksize = alg->cra_blocksize;
 	rblkcipher.min_keysize = alg->cra_blkcipher.min_keysize;
@@ -555,7 +534,7 @@ static int crypto_blkcipher_report(struct sk_buff *skb, struct crypto_alg *alg)
 #endif
 
 static void crypto_blkcipher_show(struct seq_file *m, struct crypto_alg *alg)
-	__attribute__ ((unused));
+	__maybe_unused;
 static void crypto_blkcipher_show(struct seq_file *m, struct crypto_alg *alg)
 {
 	seq_printf(m, "type         : blkcipher\n");

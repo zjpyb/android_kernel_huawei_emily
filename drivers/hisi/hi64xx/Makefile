@@ -6,13 +6,12 @@ EXTRA_CFLAGS += -Isound/soc/codecs/hisi/hi6xxx_fpga_test/
 EXTRA_CFLAGS += -Isound/soc/codecs/hisi/hs_auto_calib/
 EXTRA_CFLAGS += -Idrivers/hisi/mntn/blackbox/platform_hifi/
 
-ifeq ($(CLT_IV), true)
-EXTRA_CFLAGS += -DCLT_AUDIO
-endif
-
 ifeq ($(CONFIG_HI6402_MBHC_ANC),y)
 EXTRA_CFLAGS += -DANC_HEADSET
-EXTRA_CFLAGS += -DINVERT_HEADSET
+endif
+
+ifneq ($(strip $(CONFIG_SWITCH)),)
+ccflags-y += -DCONFIG_HUAWEI_HEADSET_DEBUG_SWITCH
 endif
 
 ifeq ($(CONFIG_HISI_AUDIO_DEBUG),y)

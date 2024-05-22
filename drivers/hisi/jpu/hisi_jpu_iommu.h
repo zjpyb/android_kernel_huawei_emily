@@ -1,4 +1,8 @@
-/* Copyright (c) 2018-2019, Hisilicon Tech. Co., Ltd. All rights reserved.
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2024. All rights reserved.
+ * Description: jpeg jpu iommu
+ * Author: Huawei Hisilicon
+ * Create: 2018
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,6 +23,8 @@
 #include <linux/platform_device.h>
 #include <linux/version.h>
 #include <linux/hisi-iommu.h>
+
+#define JPU_BLOCK_BUF_MAX_SIZE 2048
 
 struct jpu_iommu_page_info {
 	struct page *page;

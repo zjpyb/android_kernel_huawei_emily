@@ -25,7 +25,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/miscdevice.h>
 #include <linux/workqueue.h>
 #include <linux/of_gpio.h>
@@ -87,7 +87,7 @@ int usb_headset_plug_out(void)
 	if ((uh_pdata->hs_hw_issus_enable == 1) &&
 		(uh_pdata->scharge_ctl_flag == USB_SCHARGE_BOOTST_ON)) {
 		/* turn off scharge 5v boost for hs hw issue */
-		charge_otg_mode_enable(OTG_DISABLE, OTG_CTRL_AUDIO);
+		charge_otg_mode_enable(OTG_DISABLE, VBUS_CH_USER_AUDIO);
 		uh_pdata->scharge_ctl_flag = USB_SCHARGE_BOOTST_OFF;
 		hwlog_info("headset: turn off scharge 5vboost\n");
 	}
@@ -121,7 +121,7 @@ static int xhci_notifier_fn(struct notifier_block *nb,
 		(uh_pdata->hs_state == USB_HEADSET_PLUG_IN)) {
 		if (uh_pdata->scharge_ctl_flag == USB_SCHARGE_BOOTST_OFF) {
 			/* turn on scharge 5v boost for hs hw issue */
-			charge_otg_mode_enable(OTG_ENABLE, OTG_CTRL_AUDIO);
+			charge_otg_mode_enable(OTG_ENABLE, VBUS_CH_USER_AUDIO);
 			uh_pdata->scharge_ctl_flag = USB_SCHARGE_BOOTST_ON;
 			hwlog_info("headset: turn on scharge 5vboost\n");
 		}

@@ -34,8 +34,11 @@
 #include <linux/hisi/kirin_partition.h>
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/hisi/rdr_hisi_platform.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/hisi/hisi_log.h>
+#include <linux/hisi/hisi_hw_diag.h>
+#include <linux/hisi/bl31_log.h>
+#include <bl31_platform_memory_def.h>
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 /*
@@ -48,29 +51,29 @@
  *	!0   fail
  *	== 0 success
  */
-#define HISTORY_LOG_SIZE 256
-#define HISTORY_LOG_MAX  0x400000	/*64*16*1024*4 = 4M */
 u32 dfx_size_tbl[DFX_MAX_MODULE];
 u32 dfx_addr_tbl[DFX_MAX_MODULE];
 
-int rdr_save_history_log(struct rdr_exception_info_s *p, char *date,
+int rdr_save_history_log(struct rdr_exception_info_s *p, char *date, u32 datelen,
 			 bool is_save_done, u32 bootup_keypoint)
 {
 	int ret = 0;
 	char buf[HISTORY_LOG_SIZE];
 	struct kstat historylog_stat;
 	char local_path[PATH_MAXLEN];
-	char *reboot_from_ap;
-	char * subtype_name;
+	char *reboot_from_ap = NULL;
+	char * subtype_name = NULL;
 
 	if (!check_himntn(HIMNTN_GOBAL_RESETLOG)) {
 		return 0;
 	}
 	BB_PRINT_START();
-	if (DATATIME_MAXLEN < (strlen(date) + 1)) {
+	if (datelen < (strlen(date) + 1)) {
 		date[DATATIME_MAXLEN - 1] = '\0';
 	}
-	memset(buf, 0, HISTORY_LOG_SIZE);
+	if (EOK != memset_s(buf, HISTORY_LOG_SIZE, 0, HISTORY_LOG_SIZE)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 
 	if (p->e_reset_core_mask & RDR_AP)
 		reboot_from_ap = "true";
@@ -86,7 +89,7 @@ int rdr_save_history_log(struct rdr_exception_info_s *p, char *date,
 			 	rdr_get_exception_core(p->e_from_core),
 			 	rdr_get_exception_type(p->e_exce_type),
 			 	subtype_name,
-				date, 
+				date,
 				reboot_from_ap,
 				bootup_keypoint,
 				rdr_get_category_name(p->e_exce_type, p->e_exce_subtype));
@@ -141,6 +144,7 @@ int rdr_save_history_log(struct rdr_exception_info_s *p, char *date,
 	}
 
 	rdr_savebuf2fs(PATH_ROOT, "history.log", buf, strlen(buf), 1);
+
 	BB_PRINT_END();
 	return ret;
 }
@@ -156,7 +160,9 @@ int rdr_save_history_log_for_undef_exception(struct rdr_syserr_param_s *p)
 		return 0;
 	}
 	BB_PRINT_START();
-	memset(buf, 0, HISTORY_LOG_SIZE);
+	if (EOK != memset_s(buf, HISTORY_LOG_SIZE, 0, HISTORY_LOG_SIZE)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	snprintf(buf, HISTORY_LOG_SIZE,
 		 "system exception undef. modid[0x%x], arg [0x%x], arg [0x%x].\n",
 		 p->modid, p->arg1, p->arg2);
@@ -174,6 +180,32 @@ int rdr_save_history_log_for_undef_exception(struct rdr_syserr_param_s *p)
 	return ret;
 }
 
+
+void rdr_save_pstore_log(const struct rdr_exception_info_s *p_exce_info, const char *path)
+{
+	u32 save_flags = p_exce_info->e_save_log_flags;
+
+	/* for system reset, save logs in reboot */
+	if (p_exce_info->e_reboot_priority != RDR_REBOOT_NO) {
+		BB_PRINT_PN("%s(): system reset, no need to save\n", __func__);
+		return;
+	}
+
+	if (save_flags & RDR_SAVE_BL31_LOG) {
+		BB_PRINT_PN("%s(): bl31_log saving\n", __func__);
+	}
+
+	if (save_flags & RDR_SAVE_DMESG) {
+		BB_PRINT_PN("%s(): dmsg saving\n", __func__);
+	}
+
+	if (save_flags & RDR_SAVE_CONSOLE_MSG) {
+		BB_PRINT_PN("%s(): console msg saving\n", __func__);
+	}
+
+	return;
+}
+
 /*
  * func name: rdr_savebuf2fs
  * append(save) data to path.
@@ -186,11 +218,11 @@ int rdr_save_history_log_for_undef_exception(struct rdr_syserr_param_s *p)
  *	>=len fail
  *	==len success
  */
-int rdr_savebuf2fs(char *logpath, char *filename,
+int rdr_savebuf2fs(const char *logpath, char *filename,
 		   void *buf, u32 len, u32 is_append)
 {
 	int ret = 0, flags;
-	struct file *fp;
+	struct file *fp = NULL;
 	char path[PATH_MAXLEN];
 
 	BB_PRINT_START();
@@ -232,7 +264,7 @@ out1:
 	BB_PRINT_END();
 out2:
 	return ret;
-}
+} /*lint !e429 */
 
 /********************************************************************
 Function:       bbox_save_every_core_data
@@ -243,15 +275,15 @@ Return:         NA
 ********************************************************************/
 void bbox_save_every_core_data(const char *logpath, char *base_addr)
 {
-	char *addr;
+	char *addr = NULL;
 	int ret;
 	u32 value, size, i;
 	u32 data[RDR_CORE_MAX];
-	struct device_node *np;
+	struct device_node *np = NULL;
 	char *bbox_area_names = NULL;
 	char tmp_logpath[PATH_MAXLEN] = {0};
 
-	if (bbox_get_every_core_area_info(&value, data, &np)) {
+	if (bbox_get_every_core_area_info(&value, data, &np, RDR_CORE_MAX)) {
 		BB_PRINT_ERR("[%s], bbox_get_every_core_area_info fail!\n",
 			     __func__);
 		return;
@@ -301,7 +333,7 @@ void bbox_save_every_core_data(const char *logpath, char *base_addr)
 	return;
 }
 
-void rdr_save_cur_baseinfo(char *logpath)
+void rdr_save_cur_baseinfo(const char *logpath)
 {
 	BB_PRINT_START();
 	/* save pbb to fs */
@@ -312,7 +344,7 @@ void rdr_save_cur_baseinfo(char *logpath)
 	return;
 }
 
-void rdr_save_last_baseinfo(char *logpath)
+void rdr_save_last_baseinfo(const char *logpath)
 {
 	BB_PRINT_START();
 	/* save pbb to fs */
@@ -350,11 +382,12 @@ Return:         true:need
 ********************************************************************************/
 bool is_need_save_dfx2file(void)
 {
-	char *buf;
+#ifdef CONFIG_HISI_PARTITION
+	char *buf = NULL;
 	int ret, fd_dfx, cnt;
 	char p_name[BDEVNAME_SIZE + 12];
 	bool is_need_save_dfx2file = false;/*lint !e578 */
-	struct dfx_head_info *dfx_head_info;
+	struct dfx_head_info *dfx_head_info = NULL;
 
 	if (!check_himntn(HIMNTN_DFXPARTITION_TO_FILE)) {
 		BB_PRINT_PN("%s():%d:switch is close\n", __func__, __LINE__);
@@ -372,14 +405,16 @@ bool is_need_save_dfx2file(void)
 		goto out;
 	}
 
-	ret = flash_find_ptn(PART_DFX, buf);
+	ret = flash_find_ptn_s(PART_DFX, buf, SZ_4K);
 	if (ret != 0) {
-		BB_PRINT_ERR("%s():%d:flash_find_ptn fail[%d]\n", __func__, __LINE__, ret);
+		BB_PRINT_ERR("%s():%d:flash_find_ptn_s fail[%d]\n", __func__, __LINE__, ret);
 		kfree(buf);
 		goto out;
 	}
 
-	memset(p_name, 0, sizeof(p_name));
+	if (EOK != memset_s(p_name, sizeof(p_name), 0, sizeof(p_name))) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	strncpy(p_name, buf, sizeof(p_name));
 	p_name[BDEVNAME_SIZE + 11] = '\0';
 
@@ -409,6 +444,9 @@ close:
 	kfree(buf);
 out:
 	return is_need_save_dfx2file;
+#else
+	return false;
+#endif
 }
 
 /*******************************************************************************
@@ -467,14 +505,15 @@ Input:          dfx_head_info
 Output:         NA
 Return:         0:success
 ********************************************************************************/
+#ifdef CONFIG_HISI_PARTITION
 static int save_dfxbuffer_to_file(struct dfx_head_info *dfx_head_info)
 {
-	char *buf;
-	void *offset;
+	char *buf = NULL;
+	void *offset = NULL;
 	u32 size;
 	int last_number, fd, ret;
 	struct rdr_exception_info_s temp;
-	struct every_number_info *every_number_info;
+	struct every_number_info *every_number_info = NULL;
 	char path[PATH_MAXLEN], date[DATATIME_MAXLEN];
 	BB_PRINT_START();
 
@@ -483,7 +522,9 @@ static int save_dfxbuffer_to_file(struct dfx_head_info *dfx_head_info)
 		dfx_head_info->need_save_number = TOTAL_NUMBER;
 	}
 
-	memset(&temp, 0, sizeof(struct rdr_exception_info_s));
+	if (EOK != memset_s(&temp, sizeof(struct rdr_exception_info_s), 0, sizeof(struct rdr_exception_info_s))) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	last_number = (dfx_head_info->cur_number - dfx_head_info->need_save_number + TOTAL_NUMBER)%TOTAL_NUMBER;
 
 	while (0 != dfx_head_info->need_save_number) {
@@ -514,7 +555,7 @@ static int save_dfxbuffer_to_file(struct dfx_head_info *dfx_head_info)
 				return -1;
 			}
 
-			rdr_save_history_log(&temp, &date[0], false, every_number_info->bootup_keypoint);
+			rdr_save_history_log(&temp, &date[0], DATATIME_MAXLEN, false, every_number_info->bootup_keypoint);
 
 			dfx_head_info->need_save_number--;
 			last_number = (last_number + 1 + TOTAL_NUMBER)%TOTAL_NUMBER;
@@ -522,7 +563,7 @@ static int save_dfxbuffer_to_file(struct dfx_head_info *dfx_head_info)
 			continue;
 		}
 
-		if (0 != bbox_create_dfxlog_path(&path[0], &date[0])) {
+		if (0 != bbox_create_dfxlog_path(&path[0], &date[0], DATATIME_MAXLEN)) {
 			BB_PRINT_ERR("bbox_create_dfxlog_path fail\n");
 			return -1;
 		}
@@ -557,7 +598,7 @@ static int save_dfxbuffer_to_file(struct dfx_head_info *dfx_head_info)
 				rdr_savebuf2fs(path, "pmsg-ramoops-0", offset, size, 0);
 		}
 
-		rdr_save_history_log(&temp, &date[0], true, every_number_info->bootup_keypoint);
+		rdr_save_history_log(&temp, &date[0], DATATIME_MAXLEN, true, every_number_info->bootup_keypoint);
 
 		path[strlen(path) - strlen("/ap_log/")] = '\0';
 		bbox_save_done(path, BBOX_SAVE_STEP_DONE);
@@ -569,6 +610,7 @@ static int save_dfxbuffer_to_file(struct dfx_head_info *dfx_head_info)
 
 	return 0;
 }
+#endif
 
 /*******************************************************************************
 Function:       save_dfxpartition_to_file
@@ -579,8 +621,11 @@ Return:         NA
 ********************************************************************************/
 void save_dfxpartition_to_file(void)
 {
+#ifdef CONFIG_HISI_PARTITION
 	char p_name[BDEVNAME_SIZE + 12];
-	void *buf, *dfx_buf, *dfx_buf_temp;
+	void *buf = NULL;
+	void *dfx_buf = NULL;
+	void *dfx_buf_temp = NULL;
 	int ret, fd_dfx, cnt, need_read_size;
 	BB_PRINT_START();
 
@@ -602,17 +647,19 @@ void save_dfxpartition_to_file(void)
 		return;
 	}
 
-	ret = flash_find_ptn(PART_DFX, buf);
+	ret = flash_find_ptn_s(PART_DFX, buf, SZ_4K);
 	if (ret != 0) {
 		BB_PRINT_ERR(
-		    "%s():%d:flash_find_ptn fail[%d]\n",
+		    "%s():%d:flash_find_ptn_s fail[%d]\n",
 		    __func__, __LINE__, ret);
 		kfree(buf);
 		vfree(dfx_buf);
 		return;
 	}
 
-	memset(p_name, 0, sizeof(p_name));
+	if (EOK != memset_s(p_name, sizeof(p_name), 0, sizeof(p_name))) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	strncpy(p_name, buf, sizeof(p_name));
 	p_name[BDEVNAME_SIZE + 11] = '\0';
 
@@ -665,6 +712,7 @@ close:
 out:
 	vfree(dfx_buf);
 	kfree(buf);
+#endif
 	return;
 }
 
@@ -677,9 +725,11 @@ Return:         NA
 ********************************************************************************/
 static void save_buffer_to_dfx_loopbuffer(struct every_number_info *every_number_info)
 {
-	void *buf1, *buf2;
+#ifdef CONFIG_HISI_PARTITION
+	void *buf1 = NULL;
+	void *buf2 = NULL;
 	char p_name[BDEVNAME_SIZE + 12];
-	struct dfx_head_info *dfx_head_info;
+	struct dfx_head_info *dfx_head_info = NULL;
 	int ret, fd_dfx, cnt, cfo, need_write_size;
 	BB_PRINT_START();
 
@@ -689,14 +739,16 @@ static void save_buffer_to_dfx_loopbuffer(struct every_number_info *every_number
 		return;
 	}
 
-	ret = flash_find_ptn(PART_DFX, buf1);
+	ret = flash_find_ptn_s(PART_DFX, buf1, SZ_4K);
 	if (0 != ret) {
-		BB_PRINT_ERR("%s():%d:flash_find_ptn fail\n", __func__, __LINE__);
+		BB_PRINT_ERR("%s():%d:flash_find_ptn_s fail\n", __func__, __LINE__);
 		kfree(buf1);
 		return;
 	}
 
-	memset(p_name, 0, sizeof(p_name));
+	if (EOK != memset_s(p_name, sizeof(p_name), 0, sizeof(p_name))) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	strncpy(p_name, buf1, sizeof(p_name));
 	p_name[BDEVNAME_SIZE + 11] = '\0';
 
@@ -728,6 +780,10 @@ static void save_buffer_to_dfx_loopbuffer(struct every_number_info *every_number
 	}
 
 	dfx_head_info = (struct dfx_head_info *)buf1;
+	if (dfx_head_info->cur_number < 0 || dfx_head_info->cur_number >= TOTAL_NUMBER) {
+		BB_PRINT_ERR("%s():%d:dfx_head_info->cur_number=%d error\n", __func__, __LINE__, dfx_head_info->cur_number);
+		goto close;
+	}
 	cfo = dfx_head_info->every_number_addr[dfx_head_info->cur_number];
 	ret = sys_lseek(fd_dfx, cfo, SEEK_SET);
 	if (ret != cfo) {
@@ -781,6 +837,7 @@ close:
 	sys_close(fd_dfx);
 open_fail:
 	kfree(buf1);
+#endif
 	return;
 }
 
@@ -793,8 +850,12 @@ Return:         NA
 ********************************************************************************/
 void systemerror_save_log2dfx(u32 reboot_type)
 {
-	void *buf, *fastbootlog_addr, *pstore_addr, *last_kmsg_addr, *last_applog_addr;
-	struct every_number_info *every_number_info;
+	void *buf = NULL;
+	void *fastbootlog_addr = NULL;
+	void *pstore_addr = NULL;
+	void *last_kmsg_addr = NULL;
+	void *last_applog_addr = NULL;
+	struct every_number_info *every_number_info = NULL;
 	BB_PRINT_START();
 
 	if (in_atomic() || irqs_disabled() || in_irq()) {
@@ -832,7 +893,9 @@ void systemerror_save_log2dfx(u32 reboot_type)
 		LAST_APPLOG_SIZE;
 	last_kmsg_addr = last_applog_addr - LAST_KMSG_SIZE;
 
-	memset(buf, 0, EVERY_NUMBER_SIZE);
+	if (EOK != memset_s(buf, EVERY_NUMBER_SIZE, 0, EVERY_NUMBER_SIZE)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	every_number_info = (struct every_number_info *)buf;
 	every_number_info->rtc_time = get_system_time();
 	every_number_info->boot_time = hisi_getcurtime();
@@ -880,9 +943,10 @@ Return:         NA
 ********************************************************************************/
 static void save_buffer_to_dfx_tempbuffer(struct every_number_info *every_number_info)
 {
-	void *buf;
+#ifdef CONFIG_HISI_PARTITION
+	void *buf = NULL;
 	char p_name[BDEVNAME_SIZE + 12];
-	struct dfx_head_info *dfx_head_info;
+	struct dfx_head_info *dfx_head_info = NULL;
 	int ret, fd_dfx, cnt, cfo, need_write_size;
 
 	buf = kzalloc(SZ_4K, GFP_KERNEL);
@@ -891,14 +955,16 @@ static void save_buffer_to_dfx_tempbuffer(struct every_number_info *every_number
 		return;
 	}
 
-	ret = flash_find_ptn(PART_DFX, buf);
+	ret = flash_find_ptn_s(PART_DFX, buf, SZ_4K);
 	if (0 != ret) {
-		BB_PRINT_ERR("%s():%d:flash_find_ptn fail\n", __func__, __LINE__);
+		BB_PRINT_ERR("%s():%d:flash_find_ptn_s fail\n", __func__, __LINE__);
 		kfree(buf);
 		return;
 	}
 
-	memset(p_name, 0, sizeof(p_name));
+	if (EOK != memset_s(p_name, sizeof(p_name), 0, sizeof(p_name))) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	strncpy(p_name, buf, sizeof(p_name));
 	p_name[BDEVNAME_SIZE + 11] = '\0';
 
@@ -955,6 +1021,7 @@ close:
 	sys_close(fd_dfx);
 open_fail:
 	kfree(buf);
+#endif
 	return;
 }
 
@@ -967,8 +1034,12 @@ Return:         NA
 ********************************************************************************/
 void save_log_to_dfx_tempbuffer(u32 reboot_type)
 {
-	void *buf, *fastbootlog_addr, *pstore_addr, *last_kmsg_addr, *last_applog_addr;
-	struct every_number_info *every_number_info;
+	void *buf = NULL;
+	void *fastbootlog_addr = NULL;
+	void *pstore_addr = NULL;
+	void *last_kmsg_addr = NULL;
+	void *last_applog_addr = NULL;
+	struct every_number_info *every_number_info = NULL;
 
 	buf = vmalloc(EVERY_NUMBER_SIZE);
 	if (!buf) {
@@ -998,7 +1069,9 @@ void save_log_to_dfx_tempbuffer(u32 reboot_type)
 		LAST_APPLOG_SIZE;
 	last_kmsg_addr = last_applog_addr - LAST_KMSG_SIZE;
 
-	memset(buf, 0, EVERY_NUMBER_SIZE);
+	if (EOK != memset_s(buf, EVERY_NUMBER_SIZE, 0, EVERY_NUMBER_SIZE)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	every_number_info = (struct every_number_info *)buf;
 	every_number_info->rtc_time = get_system_time();
 	every_number_info->boot_time = hisi_getcurtime();
@@ -1046,14 +1119,16 @@ Return:         NA
 ********************************************************************************/
 void clear_dfx_tempbuffer(void)
 {
-	void *buf;
+	void *buf = NULL;
 
 	buf = vmalloc(EVERY_NUMBER_SIZE);
 	if (!buf) {
 		BB_PRINT_ERR("%s():%d:vmalloc buf fail\n", __func__, __LINE__);
 		return;
 	}
-	memset(buf, 0, EVERY_NUMBER_SIZE);
+	if (EOK != memset_s(buf, EVERY_NUMBER_SIZE, 0, EVERY_NUMBER_SIZE)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	save_buffer_to_dfx_tempbuffer((struct every_number_info *)buf);
 
 	vfree(buf);
@@ -1063,7 +1138,7 @@ void clear_dfx_tempbuffer(void)
 static int get_dfx_core_size(void)
 {
 	int ret;
-	struct device_node *np;
+	struct device_node *np = NULL;
 
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,dfx_partition");

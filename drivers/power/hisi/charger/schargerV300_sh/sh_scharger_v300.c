@@ -8,7 +8,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/usb/otg.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
@@ -741,13 +741,13 @@ static int hi6523_get_vbat_sys(void)
 *  Parameters:   reg_value:string for save register value
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int hi6523_dump_register(char *reg_value)
+static int hi6523_dump_register(char *reg_value, int size)
 {
 	u8 reg[HI6523_REG_TOTAL_NUM] = { 0 };
 	char buff[26] = { 0 };
 	int i = 0;
 
-	memset(reg_value, 0, CHARGELOG_SIZE);
+	memset(reg_value, 0, size);
 	hi6523_read_block(0, &reg[0], 88);
 	hi6523_read_block(88, &reg[88], 88);
 	hi6523_read_block(176, &reg[176], 59);
@@ -811,12 +811,12 @@ static void hi6523_fcp_reg_dump(char *pbuffer)
 *  Parameters:   reg_head:string for save register head
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int hi6523_get_register_head(char *reg_head)
+static int hi6523_get_register_head(char *reg_head, int size)
 {
 	char buff[26] = { 0 };
 	int i = 0;
 
-	memset(reg_head, 0, CHARGELOG_SIZE);
+	memset(reg_head, 0, size);
 	snprintf(buff, 26, "Ibus    ");
 	strncat(reg_head, buff, strlen(buff));
 	for (i = 0; i < HI6523_REG_TOTAL_NUM; i++) {

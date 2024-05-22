@@ -79,8 +79,10 @@
 
 #include "securec.h"
 
+#ifdef HI_K3_EFUSE
 #include <mdrv.h>
 #include "../../adrv/adrv.h"
+#endif
 
 struct work_struct efuse_work;
 
@@ -102,12 +104,16 @@ void efuse_handle_work(struct work_struct *work)
 
     if (EFUSE_READ == (u32)msg->opt) {
         pr_info("efuse read start group = %d, length = %d.\n", msg->start, msg->len);
+#ifdef HI_K3_EFUSE
         if (msg->start == EFUSE_GRP_HUK) {
             msg->ret = get_efuse_kce_value((unsigned char *)msg->buf, (unsigned int)msg->len * 4, 0);
         } else {
             msg->ret = EFUSE_ERROR_ARGS;
             efuse_print_error("error group for efuse read, group = %d\n", msg->start);
         }
+#else
+        msg->ret = bsp_efuse_read(msg->buf, msg->start,msg->len);
+#endif
         if (efuse_debug_flag) {
             pr_info("efuse read end group %d length %d.\n", msg->start, msg->len);
             for(i = 0; i < msg->len; i++) {
@@ -124,12 +130,18 @@ void efuse_handle_work(struct work_struct *work)
             }
         }
 
+#ifdef HI_K3_EFUSE
         if ((msg->start == EFUSE_GRP_HUK) && (!is_in_llt())) {
             msg->ret = set_efuse_kce_value((unsigned char *)msg->buf, (unsigned int)msg->len * 4, 0);
         } else {
             msg->ret = EFUSE_ERROR_ARGS;
             efuse_print_error("error group for efuse write, group = %d\n", msg->start);
         }
+#else
+        if (!is_in_llt()) {
+            msg->ret = bsp_efuse_write(msg->buf, msg->start,msg->len);
+        }
+#endif
 
         pr_info("efuse write finish, ret = %d\n", msg->ret);
     } else {

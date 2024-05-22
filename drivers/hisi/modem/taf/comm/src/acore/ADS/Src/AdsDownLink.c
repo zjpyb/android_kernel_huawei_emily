@@ -254,11 +254,21 @@ VOS_UINT32 ADS_DL_ConfigAdq(
         /* 填写AD描述符: OUTPUT0 ---> 目的地址; OUTPUT1 ---> SKBUFF */
         pstAdDesc = ADS_DL_GET_IPF_AD_DESC_PTR(enAdType, ulCnt);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#ifndef CONFIG_NEW_PLATFORM
+        pstAdDesc->u32OutPtr0 = (VOS_UINT32)virt_to_phys((VOS_VOID *)pstImmZc->data);
+        pstAdDesc->u32OutPtr1 = (VOS_UINT32)virt_to_phys((VOS_VOID *)pstImmZc);
+#else
         pstAdDesc->OutPtr0 = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc->data);
         pstAdDesc->OutPtr1 = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc);
+#endif
+#else
+#ifndef CONFIG_NEW_PLATFORM
+        pstAdDesc->u32OutPtr0 = (VOS_UINT32)ADS_IPF_GetMemDma(pstImmZc);
+        pstAdDesc->u32OutPtr1 = (VOS_UINT32)virt_to_phys((VOS_VOID *)pstImmZc);
 #else
         pstAdDesc->OutPtr0 = (modem_phy_addr)ADS_IPF_GetMemDma(pstImmZc);
         pstAdDesc->OutPtr1 = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc);
+#endif
 #endif/* (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0) */
     }
 
@@ -276,7 +286,11 @@ VOS_UINT32 ADS_DL_ConfigAdq(
         for (ulCnt = 0; ulCnt < ulTmp; ulCnt++)
         {
             pstAdDesc = ADS_DL_GET_IPF_AD_DESC_PTR(enAdType, ulCnt);
+#ifndef CONFIG_NEW_PLATFORM
+            pstImmZc  = (IMM_ZC_STRU *)phys_to_virt((unsigned long)pstAdDesc->u32OutPtr1);
+#else
             pstImmZc  = (IMM_ZC_STRU *)phys_to_virt((unsigned long)pstAdDesc->OutPtr1);
+#endif
             IMM_ZcFreeAny(pstImmZc);
             ADS_DBG_DL_ADQ_FREE_MEM_NUM(1);
         }
@@ -503,7 +517,11 @@ VOS_VOID ADS_DL_FreeIpfUsedAd0(VOS_VOID)
         /* 释放ADQ0的内存 */
         for (i = 0; i < PS_MIN(ulAdNum, IPF_DLAD0_DESC_SIZE); i++)
         {
+#ifndef CONFIG_NEW_PLATFORM
+            IMM_ZcFreeAny((IMM_ZC_STRU *)phys_to_virt((unsigned long)pstAdDesc[i].u32OutPtr1));
+#else
             IMM_ZcFreeAny((IMM_ZC_STRU *)phys_to_virt((unsigned long)pstAdDesc[i].OutPtr1));
+#endif
         }
     }
     else
@@ -544,7 +562,11 @@ VOS_VOID ADS_DL_FreeIpfUsedAd1(VOS_VOID)
         /* 释放ADQ1的内存 */
         for (i = 0; i < PS_MIN(ulAdNum, IPF_DLAD1_DESC_SIZE); i++)
         {
+#ifndef CONFIG_NEW_PLATFORM
+            IMM_ZcFreeAny((IMM_ZC_STRU *)phys_to_virt((unsigned long)pstAdDesc[i].u32OutPtr1));
+#else
             IMM_ZcFreeAny((IMM_ZC_STRU *)phys_to_virt((unsigned long)pstAdDesc[i].OutPtr1));
+#endif
         }
     }
     else
@@ -778,7 +800,9 @@ VOS_VOID ADS_DL_Xmit(
 )
 {
     RCV_DL_DATA_FUNC                    pRcvDlDataFunc    = VOS_NULL_PTR;
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     RCV_RD_LAST_DATA_FUNC               pRcvRdLstDataFunc = VOS_NULL_PTR;
+#endif
     IMM_ZC_STRU                        *pstLstImmZc       = VOS_NULL_PTR;
     VOS_UINT32                          ulExParam;
     VOS_UINT16                          usIpfResult;
@@ -786,7 +810,9 @@ VOS_VOID ADS_DL_Xmit(
     VOS_UINT8                           ucExRabId;
 
     pRcvDlDataFunc    = ADS_DL_GET_DATA_CALLBACK_FUNC(ulInstance, ulRabId);
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     pRcvRdLstDataFunc = ADS_DL_GET_RD_LST_DATA_CALLBACK_FUNC(ulInstance, ulRabId);
+#endif
 
     /* 获取缓存的数据 */
     pstLstImmZc = ADS_DL_GET_LST_DATA_PTR(ulInstance, ulRabId);
@@ -802,12 +828,14 @@ VOS_VOID ADS_DL_Xmit(
         {
             (VOS_VOID)pRcvDlDataFunc(ucExRabId, pstLstImmZc, enIpType, ulExParam);
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
             /* 最后一个报文 */
             pRcvRdLstDataFunc = ADS_DL_GET_RD_LST_DATA_CALLBACK_FUNC(ulInstance, ulRabId);
             if ((VOS_NULL_PTR == pstImmZc) && (VOS_NULL_PTR != pRcvRdLstDataFunc))
             {
                 pRcvRdLstDataFunc(ulExParam);
             }
+#endif
             ADS_DBG_DL_RMNET_TX_PKT_NUM(1);
         }
         else
@@ -974,7 +1002,9 @@ VOS_VOID ADS_DL_ProcIpfResult(VOS_VOID)
     VOS_UINT32                          ulRdNum = IPF_DLRD_DESC_SIZE;
     VOS_UINT32                          ulTxTimeout = 0;
     VOS_UINT32                          ulCnt;
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     VOS_ULONG                           ulLockLevel;
+#endif
     VOS_UINT32                          ulExParam;
     VOS_UINT32                          ulInstance;
     VOS_UINT32                          ulRabId;
@@ -1013,16 +1043,23 @@ VOS_VOID ADS_DL_ProcIpfResult(VOS_VOID)
         return;
     }
 
+#if (FEATURE_OFF == FEATURE_LTE)
+    mdrv_wdt_feed(0);
+#endif
 
     /* 增加RD统计个数 */
     ADS_DBG_DL_RDQ_RX_RD_NUM(ulRdNum);
 
     /* 先配置AD，再处理RD */
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /*lint -e571*/
     VOS_SpinLockIntLock(&(g_stAdsCtx.stAdsIpfCtx.stAdqSpinLock), ulLockLevel);
     /*lint +e571*/
     ADS_DL_AllocMemForAdq();
     VOS_SpinUnlockIntUnlock(&(g_stAdsCtx.stAdsIpfCtx.stAdqSpinLock), ulLockLevel);
+#else
+    ADS_DL_AllocMemForAdq();
+#endif
 
     for (ulCnt = 0; ulCnt < ulRdNum; ulCnt++)
     {
@@ -1271,6 +1308,7 @@ VOS_UINT32 ADS_DL_DeregFilterDataCallback(VOS_UINT32 ulRabId)
     return VOS_OK;
 }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 
 VOS_UINT32 ADS_DL_RegNapiCallback(
     VOS_UINT8                          ulExRabId,
@@ -1310,6 +1348,7 @@ VOS_UINT32 ADS_DL_RegNapiCallback(
 
     return VOS_OK;
 }
+#endif
 
 
 VOS_UINT32 ADS_DL_RcvTafPdpStatusInd(MsgBlock *pMsg)
@@ -1356,8 +1395,10 @@ VOS_UINT32 ADS_DL_RcvTafPdpStatusInd(MsgBlock *pMsg)
         if (ADS_CLEAN_RCV_CB_FUNC_TURE == pstPdpStatusInd->enCleanRcvCbFlag)
         {
             pstDlRabInfo->pRcvDlDataFunc    = VOS_NULL_PTR;
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
             pstDlRabInfo->pRcvRdLstDataFunc  = VOS_NULL_PTR;
             pstDlRabInfo->pAdjNapiWeightFunc = VOS_NULL_PTR;
+#endif
         }
         else
         {
@@ -1404,7 +1445,9 @@ VOS_UINT32 ADS_DL_RcvCcpuResetEndInd(
     MsgBlock                           *pstMsg
 )
 {
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     VOS_ULONG                           ulLockLevel;
+#endif
     ADS_TRACE_HIGH("proc reset msg: enter.\n");
 
     TAF_MEM_SET_S(ADS_DL_GET_IPF_RD_RECORD_PTR(),
@@ -1416,11 +1459,15 @@ VOS_UINT32 ADS_DL_RcvCcpuResetEndInd(
     mdrv_ipf_reinit_dlreg();
 
     /* 重新初始化ADQ */
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /*lint -e571*/
     VOS_SpinLockIntLock(&(g_stAdsCtx.stAdsIpfCtx.stAdqSpinLock), ulLockLevel);
     /*lint +e571*/
     ADS_DL_AllocMemForAdq();
     VOS_SpinUnlockIntUnlock(&(g_stAdsCtx.stAdsIpfCtx.stAdqSpinLock), ulLockLevel);
+#else
+    ADS_DL_AllocMemForAdq();
+#endif
 
     ADS_TRACE_HIGH("proc reset msg: leave.\n");
     return VOS_OK;

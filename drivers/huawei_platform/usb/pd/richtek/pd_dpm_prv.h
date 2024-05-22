@@ -117,7 +117,7 @@ static inline svdm_svid_data_t *
 	dpm_get_svdm_svid_data(pd_port_t *pd_port, uint16_t svid)
 {
 	uint8_t i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	if (!(pd_port->id_vdos[0] & PD_IDH_MODAL_SUPPORT))
 		return NULL;
@@ -163,7 +163,7 @@ static inline bool dpm_register_svdm_ops(
 static inline bool svdm_notify_pe_startup(pd_port_t *pd_port)
 {
 	int i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
@@ -178,7 +178,7 @@ static inline int svdm_notify_pe_ready(
 	pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	int i, ret;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
@@ -198,7 +198,7 @@ static inline bool svdm_notify_pe_shutdown(
 	pd_port_t *pd_port)
 {
 	int i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
@@ -214,7 +214,7 @@ static inline bool svdm_notify_pe_shutdown(
 static inline bool svdm_reset_state(pd_port_t *pd_port)
 {
 	int i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
@@ -230,7 +230,7 @@ static inline bool svdm_dfp_inform_id(
 	pd_port_t *pd_port, pd_event_t *pd_event, bool ack)
 {
 	int i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
@@ -245,7 +245,7 @@ static inline bool svdm_dfp_inform_id(
 static inline bool svdm_dfp_inform_svids(pd_port_t *pd_port, bool ack)
 {
 	int i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];

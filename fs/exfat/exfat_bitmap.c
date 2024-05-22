@@ -47,17 +47,17 @@ s32 exfat_bitmap_test(u8 *bitmap, int i)
 	u8 data;
 
 	data = bitmap[BITMAP_LOC(i)];
-	if ((data >> BITMAP_SHIFT(i)) & 0x01)
+	if ((data >> BITMAP_SHIFT((unsigned int)i)) & 0x01)
 		return 1;
 	return 0;
 } /* end of Bitmap_test */
 
 void exfat_bitmap_set(u8 *bitmap, int i)
 {
-	bitmap[BITMAP_LOC(i)] |= (0x01 << BITMAP_SHIFT(i));
+	bitmap[BITMAP_LOC(i)] |= (0x01 << BITMAP_SHIFT((unsigned int)i));
 } /* end of Bitmap_set */
 
 void exfat_bitmap_clear(u8 *bitmap, int i)
 {
-	bitmap[BITMAP_LOC(i)] &= ~(0x01 << BITMAP_SHIFT(i)); /* [false alarm]:native code*/
+	bitmap[BITMAP_LOC(i)] &= ~(0x01 << BITMAP_SHIFT((unsigned int)i)); /* [false alarm]:native code*/
 } /* end of Bitmap_clear */

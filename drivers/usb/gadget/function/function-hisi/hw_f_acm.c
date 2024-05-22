@@ -3,7 +3,7 @@
  *
  *  USB CDC serial (ACM) function driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -107,8 +107,8 @@ static inline struct f_acm *port_to_acm(struct gserial *p)
 /*-------------------------------------------------------------------------*/
 
 /* notification endpoint uses smallish and infrequent fixed-size messages */
-#define GS_NOTIFY_INTERVAL_MS     (32)
-#define GS_NOTIFY_MAXPACKET       (10) /* notification + 2 bytes */
+#define GS_NOTIFY_INTERVAL_MS     32
+#define GS_NOTIFY_MAXPACKET       10 /* notification + 2 bytes */
 
 /* interface and class descriptors: */
 static struct usb_interface_assoc_descriptor acm_iad_descriptor = {
@@ -376,9 +376,9 @@ static struct usb_descriptor_header *acm_ss_function_single_notify[] = {
 };
 
 /* string descriptors: */
-#define ACM_CTRL_IDX    (0)
-#define ACM_DATA_IDX    (1)
-#define ACM_IAD_IDX     (2)
+#define ACM_CTRL_IDX    0
+#define ACM_DATA_IDX    1
+#define ACM_IAD_IDX     2
 
 /* static strings, in UTF-8 */
 static struct usb_string acm_string_defs[] = {
@@ -668,7 +668,7 @@ static int acm_cdc_notify(struct f_acm *acm, u8 type, u16 value,
 	struct usb_request *req;
 	struct usb_cdc_notification *notify;
 	const unsigned int len = sizeof(*notify) + length;
-	void *buf;
+	void *buf = NULL;
 	int status;
 
 	req = acm->notify_req;
@@ -1079,8 +1079,7 @@ static inline struct f_serial_opts *to_f_serial_opts(struct config_item *item)
 #if (KERNEL_VERSION(4, 4, 0) > LINUX_VERSION_CODE)
 CONFIGFS_ATTR_STRUCT(f_serial_opts);
 static ssize_t f_acm_attr_show(struct config_item *item,
-				 struct configfs_attribute *attr,
-				 char *page)
+	struct configfs_attribute *attr, char *page)
 {
 	struct f_serial_opts *opts = to_f_serial_opts(item);
 	struct f_serial_opts_attribute *f_serial_opts_attr =

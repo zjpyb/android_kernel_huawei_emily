@@ -6746,6 +6746,8 @@ static void parade_get_mt_touches(struct parade_mt_data *md,
 				break;
 		}
 
+		if (info->fingers[touch_id].event == PT_EV_LIFTOFF)
+			info->fingers[touch_id].status = TP_NONE_FINGER;
 		info->fingers[touch_id].wx = tch->abs[PT_TCH_WX];
 		info->fingers[touch_id].wy = tch->abs[PT_TCH_WY];
 
@@ -8030,9 +8032,11 @@ static int parade_create_project_id(void)
 			TS_LOG_ERR("%s: get chip id failed!\n", __func__);
 			goto out;
 		}
-		for (i = 0; g_ts_kit_platform_data.product_name[i] && i < PROJECT_ID_PRODUCT_NAME_LEN; i++) { // exchange name to upper
+		/* exchange name to upper */
+		for (i = 0;  (i < PROJECT_ID_PRODUCT_NAME_LEN) &&
+			g_ts_kit_platform_data.product_name[i]; i++)
 			tmp_buff[i] = toupper(g_ts_kit_platform_data.product_name[i]);
-		}
+
 		/* create project id */
 		snprintf(tskit_parade_data->project_id, MAX_STR_LEN, "%s%02d%02d0",
 				tmp_buff, chip_id,  tskit_parade_data->panel_id);

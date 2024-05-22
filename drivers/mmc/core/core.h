@@ -12,6 +12,12 @@
 #define _MMC_CORE_CORE_H
 
 #include <linux/delay.h>
+#include <linux/sched.h>
+#include <linux/mmc/core.h>
+
+struct mmc_host;
+struct mmc_card;
+struct mmc_request;
 
 #define MMC_CMD_RETRIES        3
 
@@ -33,10 +39,10 @@ struct mmc_bus_ops {
 	int (*alive)(struct mmc_host *);
 	int (*shutdown)(struct mmc_host *);
 	int (*reset)(struct mmc_host *);
-#ifdef CONFIG_MMC_PASSWORDS	
+#ifdef CONFIG_MMC_PASSWORDS
 	int (*sysfs_add)(struct mmc_host *, struct mmc_card *card);
 	void (*sysfs_remove)(struct mmc_host *, struct mmc_card *card);
-#endif	
+#endif
 };
 
 void mmc_attach_bus(struct mmc_host *host, const struct mmc_bus_ops *ops);
@@ -52,8 +58,8 @@ void mmc_set_clock(struct mmc_host *host, unsigned int hz);
 void mmc_set_bus_mode(struct mmc_host *host, unsigned int mode);
 void mmc_set_bus_width(struct mmc_host *host, unsigned int width);
 u32 mmc_select_voltage(struct mmc_host *host, u32 ocr);
-int mmc_set_signal_voltage(struct mmc_host *host, int signal_voltage, u32 ocr);
-int __mmc_set_signal_voltage(struct mmc_host *host, int signal_voltage);
+int mmc_set_uhs_voltage(struct mmc_host *host, u32 ocr);
+int mmc_set_signal_voltage(struct mmc_host *host, int signal_voltage);
 void mmc_set_timing(struct mmc_host *host, unsigned int timing);
 void mmc_set_driver_type(struct mmc_host *host, unsigned int drv_type);
 int mmc_select_drive_strength(struct mmc_card *card, unsigned int max_dtr,
@@ -71,7 +77,7 @@ static inline void mmc_delay(unsigned int ms)
 {
 	if (ms < 1000 / HZ) {
 		cond_resched();
-		mdelay(ms);/*lint !e647*/
+		mdelay(ms); /*lint !e647*/
 	} else {
 		msleep(ms);
 	}
@@ -82,6 +88,7 @@ void mmc_start_host(struct mmc_host *host);
 void mmc_stop_host(struct mmc_host *host);
 
 int _mmc_detect_card_removed(struct mmc_host *host);
+int mmc_detect_card_removed(struct mmc_host *host);
 
 int mmc_attach_mmc(struct mmc_host *host);
 int mmc_attach_sd(struct mmc_host *host);
@@ -116,9 +123,37 @@ void mmc_unregister_pm_notifier(struct mmc_host *host);
 static inline void mmc_register_pm_notifier(struct mmc_host *host) { }
 static inline void mmc_unregister_pm_notifier(struct mmc_host *host) { }
 #endif
+
 int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	struct mmc_card *oldcard);
-extern void sd_sdio_loop_test(struct work_struct *work);
+
+void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq);
+bool mmc_is_req_done(struct mmc_host *host, struct mmc_request *mrq);
+
+struct mmc_async_req;
+
+struct mmc_async_req *mmc_start_areq(struct mmc_host *host,
+				     struct mmc_async_req *areq,
+				     enum mmc_blk_status *ret_stat);
+
+int mmc_erase(struct mmc_card *card, unsigned int from, unsigned int nr,
+		unsigned int arg);
+int mmc_can_erase(struct mmc_card *card);
+int mmc_can_trim(struct mmc_card *card);
+int mmc_can_discard(struct mmc_card *card);
+int mmc_can_sanitize(struct mmc_card *card);
+int mmc_can_secure_erase_trim(struct mmc_card *card);
+int mmc_erase_group_aligned(struct mmc_card *card, unsigned int from,
+			unsigned int nr);
+unsigned int mmc_calc_max_discard(struct mmc_card *card);
+
+int mmc_set_blocklen(struct mmc_card *card, unsigned int blocklen);
+int mmc_set_blockcount(struct mmc_card *card, unsigned int blockcount,
+			bool is_rel_write);
+
+void mmc_get_card(struct mmc_card *card);
+void mmc_put_card(struct mmc_card *card);
+
+
 
 #endif
-

@@ -65,11 +65,11 @@ static int hisi_ambient_probe(struct platform_device *pdev)
 	int ret;
 	int sensor_count;
 	int i = 0;
-	struct device_node *np;
-	struct device_node *child;
-	const char *ptr_type;
-	struct hisi_ambient_sensor_t *ambient_sensor;
-	struct hisi_ambient_t *hisi_ambient;
+	struct device_node *np = NULL;
+	struct device_node *child = NULL;
+	const char *ptr_type = NULL;
+	struct hisi_ambient_sensor_t *ambient_sensor = NULL;
+	struct hisi_ambient_t *hisi_ambient = NULL;
 
 	if (!of_device_is_available(dev_node)) {
 		dev_err(dev, "HISI ambient dev not found\n");
@@ -199,7 +199,7 @@ MODULE_DEVICE_TABLE(of, hisi_ambient_of_match);
 
 int hisi_ambient_suspend(struct platform_device *pdev, pm_message_t state)
 {
-	struct hisi_ambient_t *hisi_ambient;
+	struct hisi_ambient_t *hisi_ambient = NULL;
 	int now_cc = 0;
 	long delta_time = 0;
 	int delta_cc = 0;
@@ -255,8 +255,8 @@ int hisi_ambient_resume(struct platform_device *pdev)
 	int delta_cc = 0;
 	int avg_current = 0;
 	int ret = 0;
-	struct hisi_ambient_sensor_t *ambient_sensor;
-	struct hisi_ambient_t *hisi_ambient;
+	struct hisi_ambient_sensor_t *ambient_sensor = NULL;
+	struct hisi_ambient_t *hisi_ambient = NULL;
 	struct rtc_time tm = {0};
 
 

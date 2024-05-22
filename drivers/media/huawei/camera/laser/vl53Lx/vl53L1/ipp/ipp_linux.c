@@ -128,7 +128,7 @@ VL53L1_Error VL53L1_ipp_hist_process_data(
 	struct ipp_work_t *pout = &data->ipp.work_out;
 	struct ipp_work_t *pin = &data->ipp.work;
 	int rc;
-	VL53L1_range_results_t *presults_ipp;
+	VL53L1_range_results_t *presults_ipp = NULL;
 
 	IPP_SERIALIZE_VAR;
 
@@ -192,7 +192,7 @@ VL53L1_Error VL53L1_ipp_hist_ambient_dmax(
 	struct ipp_work_t *pout = &data->ipp.work_out;
 	struct ipp_work_t *pin = &data->ipp.work;
 	int rc;
-	int16_t *pambient_dmax_mm_ipp;
+	int16_t *pambient_dmax_mm_ipp = NULL;
 
 	IPP_SERIALIZE_VAR;
 
@@ -250,8 +250,8 @@ VL53L1_Error VL53L1_ipp_xtalk_calibration_process_data(
 	struct ipp_work_t *pout = &data->ipp.work_out;
 	struct ipp_work_t *pin = &data->ipp.work;
 	int rc;
-	VL53L1_xtalk_histogram_data_t *pxtalk_shape_ipp;
-	VL53L1_xtalk_calibration_results_t *pxtalk_cal_ipp;
+	VL53L1_xtalk_histogram_data_t *pxtalk_shape_ipp = NULL;
+	VL53L1_xtalk_calibration_results_t *pxtalk_cal_ipp = NULL;
 
 	IPP_SERIALIZE_VAR;
 
@@ -312,7 +312,7 @@ VL53L1_Error VL53L1_ipp_generate_dual_reflectance_xtalk_samples(
 	struct ipp_work_t *pout = &data->ipp.work_out;
 	struct ipp_work_t *pin = &data->ipp.work;
 	int rc;
-	VL53L1_histogram_bin_data_t *pxtalk_avg_samples_ipp;
+	VL53L1_histogram_bin_data_t *pxtalk_avg_samples_ipp = NULL;
 
 	IPP_SERIALIZE_VAR;
 

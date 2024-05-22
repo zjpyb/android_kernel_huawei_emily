@@ -8,9 +8,10 @@
 /*version=0 indicat there is not enable cos image upgrade sw version*/
 #define HISEE_DEFAULT_SW_UPGRADE_VERSION (0x0)
 
-int cos_image_upgrade_func(void *buf, int para);
-int handle_cos_image_upgrade(void *buf, int para);
+int cos_image_upgrade_func(const void *buf, int para);
+int handle_cos_image_upgrade(const void *buf, int para);
 int misc_image_upgrade_func(void *buf, unsigned int cos_id);
+int hisee_upgrade_image_read(unsigned int cos_id, hisee_img_file_type img_type, se_smc_cmd smc_cmd);
 int cos_upgrade_image_read(unsigned int cos_id, hisee_img_file_type img_type);
 
 #ifdef CONFIG_HICOS_MISCIMG_PATCH

@@ -3,7 +3,7 @@
  *
  * bq2560x driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,7 +24,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/usb/otg.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
@@ -48,10 +48,10 @@
 #include <huawei_platform/power/huawei_charger.h>
 #include <linux/power/hisi/hisi_bci_battery.h>
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
-#include <bq2560x_charger.h>
 #ifdef CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
 #include <huawei_platform/power/usb_short_circuit_protect.h>
 #endif
+#include "bq2560x_charger.h"
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -74,15 +74,14 @@ static int g_cv_policy;
 static int g_bq2560x_cv;
 static bool g_shutdown_flag;
 
-#define TERM_CURR                    (840)
-#define LIMIT_CURR                   (840)
+#define TERM_CURR                    840
+#define LIMIT_CURR                   840
 
-#define MSG_LEN                      (2)
-#define BUF_LEN                      (26)
+#define MSG_LEN                      2
+#define BUF_LEN                      26
 
 #define GPIO_LOW                     0
 #define GPIO_HIGH                    1
-#define VOLTAGE9V                    9
 #define DELAY_10MS                   10
 #define DELAY_50MS                   50
 #define DELAY_100MS                  100
@@ -96,9 +95,9 @@ static int bq2560x_write_block(struct bq2560x_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[1];
-	int ret = 0;
+	int ret;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
@@ -115,23 +114,20 @@ static int bq2560x_write_block(struct bq2560x_device_info *di,
 	/* i2c_transfer returns number of messages transferred */
 	if (ret != 1) {
 		hwlog_err("write_block failed[%x]\n", reg);
-		if (ret < 0)
-			return ret;
-		else
-			return -EIO;
-	} else {
-		return 0;
+		return -EIO;
 	}
+
+	return 0;
 }
 
 static int bq2560x_read_block(struct bq2560x_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[MSG_LEN];
-	u8 buf = 0;
-	int ret = 0;
+	u8 buf;
+	int ret;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
@@ -153,13 +149,10 @@ static int bq2560x_read_block(struct bq2560x_device_info *di,
 	/* i2c_transfer returns number of messages transferred */
 	if (ret != MSG_LEN) {
 		hwlog_err("read_block failed[%x]\n", reg);
-		if (ret < 0)
-			return ret;
-		else
-			return -EIO;
-	} else {
-		return 0;
+		return -EIO;
 	}
+
+	return 0;
 }
 
 static int bq2560x_write_byte(u8 reg, u8 value)
@@ -182,7 +175,7 @@ static int bq2560x_read_byte(u8 reg, u8 *value)
 
 static int bq2560x_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = bq2560x_read_byte(reg, &val);
@@ -192,14 +185,12 @@ static int bq2560x_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 	val &= ~mask;
 	val |= ((value << shift) & mask);
 
-	ret = bq2560x_write_byte(reg, val);
-
-	return ret;
+	return bq2560x_write_byte(reg, val);
 }
 
 static int bq2560x_read_mask(u8 reg, u8 mask, u8 shift, u8 *value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = bq2560x_read_byte(reg, &val);
@@ -229,10 +220,10 @@ static int bq2560x_read_mask(u8 reg, u8 mask, u8 shift, u8 *value)
 }
 
 #define BQ2560x_SYSFS_FIELD_RW(_name, r, f) \
-	BQ2560x_SYSFS_FIELD(_name, r, f, 0644, bq2560x_sysfs_store)
+	BQ2560x_SYSFS_FIELD(_name, r, f, 0640, bq2560x_sysfs_store)
 
 #define BQ2560x_SYSFS_FIELD_RO(_name, r, f) \
-	BQ2560x_SYSFS_FIELD(_name, r, f, 0444, NULL)
+	BQ2560x_SYSFS_FIELD(_name, r, f, 0440, NULL)
 
 static ssize_t bq2560x_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
@@ -265,7 +256,8 @@ static const struct attribute_group bq2560x_sysfs_attr_group = {
 
 static void bq2560x_sysfs_init_attrs(void)
 {
-	int i, limit = ARRAY_SIZE(bq2560x_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(bq2560x_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++)
 		bq2560x_sysfs_attrs[i] = &bq2560x_sysfs_field_tbl[i].attr.attr;
@@ -276,7 +268,8 @@ static void bq2560x_sysfs_init_attrs(void)
 static struct bq2560x_sysfs_field_info *bq2560x_sysfs_field_lookup(
 	const char *name)
 {
-	int i, limit = ARRAY_SIZE(bq2560x_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(bq2560x_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++) {
 		if (!strcmp(name, bq2560x_sysfs_field_tbl[i].attr.attr.name))
@@ -293,13 +286,13 @@ static ssize_t bq2560x_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 
-	struct bq2560x_sysfs_field_info *info;
-	struct bq2560x_sysfs_field_info *info2;
+	struct bq2560x_sysfs_field_info *info = NULL;
+	struct bq2560x_sysfs_field_info *info2 = NULL;
 	int ret;
 	u8 v;
 
 	info = bq2560x_sysfs_field_lookup(attr->attr.name);
-	if (info == NULL) {
+	if (!info) {
 		hwlog_err("get sysfs entries failed\n");
 		return -EINVAL;
 	}
@@ -309,7 +302,7 @@ static ssize_t bq2560x_sysfs_show(struct device *dev,
 
 	if (!strncmp(("reg_value"), attr->attr.name, strlen("reg_value"))) {
 		info2 = bq2560x_sysfs_field_lookup("reg_addr");
-		if (info2 == NULL) {
+		if (!info2) {
 			hwlog_err("get sysfs entries failed\n");
 			return -EINVAL;
 		}
@@ -327,13 +320,13 @@ static ssize_t bq2560x_sysfs_show(struct device *dev,
 static ssize_t bq2560x_sysfs_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct bq2560x_sysfs_field_info *info;
-	struct bq2560x_sysfs_field_info *info2;
+	struct bq2560x_sysfs_field_info *info = NULL;
+	struct bq2560x_sysfs_field_info *info2 = NULL;
 	int ret;
 	u8 v;
 
 	info = bq2560x_sysfs_field_lookup(attr->attr.name);
-	if (info == NULL) {
+	if (!info) {
 		hwlog_err("get sysfs entries failed\n");
 		return -EINVAL;
 	}
@@ -346,7 +339,7 @@ static ssize_t bq2560x_sysfs_store(struct device *dev,
 
 	if (!strncmp(("reg_value"), attr->attr.name, strlen("reg_value"))) {
 		info2 = bq2560x_sysfs_field_lookup("reg_addr");
-		if (info2 == NULL) {
+		if (!info2) {
 			hwlog_err("get sysfs entries failed\n");
 			return -EINVAL;
 		}
@@ -373,7 +366,6 @@ static ssize_t bq2560x_sysfs_store(struct device *dev,
 static int bq2560x_sysfs_create_group(struct bq2560x_device_info *di)
 {
 	bq2560x_sysfs_init_attrs();
-
 	return sysfs_create_group(&di->dev->kobj, &bq2560x_sysfs_attr_group);
 }
 
@@ -381,9 +373,7 @@ static void bq2560x_sysfs_remove_group(struct bq2560x_device_info *di)
 {
 	sysfs_remove_group(&di->dev->kobj, &bq2560x_sysfs_attr_group);
 }
-
 #else
-
 static inline int bq2560x_sysfs_create_group(struct bq2560x_device_info *di)
 {
 	return 0;
@@ -392,13 +382,12 @@ static inline int bq2560x_sysfs_create_group(struct bq2560x_device_info *di)
 static inline void bq2560x_sysfs_remove_group(struct bq2560x_device_info *di)
 {
 }
-
 #endif /* CONFIG_SYSFS */
 
 static int bq2560x_device_check(void)
 {
 	u8 reg = 0;
-	int ret = 0;
+	int ret;
 
 	ret = bq2560x_read_byte(BQ2560X_REG_VPRS, &reg);
 	if (ret)
@@ -418,7 +407,7 @@ static int bq2560x_device_check(void)
 
 static int bq2560x_5v_chip_init(struct bq2560x_device_info *di)
 {
-	int ret = 0;
+	int ret;
 
 	g_hiz_mode = FALSE;
 
@@ -432,13 +421,13 @@ static int bq2560x_5v_chip_init(struct bq2560x_device_info *di)
 	/* iprechg = 256ma,iterm current = 128ma */
 	ret |= bq2560x_write_byte(BQ2560X_REG_PCTCC, 0x42);
 	ret |= bq2560x_write_mask(BQ2560X_REG_MOC,
-			BQ2560X_REG_MOC_VDPM_BAT_TRACK_MASK,
-			BQ2560X_REG_MOC_VDPM_BAT_TRACK_SHIFT,
-			REG07_VDPM_BAT_TRACK_DISABLE);
+		BQ2560X_REG_MOC_VDPM_BAT_TRACK_MASK,
+		BQ2560X_REG_MOC_VDPM_BAT_TRACK_SHIFT,
+		REG07_VDPM_BAT_TRACK_DISABLE);
 	ret |= bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
-			BQ2560X_REG_REG_BVTRC_OVP_MASK,
-			BQ2560X_REG_REG_BVTRC_OVP_SHIFT,
-			REG06_OVP_10P5V);
+		BQ2560X_REG_REG_BVTRC_OVP_MASK,
+		BQ2560X_REG_REG_BVTRC_OVP_SHIFT,
+		REG06_OVP_10P5V);
 
 	hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
 
@@ -452,7 +441,7 @@ static int bq2560x_chip_init(struct chip_init_crit *init_crit)
 	int ret = -1;
 	struct bq2560x_device_info *di = g_bq2560x_dev;
 
-	if (di == NULL || init_crit == NULL) {
+	if (!di || !init_crit) {
 		hwlog_err("di or init_crit is null\n");
 		return -ENOMEM;
 	}
@@ -465,7 +454,6 @@ static int bq2560x_chip_init(struct chip_init_crit *init_crit)
 
 		ret = bq2560x_5v_chip_init(di);
 		break;
-
 	default:
 		hwlog_err("invaid init_crit vbus mode\n");
 		break;
@@ -476,7 +464,7 @@ static int bq2560x_chip_init(struct chip_init_crit *init_crit)
 
 static int bq2560x_set_input_current(int value)
 {
-	int val = 0;
+	int val;
 
 	/*
 	 * IC precision deviation by hw: +100mA(current >= 1700)
@@ -493,28 +481,28 @@ static int bq2560x_set_input_current(int value)
 	hwlog_info("set_input_current [%x]=0x%x\n", BQ2560X_REG_ISC, val);
 
 	return bq2560x_write_mask(BQ2560X_REG_ISC,
-			BQ2560X_REG_ISC_IINLIM_MASK,
-			BQ2560X_REG_ISC_IINLIM_SHIFT,
-			val);
+		BQ2560X_REG_ISC_IINLIM_MASK,
+		BQ2560X_REG_ISC_IINLIM_SHIFT,
+		val);
 }
 
 static int bq2560x_set_charge_current(int value)
 {
-	int val = 0;
+	int val;
 
 	val = (value - REG02_ICHG_BASE) / REG02_ICHG_LSB;
 
 	hwlog_info("set_charge_current [%x]=0x%x\n", BQ2560X_REG_CCC, val);
 
 	return bq2560x_write_mask(BQ2560X_REG_CCC,
-			BQ2560X_REG_CCC_ICHG_MASK,
-			BQ2560X_REG_CCC_ICHG_SHIFT,
-			val);
+		BQ2560X_REG_CCC_ICHG_MASK,
+		BQ2560X_REG_CCC_ICHG_SHIFT,
+		val);
 }
 
 static int bq2560x_set_boost_current(int curr)
 {
-	int val = 0;
+	int val;
 
 	if (curr == BOOST_LIM_0P5A)
 		val = REG02_BOOST_LIM_0P5A;
@@ -524,23 +512,23 @@ static int bq2560x_set_boost_current(int curr)
 	hwlog_info("set_boost_current [%x]=0x%x\n", BQ2560X_REG_REG_BVTRC, val);
 
 	return bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
-			BQ2560X_REG_REG_BVTRC_BOOSTV_MASK,
-			BQ2560X_REG_REG_BVTRC_BOOSTV_SHIFT,
-			val);
+		BQ2560X_REG_REG_BVTRC_BOOSTV_MASK,
+		BQ2560X_REG_REG_BVTRC_BOOSTV_SHIFT,
+		val);
 }
 
 static int bq2560x_reused_set_cv(int value)
 {
-	int val = 0;
+	int val;
 
 	val = (value - REG04_VREG_BASE) / REG04_VREG_LSB;
 
 	hwlog_info("reused_set_cv [%x]=0x%x\n", BQ2560X_REG_CVC, val);
 
 	return bq2560x_write_mask(BQ2560X_REG_CVC,
-			BQ2560X_REG_CVC_VREG_MASK,
-			BQ2560X_REG_CVC_VREG_SHIFT,
-			val);
+		BQ2560X_REG_CVC_VREG_MASK,
+		BQ2560X_REG_CVC_VREG_SHIFT,
+		val);
 }
 
 static int bq2560x_set_terminal_voltage(int value)
@@ -560,35 +548,35 @@ static int bq2560x_set_terminal_voltage(int value)
 
 static int bq2560x_set_dpm_voltage(int value)
 {
-	int val = 0;
+	int val;
 
 	val = (value - REG06_VINDPM_BASE) / REG06_VINDPM_LSB;
 
 	hwlog_info("set_dpm_voltage [%x]=0x%x\n", BQ2560X_REG_REG_BVTRC, val);
 
 	return bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
-			BQ2560X_REG_REG_BVTRC_VINDPM_MASK,
-			BQ2560X_REG_REG_BVTRC_VINDPM_SHIFT,
-			val);
+		BQ2560X_REG_REG_BVTRC_VINDPM_MASK,
+		BQ2560X_REG_REG_BVTRC_VINDPM_SHIFT,
+		val);
 }
 
 static int bq2560x_reused_set_iterm(int value)
 {
-	int val = 0;
+	int val;
 
 	val = (value - REG03_ITERM_BASE) / REG03_ITERM_LSB;
 
 	hwlog_info("reused_set_iterm [%x]=0x%x\n", BQ2560X_REG_PCTCC, val);
 
 	return bq2560x_write_mask(BQ2560X_REG_PCTCC,
-			BQ2560X_REG_PCTCC_ITERM_MASK,
-			BQ2560X_REG_PCTCC_ITERM_SHIFT,
-			val);
+		BQ2560X_REG_PCTCC_ITERM_MASK,
+		BQ2560X_REG_PCTCC_ITERM_SHIFT,
+		val);
 }
 
 static int bq2560x_set_terminal_current(int value)
 {
-	int ret = 0;
+	int ret;
 	int ichg = -hisi_battery_current();
 
 	if (ichg > LIMIT_CURR) {
@@ -598,7 +586,7 @@ static int bq2560x_set_terminal_current(int value)
 
 			ret = bq2560x_reused_set_cv(g_cv_policy);
 			if (ret)
-				hwlog_err("set g_cv_policy error");
+				hwlog_err("set g_cv_policy error\n");
 
 			return bq2560x_reused_set_iterm(value);
 		}
@@ -620,14 +608,14 @@ static int bq2560x_set_terminal_current(int value)
 static int bq2560x_set_charge_enable(int enable)
 {
 	return bq2560x_write_mask(BQ2560X_REG_POC,
-			BQ2560X_REG_POC_CHG_CONFIG_MASK,
-			BQ2560X_REG_POC_CHG_CONFIG_SHIFT,
-			enable);
+		BQ2560X_REG_POC_CHG_CONFIG_MASK,
+		BQ2560X_REG_POC_CHG_CONFIG_SHIFT,
+		enable);
 }
 
 static int bq2560x_set_boost_voltage(int voltage)
 {
-	int val = 0;
+	int val;
 
 	if (voltage == BOOSTV_4850)
 		val = REG06_BOOSTV_4P85V;
@@ -641,47 +629,54 @@ static int bq2560x_set_boost_voltage(int voltage)
 	hwlog_info("set_boost_voltage [%x]=0x%x\n", BQ2560X_REG_REG_BVTRC, val);
 
 	return bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
-			BQ2560X_REG_REG_BVTRC_BOOSTV_MASK,
-			BQ2560X_REG_REG_BVTRC_BOOSTV_SHIFT,
-			val);
+		BQ2560X_REG_REG_BVTRC_BOOSTV_MASK,
+		BQ2560X_REG_REG_BVTRC_BOOSTV_SHIFT,
+		val);
 }
 
 static int bq2560x_set_otg_enable(int enable)
 {
 	struct bq2560x_device_info *di = g_bq2560x_dev;
 
-	/* NOTICE:
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -1;
+	}
+
+	/*
+	 * notice:
 	 * why enable irq when entry to OTG mode only?
 	 * because we care VBUS overloaded OCP or OVP's interrupt in boost mode
 	 */
 	if ((!di->irq_active) && (enable)) {
-		di->irq_active = 1; /* ACTIVE */
+		di->irq_active = 1; /* active */
 		enable_irq(di->irq_int);
 	} else if ((di->irq_active) && (!enable)) {
-		di->irq_active = 0; /* INACTIVE */
+		di->irq_active = 0; /* inactive */
 		disable_irq(di->irq_int);
-	} else {
-		/* do nothing */
 	}
 
 	return bq2560x_write_mask(BQ2560X_REG_POC,
-			BQ2560X_REG_POC_OTG_CONFIG_MASK,
-			BQ2560X_REG_POC_OTG_CONFIG_SHIFT,
-			enable);
+		BQ2560X_REG_POC_OTG_CONFIG_MASK,
+		BQ2560X_REG_POC_OTG_CONFIG_SHIFT,
+		enable);
 }
 
 static int bq2560x_set_term_enable(int enable)
 {
 	return bq2560x_write_mask(BQ2560X_REG_CTTC,
-			BQ2560X_REG_CTTC_EN_TERM_MASK,
-			BQ2560X_REG_CTTC_EN_TERM_SHIFT,
-			enable);
+		BQ2560X_REG_CTTC_EN_TERM_MASK,
+		BQ2560X_REG_CTTC_EN_TERM_SHIFT,
+		enable);
 }
 
 static int bq2560x_get_charge_state(unsigned int *state)
 {
 	u8 reg = 0;
-	int ret = 0;
+	int ret;
+
+	if (!state)
+		return -1;
 
 	ret = bq2560x_read_byte(BQ2560X_REG_SS, &reg);
 
@@ -716,9 +711,9 @@ static int bq2560x_get_charge_state(unsigned int *state)
 static int bq2560x_reset_watchdog_timer(void)
 {
 	return bq2560x_write_mask(BQ2560X_REG_POC,
-			BQ2560X_REG_POC_WDT_RESET_MASK,
-			BQ2560X_REG_POC_WDT_RESET_SHIFT,
-			0x01);
+		BQ2560X_REG_POC_WDT_RESET_MASK,
+		BQ2560X_REG_POC_WDT_RESET_SHIFT,
+		0x01);
 }
 
 static int bq2560x_get_ilim(void)
@@ -732,81 +727,88 @@ static int bq2560x_check_charger_plugged(void)
 	int ret;
 
 	ret = bq2560x_read_mask(BQ2560X_REG_SS,
-			BQ2560X_REG_SS_PG_STAT_MASK,
-			BQ2560X_REG_SS_PG_STAT_SHIFT,
-			&reg);
+		BQ2560X_REG_SS_PG_STAT_MASK,
+		BQ2560X_REG_SS_PG_STAT_SHIFT,
+		&reg);
 	if (ret < 0)
-		hwlog_info("read i2c fail\n");
+		return 0;
 
 	hwlog_info("check_charger_plugged [%x]=0x%x\n", BQ2560X_REG_SS, reg);
 
 	if (reg == BQ2560x_REG_SS_VBUS_PLUGGED)
 		return REG08_POWER_GOOD;
+
 	return 0;
 }
 
 static int bq2560x_check_input_dpm_state(void)
 {
 	u8 reg = 0;
-	int ret = -1;
+	int ret;
 
 	ret = bq2560x_read_byte(BQ2560X_REG_VINS, &reg);
 	if (ret < 0)
-		return ret;
+		return FALSE;
 
 	hwlog_info("check_input_dpm_state [%x]=0x%x\n", BQ2560X_REG_VINS, reg);
 
 	if (reg & BQ2560X_REG_VINS_VINDPM_STAT_MASK)
 		return TRUE;
-	else
-		return FALSE;
+
+	return FALSE;
 }
 
 static int bq2560x_check_input_vdpm_state(void)
 {
 	u8 reg = 0;
-	int ret = -1;
+	int ret;
 
 	ret = bq2560x_read_byte(BQ2560X_REG_VINS, &reg);
 	if (ret < 0)
-		return ret;
+		return FALSE;
 
 	hwlog_info("check_input_vdpm_state [%x]=0x%x\n", BQ2560X_REG_VINS, reg);
 
 	if (reg & BQ2560X_REG_VINS_VINDPM_STAT_MASK)
 		return TRUE;
-	else
-		return FALSE;
+
+	return FALSE;
 }
 
 static int bq2560x_check_input_idpm_state(void)
 {
 	u8 reg = 0;
-	int ret = -1;
+	int ret;
 
 	ret = bq2560x_read_byte(BQ2560X_REG_VINS, &reg);
 	if (ret < 0)
-		return ret;
+		return FALSE;
 
 	hwlog_info("check_input_idpm_state [%x]=0x%x\n", BQ2560X_REG_VINS, reg);
 
 	if (reg & BQ2560X_REG_VINS_IINDPM_STAT_MASK)
 		return TRUE;
-	else
-		return FALSE;
+
+	return FALSE;
 }
 
-static int bq2560x_dump_register(char *reg_value)
+static int bq2560x_dump_register(char *reg_value, int size)
 {
 	u8 reg[BQ2560X_REG_NUM] = {0};
 	char buff[BUF_LEN] = {0};
-	int i = 0;
+	int i;
+	int ret;
 
-	memset(reg_value, 0, CHARGELOG_SIZE);
+	if (!reg_value)
+		return 0;
+
+	memset(reg_value, 0, size);
 
 	for (i = 0; i < BQ2560X_REG_NUM; i++) {
-		bq2560x_read_byte(i, &reg[i]);
-		bq2560x_read_byte(i, &reg[i]);
+		ret = bq2560x_read_byte(i, &reg[i]);
+		if (ret)
+			hwlog_err("dump_register read fail\n");
+
 		snprintf(buff, BUF_LEN, "0x%-8.2x", reg[i]);
 		strncat(reg_value, buff, strlen(buff));
 	}
@@ -814,12 +816,15 @@ static int bq2560x_dump_register(char *reg_value)
 	return 0;
 }
 
-static int bq2560x_get_register_head(char *reg_head)
+static int bq2560x_get_register_head(char *reg_head, int size)
 {
 	char buff[BUF_LEN] = {0};
-	int i = 0;
+	int i;
 
-	memset(reg_head, 0, CHARGELOG_SIZE);
+	if (!reg_head)
+		return 0;
+
+	memset(reg_head, 0, size);
 
 	for (i = 0; i < BQ2560X_REG_NUM; i++) {
 		snprintf(buff, BUF_LEN, "Reg[0x%x]  ", i);
@@ -832,17 +837,17 @@ static int bq2560x_get_register_head(char *reg_head)
 static int bq2560x_set_batfet_disable(int disable)
 {
 	return bq2560x_write_mask(BQ2560X_REG_MOC,
-			BQ2560X_REG_MOC_BATFET_DISABLE_MASK,
-			BQ2560X_REG_MOC_BATFET_DISABLE_SHIFT,
-			disable);
+		BQ2560X_REG_MOC_BATFET_DISABLE_MASK,
+		BQ2560X_REG_MOC_BATFET_DISABLE_SHIFT,
+		disable);
 }
 
 static int bq2560x_set_watchdog_timer(int value)
 {
-	int ret = 0;
-	int val = 0;
+	int ret;
+	int val;
 
-	if (value == WDT_BASE || TRUE == g_hiz_mode)
+	if (value == WDT_BASE || g_hiz_mode == TRUE)
 		val = REG05_WDT_DISABLE;
 	else if (value <= WDT_40S)
 		val = REG05_WDT_40S;
@@ -852,9 +857,9 @@ static int bq2560x_set_watchdog_timer(int value)
 		val = REG05_WDT_160S;
 
 	ret = bq2560x_write_mask(BQ2560X_REG_CTTC,
-			BQ2560X_REG_CTTC_WDT_MASK,
-			BQ2560X_REG_CTTC_WDT_SHIFT,
-			val);
+		BQ2560X_REG_CTTC_WDT_MASK,
+		BQ2560X_REG_CTTC_WDT_SHIFT,
+		val);
 	if (ret)
 		hwlog_err("set_watchdog_timer write fail\n");
 
@@ -868,12 +873,12 @@ static int bq2560x_set_watchdog_timer(int value)
 
 static int bq2560x_set_charger_hiz(int enable)
 {
-	int ret = 0;
-	int ret2 = 0;
+	int ret;
+	int ret2;
 	static int first_in = 1;
 	struct bq2560x_device_info *di = g_bq2560x_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -897,11 +902,11 @@ static int bq2560x_set_charger_hiz(int enable)
 				return 0;
 			}
 		} else {
-#endif
-			ret |= bq2560x_write_mask(BQ2560X_REG_ISC,
-					BQ2560X_REG_ISC_EN_HIZ_MASK,
-					BQ2560X_REG_ISC_EN_HIZ_SHIFT,
-					TRUE);
+#endif /* CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT */
+			ret = bq2560x_write_mask(BQ2560X_REG_ISC,
+				BQ2560X_REG_ISC_EN_HIZ_MASK,
+				BQ2560X_REG_ISC_EN_HIZ_SHIFT,
+				TRUE);
 
 			g_hiz_mode = TRUE;
 
@@ -911,15 +916,15 @@ static int bq2560x_set_charger_hiz(int enable)
 				hwlog_err("set_charger_hiz write fail\n");
 #ifdef CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT
 		}
-#endif
+#endif /* CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT */
 	} else {
 		hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
 		first_in = 1;
 
-		ret |= bq2560x_write_mask(BQ2560X_REG_ISC,
-				BQ2560X_REG_ISC_EN_HIZ_MASK,
-				BQ2560X_REG_ISC_EN_HIZ_SHIFT,
-				FALSE);
+		ret = bq2560x_write_mask(BQ2560X_REG_ISC,
+			BQ2560X_REG_ISC_EN_HIZ_MASK,
+			BQ2560X_REG_ISC_EN_HIZ_SHIFT,
+			FALSE);
 		g_hiz_mode = FALSE;
 	}
 
@@ -952,6 +957,15 @@ struct charge_device_ops bq2560x_ops = {
 	.set_charger_hiz = bq2560x_set_charger_hiz,
 	.get_charge_current = NULL,
 	.set_boost_voltage = bq2560x_set_boost_voltage,
+};
+
+static struct charger_otg_device_ops bq2560x_otg_ops = {
+	.chip_name = "bq2560x",
+	.otg_set_charger_enable = bq2560x_set_charge_enable,
+	.otg_set_enable = bq2560x_set_otg_enable,
+	.otg_set_current = bq2560x_set_boost_current,
+	.otg_set_watchdog_timer = bq2560x_set_watchdog_timer,
+	.otg_reset_watchdog_timer = bq2560x_reset_watchdog_timer,
 };
 
 static int bq2560x_fcp_init(struct bq2560x_device_info *info)
@@ -1047,19 +1061,10 @@ static int bq2560x_is_ovpstate(bool *is_ovp)
 	return ret;
 }
 
-static int bq2560x_fcp_get_adapter_output_current(void)
-{
-	return 0;
-}
-
-static int bq2560x_fcp_set_adapter_output_vol(int output_vol)
-{
-	return 0;
-}
-
 static int bq2560x_fcp_reset(void)
 {
 	struct bq2560x_device_info *di = g_bq2560x_dev;
+	int ret;
 
 	if (!di) {
 		hwlog_err("di is null\n");
@@ -1068,10 +1073,10 @@ static int bq2560x_fcp_reset(void)
 
 	/* reset gpio to input status */
 	gpio_set_value(di->gpio_fcp, GPIO_LOW);
-	gpio_direction_input(di->gpio_fcp);
+	ret = gpio_direction_input(di->gpio_fcp);
 
 	hwlog_info("fcp reset gpio_fcp\n");
-	return 0;
+	return ret;
 }
 
 static int bq2560x_fcp_adapter_detect(void)
@@ -1081,7 +1086,6 @@ static int bq2560x_fcp_adapter_detect(void)
 	bool is_ovp = false;
 	struct bq2560x_device_info *di = g_bq2560x_dev;
 
-	hwlog_info("fcp detect enter\n");
 	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
@@ -1126,51 +1130,61 @@ static int bq2560x_fcp_adapter_detect(void)
 	return -1;
 }
 
-static int bq2560x_is_support_fcp(void)
+static int bq2560x_fcp_reg_read_block(int reg, int *val, int num)
 {
-	struct bq2560x_device_info *di = g_bq2560x_dev;
+	int i;
 
-	if (!di) {
-		hwlog_err("di is null\n");
-		return -EINVAL;
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
 	}
 
-	if (di->fcp_support) {
-		hwlog_info("support fcp\n");
-		return 0;
-	}
+	for (i = 0; i < num; i++)
+		val[i] = 0;
 
-	hwlog_err("not support fcp %d\n", di->fcp_support);
-	return 1; /* not support */
+	return 0;
 }
 
-static int bq2560x_fcp_read_switch_status(void)
+static int bq2560x_fcp_reg_write_block(int reg, const int *val, int num)
 {
 	return 0;
 }
 
-struct fcp_adapter_device_ops fcp_bq2560x_ops = {
-	.get_adapter_output_current = bq2560x_fcp_get_adapter_output_current,
-	.set_adapter_output_vol = bq2560x_fcp_set_adapter_output_vol,
+static struct fcp_protocol_ops bq2560x_fcp_protocol_ops = {
+	.chip_name = "bq2560x",
+	.reg_read = bq2560x_fcp_reg_read_block,
+	.reg_write = bq2560x_fcp_reg_write_block,
 	.detect_adapter = bq2560x_fcp_adapter_detect,
-	.is_support_fcp = bq2560x_is_support_fcp,
-	.switch_chip_reset = bq2560x_fcp_reset,
-	.fcp_adapter_reset = bq2560x_fcp_reset,
-	.stop_charge_config = bq2560x_fcp_reset,
-	.fcp_read_switch_status = bq2560x_fcp_read_switch_status,
+	.soft_reset_master = bq2560x_fcp_reset,
+	.soft_reset_slave = bq2560x_fcp_reset,
+	.get_master_status = NULL,
+	.stop_charging_config = bq2560x_fcp_reset,
+	.is_accp_charger_type = NULL,
 };
 
 static void bq2560x_irq_work(struct work_struct *work)
 {
-	struct bq2560x_device_info *di;
+	struct bq2560x_device_info *di = NULL;
 	u8 reg = 0;
+	int ret;
+
+	if (!work) {
+		hwlog_err("work is null\n");
+		return;
+	}
 
 	di = container_of(work, struct bq2560x_device_info, irq_work);
+	if (!di) {
+		hwlog_err("di is null\n");
+		return;
+	}
 
 	msleep(100); /* sleep 100ms */
 
-	bq2560x_read_byte(BQ2560X_REG_F, &reg);
-	bq2560x_read_byte(BQ2560X_REG_F, &reg);
+	ret = bq2560x_read_byte(BQ2560X_REG_F, &reg);
+	ret |= bq2560x_read_byte(BQ2560X_REG_F, &reg);
+	if (ret)
+		hwlog_err("irq_work read fail\n");
 
 	hwlog_err("boost_ovp_reg [%x]=0x%x\n", BQ2560X_REG_F, reg);
 
@@ -1191,12 +1205,12 @@ static irqreturn_t bq2560x_interrupt(int irq, void *_di)
 {
 	struct bq2560x_device_info *di = _di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
-		return -1;
+		return IRQ_HANDLED;
 	}
 
-	hwlog_info("bq2560x int happened (%d)\n", di->irq_active);
+	hwlog_info("bq2560x int happened\n");
 
 	if (di->irq_active == 1) {
 		di->irq_active = 0;
@@ -1212,20 +1226,19 @@ static irqreturn_t bq2560x_interrupt(int irq, void *_di)
 static int bq2560x_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret = 0;
+	int ret;
 	struct bq2560x_device_info *di = NULL;
 	struct device_node *np = NULL;
 	struct class *power_class = NULL;
+	struct power_devices_info_data *power_dev_info = NULL;
 
 	hwlog_info("probe begin\n");
 
-	if (client == NULL || id == NULL) {
-		hwlog_err("client or id is null\n");
-		return -ENOMEM;
-	}
+	if (!client || !client->dev.of_node || !id)
+		return -ENODEV;
 
 	di = kzalloc(sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_bq2560x_dev = di;
@@ -1262,21 +1275,21 @@ static int bq2560x_probe(struct i2c_client *client,
 	hwlog_info("gpio_cd=%d\n", di->gpio_cd);
 
 	if (!gpio_is_valid(di->gpio_cd)) {
-		hwlog_err("gpio(gpio_cd) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto bq2560x_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_cd, "charger_cd");
 	if (ret) {
-		hwlog_err("gpio(gpio_cd) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto bq2560x_fail_0;
 	}
 
 	/* set gpio to control CD pin to disable/enable bq2560x IC */
 	ret = gpio_direction_output(di->gpio_cd, 0);
 	if (ret) {
-		hwlog_err("gpio(gpio_cd) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto bq2560x_fail_1;
 	}
 
@@ -1284,26 +1297,26 @@ static int bq2560x_probe(struct i2c_client *client,
 	hwlog_info("gpio_int=%d\n", di->gpio_int);
 
 	if (!gpio_is_valid(di->gpio_int)) {
-		hwlog_err("gpio(gpio_int) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto bq2560x_fail_1;
 	}
 
 	ret = gpio_request(di->gpio_int, "charger_int");
 	if (ret) {
-		hwlog_err("gpio(gpio_int) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto bq2560x_fail_1;
 	}
 
 	ret = gpio_direction_input(di->gpio_int);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) set input fail\n");
+		hwlog_err("gpio set input fail\n");
 		goto bq2560x_fail_2;
 	}
 
 	di->irq_int = gpio_to_irq(di->gpio_int);
 	if (di->irq_int < 0) {
-		hwlog_err("gpio(gpio_int) map to irq fail\n");
+		hwlog_err("gpio map to irq fail\n");
 		ret = -EINVAL;
 		goto bq2560x_fail_2;
 	}
@@ -1311,7 +1324,7 @@ static int bq2560x_probe(struct i2c_client *client,
 	ret = request_irq(di->irq_int, bq2560x_interrupt, IRQF_TRIGGER_FALLING,
 		"charger_int_irq", di);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) irq request fail\n");
+		hwlog_err("gpio irq request fail\n");
 		di->irq_int = -1;
 		goto bq2560x_fail_2;
 	}
@@ -1325,15 +1338,28 @@ static int bq2560x_probe(struct i2c_client *client,
 		goto bq2560x_fail_3;
 	}
 
+	ret = charger_otg_ops_register(&bq2560x_otg_ops);
+	if (ret) {
+		hwlog_err("bq2560x charger_otg ops register fail\n");
+		goto bq2560x_fail_3;
+	}
+
 	ret = bq2560x_sysfs_create_group(di);
-	if (ret)
+	if (ret) {
 		hwlog_err("sysfs group create failed\n");
+		goto bq2560x_fail_3;
+	}
 
 	power_class = hw_power_get_class();
-	if (power_class != NULL) {
-		if (charge_dev == NULL)
+	if (power_class) {
+		if (!charge_dev)
 			charge_dev = device_create(power_class, NULL, 0, NULL,
 				"charger");
+		if (IS_ERR(charge_dev)) {
+			hwlog_err("sysfs device create failed\n");
+			ret = PTR_ERR(charge_dev);
+			goto bq2560x_fail_4;
+		}
 
 		ret = sysfs_create_link(&charge_dev->kobj, &di->dev->kobj,
 			"bq2560x");
@@ -1348,9 +1374,14 @@ static int bq2560x_probe(struct i2c_client *client,
 	if (ret < 0)
 		hwlog_err("set bq2560x boost voltage fail\n");
 
-	if (!bq2560x_fcp_init(di)) {
-		if (!fcp_adapter_ops_register(&fcp_bq2560x_ops))
-			hwlog_info("fcp adapter ops register success\n");
+	if (!bq2560x_fcp_init(di))
+		fcp_protocol_ops_register(&bq2560x_fcp_protocol_ops);
+
+	power_dev_info = power_devices_info_register();
+	if (power_dev_info) {
+		power_dev_info->dev_name = di->dev->driver->name;
+		power_dev_info->dev_id = 0;
+		power_dev_info->ver_id = 0;
 	}
 
 	hwlog_info("probe end\n");
@@ -1367,7 +1398,6 @@ bq2560x_fail_1:
 bq2560x_fail_0:
 	kfree(di);
 	g_bq2560x_dev = NULL;
-	np = NULL;
 
 	return ret;
 }
@@ -1398,6 +1428,9 @@ static int bq2560x_remove(struct i2c_client *client)
 
 	hwlog_info("remove begin\n");
 
+	if (!di)
+		return -ENODEV;
+
 	bq2560x_sysfs_remove_group(di);
 
 	gpio_set_value(di->gpio_cd, 1);
@@ -1415,6 +1448,7 @@ static int bq2560x_remove(struct i2c_client *client)
 		gpio_free(di->gpio_fcp);
 
 	kfree(di);
+	g_bq2560x_dev = NULL;
 
 	hwlog_info("remove end\n");
 	return 0;
@@ -1430,7 +1464,7 @@ static const struct of_device_id bq2560x_of_match[] = {
 };
 
 static const struct i2c_device_id bq2560x_i2c_id[] = {
-	{"bq2560x_charger", 0}, {}
+	{ "bq2560x_charger", 0 }, {}
 };
 
 static struct i2c_driver bq2560x_driver = {
@@ -1447,13 +1481,7 @@ static struct i2c_driver bq2560x_driver = {
 
 static int __init bq2560x_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&bq2560x_driver);
-	if (ret)
-		hwlog_err("i2c_add_driver error\n");
-
-	return ret;
+	return i2c_add_driver(&bq2560x_driver);
 }
 
 static void __exit bq2560x_exit(void)

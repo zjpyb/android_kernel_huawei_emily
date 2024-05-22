@@ -41,9 +41,7 @@
 #include "hwcam_intf.h"
 #include "../../cci/hw_cci.h"
 
-typedef struct _tag_hw_vcm_vtbl hw_vcm_vtbl_t;
-typedef struct _tag_hw_vcm_intf hw_vcm_intf_t;
-
+struct _tag_hw_vcm_vtbl;
 /* vcm controler struct define */
 struct hw_vcm_info {
 	const char *vcm_name;
@@ -54,10 +52,9 @@ struct hw_vcm_info {
 
 typedef struct _tag_hw_vcm_intf
 {
-	hw_vcm_vtbl_t *vtbl;
+	struct _tag_hw_vcm_vtbl *vtbl;
     struct v4l2_subdev *subdev;
 } hw_vcm_intf_t;
-
 
 typedef struct _vcm_t {
 	hw_vcm_intf_t intf;
@@ -74,13 +71,13 @@ typedef struct _tag_hw_vcm
 } hw_vcm_t;
 
 /* vcm function table */
-struct _tag_hw_vcm_vtbl {
+typedef struct _tag_hw_vcm_vtbl {
 	int (*vcm_match_id) (hw_vcm_intf_t *, void *);
 	int (*vcm_config) (hw_vcm_t *, void *);
 	int (*vcm_i2c_read) (hw_vcm_intf_t *, void *);
 	int (*vcm_i2c_write) (hw_vcm_intf_t *, void *);
 	int (*vcm_ioctl) (hw_vcm_intf_t *, void *);
-};
+} hw_vcm_vtbl_t;
 
 /* extern function declare */
 extern int hw_vcm_register(struct platform_device *pdev,

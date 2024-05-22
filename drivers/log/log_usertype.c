@@ -1,9 +1,22 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2012-2018. All rights reserved.
+ * log_usertype.c
  *
- * Description: drivers to indicate user types in kernel
- *      Author: shenchenkai <shenchenkai@huawei.com>
+ * drivers to indicate user types in kernel
+ *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2019. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
+#include <log/log_usertype.h>
 
 #include <linux/module.h>
 #include <linux/proc_fs.h>
@@ -11,8 +24,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 
-#include <log/log_usertype.h>
-
+/* log_usertype must be initialized to 0 to prevent version errors */
 static unsigned int log_usertype = 0;
 
 unsigned int get_log_usertype(void)
@@ -53,7 +65,7 @@ static ssize_t log_usertype_proc_write(struct file *file,
 	if (copy_from_user(&tmp, buffer, 1))
 		return -EFAULT;
 
-	if (tmp >= '1' && tmp <= '9')
+	if ((tmp >= '1') && (tmp <= '9'))
 		set_log_usertype((unsigned int)(tmp - '0'));
 
 	return count;
@@ -74,3 +86,7 @@ static int __init log_usertype_proc_init(void)
 }
 
 module_init(log_usertype_proc_init);
+
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("drivers to indicate user types in kernel");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

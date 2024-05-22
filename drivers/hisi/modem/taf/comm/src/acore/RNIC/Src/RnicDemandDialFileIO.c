@@ -60,6 +60,7 @@
 #include "RnicSndMsg.h"
 
 
+#if (VOS_OS_VER == VOS_LINUX)
 #include <linux/namei.h>
 #include <linux/fs.h>
 #include <linux/module.h>
@@ -68,6 +69,7 @@
 #include <asm/uaccess.h>
 #include <asm-generic/errno-base.h>
 #include <kernel.h>
+#endif
 
 
 
@@ -80,6 +82,7 @@
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
+#if (VOS_OS_VER == VOS_LINUX)
 
 static const struct file_operations g_stOnDemandFileOps        =
 {
@@ -101,6 +104,11 @@ static const struct file_operations g_stDialEventReportFileOps =
     .write      = RNIC_WriteDialEventReportFile,
     .read       = RNIC_ReadDialEventReportFile,
 };
+#else
+static const struct file_operations g_stOnDemandFileOps ;
+static const struct file_operations g_stIdleTimerOutFileOps ;
+static const struct file_operations g_stDialEventReportFileOps;
+#endif
 /*****************************************************************************
   3 函数实现
 *****************************************************************************/

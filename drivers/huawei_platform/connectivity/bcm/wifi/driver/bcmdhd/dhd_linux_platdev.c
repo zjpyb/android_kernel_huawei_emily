@@ -42,7 +42,11 @@
 extern void wifi_plat_dev_drv_shutdown(struct platform_device *pdev);
 #endif
 #if defined(CONFIG_WIFI_CONTROL_FUNC)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include "hw_wlan_plantform.h"
+#else
 #include <linux/wlan_plat.h>
+#endif
 #endif
 #define WIFI_PLAT_NAME		"bcmdhd_wlan"
 #define WIFI_PLAT_NAME2		"bcm4329_wlan"

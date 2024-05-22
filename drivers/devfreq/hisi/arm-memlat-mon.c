@@ -124,7 +124,7 @@ static unsigned long get_cnt(struct memlat_hwmon *hw)
 	int cpu;
 	struct cpu_grp_info *cpu_grp = to_cpu_grp(hw);
 
-	for_each_cpu(cpu, &cpu_grp->inited_cpus)
+	for_each_cpu(cpu, &cpu_grp->inited_cpus) //lint !e574
 		read_perf_counters(cpu, cpu_grp);
 
 	return 0;
@@ -144,10 +144,10 @@ static void stop_hwmon(struct memlat_hwmon *hw)
 {
 	int cpu;
 	struct cpu_grp_info *cpu_grp = to_cpu_grp(hw);
-	struct dev_stats *devstats;
+	struct dev_stats *devstats = NULL;
 
 	get_online_cpus();
-	for_each_cpu(cpu, &cpu_grp->inited_cpus) {
+	for_each_cpu(cpu, &cpu_grp->inited_cpus) { //lint !e574
 		delete_events(to_cpustats(cpu_grp, cpu));
 
 		/* Clear governor data */
@@ -189,8 +189,8 @@ static struct perf_event_attr *alloc_attr(void)
 
 static int set_events(struct cpu_grp_info *cpu_grp, int cpu)
 {
-	struct perf_event *pevent;
-	struct perf_event_attr *attr;
+	struct perf_event *pevent = NULL;
+	struct perf_event_attr *attr = NULL;
 	int err;
 	unsigned int i = 0, j = 0;
 	struct cpu_pmu_stats *cpustats = to_cpustats(cpu_grp, cpu);
@@ -228,7 +228,7 @@ err_out:
 static int arm_memlat_cpu_callback(struct notifier_block *nb,
 		unsigned long action, void *hcpu)
 {
-	unsigned long cpu = (unsigned long)hcpu;
+	unsigned long cpu = (unsigned long)(uintptr_t)hcpu;
 	struct cpu_grp_info *cpu_grp, *tmp;
 
 	if (action != CPU_ONLINE)
@@ -253,7 +253,8 @@ static int arm_memlat_cpu_callback(struct notifier_block *nb,
 #else
 static int __ref arm_memlat_cpu_online(unsigned int cpu)
 {
-	struct cpu_grp_info *cpu_grp, *tmp;
+	struct cpu_grp_info *cpu_grp = NULL;
+	struct cpu_grp_info *tmp = NULL;
 
 	mutex_lock(&list_lock);
 	list_for_each_entry_safe(cpu_grp, tmp, &memlat_mon_list, mon_list) {
@@ -261,7 +262,7 @@ static int __ref arm_memlat_cpu_online(unsigned int cpu)
 		    cpumask_test_cpu(cpu, &cpu_grp->inited_cpus))
 			continue;
 		if (set_events(cpu_grp, cpu))
-			pr_warn("Failed to create perf ev for CPU%lu\n", cpu);
+			pr_warn("Failed to create perf ev for CPU%u\n", cpu);
 		else
 			cpumask_set_cpu(cpu, &cpu_grp->inited_cpus);
 		if (cpumask_equal(&cpu_grp->cpus, &cpu_grp->inited_cpus))
@@ -285,7 +286,7 @@ static int start_hwmon(struct memlat_hwmon *hw)
 #endif
 
 	get_online_cpus();
-	for_each_cpu(cpu, &cpu_grp->cpus) {
+	for_each_cpu(cpu, &cpu_grp->cpus) { //lint !e574
 		ret = set_events(cpu_grp, cpu);
 		if (ret) {
 			if (!cpu_online(cpu)) {
@@ -313,14 +314,14 @@ static int get_mask_from_dev_handle(struct platform_device *pdev,
 					cpumask_t *mask)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *dev_phandle;
-	struct device *cpu_dev;
+	struct device_node *dev_phandle = NULL;
+	struct device *cpu_dev = NULL;
 	int cpu, i = 0;
 	int ret = -ENOENT;
 
 	dev_phandle = of_parse_phandle(dev->of_node, "hisi,cpulist", i++);
 	while (dev_phandle) {
-		for_each_possible_cpu(cpu) {
+		for_each_possible_cpu(cpu) { //lint !e574
 			cpu_dev = get_cpu_device(cpu);
 			if (cpu_dev && cpu_dev->of_node == dev_phandle) {
 				cpumask_set_cpu(cpu, mask);
@@ -339,8 +340,8 @@ static int get_mask_from_dev_handle(struct platform_device *pdev,
 static int arm_memlat_mon_driver_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct memlat_hwmon *hw;
-	struct cpu_grp_info *cpu_grp;
+	struct memlat_hwmon *hw = NULL;
+	struct cpu_grp_info *cpu_grp = NULL;
 	int cpu, ret;
 	u32 event_id = 0;
 
@@ -397,7 +398,7 @@ static int arm_memlat_mon_driver_probe(struct platform_device *pdev)
 	}
 	cpu_grp->event_ids[INST_IDX] = event_id;
 
-	for_each_cpu(cpu, &cpu_grp->cpus)
+	for_each_cpu(cpu, &cpu_grp->cpus) //lint !e574
 		to_devstats(cpu_grp, cpu)->id = cpu;
 
 	hw->start_hwmon = &start_hwmon;

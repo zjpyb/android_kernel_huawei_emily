@@ -32,20 +32,16 @@ void walt_update_task_ravg(struct task_struct *p, struct rq *rq, int event,
 		u64 wallclock, u64 irqtime);
 void walt_inc_cumulative_runnable_avg(struct rq *rq, struct task_struct *p);
 void walt_dec_cumulative_runnable_avg(struct rq *rq, struct task_struct *p);
-void walt_inc_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
-		struct task_struct *p);
-void walt_dec_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
-		struct task_struct *p);
+
 void walt_fixup_busy_time(struct task_struct *p, int new_cpu);
 void walt_init_new_task_load(struct task_struct *p);
 void walt_mark_task_starting(struct task_struct *p);
-void walt_set_window_start(struct rq *rq);
+void walt_set_window_start(struct rq *rq, struct rq_flags *rf);
 #ifdef CONFIG_HISI_CPU_ISOLATION
 void walt_migrate_sync_cpu(int cpu, int new_cpu);
 #else
 void walt_migrate_sync_cpu(int cpu);
 #endif
-void walt_init_cpu_efficiency(void);
 u64 walt_ktime_clock(void);
 void walt_account_irqtime(int cpu, struct task_struct *curr, u64 delta,
                                   u64 wallclock);
@@ -66,26 +62,25 @@ static inline bool is_new_task(struct task_struct *p)
 	return p->ravg.active_windows < NEW_TASK_WINDOWS;
 }
 
+#ifdef CONFIG_HISI_EAS_SCHED
+void walt_reset_new_task_load(struct task_struct *p);
+#endif
+
 #else /* CONFIG_SCHED_WALT */
 
 static inline void walt_update_task_ravg(struct task_struct *p, struct rq *rq,
 		int event, u64 wallclock, u64 irqtime) { }
 static inline void walt_inc_cumulative_runnable_avg(struct rq *rq, struct task_struct *p) { }
 static inline void walt_dec_cumulative_runnable_avg(struct rq *rq, struct task_struct *p) { }
-static inline void walt_inc_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
-		struct task_struct *p) { }
-static inline void walt_dec_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
-		struct task_struct *p) { }
 static inline void walt_fixup_busy_time(struct task_struct *p, int new_cpu) { }
 static inline void walt_init_new_task_load(struct task_struct *p) { }
 static inline void walt_mark_task_starting(struct task_struct *p) { }
-static inline void walt_set_window_start(struct rq *rq) { }
+static inline void walt_set_window_start(struct rq *rq, struct rq_flags *rf) { }
 #ifdef CONFIG_HISI_CPU_ISOLATION
 static inline void walt_migrate_sync_cpu(int cpu, int new_cpu) { }
 #else
 static inline void walt_migrate_sync_cpu(int cpu) { }
 #endif
-static inline void walt_init_cpu_efficiency(void) { }
 static inline u64 walt_ktime_clock(void) { return 0; }
 
 #define walt_cpu_high_irqload(cpu) false
@@ -95,10 +90,36 @@ static inline u64 walt_ktime_clock(void) { return 0; }
 
 #endif /* CONFIG_SCHED_WALT */
 
+#if defined(CONFIG_CFS_BANDWIDTH) && defined(CONFIG_SCHED_WALT)
+void walt_inc_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
+		struct task_struct *p);
+void walt_dec_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
+		struct task_struct *p);
+#else
+static inline void walt_inc_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
+		struct task_struct *p) { }
+static inline void walt_dec_cfs_cumulative_runnable_avg(struct cfs_rq *rq,
+		struct task_struct *p) { }
+#endif
+
 #ifdef CONFIG_SCHED_HISI_WALT_WINDOW_SIZE_TUNABLE
 extern bool walt_disabled;
 #else
 extern const bool walt_disabled;
+#endif
+
+#ifdef CONFIG_SCHED_HISI_PRED_LOAD
+bool use_pred_load(int cpu);
+unsigned long predict_util(struct rq *rq);
+unsigned long task_pred_util(struct task_struct *p);
+extern unsigned int predl_jump_load;
+extern unsigned int predl_do_predict;
+extern unsigned int predl_window_size;
+extern unsigned int predl_enable;
+#else
+static inline bool use_pred_load(int cpu) { return false; }
+static inline unsigned long predict_util(struct rq *rq) { return 0; }
+static inline unsigned long task_pred_util(struct task_struct *p) { return 0; }
 #endif
 
 #endif

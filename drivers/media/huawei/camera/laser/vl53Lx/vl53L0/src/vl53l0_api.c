@@ -598,7 +598,7 @@ VL53L0_Error VL53L0_StaticInit(VL53L0_DEV Dev)
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
 	VL53L0_DeviceParameters_t CurrentParameters = {0};
-	uint8_t *pTuningSettingBuffer;
+	uint8_t *pTuningSettingBuffer = NULL;
 	uint16_t tempword = 0;
 	uint8_t tempbyte = 0;
 	uint8_t UseInternalTuningSettings = 0;

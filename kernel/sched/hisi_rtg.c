@@ -7,12 +7,9 @@
 #include <linux/hisi_rtg.h>
 #include "tune.h"
 
-#ifdef CONFIG_FRAME_RTG
-#include "frame/frame.h"
-#endif
-
 #define DEFAULT_FREQ_UPDATE_INTERVAL	8000000  /* ns */
 #define DEFAULT_UTIL_INVALID_INTERVAL	(~0U) /* ns */
+#define DEFAULT_UTIL_UPDATE_TIMEOUT	20000000  /* ns */
 #define DEFAULT_GROUP_RATE		60 /* 60FPS */
 
 struct related_thread_group *related_thread_groups[MAX_NUM_CGROUP_COLOC_ID];
@@ -35,6 +32,31 @@ void init_task_rtg(struct task_struct *p)
 {
 	rcu_assign_pointer(p->grp, NULL);
 	INIT_LIST_HEAD(&p->grp_list);
+}
+
+unsigned int get_cluster_grp_running(int cluster_id)
+{
+	struct related_thread_group *grp = NULL;
+	unsigned int total_grp_running = 0;
+	unsigned long flag, rtg_flag;
+	unsigned int i;
+
+	read_lock_irqsave(&related_thread_group_lock, rtg_flag);
+
+	/* grp_id 0 is used for exited tasks */
+	for (i = 1; i < MAX_NUM_CGROUP_COLOC_ID; i++) {
+		grp = lookup_related_thread_group(i);
+		if (grp == NULL)
+			continue;
+
+		raw_spin_lock_irqsave(&grp->lock, flag);
+		if (grp->preferred_cluster != NULL && grp->preferred_cluster->id == cluster_id)
+			total_grp_running += grp->nr_running;
+		raw_spin_unlock_irqrestore(&grp->lock, flag);
+	}
+	read_unlock_irqrestore(&related_thread_group_lock, rtg_flag);
+
+	return total_grp_running;
 }
 
 int sched_set_group_window_size(unsigned int grp_id, unsigned int rate)
@@ -238,9 +260,6 @@ static void transfer_busy_time(struct rq *rq, struct related_thread_group *grp,
 	*src_prev_runnable_sum -= p->ravg.prev_window;
 	*dst_prev_runnable_sum += p->ravg.prev_window;
 	raw_spin_unlock(&grp->lock);
-
-	//BUG_ON((s64)*src_curr_runnable_sum < 0);
-	//BUG_ON((s64)*src_prev_runnable_sum < 0);
 }
 
 extern long schedtune_margin(unsigned long signal, long boost);
@@ -263,7 +282,6 @@ static struct sched_cluster *best_cluster(struct related_thread_group *grp)
 	unsigned long util = grp->time.normalized_util;
 	unsigned long boosted_grp_util = util + schedtune_grp_margin(util, grp);
 	unsigned long max_cap = 0, cap = 0;
-
 
 	if (grp->max_boost > 0 && global_boost_enable)
 		return max_cap_cluster();
@@ -289,6 +307,9 @@ int sched_set_group_freq_update_interval(unsigned int grp_id, unsigned int inter
 {
 	struct related_thread_group *grp;
 	unsigned long flag;
+
+	if (interval == 0)
+		return -EINVAL;
 
 	/* DEFAULT_CGROUP_COLOC_ID is a reserved id */
 	if (grp_id == DEFAULT_CGROUP_COLOC_ID ||
@@ -324,10 +345,65 @@ static bool group_should_update_freq(struct related_thread_group *grp,
 	return false;
 }
 
+int sched_set_group_load_mode(struct rtg_load_mode *mode)
+{
+	struct related_thread_group *grp = NULL;
+	unsigned long flag;
+
+	if (mode->grp_id <= DEFAULT_CGROUP_COLOC_ID ||
+		mode->grp_id >= MAX_NUM_CGROUP_COLOC_ID) {
+		pr_err("grp_id=%d is invalid.\n", mode->grp_id);
+		return -EINVAL;
+	}
+
+	grp = lookup_related_thread_group(mode->grp_id);
+	if (!grp) {
+		pr_err("set invalid interval for group %d fail\n", mode->grp_id);
+		return -ENODEV;
+	}
+
+	raw_spin_lock_irqsave(&grp->lock, flag);
+	grp->mode.freq_enabled = !!mode->freq_enabled;
+	grp->mode.util_enabled = !!mode->util_enabled;
+	raw_spin_unlock_irqrestore(&grp->lock, flag);
+
+	return 0;
+}
+
+int sched_set_group_ed_params(struct rtg_ed_params *params)
+{
+	struct related_thread_group *grp = NULL;
+	unsigned long flag;
+
+	if (params->grp_id <= DEFAULT_CGROUP_COLOC_ID ||
+		params->grp_id >= MAX_NUM_CGROUP_COLOC_ID) {
+		pr_err("grp_id=%d is invalid.\n", params->grp_id);
+		return -EINVAL;
+	}
+
+	grp = lookup_related_thread_group(params->grp_id);
+	if (!grp) {
+		pr_err("set invalid interval for group %d fail\n", params->grp_id);
+		return -ENODEV;
+	}
+
+	raw_spin_lock_irqsave(&grp->lock, flag);
+	grp->ed_enabled = params->enabled;
+	grp->ed_task_running_duration = params->running_ns;
+	grp->ed_task_waiting_duration = params->waiting_ns;
+	grp->ed_new_task_running_duration = params->nt_running_ns;
+	raw_spin_unlock_irqrestore(&grp->lock, flag);
+
+	return 0;
+}
+
 int sched_set_group_util_invalid_interval(unsigned int grp_id, unsigned int interval)
 {
 	struct related_thread_group *grp;
 	unsigned long flag;
+
+	if (interval == 0)
+		return -EINVAL;
 
 	/* DEFAULT_CGROUP_COLOC_ID is a reserved id */
 	if (grp_id == DEFAULT_CGROUP_COLOC_ID ||
@@ -360,10 +436,13 @@ int sched_set_group_normalized_util(unsigned int grp_id, unsigned long util,
 					unsigned int flag)
 {
 	struct related_thread_group *grp;
-	bool need_update_freq;
-	int pref_cpu;
+	bool need_update_prev_freq = false;
+	bool need_update_next_freq = false;
 	u64 now;
 	unsigned long flags;
+	struct sched_cluster *preferred_cluster;
+	int prev_cpu;
+	int next_cpu;
 
 	grp = lookup_related_thread_group(grp_id);
 	if (!grp) {
@@ -380,18 +459,37 @@ int sched_set_group_normalized_util(unsigned int grp_id, unsigned long util,
 
 	grp->time.normalized_util = util;
 
-	grp->preferred_cluster = best_cluster(grp);
-	pref_cpu = cpumask_first(&grp->preferred_cluster->cpus);
+	preferred_cluster = best_cluster(grp);
+
+	/* update prev_cluster force when preferred_cluster changed */
+	if (!grp->preferred_cluster)
+		grp->preferred_cluster = preferred_cluster;
+	else if (grp->preferred_cluster != preferred_cluster) {
+		prev_cpu = cpumask_first(&grp->preferred_cluster->cpus); //lint !e713
+		grp->preferred_cluster = preferred_cluster;
+
+		need_update_prev_freq = true;
+	}
+
+	if (grp->preferred_cluster)
+		next_cpu = cpumask_first(&grp->preferred_cluster->cpus); //lint !e713
+	else
+		next_cpu = 0;
 
 	now = ktime_get_ns();
-	need_update_freq = group_should_update_freq(grp, pref_cpu, flag, now);
-	if (need_update_freq)
+	grp->last_util_update_time = now;
+	need_update_next_freq = group_should_update_freq(grp, next_cpu, flag, now);
+	if (need_update_next_freq)
 		grp->last_freq_update_time = now;
 
 	raw_spin_unlock_irqrestore(&grp->lock, flags);
 
-	if (need_update_freq)
-		sugov_check_freq_update(pref_cpu);
+	if (need_update_prev_freq) {
+		sugov_mark_util_change(prev_cpu, FORCE_UPDATE); //lint !e644
+		sugov_check_freq_update(prev_cpu);
+	}
+	if (need_update_next_freq)
+		sugov_check_freq_update(next_cpu);
 
 	return 0;
 }
@@ -427,6 +525,23 @@ int sched_set_group_freq(unsigned int grp_id, unsigned int freq)
 	return 0;
 }
 
+static inline bool valid_normalized_util(struct related_thread_group *grp)
+{
+	struct task_struct *p = NULL;
+	cpumask_t rtg_cpus = CPU_MASK_NONE;
+
+	if (grp->nr_running) {
+		list_for_each_entry(p, &grp->tasks, grp_list) {
+			if (p->state == TASK_RUNNING)
+				cpumask_set_cpu(task_cpu(p), &rtg_cpus);
+		}
+
+		return cpumask_intersects(&rtg_cpus, &grp->preferred_cluster->cpus);
+	}
+
+	return false;
+}
+
 void sched_get_max_group_util(const struct cpumask *query_cpus,
 			      unsigned long *util, unsigned int *freq)
 {
@@ -434,13 +549,14 @@ void sched_get_max_group_util(const struct cpumask *query_cpus,
 	unsigned long max_grp_util = 0;
 	unsigned int max_grp_freq = 0;
 	u64 now = ktime_get_ns();
+	unsigned long rtg_flag;
 	unsigned long flag;
 
 	/*
 	 *  sum the prev_runnable_sum for each rtg,
 	 *  return the max rtg->load
 	 */
-	read_lock(&related_thread_group_lock);
+	read_lock_irqsave(&related_thread_group_lock, rtg_flag);
 	if (list_empty(&active_related_thread_groups))
 		goto unlock;
 
@@ -453,14 +569,14 @@ void sched_get_max_group_util(const struct cpumask *query_cpus,
 			if (grp->us_set_min_freq > max_grp_freq)
 				max_grp_freq = grp->us_set_min_freq;
 
-			if (grp->time.normalized_util > max_grp_util)
+			if (grp->time.normalized_util > max_grp_util && valid_normalized_util(grp))
 				max_grp_util = grp->time.normalized_util;
 		}
 		raw_spin_unlock_irqrestore(&grp->lock, flag);
 	}
 
 unlock:
-	read_unlock(&related_thread_group_lock);
+	read_unlock_irqrestore(&related_thread_group_lock, rtg_flag);
 
 	*freq = max_grp_freq;
 	*util = max_grp_util;
@@ -470,13 +586,14 @@ void sched_update_group_load(struct rq *rq)
 {
 	int cpu = cpu_of(rq);
 	struct related_thread_group *grp;
+	unsigned long flags;
 
 	/*
 	 * This function could be called in timer context, and the
 	 * current task may have been executing for a long time. Ensure
 	 * that the window stats are current by doing an update.
 	 */
-	read_lock(&related_thread_group_lock);
+	read_lock_irqsave(&related_thread_group_lock, flags);
 
 	for_each_related_thread_group(grp) {
 		/* Protected by rq_lock */
@@ -486,7 +603,7 @@ void sched_update_group_load(struct rq *rq)
 		rq->group_load += cpu_time->prev_runnable_sum;
 	}
 
-	read_unlock(&related_thread_group_lock);
+	read_unlock_irqrestore(&related_thread_group_lock, flags);
 }
 
 int preferred_cluster(struct sched_cluster *cluster, struct task_struct *p)
@@ -529,7 +646,6 @@ static void _set_preferred_cluster(struct related_thread_group *grp, int sched_c
 
 /*
  * sched_cluster_id == -1: grp will set to NULL
- *
  */
 static void set_preferred_cluster(struct related_thread_group *grp, int sched_cluster_id)
 {
@@ -608,6 +724,7 @@ int alloc_related_thread_groups(void)
 		grp->id = i;
 		grp->freq_update_interval = DEFAULT_FREQ_UPDATE_INTERVAL;
 		grp->util_invalid_interval = DEFAULT_UTIL_INVALID_INTERVAL;
+		grp->util_update_timeout = DEFAULT_UTIL_UPDATE_TIMEOUT;
 		grp->max_boost = INT_MIN;
 		grp->window_size = NSEC_PER_SEC / DEFAULT_GROUP_RATE;
 		INIT_LIST_HEAD(&grp->tasks);
@@ -644,11 +761,11 @@ static void remove_task_from_group(struct task_struct *p)
 
 	rq = __task_rq_lock(p, &flag);
 	transfer_busy_time(rq, p->grp, p, REM_TASK);
-	__task_rq_unlock(rq, &flag);
 
 	raw_spin_lock_irqsave(&grp->lock, irqflag);
 	list_del_init(&p->grp_list);
 	rcu_assign_pointer(p->grp, NULL);
+
 	if (p->on_cpu)
 		grp->nr_running--;
 
@@ -665,6 +782,7 @@ static void remove_task_from_group(struct task_struct *p)
 		grp->time.normalized_util = 0;
 	}
 	raw_spin_unlock_irqrestore(&grp->lock, irqflag);
+	__task_rq_unlock(rq, &flag);
 
 	/* Reserved groups cannot be destroyed */
 	if (empty_group && grp->id != DEFAULT_CGROUP_COLOC_ID) {
@@ -692,20 +810,23 @@ add_task_to_group(struct task_struct *p, struct related_thread_group *grp)
 	 */
 	rq = __task_rq_lock(p, &flag);
 	transfer_busy_time(rq, grp, p, ADD_TASK);
-	__task_rq_unlock(rq, &flag);
 
 	raw_spin_lock_irqsave(&grp->lock, irqflag);
 	list_add(&p->grp_list, &grp->tasks);
 	rcu_assign_pointer(p->grp, grp);
 
-	if (p->on_cpu)
+	if (p->on_cpu) {
 		grp->nr_running++;
+		if (grp->nr_running == 1)
+			grp->mark_start = max(grp->mark_start, walt_ktime_clock()); //lint !e666 !e732
+	}
 
 	boost = schedtune_task_boost(p);
 	if (boost > grp->max_boost)
 		grp->max_boost = boost;
 
 	raw_spin_unlock_irqrestore(&grp->lock, irqflag);
+	__task_rq_unlock(rq, &flag);
 
 	return 0;
 }
@@ -788,25 +909,6 @@ unsigned int sched_get_group_id(struct task_struct *p)
 
 	return group_id;
 }
-
-void update_preferred_cluster(struct task_struct *p, u32 old_load)
-{
-	struct related_thread_group *grp;
-	unsigned long flag;
-
-	rcu_read_lock();
-	grp = task_related_thread_group(p);
-	if (!grp)
-		goto exit;
-
-	raw_spin_lock_irqsave(&grp->lock, flag);
-	grp->preferred_cluster = best_cluster(grp);
-	raw_spin_unlock_irqrestore(&grp->lock, flag);
-
-exit:
-	rcu_read_unlock();
-}
-
 
 #ifdef CONFIG_HISI_CGROUP_RTG
 /*
@@ -894,7 +996,6 @@ void sched_update_rtg_tick(struct task_struct *p)
 	}
 	rcu_read_unlock();
 
-#ifdef CONFIG_FRAME_RTG
-	update_frame_info_tick(grp);
-#endif
+	if (grp->rtg_class)
+		grp->rtg_class->sched_update_rtg_tick(grp);
 }

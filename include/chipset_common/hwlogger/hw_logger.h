@@ -17,11 +17,12 @@
 #ifndef _LINUX_LOGGER_H
 #define _LINUX_LOGGER_H
 
-#include <linux/types.h>
+#include <linux/fs.h>
 #include <linux/ioctl.h>
+#include <linux/types.h>
 
-/**
- * struct user_logger_entry_compat - defines a single entry that is given to a logger
+/*
+ * struct user_logger_entry_compat - defines a single entry given to a logger
  * @len:	The length of the payload
  * @__pad:	Two bytes of padding that appear to be required
  * @pid:	The generating process' process ID
@@ -44,7 +45,7 @@ struct user_logger_entry_compat {
 	char msg[0];
 };
 
-/**
+/*
  * struct logger_entry - defines a single entry that is given to a logger
  * @len:	The length of the payload
  * @hdr_size:	sizeof(struct logger_entry_v2)
@@ -77,9 +78,12 @@ struct hw_logger_msg {
 
 extern struct huawei_log_tag __start_hwlog_tag, __stop_hwlog_tag;
 
-#define LOGGER_LOG_EXCEPTION	"hwlog_exception"	/* exception */
-#define LOGGER_LOG_JANK    "hwlog_jank"	/* system performance messages */
-#define LOGGER_LOG_DUBAI   "hwlog_dubai" /* system dubai messages */
+/* exception */
+#define LOGGER_LOG_EXCEPTION		"hwlog_exception"
+/* system performance messages */
+#define LOGGER_LOG_JANK			"hwlog_jank"
+/* system dubai messages */
+#define LOGGER_LOG_DUBAI		"hwlog_dubai"
 
 #define LOGGER_ENTRY_MAX_PAYLOAD	4076
 
@@ -87,18 +91,25 @@ extern struct huawei_log_tag __start_hwlog_tag, __stop_hwlog_tag;
 #define CHECK_CODE	0x7BCDABCD
 
 enum CheckError {
-    EVecSeg = 1,
-    EVecLen,
-    EVecCopy,
-    EVecCode,
+	EVecSeg = 1,
+	EVecLen,
+	EVecCopy,
+	EVecCode,
 };
 
-#define O_HWLOGGER_RDDEL		01000000000		/* will be deleted after being read */
-#define LOGGER_GET_LOG_BUF_SIZE	_IO(__LOGGERIO, 1)	/* size of log */
-#define LOGGER_GET_LOG_LEN		_IO(__LOGGERIO, 2)	/* used log len */
-#define LOGGER_GET_NEXT_ENTRY_LEN	_IO(__LOGGERIO, 3)	/* next entry len */
-#define LOGGER_FLUSH_LOG		_IO(__LOGGERIO, 4)	/* flush log */
-#define LOGGER_SET_RDDEL		_IO(__LOGGERIO, 5)	/* set O_HWLOGGER_RDDEL to flag */
-#define LOGGER_RESET_RDDEL		_IO(__LOGGERIO, 6)	/* reset O_HWLOGGER_RDDEL to flag */
+/* will be deleted after being read */
+#define O_HWLOGGER_RDDEL		01000000000
+/* size of log */
+#define LOGGER_GET_LOG_BUF_SIZE		_IO(__LOGGERIO, 1)
+/* used log len */
+#define LOGGER_GET_LOG_LEN		_IO(__LOGGERIO, 2)
+/* next entry len */
+#define LOGGER_GET_NEXT_ENTRY_LEN	_IO(__LOGGERIO, 3)
+/* flush log */
+#define LOGGER_FLUSH_LOG		_IO(__LOGGERIO, 4)
+/* set O_HWLOGGER_RDDEL to flag */
+#define LOGGER_SET_RDDEL		_IO(__LOGGERIO, 5)
+/* reset O_HWLOGGER_RDDEL to flag */
+#define LOGGER_RESET_RDDEL		_IO(__LOGGERIO, 6)
 
 #endif /* _LINUX_LOGGER_H */

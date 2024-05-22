@@ -1,9 +1,5 @@
 subdir-ccflags-y += -Wall -Werror
 
-ifeq ($(CLT_IV),true)
-EXTRA_CFLAGS += -DCLT_VOICE
-endif
-
 # hifi dsp device driver
 ifeq ($(CONFIG_HIFI_IPC_3650),y)
 EXTRA_CFLAGS += -Iinclude/modem/include/config/hi365x
@@ -19,6 +15,10 @@ EXTRA_CFLAGS += -DCONFIG_DP_MULTI_CHANNELS
 endif
 
 ifeq ($(CONFIG_HISI_FB_V501),y)
+EXTRA_CFLAGS += -DCONFIG_DP_MULTI_CHANNELS
+endif
+
+ifeq ($(CONFIG_HISI_FB_V510),y)
 EXTRA_CFLAGS += -DCONFIG_DP_MULTI_CHANNELS
 endif
 
@@ -51,7 +51,7 @@ endif
 obj-$(CONFIG_HIFI_DSP_ONE_TRACK)	+= hifi_lpp.o
 obj-$(CONFIG_HIFI_DSP_ONE_TRACK)	+= hifi_om.o
 
-ifneq ($(HISI_EXTERNAL_MODEM), )
+ifeq ($(CONFIG_HIFI_EXTRA_MODEM_MODE),y)
 obj-$(CONFIG_HIFI_DSP_ONE_TRACK)	+= audio_pcie_proc.o
 obj-$(CONFIG_HIFI_DSP_ONE_TRACK)	+= b5000_strategy_acore.o
 EXTRA_CFLAGS += -DHISI_EXTERNAL_MODEM
@@ -64,4 +64,9 @@ endif
 endif
 
 obj-y	+= voice_proxy/
+
+ifeq ($(CONFIG_HIFI_EXTRA_MODEM_MODE),y)
+obj-y	+= ap_clk_correct/
+endif
+
 ccflags-$(CONFIG_HIFI_DSP_ONE_TRACK) += -Idrivers/devkit/audiokit/

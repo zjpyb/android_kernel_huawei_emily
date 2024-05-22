@@ -14,7 +14,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(cpufreq_schedutil_boost,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_schedutil_boost, /* [false alarm]:TRACE_EVENT是原生宏定义 */
 	    TP_PROTO(const char *s),
 	    TP_ARGS(s),
 	    TP_STRUCT__entry(
@@ -26,7 +26,7 @@ TRACE_EVENT(cpufreq_schedutil_boost,/* [false alarm]:原生宏定义 */
 	    TP_printk("%s", __get_str(s))
 );
 
-TRACE_EVENT(cpufreq_schedutil_unboost,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_schedutil_unboost, /* [false alarm]:TRACE_EVENT是原生宏定义 */
 	    TP_PROTO(const char *s),
 	    TP_ARGS(s),
 	    TP_STRUCT__entry(
@@ -38,7 +38,7 @@ TRACE_EVENT(cpufreq_schedutil_unboost,/* [false alarm]:原生宏定义 */
 	    TP_printk("%s", __get_str(s))
 );
 
-TRACE_EVENT(cpufreq_schedutil_eval_target,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_schedutil_eval_target, /* [false alarm]:TRACE_EVENT是原生宏定义 */
 	    TP_PROTO(unsigned int cpu,
 		     unsigned long util,
 		     unsigned long max,
@@ -67,21 +67,23 @@ TRACE_EVENT(cpufreq_schedutil_eval_target,/* [false alarm]:原生宏定义 */
 		      __entry->load, __entry->curr, __entry->target)
 );
 
-TRACE_EVENT(cpufreq_schedutil_get_util,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_schedutil_get_util, /* [false alarm]:TRACE_EVENT是原生宏定义 */
 	    TP_PROTO(unsigned int cpu,
 		     unsigned long util,
 		     unsigned long max,
 		     unsigned long top,
+		     unsigned long pred,
 		     unsigned int iowait,
 		     unsigned int flag,
 		     unsigned int ed,
 		     unsigned int od),
-	    TP_ARGS(cpu, util, max, top, iowait, flag, ed, od),
+	    TP_ARGS(cpu, util, max, top, pred, iowait, flag, ed, od),
 	    TP_STRUCT__entry(
 		    __field(unsigned int,	cpu)
 		    __field(unsigned long,	util)
 		    __field(unsigned long,	max)
 		    __field(unsigned long,	top)
+		    __field(unsigned long,	pred)
 		    __field(unsigned int,	iowait)
 		    __field(unsigned int,	flag)
 		    __field(unsigned int,	ed)
@@ -92,17 +94,18 @@ TRACE_EVENT(cpufreq_schedutil_get_util,/* [false alarm]:原生宏定义 */
 		    __entry->util = util;
 		    __entry->max = max;
 		    __entry->top = top;
+		    __entry->pred = pred;
 		    __entry->iowait = iowait;
 		    __entry->flag = flag;
 		    __entry->ed = ed;
 		    __entry->od = od;
 	    ),
-	    TP_printk("cpu=%u util=%lu max=%lu top=%lu iowait=%u flag=%u ed=%u od=%u",
-		      __entry->cpu, __entry->util, __entry->max, __entry->top,
+	    TP_printk("cpu=%u util=%lu max=%lu top=%lu pred=%lu iowait=%u flag=%u ed=%u od=%u",
+		      __entry->cpu, __entry->util, __entry->max, __entry->top, __entry->pred,
 		      __entry->iowait, __entry->flag, __entry->ed, __entry->od)
 );
 
-TRACE_EVENT(cpufreq_schedutil_notyet,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_schedutil_notyet, /* [false alarm]:TRACE_EVENT是原生宏定义 */
 	    TP_PROTO(unsigned int cpu,
 		     const char *reason,
 		     unsigned long long delta,
@@ -128,7 +131,7 @@ TRACE_EVENT(cpufreq_schedutil_notyet,/* [false alarm]:原生宏定义 */
 		      __entry->delta, __entry->curr, __entry->target)
 );
 
-TRACE_EVENT(cpufreq_schedutil_already,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_schedutil_already, /* [false alarm]:TRACE_EVENT是原生宏定义 */
 	    TP_PROTO(unsigned int cpu,
 		     unsigned int curr,
 		     unsigned int target),

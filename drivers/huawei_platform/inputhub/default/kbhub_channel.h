@@ -55,7 +55,6 @@ struct kbdev_proxy {
 };
 
 extern bool really_do_enable_disable(int *ref_cnt, bool enable, int bit);
-extern int send_app_config_cmd(int tag, void *app_config, bool use_lock);
 extern void disable_kb_when_sysreboot(void);
 
 #endif /* _KBHUB_CHANNEL_H_ */

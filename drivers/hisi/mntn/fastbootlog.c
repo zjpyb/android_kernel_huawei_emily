@@ -36,6 +36,8 @@
 #include <global_ddr_map.h>
 #include <linux/module.h>
 #include <linux/hisi/hisi_log.h>
+#include <securec.h>
+
 #define HISI_LOG_TAG HISI_FASTBOOTLOG_TAG
 #include "blackbox/rdr_print.h"
 
@@ -75,6 +77,11 @@ static ssize_t last_fastbootlog_dump_file_read(struct file *file,
 		return 0;
 	}
 
+	if (!userbuf) {
+		/*end of file */
+		return 0;
+	}
+
 	copy = (ssize_t) min(bytes, (size_t) (s_last_fastbootlog_size - *off));
 
 	if (copy_to_user(userbuf, s_last_fastbootlog_buff + *off, copy)) {
@@ -102,6 +109,11 @@ static ssize_t fastbootlog_dump_file_read(struct file *file,
 	}
 
 	if (*off == s_fastbootlog_size) {
+		/*end of file */
+		return 0;
+	}
+
+	if (!userbuf) {
 		/*end of file */
 		return 0;
 	}
@@ -204,11 +216,11 @@ static void check_fastbootlog_head(struct fastbootlog_head *head,
 
 static int __init fastbootlog_dump_init(void)
 {
-	char *fastbootlog_buff;
-	struct fastbootlog_head *head;
-	char *lastlog_start;
+	char *fastbootlog_buff = NULL;
+	struct fastbootlog_head *head = NULL;
+	char *lastlog_start = NULL;
 	unsigned int lastlog_size;
-	char *log_start;
+	char *log_start = NULL;
 	unsigned int log_size;
 	int use_ioremap = 0;
 	int need_dump_whole = 0;
@@ -256,10 +268,18 @@ static int __init fastbootlog_dump_init(void)
 			ret = -1;
 			goto out;
 		}
-		memcpy(s_last_fastbootlog_buff, lastlog_start, tmp_len);
+
+		if (EOK != memcpy_s(s_last_fastbootlog_buff, lastlog_size, lastlog_start, tmp_len)) {
+			BB_PRINT_ERR("[%s:%d]: memcpy_s err \n]", __func__, __LINE__);
+		}
+
 		lastlog_start = fastbootlog_buff + sizeof(struct fastbootlog_head);
-		memcpy(s_last_fastbootlog_buff + tmp_len, lastlog_start,
-		       lastlog_size - tmp_len);
+
+		if (EOK != memcpy_s(s_last_fastbootlog_buff + tmp_len, lastlog_size - tmp_len, lastlog_start,
+		       lastlog_size - tmp_len)) {
+			BB_PRINT_ERR("[%s:%d]: memcpy_s err \n]", __func__, __LINE__);
+		}
+
 		s_last_fastbootlog_size = lastlog_size;
 	} else {
 		lastlog_size = head->lastlog_offset - head->lastlog_start;
@@ -272,8 +292,9 @@ static int __init fastbootlog_dump_init(void)
 				ret = -1;
 				goto out;
 			}
-			memcpy(s_last_fastbootlog_buff, lastlog_start,
-			       lastlog_size);
+			if (EOK != memcpy_s(s_last_fastbootlog_buff, lastlog_size, lastlog_start, lastlog_size)) {
+				BB_PRINT_ERR("[%s:%d]: memcpy_s err \n]", __func__, __LINE__);
+			}
 			s_last_fastbootlog_size = lastlog_size;
 		}
 	}

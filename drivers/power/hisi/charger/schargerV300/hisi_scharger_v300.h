@@ -1,4 +1,4 @@
-﻿//******************************************************************************
+// ******************************************************************************
 // Copyright     :  Copyright (C) 2015, Hisilicon Technologies Co., Ltd.
 // File name     :  hisi_scharger_v300.h
 // Version       :  1.0
@@ -354,9 +354,9 @@ struct charge_cv_vdpm_data {
 #define WATCHDOG_CTRL_REG               (SOC_SCHARGER_WATCHDOG_CTRL_ADDR(0))
 #define WATCHDOG_TIMER_SHIFT            (SOC_SCHARGER_WATCHDOG_CTRL_watchdog_timer_START)
 #define WATCHDOG_TIMER_MSK              (0x03<<WATCHDOG_TIMER_SHIFT)
-#define WATCHDOG_TIMER_10_S             (10)
-#define WATCHDOG_TIMER_20_S             (20)
-#define WATCHDOG_TIMER_40_S             (40)
+#define WATCHDOG_TIMER_10_S             10
+#define WATCHDOG_TIMER_20_S             20
+#define WATCHDOG_TIMER_40_S             40
 
 /* 看门狗软复位控制寄存器。 */
 #define WATCHDOG_SOFT_RST_REG           (SOC_SCHARGER_WATCHDOG_SOFT_RST_ADDR(0))

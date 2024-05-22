@@ -1,15 +1,18 @@
-/* Copyright (c) 2013-2014, Hisilicon Tech. Co., Ltd. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 and
-* only version 2 as published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
-* GNU General Public License for more details.
-*
-*/
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2013-2025. All rights reserved.
+ * Description: jpeg jpu def
+ * Author: Huawei Hisilicon
+ * Create: 2013
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 #ifndef HISI_JPU_DEF_H
 #define HISI_JPU_DEF_H
 
@@ -30,16 +33,15 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #endif
 
-/* align */
 #ifndef ALIGN_DOWN
-#define ALIGN_DOWN(val, al)  ((val) & ~((al)-1))
+#define ALIGN_DOWN(val, al)  ((val) & ~((al) - 1))
 #endif
 #ifndef ALIGN_UP
-#define ALIGN_UP(val, al)    (((val) + ((al)-1)) & ~((al)-1))
+#define ALIGN_UP(val, al)    (((val) + ((al) - 1)) & ~((al) - 1))
 #endif
 
 #ifndef BIT
-#define BIT(x)  (1<<(x))
+#define BIT(x)  (1 << (x))
 #endif
 
 #ifndef IS_EVEN
@@ -56,7 +58,7 @@
 
 #define HISI_JPU_TAG "hisijpu"
 #define HISI_LOG_TAG  HISI_JPU_TAG
-/*--------------------------------------------------------------------------*/
+
 extern uint32_t hisi_jpu_msg_level;
 
 /*
@@ -70,45 +72,50 @@ extern uint32_t hisi_jpu_msg_level;
  * LEVEL 6 KERN_INFO
  * LEVEL 7 KERN_DEBUG (Lowest priority)
  */
-#define HISI_JPU_EMERG(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 0)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_JPU_ALERT(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 1)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_JPU_CRIT(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 2)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_JPU_ERR(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 3)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_JPU_WARNING(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 4)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_JPU_NOTICE(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 5)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_JPU_INFO(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 6)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_JPU_DEBUG(msg, ...)    \
-	do { if (hisi_jpu_msg_level > 7)  \
-		pr_info("%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-
-//printk(KERN_DEBUG "[hisijpu]%s: "msg, __func__, ## __VA_ARGS__);
+#define HISI_JPU_EMERG(msg, ...) \
+	do { if (hisi_jpu_msg_level > 0) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
+#define HISI_JPU_ALERT(msg, ...) \
+	do { if (hisi_jpu_msg_level > 1) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
+#define HISI_JPU_CRIT(msg, ...) \
+	do { if (hisi_jpu_msg_level > 2) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
+#define HISI_JPU_ERR(msg, ...) \
+	do { if (hisi_jpu_msg_level > 3) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
+#define HISI_JPU_WARNING(msg, ...) \
+	do { if (hisi_jpu_msg_level > 4) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
+#define HISI_JPU_NOTICE(msg, ...) \
+	do { if (hisi_jpu_msg_level > 5) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
+#define HISI_JPU_INFO(msg, ...) \
+	do { if (hisi_jpu_msg_level > 6) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
+#define HISI_JPU_DEBUG(msg, ...) \
+	do { if (hisi_jpu_msg_level > 7) \
+		pr_info("%s: "msg, __func__, ## __VA_ARGS__); \
+	} while (0)
 
 #define assert(expr) \
-	if(!(expr)) { \
-		pr_err("assertion failed! %s,%s,%s,line=%d\n",\
-			#expr, __FILE__, __func__, __LINE__); \
-	}
+	do { \
+		if (!(expr)) { \
+			pr_err("assertion failed! %s,%s,%s,line=%d\n",\
+				#expr, __FILE__, __func__, __LINE__); \
+		} \
+	} while (0)
 
 #define HISI_JPU_ASSERT(x)   assert(x)
 
-
 /*--------------------------------------------------------------------------*/
-//#define CONFIG_HISI_JPU_DUMP_REG
-
 #ifdef CONFIG_HISI_JPU_DUMP_REG
 #define outp32(addr, val) \
 	do {\
@@ -132,6 +139,5 @@ extern uint32_t hisi_jpu_msg_level;
 #define outpw(port, val) writew(val, port)
 #define inpdw(port) readl(port)
 #define outpdw(port, val) writel(val, port)
-
 
 #endif /* HISI_JPU_DEF_H */

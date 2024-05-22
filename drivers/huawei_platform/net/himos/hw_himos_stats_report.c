@@ -21,6 +21,7 @@
 #include <linux/skbuff.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
+#include <linux/version.h>
 
 #include "hw_himos_stats_common.h"
 #include "hw_himos_stats_report.h"
@@ -30,17 +31,6 @@
 static int himos_stats_report_start(struct sk_buff *skb, struct genl_info *info);
 static int himos_stats_report_stop(struct sk_buff *skb, struct genl_info *info);
 static int himos_stats_report_keepalive(struct sk_buff *skb, struct genl_info *info);
-
-
-//family
-static struct genl_family himos_stats_report_genl =
-{
-	.id = GENL_ID_GENERATE,
-	.hdrsize = 0,
-	.name = HIMOS_STATS_REPORT_GENL_FAMILY,
-	.version = 1,
-	.maxattr = MAX_HIMOS_STATS_REPORT_ATTR,
-};
 
 //attr policy
 static const struct nla_policy himos_stats_report_policy[MAX_HIMOS_STATS_REPORT_ATTR + 1] =
@@ -83,6 +73,20 @@ static struct genl_ops himos_stats_report_ops[] =
 		.policy = himos_stats_report_policy,
 		.doit = himos_update_aweme_stall_info
 	},
+};
+
+// family
+static struct genl_family himos_stats_report_genl =
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0))
+	.id = GENL_ID_GENERATE,
+#endif
+	.hdrsize = 0,
+	.name = HIMOS_STATS_REPORT_GENL_FAMILY,
+	.version = 1, // current version number
+	.maxattr = MAX_HIMOS_STATS_REPORT_ATTR,
+	.ops = himos_stats_report_ops,
+	.n_ops = ARRAY_SIZE(himos_stats_report_ops),
 };
 
 static int himos_stats_report_start(struct sk_buff *skb, struct genl_info *info)
@@ -203,7 +207,7 @@ static int himos_stats_report_keepalive(struct sk_buff *skb, struct genl_info *i
 struct sk_buff* himos_get_nlmsg(__u32 portid, int type, size_t size)
 {
 	struct sk_buff *skb;
-	void *reply;
+	void *reply = NULL;
 
 	skb = genlmsg_new(size, GFP_ATOMIC);
 	if (skb == NULL) {
@@ -235,7 +239,7 @@ static int __init himos_stats_report_init(void)
 
 	pr_crit("himos_stats_report_init enter()");
 
-	err = genl_register_family_with_ops(&himos_stats_report_genl, himos_stats_report_ops);
+	err = genl_register_family(&himos_stats_report_genl);
 	if (err < 0) {
 		pr_err("genl_register_family_with_ops fail with error code %d", err);
 		return err;

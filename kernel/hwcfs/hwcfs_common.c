@@ -135,7 +135,7 @@ bool test_dynamic_vip(struct task_struct *task, int type)
 		return false;
 	}
 	dynamic_vip = atomic64_read(&task->dynamic_vip);
-	return dynamic_vip_get_bits(dynamic_vip, type) > 0;
+	return dynamic_vip_get_bits(dynamic_vip, (u32)type) > 0;
 }
 
 static bool test_task_exist(struct task_struct *task, struct list_head *head)
@@ -151,12 +151,12 @@ static bool test_task_exist(struct task_struct *task, struct list_head *head)
 
 static inline void dynamic_vip_dec(struct task_struct *task, int type)
 {
-	atomic64_sub(dynamic_vip_one(type), &task->dynamic_vip);
+	atomic64_sub(dynamic_vip_one((u32)type), &task->dynamic_vip);
 }
 
 static inline void dynamic_vip_inc(struct task_struct *task, int type)
 {
-	atomic64_add(dynamic_vip_one(type), &task->dynamic_vip);
+	atomic64_add(dynamic_vip_one((u32)type), &task->dynamic_vip);
 }
 
 static void __dynamic_vip_dequeue(struct task_struct *task, int type)
@@ -316,7 +316,10 @@ static void attach_task(struct rq *dst_rq, struct task_struct *p)
 {
 	trace_sched_vip_queue_op(p, "attach_task");
 	raw_spin_lock(&dst_rq->lock);
-	BUG_ON(task_rq(p) != dst_rq); /*lint !e58*/
+	if (task_rq(p) != dst_rq) { /*lint !e58*/
+		raw_spin_unlock(&dst_rq->lock);
+		return;
+	}
 	p->on_rq = TASK_ON_RQ_QUEUED;
 	activate_task(dst_rq, p, 0);
 	check_preempt_curr(dst_rq, p, 0);

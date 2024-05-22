@@ -20,16 +20,16 @@ int hisi_dp_hpd_register(struct hisi_fb_data_type *hisifd)
 	int ret = 0;
 	struct dp_ctrl *dptx = NULL;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return -EINVAL;
 	}
 
 	dptx = &(hisifd->dp);
-	if (!hisifd->pdev) {
+	if (hisifd->pdev == NULL) {
 		return -EINVAL;
 	}
-	if (!dptx) {
+	if (dptx == NULL) {
 		dev_err(&hisifd->pdev->dev, "invalid dptx!\n");
 		return -EINVAL;
 	}
@@ -47,16 +47,16 @@ void hisi_dp_hpd_unregister(struct hisi_fb_data_type *hisifd)
 {
 	struct dp_ctrl *dptx = NULL;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return;
 	}
 
-	if (!hisifd->pdev) {
+	if (hisifd->pdev == NULL) {
 		return;
 	}
 	dptx = &(hisifd->dp);
-	if (!dptx) {
+	if (dptx == NULL) {
 		dev_err(&hisifd->pdev->dev, "invalid dptx!\n");
 		return;
 	}

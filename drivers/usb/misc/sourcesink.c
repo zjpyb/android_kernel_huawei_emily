@@ -6,6 +6,7 @@
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/usb.h>
+#include <securec.h>
 
 #ifndef D
 #define D(format, arg...) pr_info("[sourcesink][%s]" format, __func__, ##arg)
@@ -71,11 +72,14 @@ static void reinit_write_data(int pattern, char *buf, int len,
 
 	switch (pattern) {
 	case 0:
-		memset(buf, 0, len);
+		if (memset_s(buf, len, 0, len) != EOK)
+			pr_err(" fail to memset_s buf\n");
 		break;
 	case 1:
-		for (i = 0; i < len; i++)
-			*buf++ = (u8) ((i % max_packet_size) % 63);
+		if (max_packet_size != 0) {
+			for (i = 0; i < len; i++)
+				*buf++ = (u8) ((i % max_packet_size) % 63);
+		}
 		break;
 	default:
 		break;
@@ -183,7 +187,7 @@ static int submit_bulk_test(struct usb_device *udev,
 	int is_out = usb_endpoint_dir_out(&ep->desc);
 	int max_packet_size = le16_to_cpu(ep->desc.wMaxPacketSize);
 
-	buf = kzalloc(xfer_len, GFP_KERNEL);
+	buf = kzalloc(xfer_len + 1, GFP_KERNEL); /* avoid coverity warnning */
 	if (!buf)
 		return -ENOMEM;
 
@@ -288,6 +292,9 @@ static ssize_t sourcesink_bulk_tx_write(struct file *file,
 	int rx_pattern = 0;
 
 	D("+\n");
+
+	if (!ubuf)
+		return -EINVAL;
 
 	cmd_len = min_t(size_t, sizeof(cmd) - 1, count);
 	if (copy_from_user(&cmd, ubuf, cmd_len))
@@ -417,7 +424,7 @@ static int submit_isoc_test(struct sourcesink *ss, struct isoc_test_case *test, 
 	struct usb_host_interface *altsetting = intf->cur_altsetting;
 	struct usb_host_endpoint *isoc_in_ep = NULL;
 	struct usb_host_endpoint *isoc_out_ep = NULL;
-	struct urb *isoc_urb;
+	struct urb *isoc_urb = NULL;
 	int i;
 	int ret;
 
@@ -459,7 +466,7 @@ static int submit_isoc_test(struct sourcesink *ss, struct isoc_test_case *test, 
 	/* borrow the usb_fill_int_urb */
 	usb_fill_int_urb(isoc_urb, ss->udev, test->pipe, test, sizeof(*test),
 			sourcesink_isoc_irq, ss,
-			is_in ? isoc_in_ep->desc.bInterval : isoc_out_ep->desc.bInterval);/*lint !e613*/ /*[false alarm]:it is a false alarm*/
+			is_in ? isoc_in_ep->desc.bInterval : isoc_out_ep->desc.bInterval);/*lint !e613*//*[false alarm]:it is a false alarm*/
 	isoc_urb->number_of_packets = 1;
 	isoc_urb->iso_frame_desc[0].length = sizeof(*test);
 
@@ -758,8 +765,10 @@ static ssize_t sourcesink_isoc_write(struct file *file,
 	int buf_len;
 	int ret;
 
-
 	D("+\n");
+
+	if (!ubuf)
+		return -EINVAL;
 
 	buf_len = min_t(size_t, sizeof(buf) - 1, count);
 	if (copy_from_user(&buf, ubuf, buf_len))
@@ -842,7 +851,7 @@ static int control_rw(struct sourcesink *ss, void *data, int size, bool r)
 
 static int control_rw_test(struct sourcesink *ss, int size, bool r)
 {
-	char *buf;
+	char *buf = NULL;
 	unsigned repeat = SOURCESINK_CONTROL_RW_REPEAT;
 	unsigned i;
 	int actual;
@@ -851,7 +860,7 @@ static int control_rw_test(struct sourcesink *ss, int size, bool r)
 	D("+\n");
 	D("control %s %d test.\n", r ? "read" : "write", size);
 
-	buf = kmalloc(size, GFP_KERNEL);
+	buf = kzalloc(size + 1, GFP_KERNEL); /* avoid coverity warnning */
 	if (!buf) {
 		D("no mem\n");
 		return -ENOMEM;
@@ -898,6 +907,9 @@ static ssize_t sourcesink_control_rw_write(struct file *file,
 	int 			len;
 
 	D("+\n");
+
+	if (!ubuf)
+		return -EINVAL;
 
 	if (copy_from_user(&buf, ubuf, min_t(size_t, sizeof(buf) - 1, count)))
 		return -EFAULT;
@@ -981,8 +993,8 @@ static const struct file_operations sourcesink_control_write_fops = {
 
 static int sourcesink_debugfs_init(struct sourcesink *ss)
 {
-	struct dentry		*root;
-	struct dentry		*file;
+	struct dentry		*root = NULL;
+	struct dentry		*file = NULL;
 	int			ret;
 	char			name[32] = {0};
 
@@ -1071,9 +1083,9 @@ void sourcesink_debugfs_exit(struct sourcesink *ss)
 static int usb_sourcesink_probe(struct usb_interface *intf,
 			   const struct usb_device_id *usb_id)
 {
-	struct sourcesink *ss;
+	struct sourcesink *ss = NULL;
 	struct usb_device *udev = interface_to_usbdev(intf);
-	struct usb_host_interface *cur_alt;
+	struct usb_host_interface *cur_alt = NULL;
 	int ret;
 
 	D("+\n");
@@ -1109,7 +1121,7 @@ static int usb_sourcesink_probe(struct usb_interface *intf,
 
 static void usb_sourcesink_disconnect(struct usb_interface *intf)
 {
-	struct sourcesink *ss;
+	struct sourcesink *ss = NULL;
 
 	D("+\n");
 

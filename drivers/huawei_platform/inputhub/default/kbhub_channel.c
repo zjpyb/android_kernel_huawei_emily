@@ -36,6 +36,7 @@
 #include "contexthub_route.h"
 #include "contexthub_boot.h"
 #include "kbhub_channel.h"
+
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif /* CONFIG_HUAWEI_DSM */
@@ -44,7 +45,8 @@
 #undef HWLOG_TAG
 #endif
 
-#define KB_APP_CONFIG_LEN (16)
+#define KB_APP_CONFIG_LEN 16
+#define KBHUB_READY       1
 
 #define HWLOG_TAG kbhub_channel
 HWLOG_REGIST();
@@ -53,9 +55,10 @@ static bool g_kbchannel_status;
 static int g_kb_ref_cnt;
 
 static const struct kb_cmd_map_t kb_cmd_map_tab[] = {
-	{KBHB_IOCTL_START, -1, TAG_KB, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ},
-	{KBHB_IOCTL_STOP, -1, TAG_KB, CMD_CMN_CLOSE_REQ, SUB_CMD_NULL_REQ},
-	{KBHB_IOCTL_CMD, -1, TAG_KB, CMD_CMN_CONFIG_REQ, SUB_CMD_KB_EVENT_REQ},
+	{ KBHB_IOCTL_START, -1, TAG_KB, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ },
+	{ KBHB_IOCTL_STOP, -1, TAG_KB, CMD_CMN_CLOSE_REQ, SUB_CMD_NULL_REQ },
+	{ KBHB_IOCTL_CMD, -1, TAG_KB, CMD_CMN_CONFIG_REQ,
+		SUB_CMD_KB_EVENT_REQ },
 };
 
 static struct kbdev_proxy kbdev_proxy = {
@@ -71,7 +74,7 @@ int kbdev_proxy_register(struct kb_dev_ops *ops)
 {
 	int ret = -1;
 
-	if (ops != NULL) {
+	if (ops) {
 		kbdev_proxy.ops = ops;
 		if (kbdev_proxy.notify_event != NOTIFY_EVENT_NONE &&
 			ops->notify_event) {
@@ -144,16 +147,14 @@ void disable_kb_when_sysreboot(void)
 	hwlog_info("%s enter\n", __func__);
 }
 
-/*
- * Provide function to send command to sensorhub kb app
- */
+/* Provide function to send command to sensorhub kb app */
 int kernel_send_kb_cmd(unsigned int cmd, int val)
 {
 	int i;
 
 	hwlog_info("%s enter\n", __func__);
 	for (i = 0; i < ARRAY_SIZE(kb_cmd_map_tab); i++) {
-		if (kb_cmd_map_tab[i].fhb_ioctl_app_cmd == cmd)
+		if (cmd == kb_cmd_map_tab[i].fhb_ioctl_app_cmd)
 			break;
 	}
 	if (i == ARRAY_SIZE(kb_cmd_map_tab)) {
@@ -171,9 +172,7 @@ int kernel_send_kb_cmd(unsigned int cmd, int val)
 }
 EXPORT_SYMBOL(kernel_send_kb_cmd);
 
-/*
- * Provide function to send report event to sensorhub kb app
- */
+/* Provide function to send report event to sensorhub kb app */
 int kernel_send_kb_report_event(unsigned int cmd, void *buffer, int size)
 {
 	int ret;
@@ -184,11 +183,11 @@ int kernel_send_kb_report_event(unsigned int cmd, void *buffer, int size)
 
 	hwlog_info("%s enter\n", __func__);
 
-	if ((size <= 0) || (size > KBHUB_REPORT_DATA_SIZE) || (buffer == NULL))
+	if ((size <= 0) || (size > KBHUB_REPORT_DATA_SIZE) || !(buffer))
 		return -EFAULT;
 
 	for (i = 0; i < ARRAY_SIZE(kb_cmd_map_tab); i++) {
-		if (kb_cmd_map_tab[i].fhb_ioctl_app_cmd == cmd)
+		if (cmd == kb_cmd_map_tab[i].fhb_ioctl_app_cmd)
 			break;
 	}
 	if (i == ARRAY_SIZE(kb_cmd_map_tab)) {
@@ -223,9 +222,45 @@ int kernel_send_kb_report_event(unsigned int cmd, void *buffer, int size)
 }
 EXPORT_SYMBOL(kernel_send_kb_report_event);
 
+/*
+ * Provide function to send msg to sensorhub,
+ * kbhub is ready and reviced mcu ready msg
+ */
+static void kbhb_send_mcu_ready_event(void)
+{
+	int ret;
+	uint8_t kbhub_ready_event = KBHUB_READY;
+	write_info_t pkg_ap;
+	read_info_t pkg_mcu;
+	struct kb_outreport_t outreport;
+
+	hwlog_info("%s enter\n", __func__);
+
+	memset(&pkg_ap, 0, sizeof(pkg_ap));
+	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
+	memset(&outreport, 0, sizeof(outreport));
+
+	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
+	pkg_ap.tag = TAG_KB;
+	outreport.sub_cmd = SUB_CMD_KB_HUB_MCU_READY;
+	outreport.report_len = sizeof(uint8_t);
+	outreport.report_data[0] = kbhub_ready_event;
+	pkg_ap.wr_buf = &outreport;
+	pkg_ap.wr_len = sizeof(outreport);
+	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
+	if (ret) {
+		hwlog_err("%s write cmd err\n", __func__);
+		return;
+	}
+
+	if (pkg_mcu.errno != 0)
+		hwlog_err("%s mcu err\n", __func__);
+}
+
 void kbhb_notify_mcu_state(sys_status_t status)
 {
 	if (status == ST_MCUREADY) {
+		kbhb_send_mcu_ready_event();
 		if (kbdev_proxy.ops && kbdev_proxy.ops->notify_event) {
 			hwlog_info("%s notify_event NOTIFY_EVENT_DETECT\n",
 				__func__);
@@ -249,7 +284,7 @@ static int kb_recovery_notifier(struct notifier_block *nb,
 	unsigned long foo, void *bar)
 {
 	/* prevent access the emmc now: */
-	hwlog_info("%s (%lu) +\n", __func__, foo);
+	hwlog_info("%s %lu +\n", __func__, foo);
 	switch (foo) {
 	case IOM3_RECOVERY_IDLE:
 	case IOM3_RECOVERY_START:
@@ -347,9 +382,9 @@ static int kb_report_callback(const pkt_header_t *head)
 {
 	int ret = -1;
 	int count;
-	char *kb_data;
+	char *kb_data = NULL;
 
-	if (head == NULL)
+	if (!head)
 		return -1;
 
 	kb_data = (char *)head + sizeof(pkt_header_t);
@@ -360,8 +395,7 @@ static int kb_report_callback(const pkt_header_t *head)
 		hwlog_info("%s mcu ready\n", __func__);
 		kbhb_notify_mcu_state(ST_MCUREADY);
 	} else {
-		if ((kbdev_proxy.ops != NULL) &&
-			(kbdev_proxy.ops->process_kbdata != NULL))
+		if (kbdev_proxy.ops && kbdev_proxy.ops->process_kbdata)
 			ret = kbdev_proxy.ops->process_kbdata(kb_data, count);
 	}
 	return ret;
@@ -370,18 +404,18 @@ static int kb_report_callback(const pkt_header_t *head)
 static int is_kbhub_disabled(void)
 {
 	int len;
-	struct device_node *sh_node;
-	const char *sh_status;
+	struct device_node *sh_node = NULL;
+	const char *sh_status = NULL;
 	int ret;
 
 	sh_node = of_find_compatible_node(NULL, NULL, "huawei,sw_kb");
-	if (sh_node == NULL) {
+	if (!sh_node) {
 		hwlog_err("%s can not find node kbhub_status\n", __func__);
 		return -1;
 	}
 
 	sh_status = of_get_property(sh_node, "status", &len);
-	if (sh_status == NULL) {
+	if (!sh_status) {
 		hwlog_err("%s can't find property status\n", __func__);
 		return -1;
 	}
@@ -413,14 +447,14 @@ static int __init kbhub_init(void)
 
 	hwlog_info("%s enter\n", __func__);
 	ret = inputhub_route_open(ROUTE_KB_PORT);
-	if (ret != 0) {
+	if (ret) {
 		hwlog_err("%s cannot open inputhub route err=%d\n",
 			__func__, ret);
 		return ret;
 	}
 #ifdef USE_KBHB_DEVICE
 	ret = misc_register(&kbhub_miscdev);
-	if (ret != 0) {
+	if (ret) {
 		hwlog_err("%s cannot register miscdev err=%d\n", __func__, ret);
 		inputhub_route_close(ROUTE_KB_PORT);
 		return ret;
@@ -446,5 +480,5 @@ late_initcall_sync(kbhub_init);
 module_exit(kbhub_exit);
 
 MODULE_LICENSE("GPL v2");
-MODULE_DESCRIPTION("KBHub driver 20");
+MODULE_DESCRIPTION("KBHub driver");
 MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

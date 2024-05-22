@@ -128,9 +128,8 @@ static bool clk_core_is_prepared(struct clk_core *core)
 
 bool clk_core_is_enabled(struct clk_core *core)
 {
-	if(!core)
-		return false;
-
+    if(!core)
+        return false;
 	/*
 	 * .is_enabled is only mandatory for clocks that gate
 	 * fall back to software usage counter if .is_enabled is missing
@@ -284,11 +283,11 @@ EXPORT_SYMBOL_GPL(clk_get_enable_count);
 
 int __clk_get_source(struct clk *clk)
 {
-	if (clk->core->ops->get_source) {
-		return clk->core->ops->get_source(clk->core->hw);
-	} else {
-		return -1;
-	}
+    if (clk->core->ops->get_source) {
+	    return clk->core->ops->get_source(clk->core->hw);
+    } else {
+        return -1;
+    }
 }
 EXPORT_SYMBOL_GPL(__clk_get_source);
 
@@ -390,9 +389,9 @@ static bool mux_is_better_rate(unsigned long rate, unsigned long now,
 	return now <= rate && now > best;
 }
 
-static int
-clk_mux_determine_rate_flags(struct clk_hw *hw, struct clk_rate_request *req,
-			     unsigned long flags)
+int clk_mux_determine_rate_flags(struct clk_hw *hw,
+				 struct clk_rate_request *req,
+				 unsigned long flags)
 {
 	struct clk_core *core = hw->core, *parent, *best_parent = NULL;
 	int i, num_parents, ret;
@@ -452,6 +451,7 @@ out:
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(clk_mux_determine_rate_flags);
 
 struct clk *__clk_lookup(const char *name)
 {
@@ -658,7 +658,7 @@ static void clk_core_disable_lock(struct clk_core *core)
 	flags = clk_enable_lock();
 	clk_core_disable(core);
 #ifdef CONFIG_HISI_CLK_TRACE
-        track_clk_enable(core->hw->clk);
+    track_clk_enable(core->hw->clk);
 #endif
 	clk_enable_unlock(flags);
 }
@@ -732,12 +732,14 @@ static int clk_core_enable_lock(struct clk_core *core)
 {
 	unsigned long flags;
 	int ret;
+
 	flags = clk_enable_lock();
 	ret = clk_core_enable(core);
 #ifdef CONFIG_HISI_CLK_TRACE
-        track_clk_enable(core->hw->clk);
+    track_clk_enable(core->hw->clk);
 #endif
 	clk_enable_unlock(flags);
+
 	return ret;
 }
 
@@ -1100,6 +1102,8 @@ static int __clk_notify(struct clk_core *core, unsigned long msg,
 			cnd.clk = cn->clk;
 			ret = srcu_notifier_call_chain(&cn->notifier_head, msg,
 					&cnd);
+			if (ret & NOTIFY_STOP_MASK)
+				return ret;
 		}
 	}
 
@@ -1780,7 +1784,7 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 
 	ret = clk_core_set_rate_nolock(clk->core, rate);
 #ifdef CONFIG_HISI_CLK_TRACE
-	track_clk_set_freq(clk, rate);
+    track_clk_set_freq(clk, rate);
 #endif
 	clk_prepare_unlock();
 
@@ -2245,11 +2249,11 @@ static void clk_dump_subtree(struct seq_file *s, struct clk_core *c, int level)
 	clk_dump_one(s, c, level);
 
 	hlist_for_each_entry(child, &c->children, child_node) {
-		seq_printf(s, ",");
+		seq_putc(s, ',');
 		clk_dump_subtree(s, child, level + 1);
 	}
 
-	seq_printf(s, "}");
+	seq_putc(s, '}');
 }
 
 static int clk_dump(struct seq_file *s, void *data)
@@ -2258,14 +2262,13 @@ static int clk_dump(struct seq_file *s, void *data)
 	bool first_node = true;
 	struct hlist_head **lists = (struct hlist_head **)s->private;
 
-	seq_printf(s, "{");
-
+	seq_putc(s, '{');
 	clk_prepare_lock();
 
 	for (; *lists; lists++) {
 		hlist_for_each_entry(c, *lists, child_node) {
 			if (!first_node)
-				seq_puts(s, ",");
+				seq_putc(s, ',');
 			first_node = false;
 			clk_dump_subtree(s, c, 0);
 		}
@@ -2285,6 +2288,31 @@ static int clk_dump_open(struct inode *inode, struct file *file)
 
 static const struct file_operations clk_dump_fops = {
 	.open		= clk_dump_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int possible_parents_dump(struct seq_file *s, void *data)
+{
+	struct clk_core *core = s->private;
+	int i;
+
+	for (i = 0; i < core->num_parents - 1; i++)
+		seq_printf(s, "%s ", core->parent_names[i]);
+
+	seq_printf(s, "%s\n", core->parent_names[i]);
+
+	return 0;
+}
+
+static int possible_parents_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, possible_parents_dump, inode->i_private);
+}
+
+static const struct file_operations possible_parents_fops = {
+	.open		= possible_parents_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -2344,6 +2372,13 @@ static int clk_debug_create_one(struct clk_core *core, struct dentry *pdentry)
 			(u32 *)&core->notifier_count);
 	if (!d)
 		goto err_out;
+
+	if (core->num_parents > 1) {
+		d = debugfs_create_file("clk_possible_parents", S_IRUGO,
+				core->dentry, core, &possible_parents_fops);
+		if (!d)
+			goto err_out;
+	}
 
 	if (core->ops->debug_init) {
 		ret = core->ops->debug_init(core->hw, core->dentry);
@@ -2685,7 +2720,7 @@ struct clk *__clk_create_clk(struct clk_hw *hw, const char *dev_id,
 
 	clk->core = hw->core;
 	clk->dev_id = dev_id;
-	clk->con_id = con_id;
+	clk->con_id = kstrdup_const(con_id, GFP_KERNEL);
 	clk->max_rate = ULONG_MAX;
 
 	clk_prepare_lock();
@@ -2695,12 +2730,14 @@ struct clk *__clk_create_clk(struct clk_hw *hw, const char *dev_id,
 	return clk;
 }
 
+/* keep in sync with __clk_put */
 void __clk_free_clk(struct clk *clk)
 {
 	clk_prepare_lock();
 	hlist_del(&clk->clks_node);
 	clk_prepare_unlock();
 
+	kfree_const(clk->con_id);
 	kfree(clk);
 }
 
@@ -3059,6 +3096,7 @@ int __clk_get(struct clk *clk)
 	return 1;
 }
 
+/* keep in sync with __clk_free_clk */
 void __clk_put(struct clk *clk)
 {
 	struct module *owner;
@@ -3080,6 +3118,7 @@ void __clk_put(struct clk *clk)
 
 	module_put(owner);
 
+	kfree_const(clk->con_id);
 	kfree(clk);
 }
 
@@ -3122,7 +3161,7 @@ int clk_notifier_register(struct clk *clk, struct notifier_block *nb)
 
 	/* if clk wasn't in the notifier list, allocate new clk_notifier */
 	if (cn->clk != clk) {
-		cn = kzalloc(sizeof(struct clk_notifier), GFP_KERNEL);
+		cn = kzalloc(sizeof(*cn), GFP_KERNEL);
 		if (!cn)
 			goto out;
 
@@ -3270,7 +3309,7 @@ int of_clk_add_provider(struct device_node *np,
 	struct of_clk_provider *cp;
 	int ret;
 
-	cp = kzalloc(sizeof(struct of_clk_provider), GFP_KERNEL);
+	cp = kzalloc(sizeof(*cp), GFP_KERNEL);
 	if (!cp)
 		return -ENOMEM;
 
@@ -3281,7 +3320,7 @@ int of_clk_add_provider(struct device_node *np,
 	mutex_lock(&of_clk_mutex);
 	list_add(&cp->link, &of_clk_providers);
 	mutex_unlock(&of_clk_mutex);
-	pr_debug("Added clock from %s\n", np->full_name);
+	pr_debug("Added clock from %pOF\n", np);
 
 	ret = of_clk_set_defaults(np, true);
 	if (ret < 0)
@@ -3316,7 +3355,7 @@ int of_clk_add_hw_provider(struct device_node *np,
 	mutex_lock(&of_clk_mutex);
 	list_add(&cp->link, &of_clk_providers);
 	mutex_unlock(&of_clk_mutex);
-	pr_debug("Added clk_hw provider from %s\n", np->full_name);
+	pr_debug("Added clk_hw provider from %pOF\n", np);
 
 	ret = of_clk_set_defaults(np, true);
 	if (ret < 0)

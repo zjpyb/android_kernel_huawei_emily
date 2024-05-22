@@ -1,10 +1,14 @@
 subdir-ccflags-y += -Wall -Werror
 
-ifeq ($(CLT_IV), true)
-EXTRA_CFLAGS += -DCLT_AUDIO
+EXTRA_CFLAGS += -Isound/soc/codecs/
+EXTRA_CFLAGS += -Isound/soc/codecs/hisi/
+EXTRA_CFLAGS += -Isound/soc/codecs/hisi/hi6555/
+EXTRA_CFLAGS += -Isound/soc/codecs/hisi/hs_auto_calib/
+
+ifneq ($(strip $(CONFIG_SWITCH)),)
+ccflags-y += -DCONFIG_HUAWEI_HEADSET_DEBUG_SWITCH
 endif
 
-EXTRA_CFLAGS += -Isound/soc/codecs/
 ifeq ($(CONFIG_HISI_AUDIO_DEBUG),y)
 EXTRA_CFLAGS += -DCONFIG_HUAWEI_HEADSET_DEBUG
 EXTRA_CFLAGS += -Idrivers/devkit/audiokit/headset_debug/

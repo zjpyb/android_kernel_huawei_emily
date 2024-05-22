@@ -857,6 +857,7 @@ int adc_mean_low_boundary_test(int datalen)
 int enter_get_data_mode(int adc, int frameNum)
 {
 	int ret = 0;
+	int i;
 	uint8_t buf_recv[RECV_DATALEN] = {0};
 	uint8_t enter_getdata_mode_cmd[CMD_DATALEN] = { 0x04, 0x00, 0x23, 0x00, 0x03, 0x00, 0x04, 0x54, 0xcd,
 											adc, frameNum };
@@ -869,6 +870,8 @@ int enter_get_data_mode(int adc, int frameNum)
 	ret = memcmp(buf_recv + 4, ready_ack, sizeof(ready_ack)); // buf_recv 4th-7th is ack data
 	if (ret) {
 		TS_LOG_ERR("[elan]:%s,get ACK fail!\n", __func__);
+		for (i = 0; i < RECV_DATALEN; i++)
+			TS_LOG_ERR("buf_recv[%d]=0x%x\n", i, buf_recv[i]);
 		return -EINVAL;
 	} else {
 		TS_LOG_INFO("[elan]:%s,get ACK succeed\n", __func__);

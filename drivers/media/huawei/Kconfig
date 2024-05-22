@@ -28,5 +28,6 @@ config USE_CAMERA3_ARCH
 
 if HUAWEI_CAMERA
 source "drivers/media/huawei/camera/Kconfig"
+source "drivers/media/huawei/swingcam/Kconfig"
 endif
 

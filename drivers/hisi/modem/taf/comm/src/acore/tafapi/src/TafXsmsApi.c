@@ -65,9 +65,11 @@
 /*****************************************************************************
   3 函数定义
 *****************************************************************************/
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 TAF_XSMS_GetReceiverPid(MN_CLIENT_ID_T  ClientId, VOS_UINT32 *pulReceiverPid)
 {
+#if ( MULTI_MODEM_NUMBER > 1 )
     MODEM_ID_ENUM_UINT16    enModemID;
 
     /* 调用接口获取Modem ID */
@@ -80,14 +82,19 @@ VOS_UINT32 TAF_XSMS_GetReceiverPid(MN_CLIENT_ID_T  ClientId, VOS_UINT32 *pulRece
     {
         *pulReceiverPid = I1_UEPS_PID_XSMS;
     }
+#if (MULTI_MODEM_NUMBER > 2)
     else if (MODEM_ID_2 == enModemID)
     {
         *pulReceiverPid = I2_UEPS_PID_XSMS;
     }
+#endif
     else
     {
         *pulReceiverPid = I0_UEPS_PID_XSMS;
     }
+#else
+    *pulReceiverPid = UEPS_PID_XSMS;
+#endif
 
     return VOS_OK;
 }
@@ -103,6 +110,16 @@ VOS_UINT32 TAF_XSMS_SendSmsReq(
     TAF_XSMS_SEND_MSG_REQ_STRU         *pstMsg;
     VOS_UINT32                          ulReceiverPid;
 
+#if (FEATURE_OFF == FEATURE_PHONE_SC)
+    VOS_UINT8                           ucLteSmsEnable;
+
+    TAF_LSMS_GetLteSmsEnableFlag(&ucLteSmsEnable);
+
+    if (VOS_FALSE == ucLteSmsEnable)
+    {
+        return VOS_ERR;
+    }
+#endif
 
     if (VOS_OK != TAF_XSMS_GetReceiverPid(usClientId, &ulReceiverPid))
     {
@@ -264,7 +281,35 @@ VOS_UINT32 TAF_XSMS_DeleteSmsReq(
         return VOS_ERR;
     }
 }
+#endif
 
+#if (FEATURE_OFF == FEATURE_PHONE_SC)
+
+VOS_VOID TAF_LSMS_GetLteSmsEnableFlag(
+    VOS_UINT8                          *pucLteSmsEnable
+)
+{
+    TAF_NVIM_LTE_SMS_CFG_STRU           stLsmsCfgNvim;
+
+    TAF_MEM_SET_S(&stLsmsCfgNvim,
+                  sizeof(TAF_NVIM_LTE_SMS_CFG_STRU),
+                  0,
+                  sizeof(TAF_NVIM_LTE_SMS_CFG_STRU));
+
+    if (VOS_OK != TAF_ACORE_NV_READ(MODEM_ID_0, en_NV_Item_LTE_SMS_CFG, &stLsmsCfgNvim, sizeof(TAF_NVIM_LTE_SMS_CFG_STRU)))
+    {
+        /* 默认关闭 */
+        *pucLteSmsEnable     = VOS_FALSE;
+
+        return;
+    }
+
+    *pucLteSmsEnable     = stLsmsCfgNvim.ucLteSmsEnable;
+
+    return;
+}
+
+#endif
 
 
 

@@ -37,7 +37,7 @@
 #include <linux/unistd.h>
 #include <linux/bug.h>
 #include <linux/mutex.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/of_device.h>
@@ -80,7 +80,7 @@ struct gps_geofence_wake {
     /* misc driver structure*/
     struct miscdevice misc;
     /* wake_lock*/
-    struct wake_lock wake_lock;
+    struct wakeup_source wake_lock;
 };
 
 enum procs {
@@ -139,9 +139,9 @@ static void gps_geofence_wake_lock(int gpio)
 
     if (gpio) {
         /*wake_lock(&ac_data->wake_lock);*/
-        wake_lock_timeout(&ac_data->wake_lock, 5 * HZ);
+        __pm_wakeup_event(&ac_data->wake_lock, jiffies_to_msecs(5 * HZ));
     } else {
-        wake_unlock(&ac_data->wake_lock);
+        __pm_relax(&ac_data->wake_lock);
     }
 }
 
@@ -525,7 +525,7 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
         goto err_free_host_wake;
     }
     /*3. Init wake_lock*/
-    wake_lock_init(&ac_data->wake_lock, WAKE_LOCK_SUSPEND,
+    wakeup_source_init(&ac_data->wake_lock,
                "gps_geofence_wakelock");
     GPSINFO("[gps]wake_lock_init done");
     irq = gps_gpio_irq_init(gps_bcm->gpioid_hostwake.gpio);
@@ -566,7 +566,7 @@ err_free_clk:
 err_free_misc_register:
 #ifdef GEOFENCE
     misc_deregister(&ac_data->misc);
-    wake_lock_destroy(&ac_data->wake_lock);
+    wakeup_source_trash(&ac_data->wake_lock);
 #endif
     GPSERR(" misc_deregister!");
 #ifdef GEOFENCE

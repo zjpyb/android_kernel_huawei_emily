@@ -7,11 +7,6 @@ struct hisi_usb_combophy {
 	void (*reset_phy)(struct hisi_usb_combophy *combophy);
 	void (*reset_misc_ctrl)(struct hisi_usb_combophy *combophy);
 	void (*unreset_misc_ctrl)(struct hisi_usb_combophy *combophy);
-	bool (*is_misc_ctrl_reset)(struct hisi_usb_combophy *combophy);
-	bool (*is_misc_ctrl_unreset)(struct hisi_usb_combophy *combophy);
-	bool (*is_misc_ctrl_clk_enable)(struct hisi_usb_combophy *combophy);
-	void (*isodis)(struct hisi_usb_combophy *combophy);
-	void (*exit_testpowerdown)(struct hisi_usb_combophy *combophy);
 #ifdef COMBOPHY_FW_UPDATE
 	void (*firmware_update_prepare)(struct hisi_usb_combophy *combophy);
 	void (*firmware_update)(struct hisi_usb_combophy *combophy);
@@ -36,11 +31,6 @@ struct hisi_usb_combophy {
 COMBOPHY_OPS_VOID(reset_phy);
 COMBOPHY_OPS_VOID(reset_misc_ctrl);
 COMBOPHY_OPS_VOID(unreset_misc_ctrl);
-COMBOPHY_OPS_BOOL(is_misc_ctrl_reset);
-COMBOPHY_OPS_BOOL(is_misc_ctrl_unreset);
-COMBOPHY_OPS_BOOL(is_misc_ctrl_clk_enable);
-COMBOPHY_OPS_VOID(isodis);
-COMBOPHY_OPS_VOID(exit_testpowerdown);
 #ifdef COMBOPHY_FW_UPDATE
 COMBOPHY_OPS_VOID(firmware_update_prepare);
 COMBOPHY_OPS_VOID(firmware_update);

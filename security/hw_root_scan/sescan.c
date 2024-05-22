@@ -44,7 +44,7 @@ int sescan_hookhash(uint8_t *hash)
 	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	struct security_operations **security_ops;
+	struct security_operations **security_ops = NULL;
 
 	security_ops = kallsyms_lookup_name("security_ops");
 	if (security_ops == NULL) {
@@ -55,7 +55,12 @@ int sescan_hookhash(uint8_t *hash)
 	crypto_shash_update(shash,(char *) *security_ops,
 			sizeof(struct security_operations));
 #else
-// reference security/security.c: call_void_hook
+/*
+ * reference security/security.c: call_void_hook
+ *
+ * sizeof(P->hook.FUNC) in order to get the size of
+ * function pointer that for computing a hash later
+ */
 #define DO_ONE_HEAD(FUNC) do { \
 		struct security_hook_list *P; \
 		list_for_each_entry(P, &security_hook_heads.FUNC, list) { \
@@ -295,4 +300,5 @@ int sescan_hookhash(uint8_t *hash)
 	crypto_free_shash(tfm);
 	return err;
 }
+
 

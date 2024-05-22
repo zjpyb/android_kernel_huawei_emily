@@ -20,7 +20,10 @@
  */
 
 
-typedef struct _tag_hjpeg_intf hjpeg_intf_t;
+struct _tag_hjpeg_vtbl;
+typedef struct _tag_hjpeg_intf {
+    struct _tag_hjpeg_vtbl *vtbl;
+} hjpeg_intf_t;
 
 typedef struct _tag_hjpeg_vtbl {
     int (*get_name)(hjpeg_intf_t *i);
@@ -29,11 +32,7 @@ typedef struct _tag_hjpeg_vtbl {
     int (*power_down) (hjpeg_intf_t *i);
     int (*get_reg) (hjpeg_intf_t *i, void* cfg);
     int (*set_reg) (hjpeg_intf_t *i, void* cfg);
-}hjpeg_vtbl_t;
-
-typedef struct _tag_hjpeg_intf {
-    hjpeg_vtbl_t *vtbl;
-} hjpeg_intf_t;
+} hjpeg_vtbl_t;
 
 extern int
 hjpeg_register(

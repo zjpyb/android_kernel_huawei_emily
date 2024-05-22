@@ -104,7 +104,6 @@ struct wifipro_tcp_mib {
 	unsigned long	mibs[WIFIPRO_TCP_MIB_MAX];
 };
 #endif
-
 /* UDP */
 #define UDP_MIB_MAX	__UDP_MIB_MAX
 struct udp_mib {

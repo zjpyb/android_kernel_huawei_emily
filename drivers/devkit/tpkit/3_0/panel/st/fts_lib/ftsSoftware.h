@@ -27,19 +27,13 @@
 
 #define EVT_ID_EXT_POINTER     0x63
 
-/* unsigned types */
-typedef uint8_t u8;	/* /< basic type that represent one byte (or 8 bits) */
-typedef uint16_t u16;	/* /< basic type that represent 2 bytes (or 16 bits) */
-typedef uint32_t u32;	/* /< basic type that represent 4 bytes (or 32 bits) */
-typedef uint64_t u64;	/* /< basic type that represent 8 bytes (or 64 bits) */
-
 /* signed type */
 typedef signed char i8;	/* /< basic type that represent one signed byte (or 8
 			 * bits) */
 
 /**
   *	Enumerator which contains all the possible address length expressed in
-  *bytes.
+  * bytes.
   */
 typedef enum {
 	NO_ADDR = 0,
@@ -149,6 +143,9 @@ typedef enum {
 					 * (this is a driver define, not
 					 * available in FW) */
 /** @}*/
+
+#define MODE_OPEN 0x01
+#define MODE_SHUTDOWN 0x00
 
 /* Feature Settings */
 #define FEAT_ENABLE		1	/* /< General value to enable a feature

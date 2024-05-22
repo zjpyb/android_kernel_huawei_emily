@@ -1,14 +1,19 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * lcd_kit_disp.c
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * lcdkit display function for lcd driver
+ *
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
+ *
  */
 
 #define LOG_TAG "LCM"
@@ -21,6 +26,7 @@
 #include "lcd_kit_parse.h"
 #include "lcd_kit_adapt.h"
 #include "lcd_kit_core.h"
+#include "bias_bl_utils.h"
 #ifndef BUILD_LK
 #include <linux/string.h>
 #include <linux/kernel.h>
@@ -37,7 +43,7 @@
 #elif defined(BUILD_UBOOT)
 #include <asm/arch/mt_gpio.h>
 #else
-/*#include <mach/mt_pm_ldo.h>*/
+
 #ifdef CONFIG_MTK_LEGACY
 #include <mach/mt_gpio.h>
 #endif
@@ -53,7 +59,6 @@
 
 #include "lcm_drv.h"
 
-
 #ifndef BUILD_LK
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -63,8 +68,6 @@
 #include <linux/list.h>
 #include <linux/i2c.h>
 #include <linux/irq.h>
-/* #include <linux/jiffies.h> */
-/* #include <linux/delay.h> */
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -73,8 +76,7 @@
 
 #include <hwmanufac/runmode_type.h>
 
-#if defined (CONFIG_HUAWEI_DSM)
-#include <dsm/dsm_pub.h>
+#if defined CONFIG_HUAWEI_DSM
 static struct dsm_dev dsm_lcd = {
 	.name = "dsm_lcd",
 	.device_name = NULL,
@@ -84,7 +86,7 @@ static struct dsm_dev dsm_lcd = {
 	.buff_size = 1024,
 };
 
-struct dsm_client *lcd_dclient = NULL;
+struct dsm_client *lcd_dclient;
 struct dsm_lcd_record lcd_record;
 #endif
 
@@ -98,13 +100,17 @@ struct lcd_kit_disp_info *lcd_kit_get_disp_info(void)
 	return &g_lcd_kit_disp_info;
 }
 
+#if defined CONFIG_HUAWEI_DSM
+struct dsm_client *lcd_kit_get_lcd_dsm_client(void)
+{
+	return lcd_dclient;
+}
+#endif
+
 int is_mipi_cmd_panel(void)
 {
-	if(lcd_kit_pinfo.panel_dsi_mode == 0)
-	{
+	if (lcd_kit_pinfo.panel_dsi_mode == 0)
 		return 1;
-	}
-
 	return 0;
 }
 
@@ -112,22 +118,20 @@ void  lcd_kit_bl_ic_set_backlight(unsigned int bl_level)
 {
 	struct lcd_kit_bl_ops *bl_ops = NULL;
 
-	if(lcd_kit_pinfo.bl_ic_ctrl_mode) {
+	if (lcd_kit_pinfo.bl_ic_ctrl_mode) {
 		bl_ops = lcd_kit_get_bl_ops();
 		if (!bl_ops) {
 			LCD_KIT_INFO("bl_ops is null!\n");
 			return;
 		}
-		if (bl_ops->set_backlight) {
+		if (bl_ops->set_backlight)
 			bl_ops->set_backlight(bl_level);
-		}
 	}
 }
 
 void lcm_set_panel_state(unsigned int state)
 {
 	lcd_kit_pinfo.panel_state = state;
-	return;
 }
 
 unsigned int lcm_get_panel_state(void)
@@ -142,8 +146,8 @@ static void lcm_set_util_funcs(const struct LCM_UTIL_FUNCS *util)
 
 static void lcm_get_esd_config(struct LCM_PARAMS *params)
 {
-	int i = 0;
-	int j = 0;
+	int i;
+	int j;
 	struct lcd_kit_dsi_cmd_desc *esd_cmds;
 
 	params->dsi.customization_esd_check_enable = common_info->esd.support;
@@ -158,11 +162,15 @@ static void lcm_get_esd_config(struct LCM_PARAMS *params)
 		for (i = 0; i < common_info->esd.cmds.cmd_cnt; i++) {
 			params->dsi.lcm_esd_check_table[i].cmd = esd_cmds->payload[0];
 			params->dsi.lcm_esd_check_table[i].count = esd_cmds->dlen;
-			LCD_KIT_INFO("params->dsi.lcm_esd_check_table[%d].cmd = 0x%x\n", i, params->dsi.lcm_esd_check_table[i].cmd);
-			LCD_KIT_INFO("params->dsi.lcm_esd_check_table[%d].count = %d\n", i, params->dsi.lcm_esd_check_table[i].count);
+			LCD_KIT_INFO("dsi.lcm_esd_check_table[%d].cmd = 0x%x\n",
+				i, params->dsi.lcm_esd_check_table[i].cmd);
+			LCD_KIT_INFO("dsi.lcm_esd_check_table[%d].count = %d\n",
+				i, params->dsi.lcm_esd_check_table[i].count);
 			for (j = 0; j < esd_cmds->dlen; j++) {
-				params->dsi.lcm_esd_check_table[i].para_list[j] = common_info->esd.value.buf[i];
-				LCD_KIT_INFO("params->dsi.lcm_esd_check_table[%d].para_list[%d] = %d\n", i, j, params->dsi.lcm_esd_check_table[i].para_list[j]);
+				params->dsi.lcm_esd_check_table[i].para_list[j] =
+					common_info->esd.value.buf[i];
+				LCD_KIT_INFO("dsi.lcm_esd_check_table[%d].para_list[%d] = %d\n",
+					i, j, params->dsi.lcm_esd_check_table[i].para_list[j]);
 			}
 			esd_cmds++;
 		}
@@ -176,40 +184,35 @@ static void lcm_get_esd_config(struct LCM_PARAMS *params)
 
 static void lcm_get_params(struct LCM_PARAMS *params)
 {
-    struct mtk_panel_info *pinfo = &lcd_kit_pinfo;
+	struct mtk_panel_info *pinfo = &lcd_kit_pinfo;
+
 	memset(params, 0, sizeof(struct LCM_PARAMS));
-
 	LCD_KIT_INFO(" +!\n");
-
 	params->type = pinfo->panel_lcm_type;
-
 	params->width = pinfo->xres;
 	params->height = pinfo->yres;
 	params->physical_width = pinfo->width;
 	params->physical_height = pinfo->height;
-	params->physical_width_um = pinfo->width * 1000;
-	params->physical_height_um = pinfo->height * 1000;
-
+	params->physical_width_um = pinfo->width * 1000; // change mm to um
+	params->physical_height_um = pinfo->height * 1000; // change mm to um
 	params->dsi.mode = pinfo->panel_dsi_mode;
 	params->dsi.switch_mode = pinfo->panel_dsi_switch_mode;
 	params->dsi.switch_mode_enable = 0;
-    params->density = pinfo->panel_density;
+	params->density = pinfo->panel_density;
 
 	/* DSI */
 	/* Command mode setting */
 	params->dsi.LANE_NUM = pinfo->mipi.lane_nums;
-	/* The following defined the fomat for data coming from LCD engine. */
+	/* The following defined the fomat for data coming from LCD engine */
 	params->dsi.data_format.color_order = pinfo->bgr_fmt;
 	params->dsi.data_format.trans_seq = pinfo->panel_trans_seq;
 	params->dsi.data_format.padding = pinfo->panel_data_padding;
 	params->dsi.data_format.format = pinfo->bpp;
 
-	/* Highly depends on LCD driver capability. */
+	/* Highly depends on LCD driver capability */
 	params->dsi.packet_size = pinfo->panel_packtet_size;
 	/* video mode timing */
-
 	params->dsi.PS = pinfo->panel_ps;
-
 	params->dsi.vertical_sync_active = pinfo->ldi.v_pulse_width;
 	params->dsi.vertical_backporch = pinfo->ldi.v_back_porch;
 	params->dsi.vertical_frontporch = pinfo->ldi.v_front_porch;
@@ -221,46 +224,36 @@ static void lcm_get_params(struct LCM_PARAMS *params)
 	params->dsi.horizontal_frontporch = pinfo->ldi.h_front_porch;
 	params->dsi.horizontal_active_pixel = pinfo->xres;
 
-	params->dsi.PLL_CLOCK = pinfo->pxl_clk_rate;//440;	/* this value must be in MTK suggested table */
+	/* this value must be in MTK suggested table */
+	params->dsi.PLL_CLOCK = pinfo->pxl_clk_rate;
 	params->dsi.data_rate = pinfo->data_rate;
 	params->dsi.fbk_div =  pinfo->pxl_fbk_div;
 	params->dsi.CLK_HS_POST = pinfo->mipi.clk_post_adjust;
 	params->dsi.ssc_disable = pinfo->ssc_disable;
 	params->dsi.clk_lp_per_line_enable = pinfo->mipi.lp11_flag;
-	/*esd config*/
+	/* esd config */
 	lcm_get_esd_config(params);
-    if(0 == pinfo->mipi.non_continue_en)
-	{
+	if (pinfo->mipi.non_continue_en == 0)
 		params->dsi.cont_clock = 1;
-	}
-	else
-	{
-		params->dsi.cont_clock = 0;
-	}
+	params->dsi.cont_clock = 0;
 }
 
 static void lcd_kit_on(void)
 {
 	LCD_KIT_INFO(" +!\n");
-
-	if (common_ops->panel_power_on) {
-		common_ops->panel_power_on((void*)NULL);
-	}
+	if (common_ops->panel_power_on)
+		common_ops->panel_power_on((void *)NULL);
 	lcm_set_panel_state(LCD_POWER_STATE_ON);
-	/*record panel on time*/
+	/* record panel on time */
 	lcd_kit_disp_on_record_time();
-
 	LCD_KIT_INFO(" -!\n");
-	return;
 }
 
 static void lcd_kit_off(void)
 {
 	LCD_KIT_INFO(" +!\n");
-
-	if (common_ops->panel_power_off) {
+	if (common_ops->panel_power_off)
 		common_ops->panel_power_off(NULL);
-	}
 	lcm_set_panel_state(LCD_POWER_STATE_OFF);
 	LCD_KIT_INFO(" -!\n");
 }
@@ -272,18 +265,17 @@ static void lcm_resume(void)
 
 static void lcd_kit_set_backlight(void *handle, unsigned int level)
 {
-    int ret = 0;
+	int ret;
 
 	LCD_KIT_INFO("%s, backlight: level = %d\n", __func__, level);
 
 	ret = common_ops->set_mipi_backlight(NULL, level);
-    if (ret < 0){
-        return;
-    }
+	if (ret < 0)
+		return;
 }
 
 struct LCM_DRIVER lcdkit_mtk_common_panel = {
-    .panel_info = &lcd_kit_pinfo,
+	.panel_info = &lcd_kit_pinfo,
 	.name = "lcdkit_mtk_common_panel_drv",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params = lcm_get_params,
@@ -296,7 +288,7 @@ struct LCM_DRIVER lcdkit_mtk_common_panel = {
 static int __init lcd_kit_init(void)
 {
 	int ret = LCD_KIT_OK;
-	struct device_node* np = NULL;
+	struct device_node *np = NULL;
 
 	LCD_KIT_INFO(" +!\n");
 
@@ -307,47 +299,46 @@ static int __init lcd_kit_init(void)
 
 	np = of_find_compatible_node(NULL, NULL, DTS_COMP_LCD_KIT_PANEL_TYPE);
 	if (!np) {
-		LCD_KIT_ERR("NOT FOUND device node %s!\n", DTS_COMP_LCD_KIT_PANEL_TYPE);
+		LCD_KIT_ERR("not find device node %s!\n", DTS_COMP_LCD_KIT_PANEL_TYPE);
 		ret = -1;
 		return ret;
 	}
 
 	OF_PROPERTY_READ_U32_RETURN(np, "product_id", &disp_info->product_id);
 	LCD_KIT_INFO("disp_info->product_id = %d\n", disp_info->product_id);
-	disp_info->compatible = (char*)of_get_property(np, "lcd_panel_type", NULL);
+	disp_info->compatible = (char *)of_get_property(np, "lcd_panel_type", NULL);
 	if (!disp_info->compatible) {
 		LCD_KIT_ERR("can not get lcd kit compatible\n");
 		return ret;
 	}
 	LCD_KIT_INFO("disp_info->compatible: %s\n", disp_info->compatible);
 
-    np = of_find_compatible_node(NULL, NULL, disp_info->compatible);
+	np = of_find_compatible_node(NULL, NULL, disp_info->compatible);
 	if (!np) {
 		LCD_KIT_ERR("NOT FOUND device node %s!\n", disp_info->compatible);
 		ret = -1;
 		return ret;
 	}
 
-#if defined (CONFIG_HUAWEI_DSM)
+#if defined CONFIG_HUAWEI_DSM
 	lcd_dclient = dsm_register_client(&dsm_lcd);
 #endif
-	/*1.adapt init*/
+	/* 1.adapt init */
 	lcd_kit_adapt_init();
-	/*2.common init*/
-	if (common_ops->common_init) {
+	bias_bl_ops_init();
+	/* 2.common init */
+	if (common_ops->common_init)
 		common_ops->common_init(np);
-	}
-	/*3.utils init*/
+	/* 3.utils init */
 	lcd_kit_utils_init(np, lcdkit_mtk_common_panel.panel_info);
-	/*4.init fnode*/
+	/* 4.init fnode */
 	lcd_kit_sysfs_init();
-	/*5.init factory mode*/
-	//lcd_kit_factory_init(pinfo);
-	/*6.power init*/
+	/* 5.init factory mode */
+	/* 6.power init */
 	lcd_kit_power_init();
-	/*7.init panel ops*/
+	/* 7.init panel ops */
 	lcd_kit_panel_init();
-	/*get lcd max brightness*/
+	/* get lcd max brightness */
 	lcd_kit_get_bl_max_nit_from_dts();
 	return ret;
 }

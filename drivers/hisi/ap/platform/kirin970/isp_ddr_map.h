@@ -37,8 +37,11 @@ extern "C" {
 #define ISP_CORE_CFG_BASE_ADDR (0xE8400000)
 #define ISP_PMC_BASE_ADDR (0xFFF31000)
 #define MAX_REGION_NUM (24)
-#define STATIC_REGION_NSEC_NUM (14)
-#define STATIC_REGION_SEC_NUM (15)
+#define STATIC_REGION_NSEC_NUM (13)
+#define STATIC_REGION_SEC_NUM (14)
+#define ISP_NOC_ENABLE 0x00
+#define ISP_TARGETFLOW 0x05
+#define SOC_ISPCPU_MID 0x6B
 #ifdef __cplusplus
 #if __cplusplus
 }

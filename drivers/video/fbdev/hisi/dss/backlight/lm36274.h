@@ -16,9 +16,10 @@ extern struct dsm_client *lcd_dclient;
 #ifndef __LINUX_LM36274_H
 #define __LINUX_LM36274_H
 
-#define LM36274_NAME "lm36274"
+#define LM36274_NAME   "lm36274"
 #define DTS_COMP_LM36274 "ti,lm36274"
 #define LM36274_HIDDEN_REG_SUPPORT "lm36274_hidden_reg_support"
+#define LM36274_ONLY_BIAS                  "only_bias"
 #define LM36274_RUNNING_RESUME_BL_TIMMER   "lm36274_running_resume_bl_timmer"
 #define LM36274_UPDATE_RESUME_BL_TIMMER   "lm36274_update_resume_bl_timmer"
 

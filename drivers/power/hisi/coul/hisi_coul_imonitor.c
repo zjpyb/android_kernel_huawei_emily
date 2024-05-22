@@ -46,46 +46,46 @@ static int coul_imonitor_basp_prepare_basic_info(
 
 	basp_data = (struct coul_imonitor_basp_basic_info *)data;
 
-	ret |= imonitor_set_param_integer_v2(obj, "ActDays",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "ActDays",
 		basp_data->act_days);
-	ret |= imonitor_set_param_integer_v2(obj, "BatCap",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "BatCap",
 		basp_data->bat_cap);
-	ret |= imonitor_set_param_integer_v2(obj, "BatTVSet",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "BatTVSet",
 		basp_data->bat_tv_set);
-	ret |= imonitor_set_param_integer_v2(obj, "BatCyc",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "BatCyc",
 		basp_data->bat_cyc);
-	ret |= imonitor_set_param_integer_v2(obj, "BaspLv",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "BaspLv",
 		basp_data->basp_lv);
-	ret |= imonitor_set_param_integer_v2(obj, "Basp1Days",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "Basp1Days",
 		basp_data->basp_1_days);
-	ret |= imonitor_set_param_integer_v2(obj, "Basp2Days",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "Basp2Days",
 		basp_data->basp_2_days);
-	ret |= imonitor_set_param_integer_v2(obj, "Basp3Days",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "Basp3Days",
 		basp_data->basp_3_days);
-	ret |= imonitor_set_param_integer_v2(obj, "Basp4Days",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "Basp4Days",
 		basp_data->basp_4_days);
-	ret |= imonitor_set_param_integer_v2(obj, "Qmax",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "Qmax",
 		basp_data->q_max);
-	ret |= imonitor_set_param_integer_v2(obj, "FGFcc1",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "FGFcc1",
 		basp_data->fg_fcc1);
-	ret |= imonitor_set_param_integer_v2(obj, "FGFcc2",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "FGFcc2",
 		basp_data->fg_fcc2);
-	ret |= imonitor_set_param_integer_v2(obj, "FGFcc3",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "FGFcc3",
 		basp_data->fg_fcc3);
-	ret |= imonitor_set_param_integer_v2(obj, "ChaICTp",
+	ret |= (unsigned int)imonitor_set_param_integer_v2(obj, "ChaICTp",
 		basp_data->cha_ic_tp);
 
-	ret |= imonitor_set_param_string_v2(obj, "BatMan",
+	ret |= (unsigned int)imonitor_set_param_string_v2(obj, "BatMan",
 		basp_data->bat_man);
-	ret |= imonitor_set_param_string_v2(obj, "BatMod",
+	ret |= (unsigned int)imonitor_set_param_string_v2(obj, "BatMod",
 		basp_data->bat_mode);
-	ret |= imonitor_set_param_string_v2(obj, "BatParF",
+	ret |= (unsigned int)imonitor_set_param_string_v2(obj, "BatParF",
 		basp_data->bat_par_f);
-	ret |= imonitor_set_param_string_v2(obj, "HTime1",
+	ret |= (unsigned int)imonitor_set_param_string_v2(obj, "HTime1",
 		basp_data->fcc_time1);
-	ret |= imonitor_set_param_string_v2(obj, "HTime2",
+	ret |= (unsigned int)imonitor_set_param_string_v2(obj, "HTime2",
 		basp_data->fcc_time2);
-	ret |= imonitor_set_param_string_v2(obj, "HTime3",
+	ret |= (unsigned int)imonitor_set_param_string_v2(obj, "HTime3",
 		basp_data->fcc_time3);
 
 	coul_imonitor_info("%s success\n", __func__);

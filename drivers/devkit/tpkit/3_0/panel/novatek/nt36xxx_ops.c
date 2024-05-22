@@ -30,7 +30,7 @@
 #include <linux/gpio.h>
 #include <linux/proc_fs.h>
 #include <linux/unistd.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 
 #include <linux/slab.h>
 #include <linux/delay.h>
@@ -92,8 +92,8 @@
 struct nvt_ts_data *nvt_ts;
 static DEFINE_MUTEX(ts_power_gpio_sem);
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
-char novatek_kit_project_id[PROJECT_ID_LEN+1]={"999999999"};
-char novatek_kit_product_id[PROJECT_ID_LEN+1]={"999999999"};
+char novatek_kit_project_id[REAL_PROJECT_ID_LEN + 1] = "999999999";
+char novatek_kit_product_id[REAL_PROJECT_ID_LEN + 1] = "999999999";
 uint32_t SWRST_N8_ADDR = 0; //read from dtsi
 uint32_t DEFAULT_SWRST_N8_ADDR = 0x03F0FE;
 struct nvt_lcd_data {
@@ -164,6 +164,7 @@ static unsigned char roi_data[ROI_DATA_READ_LENGTH+1] = {0};
 #define SPI_TRANSFER_BIT8 8
 #define RX_DATA_START 2
 
+#define NOVA_OEM_INFO_NUM 16
 
 static struct tp_status_and_count nova_tp_status_dmd_bit_status[BIT_MAX];
 static struct dmd_report_charger_status nova_dmd_charge_info;
@@ -1096,13 +1097,15 @@ static int novatek_palm_switch(struct ts_palm_info *info)
 #define HOLSTER_SWITCH_OFF 0
 static int novatek_holster_switch(struct ts_holster_info *info)
 {
+	struct ts_window_info *window_info =
+		&(nvt_ts->chip_data->ts_platform_data->feature_info.window_info);
 	uint8_t buf[12] = {0};
 	int retval = NO_ERR;
 	u8 sw = 0;
-	int x0 = nvt_ts->chip_data->ts_platform_data->feature_info.window_info.top_left_x0;
-	int y0 = nvt_ts->chip_data->ts_platform_data->feature_info.window_info.top_left_y0;
-	int x1 = nvt_ts->chip_data->ts_platform_data->feature_info.window_info.bottom_right_x1;
-	int y1 = nvt_ts->chip_data->ts_platform_data->feature_info.window_info.bottom_right_y1;
+	unsigned int x0 = (unsigned int)window_info->top_left_x0;
+	unsigned int y0 = (unsigned int)window_info->top_left_y0;
+	unsigned int x1 = (unsigned int)window_info->bottom_right_x1;
+	unsigned int y1 = (unsigned int)window_info->bottom_right_y1;
 
 	TS_LOG_INFO("%s enter\n", __func__);
 
@@ -1125,8 +1128,9 @@ static int novatek_holster_switch(struct ts_holster_info *info)
 			break;
 
 		case TS_ACTION_WRITE:
-			TS_LOG_INFO("%s: write holster_switch=%d, x0=%d, y0=%d, x1=%d, y1=%d\n",
-				__func__, info->holster_switch, x0, y0, x1, y1);
+			TS_LOG_INFO("%s: set holster_switch=%u, x0=%u, y0=%u, x1=%u, y1=%u\n",
+				__func__, info->holster_switch,
+				x0, y0, x1, y1);
 
 			sw = info->holster_switch;
 			if ((HOLSTER_SWITCH_ON != sw)
@@ -1291,7 +1295,8 @@ static int novatek_parse_dts(struct device_node *device,
 		retval =
 			of_property_read_u32(device,"project_id_flash_address", &read_val);
 		if (!retval) {
-			TS_LOG_INFO("get project id flash address 0x%X\n", read_val);
+			TS_LOG_INFO("get project id flash offset: 0x%X\n",
+				read_val);
 			nvt_ts->project_id_flash_address = read_val;
 		} else {
 			TS_LOG_ERR("cannot get project id flash address, use default\n");
@@ -1608,7 +1613,7 @@ void novatek_kit_parse_specific_dts(struct ts_kit_device_data *chip_data)
 		TS_LOG_INFO("device touch_switch_flag not exit,use default value.\n");
 		chip_data->touch_switch_flag = 0;
 	}else{
-		chip_data->touch_switch_flag |= read_val;
+		chip_data->touch_switch_flag |= (u32)read_val;
 		TS_LOG_INFO("get device touch_switch_flag:%02x\n", chip_data->touch_switch_flag);
 	}
 
@@ -2474,7 +2479,7 @@ static int novatek_wakeup_gesture_report(struct ts_fingers *info,
 
 
 	if (0 != reprot_gesture_key_value) {
-		wake_lock_timeout(&nvt_ts->chip_data->ts_platform_data->ts_wake_lock, 5 * HZ);
+		__pm_wakeup_event(&nvt_ts->chip_data->ts_platform_data->ts_wake_lock, jiffies_to_msecs(5 * HZ));
 		info->gesture_wakeup_value = reprot_gesture_key_value;
 	}else{
 		TS_LOG_INFO("%s: reprot_gesture_key_value = 0 !!\n", __func__);
@@ -3632,7 +3637,9 @@ static int novatek_set_oem_data(uint8_t *data, int32_t size)
 	uint8_t buf[64] = {0};
 	uint32_t XDATA_Addr = nvt_ts->mmap->RW_FLASH_DATA_ADDR;
 	uint32_t Flash_Address = 0x1F000;
-	int32_t i = 0, j = 0, k = 0;
+	uint32_t j;
+	int32_t i = 0;
+	int32_t k;
 	uint8_t tmpvalue = 0;
 	int32_t count_256 = 0;
 	int32_t retry = 0;
@@ -3787,7 +3794,8 @@ static int novatek_set_oem_data(uint8_t *data, int32_t size)
 			}
 			retval = novatek_ts_kit_write(I2C_BLDR_Address, buf, 33);
 			if (retval < 0) {
-				TS_LOG_ERR("%s: Write Page error!!(%d), j=%d\n", __func__, retval, j);
+				TS_LOG_ERR("%s: Write Page error!!(%d), j=%u\n",
+					__func__, retval, j);
 				return retval;
 			}
 		}
@@ -4278,6 +4286,7 @@ static int novatek_get_oem_info(struct ts_oem_info_param *info)
 	int error = NO_ERR;
 	int latest_index = 0;
 	int i;
+	unsigned int len;
 
 	TS_LOG_INFO("%s called\n", __func__);
 	if (nvt_ts->btype == TS_BUS_SPI) {
@@ -4333,7 +4342,15 @@ static int novatek_get_oem_info(struct ts_oem_info_param *info)
 
 	if (latest_index) {
 		TS_LOG_INFO("%s type data find. len = %d\n", __func__, info->length);
-		memcpy(info->data, &(info->buff[latest_index*16]), info->length*16 );
+		len = info->length * NOVA_OEM_INFO_NUM;
+		if (len > TS_GAMMA_DATA_MAX_SIZE) {
+			TS_LOG_ERR("%s: len is too large, len = %u\n",
+				__func__, len);
+			len = TS_GAMMA_DATA_MAX_SIZE;
+		}
+		memcpy(info->data,
+			&(info->buff[latest_index * NOVA_OEM_INFO_NUM]),
+			len);
 	} else {
 		info->data[0] = 0x1;
 		TS_LOG_INFO("%s No type data find. info->data[0] = %2x\n", __func__, info->data[0]);

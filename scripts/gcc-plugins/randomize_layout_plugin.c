@@ -17,17 +17,12 @@
  */
 
 #include "gcc-common.h"
-//#include "randomize_layout_seed.h"
-char * randstruct_seed = "";
-char * huawei_whitelist = "";
-
-#define MAX_WHITELIST_LEN 100
-static char huawei_white_array [MAX_WHITELIST_LEN][64];
+#include "randomize_layout_seed.h"
 
 #if BUILDING_GCC_MAJOR < 4 || (BUILDING_GCC_MAJOR == 4 && BUILDING_GCC_MINOR < 7)
 #error "The RANDSTRUCT plugin requires GCC 4.7 or newer."
 #endif
-#define PATCH_MIN 2
+
 #define ORIG_TYPE_NAME(node) \
 	(TYPE_NAME(TYPE_MAIN_VARIANT(node)) != NULL_TREE ? ((const unsigned char *)IDENTIFIER_POINTER(TYPE_NAME(TYPE_MAIN_VARIANT(node)))) : (const unsigned char *)"anonymous")
 
@@ -36,15 +31,12 @@ static char huawei_white_array [MAX_WHITELIST_LEN][64];
 
 __visible int plugin_is_GPL_compatible;
 
-static int performance_mode = 0;
-static int ops_mode = 0;
-static int check_duplicate = 0;
+static int performance_mode;
 
 static struct plugin_info randomize_layout_plugin_info = {
 	.version	= "201402201816vanilla",
 	.help		= "disable\t\t\tdo not activate plugin\n"
 			  "performance-mode\tenable cacheline-aware layout randomization\n"
-			  "include_operations_struct\tenable operation struct layout randomization\n"
 };
 
 struct whitelist_entry {
@@ -79,26 +71,6 @@ name_hash(const unsigned char *name)
 	while (len--)
 		hash = partial_name_hash(*name++, hash);
 	return (unsigned int)hash;
-}
-int bypass_for_huawei(tree type)
-{
-	expanded_location xloc;
-	int i = 0;
-
-	if(TYPE_FIELDS(type) == NULL_TREE)
-		return 1;
-	/* throw out any structs in uapi */
-	xloc = expand_location(DECL_SOURCE_LOCATION(TYPE_FIELDS(type)));
-
-	/*modified for huawei, and uapi can not be randomized!*/
-	for( i = 0; i < MAX_WHITELIST_LEN; i++)
-	{
-		if((strlen(huawei_white_array[i]) > PATCH_MIN) && (strstr(xloc.file, huawei_white_array[i])))
-		{
-			return 1;
-		}
-	}
-    return 0;
 }
 
 static tree handle_randomize_layout_attr(tree *node, tree name, tree args, int flags, bool *no_add_attrs)
@@ -373,7 +345,7 @@ static int relayout_struct(tree type)
 		return 0;
 
 	/* Workaround for 3rd-party VirtualBox source that we can't modify ourselves */
-	if (!strcmp((const char *)ORIG_TYPE_NAME(type), "INTNETTRUNKFACTORY") || !strcmp((const char *)ORIG_TYPE_NAME(type), "acpi_sleep_functions") ||
+	if (!strcmp((const char *)ORIG_TYPE_NAME(type), "INTNETTRUNKFACTORY") ||
 	    !strcmp((const char *)ORIG_TYPE_NAME(type), "RAWPCIFACTORY"))
 		return 0;
 
@@ -462,9 +434,6 @@ static int is_pure_ops_struct(const_tree node)
 {
 	const_tree field;
 
-	if(ops_mode != 1)
-		return 0;
-
 	gcc_assert(TREE_CODE(node) == RECORD_TYPE || TREE_CODE(node) == UNION_TYPE);
 
 	for (field = TYPE_FIELDS(node); field; field = TREE_CHAIN(field)) {
@@ -495,8 +464,7 @@ static void randomize_type(tree type)
 
 	if (lookup_attribute("randomize_considered", TYPE_ATTRIBUTES(type)))
 		return;
-	if(bypass_for_huawei(type) == 1)
-		return;
+
 	if (lookup_attribute("randomize_layout", TYPE_ATTRIBUTES(TYPE_MAIN_VARIANT(type))) || is_pure_ops_struct(type))
 		relayout_struct(type);
 
@@ -587,11 +555,6 @@ static void randomize_layout_finish_decl(void *event_data, void *data)
 
 static void finish_type(void *event_data, void *data)
 {
-	int fd = -1;
-	unsigned int flag = 0;
-	char temp_file[4096] = {0};
-	expanded_location xloc;
-
 	tree type = (tree)event_data;
 
 	if (type == NULL_TREE || type == error_mark_node)
@@ -614,87 +577,38 @@ static void finish_type(void *event_data, void *data)
 #endif
 	randomize_type(type);
 
-
-	if(check_duplicate == 1 && ( TYPE_NAME(TYPE_MAIN_VARIANT(type)) != NULL_TREE)){
-		/*when a struct been randomized, record its file name. when  compile finished, check struct should not be define duplicated*/
-		if(lookup_attribute("randomize_layout", TYPE_ATTRIBUTES(type))){
-			flag = 1;
-		}
-		xloc = expand_location(DECL_SOURCE_LOCATION(TYPE_FIELDS(type)));
-		(void)snprintf(temp_file,sizeof(temp_file),"%s%s",xloc.file,".rand_temp");
-		fd = open(temp_file,O_WRONLY|O_CREAT|O_APPEND, 0755);
-		if(fd >1)
-		{
-			snprintf(temp_file, sizeof(temp_file), "%s,%s,line=%d,flag=%d\n",ORIG_TYPE_NAME(type),xloc.file,xloc.line,flag);
-			write(fd, temp_file, strlen(temp_file));
-		}
-		close (fd);
-	}
 	return;
 }
 
-static struct attribute_spec randomize_layout_attr = {
-	.name		= "randomize_layout",
-	// related to args
-	.min_length	= 0,
-	.max_length	= 0,
-	.decl_required	= false,
-	// need type declaration
-	.type_required	= true,
-	.function_type_required = false,
-	.handler		= handle_randomize_layout_attr,
-#if BUILDING_GCC_VERSION >= 4007
-	.affects_type_identity  = true
-#endif
-};
-
-static struct attribute_spec no_randomize_layout_attr = {
-	.name		= "no_randomize_layout",
-	// related to args
-	.min_length	= 0,
-	.max_length	= 0,
-	.decl_required	= false,
-	// need type declaration
-	.type_required	= true,
-	.function_type_required = false,
-	.handler		= handle_randomize_layout_attr,
-#if BUILDING_GCC_VERSION >= 4007
-	.affects_type_identity  = true
-#endif
-};
-
-static struct attribute_spec randomize_considered_attr = {
-	.name		= "randomize_considered",
-	// related to args
-	.min_length	= 0,
-	.max_length	= 0,
-	.decl_required	= false,
-	// need type declaration
-	.type_required	= true,
-	.function_type_required = false,
-	.handler		= handle_randomize_considered_attr,
-#if BUILDING_GCC_VERSION >= 4007
-	.affects_type_identity  = false
-#endif
-};
-
-static struct attribute_spec randomize_performed_attr = {
-	.name		= "randomize_performed",
-	// related to args
-	.min_length	= 0,
-	.max_length	= 0,
-	.decl_required	= false,
-	// need type declaration
-	.type_required	= true,
-	.function_type_required = false,
-	.handler		= handle_randomize_performed_attr,
-#if BUILDING_GCC_VERSION >= 4007
-	.affects_type_identity  = false
-#endif
-};
+static struct attribute_spec randomize_layout_attr = { };
+static struct attribute_spec no_randomize_layout_attr = { };
+static struct attribute_spec randomize_considered_attr = { };
+static struct attribute_spec randomize_performed_attr = { };
 
 static void register_attributes(void *event_data, void *data)
 {
+	randomize_layout_attr.name		= "randomize_layout";
+	randomize_layout_attr.type_required	= true;
+	randomize_layout_attr.handler		= handle_randomize_layout_attr;
+#if BUILDING_GCC_VERSION >= 4007
+	randomize_layout_attr.affects_type_identity = true;
+#endif
+
+	no_randomize_layout_attr.name		= "no_randomize_layout";
+	no_randomize_layout_attr.type_required	= true;
+	no_randomize_layout_attr.handler	= handle_randomize_layout_attr;
+#if BUILDING_GCC_VERSION >= 4007
+	no_randomize_layout_attr.affects_type_identity = true;
+#endif
+
+	randomize_considered_attr.name		= "randomize_considered";
+	randomize_considered_attr.type_required	= true;
+	randomize_considered_attr.handler	= handle_randomize_considered_attr;
+
+	randomize_performed_attr.name		= "randomize_performed";
+	randomize_performed_attr.type_required	= true;
+	randomize_performed_attr.handler	= handle_randomize_performed_attr;
+
 	register_attribute(&randomize_layout_attr);
 	register_attribute(&no_randomize_layout_attr);
 	register_attribute(&randomize_considered_attr);
@@ -1016,63 +930,24 @@ static unsigned int find_bad_casts_execute(void)
 #define NO_GATE
 #define TODO_FLAGS_FINISH TODO_dump_func
 #include "gcc-generate-gimple-pass.h"
-/**
- * Checks the compatibility of GCC and the plugin.
- * gcc_version: GCC's version
- * plugin_version: This plugin's version. i.e. version of the gcc header file
- * used to compile this plugin.
- */
-static bool version_check(struct plugin_gcc_version *gcc_version,
-		struct plugin_gcc_version *plugin_version)
-{
-	if (!gcc_version || !plugin_version)
-		return false;
-
-#if BUILDING_GCC_VERSION >= 5000
-	if (strncmp(gcc_version->basever, plugin_version->basever, 4)) {
-		fprintf(stderr, "gcc basever: %s, plugin basever: %s\n", gcc_version->basever, plugin_version->basever);
-#else
-	if (strcmp(gcc_version->basever, plugin_version->basever)) {
-		fprintf(stderr, "gcc basever: %s, plugin basever: %s\n", gcc_version->basever, plugin_version->basever);
-#endif
-		return false;
-	}
-	if (strcmp(gcc_version->datestamp, plugin_version->datestamp)) {
-		fprintf(stderr, "gcc datestamp: %s, plugin datestamp: %s\n", gcc_version->datestamp, plugin_version->datestamp);
-		return false;
-	}
-	if (strcmp(gcc_version->devphase, plugin_version->devphase)) {
-		fprintf(stderr, "gcc devphase: %s, plugin devphase: %s\n", gcc_version->devphase, plugin_version->devphase);
-		return false;
-	}
-	if (strcmp(gcc_version->revision, plugin_version->revision)) {
-		fprintf(stderr, "gcc revision: %s, plugin revision: %s\n", gcc_version->revision, plugin_version->revision);
-		return false;
-	}
-	return true;
-}
 
 __visible int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version *version)
 {
 	int i;
-	int j = 0;
 	const char * const plugin_name = plugin_info->base_name;
 	const int argc = plugin_info->argc;
 	const struct plugin_argument * const argv = plugin_info->argv;
 	bool enable = true;
 	int obtained_seed = 0;
 	struct register_pass_info find_bad_casts_pass_info;
-	char *t;
 
 	find_bad_casts_pass_info.pass			= make_find_bad_casts_pass();
 	find_bad_casts_pass_info.reference_pass_name	= "ssa";
 	find_bad_casts_pass_info.ref_pass_instance_number	= 1;
 	find_bad_casts_pass_info.pos_op			= PASS_POS_INSERT_AFTER;
 
-	if (!version_check(version, &gcc_version)) {
+	if (!plugin_default_version_check(version, &gcc_version)) {
 		error(G_("incompatible gcc/plugin versions"));
-		error(G_("input version %s--%s--%s--%s"),version->basever,version->datestamp,version->devphase,version->revision);
-		error(G_("golbal version %s--%s--%s--%s"),gcc_version.basever,gcc_version.datestamp,gcc_version.devphase,gcc_version.revision);
 		return 1;
 	}
 
@@ -1090,49 +965,17 @@ __visible int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gc
 			performance_mode = 1;
 			continue;
 		}
-		if (!strcmp(argv[i].key, "include_operations_struct")) {
-			ops_mode = 1;
-			continue;
-		}
-		if (!strcmp(argv[i].key, "seed")) {
-			randstruct_seed = xstrdup(argv[i].value);
-			continue;
-		}
-		if (!strcmp(argv[i].key, "whitelist")) {
-			huawei_whitelist = xstrdup(argv[i].value);
-			memset(huawei_white_array,0,sizeof huawei_white_array);
-			t = strtok(huawei_whitelist, ",");  
-			while(t != NULL)
-			{  
-				/* Can not less than 4 char, otherwise can catch correct file path. */
-				if(strlen(t) > PATCH_MIN){
-					memcpy(huawei_white_array[j],t,strlen(t));
-					j++;
-				}
-				t = strtok(NULL, ",");  
-			}
-			continue;
-		}
-		if (!strcmp(argv[i].key, "check_duplicate")) {
-			check_duplicate = 1;
-			continue;
-		}
 		error(G_("unknown option '-fplugin-arg-%s-%s'"), plugin_name, argv[i].key);
 	}
 
 	if (strlen(randstruct_seed) != 64) {
-		//error(G_( "invalid seed value supplied for %s plugin,seed =%s"), plugin_name,randstruct_seed);
-		fprintf(stderr, "invalid seed value supplied for %s plugin,seed =%s", plugin_name,randstruct_seed);
-		free(randstruct_seed);
-		free(huawei_whitelist);
-		return 0;
+		error(G_("invalid seed value supplied for %s plugin"), plugin_name);
+		return 1;
 	}
 	obtained_seed = sscanf(randstruct_seed, "%016llx%016llx%016llx%016llx",
 		&shuffle_seed[0], &shuffle_seed[1], &shuffle_seed[2], &shuffle_seed[3]);
 	if (obtained_seed != 4) {
-		error(G_("Invalid seed supplied for %s plugin, seed =%s"), plugin_name,randstruct_seed);
-		free(randstruct_seed);
-		free(huawei_whitelist);
+		error(G_("Invalid seed supplied for %s plugin"), plugin_name);
 		return 1;
 	}
 
@@ -1144,8 +987,6 @@ __visible int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gc
 		register_callback(plugin_name, PLUGIN_FINISH_DECL, randomize_layout_finish_decl, NULL);
 	}
 	register_callback(plugin_name, PLUGIN_ATTRIBUTES, register_attributes, NULL);
-	free(randstruct_seed);
-	free(huawei_whitelist);
 
 	return 0;
 }

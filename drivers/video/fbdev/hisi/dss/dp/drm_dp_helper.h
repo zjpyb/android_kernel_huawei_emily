@@ -29,8 +29,8 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
 
 #ifndef _DRM_DP_HELPER_H_
 #define _DRM_DP_HELPER_H_
@@ -557,6 +557,8 @@
 #define DP_PSR_SINK_ACTIVE_RESYNC          4
 #define DP_PSR_SINK_INTERNAL_ERROR         7
 #define DP_PSR_SINK_STATE_MASK             0x07
+
+#define DP_DPCD_REV_EXT 0x2200
 
 #define DP_RECEIVER_ALPM_STATUS		    0x200b  /* eDP 1.4 */
 #define DP_ALPM_LOCK_TIMEOUT_ERROR	    (1 << 0)

@@ -159,6 +159,10 @@ config MTD_BCM47XX_PARTS
 	  This provides partitions parser for devices based on BCM47xx
 	  boards.
 
+menu "Partition parsers"
+source "drivers/mtd/parsers/Kconfig"
+endmenu
+
 comment "User Modules And Translation Layers"
 config HISI_NVE
         tristate "Direct char device access to NVE devices"
@@ -169,10 +173,10 @@ config HISI_NVE
           the device, or to erase parts of it.
 
 config HISI_NVE_WHITELIST
-	boolean "hisi NVE whitelist"
-	depends on HISI_NVE
-	help
-	  This provides protect for valuable NV entries.
+        boolean "hisi NVE whitelist"
+        depends on HISI_NVE
+        help
+          This provides protect for valuable NV entries.
 
 #
 # MTD block device support is select'ed if needed

@@ -16,7 +16,7 @@
  *
  */
 #include "hisi_freq_autodown.h"
-
+#include <securec.h>
 static FREQ_AUTODOWN_DESC *g_freq_autodown;
 
 static unsigned int  hisi_crgperiph_regu_read(unsigned int reg)
@@ -248,8 +248,10 @@ static int hisi_freq_autodown_initial(struct platform_device *pdev, FREQ_AUTODOW
 	}
 	/*get freq autodown info*/
 	for (index = 0; index < freq_autodown->freq_autodown_num; index++) {
-		snprintf(compatible_string, FREQ_AUTODOWN_DTS_ATTR_LEN,\
+		ret = snprintf_s(compatible_string, FREQ_AUTODOWN_DTS_ATTR_LEN, FREQ_AUTODOWN_DTS_ATTR_LEN - 1,\
 				"hisilicon,hisi-freq-autodown-%s", freq_autodown->freq_autodown_name[index]);
+		if(ret == -1)
+			pr_err("%s snprintf_s failed!\n", __func__);
 		root = of_find_compatible_node(np, NULL, compatible_string);
 		if (!root) {
 			dev_err(dev, "[%s]no %s root node.\n", __func__, compatible_string);
@@ -298,7 +300,7 @@ static int hisi_freq_autodown_probe(struct platform_device *pdev)
 {
 	struct device *dev = NULL;
 	FREQ_AUTODOWN_DESC *freq_autodown = NULL;
-	struct device_node *np;
+	struct device_node *np = NULL;
 	int ret = 0;
 
 	if (pdev == NULL) {

@@ -53,8 +53,10 @@
 #include "AdsFilter.h"
 #include "AdsDebug.h"
 #include "AdsMntn.h"
+#ifdef CONFIG_HUAWEI_BASTET
 #include <net/inet_sock.h>
 #include <linux/version.h>
+#endif
 
 /*****************************************************************************
     协议栈打印打点方式下的.C文件宏定义
@@ -337,8 +339,12 @@ IMM_ZC_STRU* ADS_UL_GetInstanceNextQueueNode(
             /* 获取该结点的RabId */
             *pulRabId = ADS_UL_GET_PRIO_QUEUE_INDEX(ulInstanceIndex, *pulCurIndex);
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
             /* 获取该节点是否是1X或者HRPD的包 */
             *puc1XorHrpdUlIpfFlag = ADS_UL_GET_1X_OR_HRPD_UL_IPF_FLAG(ulInstanceIndex, *pulCurIndex);
+#else
+            *puc1XorHrpdUlIpfFlag = VOS_FALSE;
+#endif
 
             /* 本队列记录数增加 1*/
             ADS_UL_SET_RECORD_NUM_IN_WEIGHTED(ulInstanceIndex, *pulCurIndex, 1);
@@ -527,7 +533,11 @@ VOS_UINT8 ADS_UL_GetBdFcHead(
 {
     VOS_UINT8                           ucTempBdFcHead;
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     ucTempBdFcHead = ((VOS_TRUE == uc1XorHrpdUlIpfFlag) ? (VOS_UINT8)ADS_UL_IPF_1XHRPD : (VOS_UINT8)ulInstance);
+#else
+    ucTempBdFcHead = (VOS_UINT8)ulInstance;
+#endif
 
     return ucTempBdFcHead;
 }
@@ -549,6 +559,7 @@ VOS_UINT32 ADS_UL_CalcBuffTime(VOS_UINT32 ulBeginSlice, VOS_UINT32 ulEndSlice)
 
 VOS_UINT8 ADS_UL_GetAccState(IMM_ZC_STRU *pstImmZc)
 {
+#ifdef CONFIG_HUAWEI_BASTET
     struct sock                        *pstSk;
     if( VOS_NULL_PTR == pstImmZc )
     {
@@ -563,6 +574,7 @@ VOS_UINT8 ADS_UL_GetAccState(IMM_ZC_STRU *pstImmZc)
     {
          return pstSk->acc_state;
     }
+#endif
     return 0;
 
 }
@@ -599,9 +611,14 @@ VOS_VOID ADS_UL_ConfigBD(VOS_UINT32 ulBdNum)
         pstUlCfgParam = ADS_UL_GET_BD_CFG_PARA_PTR(ulCnt);
         /* Attribute: 中断使能，过滤加搬移，过滤器组号modem0用0，modem1用1 */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#ifndef CONFIG_NEW_PLATFORM
+        pstUlCfgParam->u32Data      = (VOS_UINT32)virt_to_phys((VOS_VOID *)pstImmZc->data);
+        pstUlCfgParam->u16Attribute = ADS_UL_BUILD_BD_ATTRIBUTE(VOS_FALSE, IPF_MODE_FILTERANDTRANS, ADS_UL_GetBdFcHead(ulInstance, uc1XorHrpdUlIpfFlag));
+#else
         pstUlCfgParam->Data         = (modem_phy_addr)virt_to_phys((VOS_VOID *)pstImmZc->data);
         pstUlCfgParam->mode         = IPF_MODE_FILTERANDTRANS;
         pstUlCfgParam->fc_head      = ADS_UL_GetBdFcHead(ulInstance, uc1XorHrpdUlIpfFlag);
+#endif /* CONFIG_NEW_PLATFORM */
         pstUlCfgParam->u16Len       = (VOS_UINT16)pstImmZc->len;
 #endif
         pstUlCfgParam->u16UsrField1 = (VOS_UINT16)ADS_UL_BUILD_BD_USER_FIELD_1(ulInstance, ulRabId);
@@ -619,9 +636,14 @@ VOS_VOID ADS_UL_ConfigBD(VOS_UINT32 ulBdNum)
         ADS_IPF_UL_MEM_MAP(pstImmZc, pstImmZc->len);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#ifndef CONFIG_NEW_PLATFORM
+        pstUlCfgParam->u32Data      = (VOS_UINT32)ADS_IPF_GetMemDma(pstImmZc);
+        pstUlCfgParam->u16Attribute = ADS_UL_BUILD_BD_ATTRIBUTE(VOS_FALSE, IPF_MODE_FILTERANDTRANS, ADS_UL_GetBdFcHead(ulInstance, uc1XorHrpdUlIpfFlag));
+#else
         pstUlCfgParam->Data         = (modem_phy_addr)ADS_IPF_GetMemDma(pstImmZc);
         pstUlCfgParam->mode         = IPF_MODE_FILTERANDTRANS;
         pstUlCfgParam->fc_head      = ADS_UL_GetBdFcHead(ulInstance, uc1XorHrpdUlIpfFlag);
+#endif
         pstUlCfgParam->u16Len       = (VOS_UINT16)pstImmZc->len;
 #endif
     }
@@ -634,7 +656,11 @@ VOS_VOID ADS_UL_ConfigBD(VOS_UINT32 ulBdNum)
 
     /* 最后一个BD配置中断使能 */
     pstUlCfgParam = ADS_UL_GET_BD_CFG_PARA_PTR(ulCnt - 1);
+#ifndef CONFIG_NEW_PLATFORM
+    ADS_UL_SET_BD_ATTR_INT_FLAG(pstUlCfgParam->u16Attribute);
+#else
     pstUlCfgParam->int_en = 1;
+#endif
     /* 配置IPF上行BD */
     lRslt = mdrv_ipf_config_ulbd(ulCnt, ADS_UL_GET_BD_CFG_PARA_PTR(0));
     if (IPF_SUCCESS != lRslt)
@@ -1095,7 +1121,9 @@ VOS_UINT32 ADS_UL_RcvTimerMsg(MsgBlock *pMsg)
         case TI_ADS_DSFLOW_STATS:
             ADS_UL_RcvTiDsFlowStatsExpired(pstTimerMsg->ulName, pstTimerMsg->ulPara);
             ADS_MNTN_ReportAllStatsInfo();
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
             ADS_RNIC_AdjNapiWeight();
+#endif
             break;
 
         case TI_ADS_UL_DATA_STAT:

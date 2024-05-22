@@ -37,14 +37,14 @@
 #include <linux/of.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <asm/irq.h>
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/hisi-spmi.h>
 #include <linux/of_hisi_spmi.h>
-#include "../../hisi/tzdriver/libhwsecurec/securec.h"
+#include <securec.h>
 
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -99,8 +99,8 @@
 #define GPIO_LOW_VOLTAGE                (0)
 #define TIMER_DEBOUNCE                  (15)
 
-static struct wake_lock volume_up_key_lock;
-static struct wake_lock volume_down_key_lock;
+static struct wakeup_source volume_up_key_lock;
+static struct wakeup_source volume_down_key_lock;
 #define HISI_PMIC_GPIO_KEY_IRQ_COUNTS   2
 
 static const char *hisi_pmic_gpio_key_irq_table[HISI_PMIC_GPIO_KEY_IRQ_COUNTS] = {
@@ -249,7 +249,7 @@ static void hisi_pmic_gpio_keyup_work(struct work_struct *work)
 #endif
 
 	if (keyup_value == GPIO_HIGH_VOLTAGE)
-		wake_unlock(&volume_up_key_lock);/*lint !e455*/
+		__pm_relax(&volume_up_key_lock);/*lint !e455*/
 
 	return;
 }
@@ -299,7 +299,7 @@ static void hisi_pmic_gpio_keydown_work(struct work_struct *work)
 #endif
 
 	if (keydown_value == GPIO_HIGH_VOLTAGE)
-		wake_unlock(&volume_down_key_lock);/*lint !e455*/
+		__pm_relax(&volume_down_key_lock);/*lint !e455*/
 
 	return;
 }
@@ -309,12 +309,12 @@ static void hisi_pmic_gpio_keydown_work(struct work_struct *work)
 static void hisi_pmic_gpio_keyup_timer(unsigned long data)
 {
 	unsigned int keyup_value;
-	struct hisi_pmic_gpio_key *gpio_key = (struct hisi_pmic_gpio_key *)data;
+	struct hisi_pmic_gpio_key *gpio_key = (struct hisi_pmic_gpio_key *)(uintptr_t)data;
 
 	keyup_value = hisi_pmic_gpio_key_read(PMIC_GPIO_KEYUP_DATA);
 	/*judge key is pressed or released.*/
 	if (keyup_value == GPIO_LOW_VOLTAGE){
-		wake_lock(&volume_up_key_lock);
+		__pm_stay_awake(&volume_up_key_lock);
 #if defined (CONFIG_HUAWEI_DSM)
 		if ((jiffies - volume_up_last_press_time) < msecs_to_jiffies(PRESS_KEY_INTERVAL)) {
 			if (!dsm_client_ocuppy(key_dclient)) {
@@ -334,12 +334,12 @@ static void hisi_pmic_gpio_keyup_timer(unsigned long data)
 static void hisi_pmic_gpio_keydown_timer(unsigned long data)
 {
 	int keydown_value;
-	struct hisi_pmic_gpio_key *gpio_key = (struct hisi_pmic_gpio_key *)data;
+	struct hisi_pmic_gpio_key *gpio_key = (struct hisi_pmic_gpio_key *)(uintptr_t)data;
 
 	keydown_value = hisi_pmic_gpio_key_read(PMIC_GPIO_KEYDOWN_DATA);
 	/*judge key is pressed or released.*/
 	if (keydown_value == GPIO_LOW_VOLTAGE){
-		wake_lock(&volume_down_key_lock);
+		__pm_stay_awake(&volume_down_key_lock);
 
 #if defined (CONFIG_HUAWEI_DSM)
 	if ((jiffies - volume_down_last_press_time) < msecs_to_jiffies(PRESS_KEY_INTERVAL)) {
@@ -358,13 +358,11 @@ static void hisi_pmic_gpio_keydown_timer(unsigned long data)
 }
 
 /*powerkey and keydown go to fastboot*/
-static char s_vol_down_hold = 0;
-static int vol_up_gpio = -1;
+static unsigned char s_vol_down_hold = 0;
 static int vol_up_active_low = -1;
-static int vol_down_gpio = -1;
 static int vol_down_active_low = -1;
 
-static void gpio_key_vol_updown_press_set_bit(int bit_number)
+static void gpio_key_vol_updown_press_set_bit(unsigned int bit_number)
 {
 	s_vol_down_hold |= (1 << bit_number);
 }
@@ -376,7 +374,7 @@ void pmic_gpio_key_vol_updown_press_set_zero(void)
 
 int pmic_gpio_key_vol_updown_press_get(void)
 {
-	return s_vol_down_hold;
+	return (int)s_vol_down_hold;
 }
 
 int is_pmic_gpio_key_vol_updown_pressed(void)
@@ -384,15 +382,14 @@ int is_pmic_gpio_key_vol_updown_pressed(void)
 	int state1 = 0;
 	int state2 = 0;
 
-	if((vol_up_gpio < 0) || (vol_down_gpio < 0)
-		|| (vol_up_active_low < 0) || (vol_down_active_low < 0)){
+	if((vol_up_active_low < 0) || (vol_down_active_low < 0)){
 		printk(KERN_ERR "[%s]:vol_updown gpio or active_low is invalid!",__FUNCTION__);
 		return 0;
 	}
 
 	mdelay(5);
-	state1 = (hisi_pmic_gpio_key_read(PMIC_GPIO_KEYUP_DATA) ? 1 : 0) ^ vol_up_active_low;
-	state2 = (hisi_pmic_gpio_key_read(PMIC_GPIO_KEYDOWN_DATA) ? 1 : 0) ^ vol_down_active_low;
+	state1 = (hisi_pmic_gpio_key_read(PMIC_GPIO_KEYUP_DATA) ? 1 : 0) ^ (unsigned int)vol_up_active_low;
+	state2 = (hisi_pmic_gpio_key_read(PMIC_GPIO_KEYDOWN_DATA) ? 1 : 0) ^ (unsigned int)vol_down_active_low;
 
 	if(!!state1 && !!state2){
 		return 1;
@@ -415,7 +412,7 @@ static irqreturn_t hisi_pmic_gpio_key_irq_handler(int irq, void *dev_id)
 			pmic_gpio_key_vol_updown_press_set_zero();
 		}
 		mod_timer(&(gpio_key->key_up_timer), jiffies + msecs_to_jiffies(TIMER_DEBOUNCE));
-		wake_lock_timeout(&volume_up_key_lock, 50);
+		__pm_wakeup_event(&volume_up_key_lock, jiffies_to_msecs(50));
 	} else if (irq == gpio_key->gpiokey_irq[1]) {
 		key_event = hisi_pmic_gpio_key_read(PMIC_GPIO_KEYDOWN_DATA);
 		if (0 == key_event) {
@@ -424,7 +421,7 @@ static irqreturn_t hisi_pmic_gpio_key_irq_handler(int irq, void *dev_id)
 			pmic_gpio_key_vol_updown_press_set_zero();
 		}
 		mod_timer(&(gpio_key->key_down_timer), jiffies + msecs_to_jiffies(TIMER_DEBOUNCE));
-		wake_lock_timeout(&volume_down_key_lock, 50);
+		__pm_wakeup_event(&volume_down_key_lock, jiffies_to_msecs(50));
 	} else {
 		printk(KERN_ERR "[gpiokey] [%s]invalid irq %d!\n", __FUNCTION__, irq);
 	}
@@ -540,13 +537,13 @@ static int hisi_pmic_gpio_key_probe(struct platform_device* pdev)
 	dev_info(&pdev->dev, "hisi gpio key driver probes start!\n");
 
 	gpio_key = devm_kzalloc(&pdev->dev, sizeof(struct hisi_pmic_gpio_key), GFP_KERNEL);
-	if (!gpio_key) {
+	if (gpio_key == NULL) {
 		dev_err(&pdev->dev, "Failed to allocate struct hisi_gpio_key!\n");
 		return -ENOMEM;
 	}
 
 	input_dev = input_allocate_device();
-	if (!input_dev) {
+	if (input_dev == NULL) {
 		dev_err(&pdev->dev, "Failed to allocate struct input_dev!\n");
 		return -ENOMEM;/*lint !e429*/
 	}
@@ -567,9 +564,9 @@ static int hisi_pmic_gpio_key_probe(struct platform_device* pdev)
 
 	/*initial work before we use it.*/
 	INIT_DELAYED_WORK(&(gpio_key->gpio_keyup_work), hisi_pmic_gpio_keyup_work);
-	INIT_DELAYED_WORK(&(gpio_key->gpio_keydown_work), hisi_pmic_gpio_keydown_work);
-	wake_lock_init(&volume_down_key_lock, WAKE_LOCK_SUSPEND, "key_down_wake_lock");
-	wake_lock_init(&volume_up_key_lock, WAKE_LOCK_SUSPEND, "key_up_wake_lock");
+	INIT_DELAYED_WORK((struct delayed_work *)(uintptr_t)(&(gpio_key->gpio_keydown_work)), hisi_pmic_gpio_keydown_work);
+	wakeup_source_init(&volume_down_key_lock, "key_down_wake_lock");
+	wakeup_source_init(&volume_up_key_lock, "key_up_wake_lock");
 
 	vol_up_active_low = GPIO_KEY_PRESS;
 	vol_down_active_low = GPIO_KEY_PRESS;
@@ -582,8 +579,8 @@ static int hisi_pmic_gpio_key_probe(struct platform_device* pdev)
 	volume_down_last_press_time = 0;
 #endif
 
-	setup_timer(&(gpio_key->key_up_timer), hisi_pmic_gpio_keyup_timer, (unsigned long )gpio_key);
-	setup_timer(&(gpio_key->key_down_timer), hisi_pmic_gpio_keydown_timer, (unsigned long )gpio_key);
+	setup_timer(&(gpio_key->key_up_timer), hisi_pmic_gpio_keyup_timer, (uintptr_t )gpio_key);
+	setup_timer(&(gpio_key->key_down_timer), hisi_pmic_gpio_keydown_timer, (uintptr_t )gpio_key);
 
 #if defined (CONFIG_HUAWEI_DSM)
 	setup_timer(&dsm_gpio_key_timer, dsm_gpio_key_timer_func, (uintptr_t)gpio_key);
@@ -624,8 +621,8 @@ static int hisi_pmic_gpio_key_probe(struct platform_device* pdev)
 
 err_request_irq:
 err_register_dev:
-	wake_lock_destroy(&volume_down_key_lock);
-	wake_lock_destroy(&volume_up_key_lock);
+	wakeup_source_trash(&volume_down_key_lock);
+	wakeup_source_trash(&volume_up_key_lock);
 
 	pr_info(KERN_ERR "[gpiokey]K3v3 gpio key probe failed! ret = %d.\n", err);
 	return err;/*lint !e593*/
@@ -642,8 +639,8 @@ static int hisi_pmic_gpio_key_remove(struct platform_device* pdev)
 
 	cancel_delayed_work(&(gpio_key->gpio_keyup_work));
 	cancel_delayed_work(&(gpio_key->gpio_keydown_work));
-	wake_lock_destroy(&volume_down_key_lock);
-	wake_lock_destroy(&volume_up_key_lock);
+	wakeup_source_trash(&volume_down_key_lock);
+	wakeup_source_trash(&volume_up_key_lock);
 
 	input_unregister_device(gpio_key->input_dev);
 	platform_set_drvdata(pdev, NULL);

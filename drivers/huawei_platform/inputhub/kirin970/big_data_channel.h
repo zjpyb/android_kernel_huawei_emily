@@ -22,6 +22,6 @@ typedef struct {
 	big_data_param_detail_t *param_data;
 } big_data_event_detail_t;
 
-uint64_t iomcu_dubai_log_fetch(uint8_t event_type);
+int iomcu_dubai_log_fetch(uint32_t event_type, void *data, uint32_t length);
 
 #endif

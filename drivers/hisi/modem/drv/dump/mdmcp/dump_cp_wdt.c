@@ -80,6 +80,7 @@
 #include "of.h"
 #include "dump_print.h"
 
+#if defined(BSP_CONFIG_PHONE_TYPE)
 u32 g_wdt_int_no = 0;
 
 wdt_timeout_cb g_wdt_reboot_func = NULL;
@@ -141,3 +142,4 @@ int bsp_wdt_register_hook(WDT_CORE_ID core_id, void *func)
 }
 
 
+#endif

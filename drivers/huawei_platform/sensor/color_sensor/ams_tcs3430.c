@@ -1,35 +1,19 @@
 /*
-*****************************************************************************
-* Copyright by ams AG                                                       *
-* All rights are reserved.                                                  *
-*                                                                           *
-* IMPORTANT - PLEASE READ CAREFULLY BEFORE COPYING, INSTALLING OR USING     *
-* THE SOFTWARE.                                                             *
-*                                                                           *
-* THIS SOFTWARE IS PROVIDED FOR USE ONLY IN CONJUNCTION WITH AMS PRODUCTS.  *
-* USE OF THE SOFTWARE IN CONJUNCTION WITH NON-AMS-PRODUCTS IS EXPLICITLY    *
-* EXCLUDED.                                                                 *
-*                                                                           *
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS       *
-* "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT         *
-* LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS         *
-* FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT  *
-* OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,     *
-* SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT          *
-* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,     *
-* DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY     *
-* THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT       *
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE     *
-* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.      *
-*****************************************************************************
-*/
-
-/*
- * Input Driver Module
- */
-
-/*
- * @@AMS_REVISION_Id:
+ * ams_tcs3430.c
+ *
+ * code for AMS tcs3430 sensor
+ *
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/kernel.h>
@@ -62,1365 +46,1193 @@
 #endif
 #include "ams_tcs3430.h"
 
+#define HWLOG_TAG color_sensor
 HWLOG_REGIST();
 
-/****************************************************************************
- *                     OSAL Device Com Interface
- ****************************************************************************/
-static bool ams_tcs3430_getDeviceInfo(ams_tcs3430_deviceInfo_t * info);
-static bool ams_tcs3430_deviceInit(ams_tcs3430_deviceCtx_t * ctx, AMS_PORT_portHndl * portHndl);
-static bool ams_tcs3430_deviceEventHandler(ams_tcs3430_deviceCtx_t * ctx, bool inCalMode);
-static ams_tcs3430_deviceIdentifier_e ams_tcs3430_testForDevice(AMS_PORT_portHndl * portHndl);
-static bool ams_tcs3430_getDeviceInfo(ams_tcs3430_deviceInfo_t * info);
-static int report_value[AMS_REPORT_DATA_LEN] = {0};
-static struct colorDriver_chip *p_chip = NULL;
+static struct color_chip *p_chip;
 static bool color_calibrate_result = true;
-static bool report_calibrate_result = false;
-static color_sensor_cali_para_nv color_nv_para;
-static int read_nv_first_in = 0;
-static int enable_status_before_calibrate = 0;
-#ifdef CONFIG_HUAWEI_DSM
+static bool report_calibrate_result;
 static bool color_devcheck_dmd_result = true;
-extern struct dsm_client* shb_dclient;
-#endif
-extern int ap_color_report(int value[], int length);
-extern int color_register(struct colorDriver_chip *chip);
-extern int read_color_calibrate_data_from_nv(int nv_number, int nv_size, char * nv_name, char * temp);
-extern int write_color_calibrate_data_to_nv(int nv_number, int nv_size, char * nv_name, char * temp);
+static struct color_sensor_cali_nv_t color_nv_para;
+static int read_nv_first_in;
+static int enable_status_before_calibrate;
 extern int (*color_default_enable)(bool enable);
+static uint8_t report_logcount;
+static int report_value[AMS_REPORT_DATA_LEN] = {0};
 struct delayed_work ams_dmd_work;
-static uint8_t report_logcount = 0;
+#ifdef CONFIG_HUAWEI_DSM
+extern struct dsm_client *shb_dclient;
+#endif
 
 #if defined(CONFIG_AMS_OPTICAL_SENSOR_ALS)
-
-typedef struct{
-    uint32_t rawX;
-    uint32_t rawY;
-    uint32_t rawZ;
-    uint32_t rawIR;
-    uint32_t rawIR2;
-}export_alsData_t;
-
-
-
-#define AMS_TCS3430_LEFT_EDGE_DEFAULT		0.1
-#define AMS_TCS3430_RIGHT_EDGE_DEFAULT		0.9
-
-#define AMS_TCS3430_K_VALUE_DEFAULT		1.0
-#define AMS_TCS3430_K_VALUE_MIN			0.8
-#define AMS_TCS3430_K_VALUE_MAX			1.2
-#define AMS_TCS3430_NUM_K_VALUE 		5
-
-#define AMS_TCS3430_HIGH_IR_THRESH_DEFAULT	AMS_TCS3430_HIGH_IR_THRESH_MAX
-#define AMS_TCS3430_HIGH_IR_THRESH_MIN		0
-#define AMS_TCS3430_HIGH_IR_THRESH_MAX		0.5
-
-#define AMS_TCS3430_CLAMP_DEFAULT               AMS_TCS3430_CLAMP_MAX
-#define AMS_TCS3430_CLAMP_MIN			0
-#define AMS_TCS3430_CLAMP_MAX			1
-
-#define AMS_TCS3430_NOMINAL_ATIME_DEFAULT       100
-#define AMS_TCS3430_NOMINAL_AGAIN_DEFAULT       16
-#define AMS_TCS3430_ATIME_DEFAULT               700
-#define AMS_TCS3430_AGAIN_DEFAULT               (64 * 1000)
-#define AMS_TCS3430_GAIN_OF_GOLDEN              64
-#define AMS_REPORT_LOG_COUNT_NUM                20
-
-#define ONE_BYTE_LENGTH_8_BITS  (8)
-
-typedef struct{
-	UINT8                 deviceId;
-	UINT8                 deviceIdMask;
-	UINT8                 deviceRef;
-	UINT8                 deviceRefMask;
-	ams_tcs3430_deviceIdentifier_e  device;
-}ams_tcs_3430_deviceIdentifier_t;
-
-static ams_tcs_3430_deviceIdentifier_t const deviceIdentifier[]={
-	{AMS_TCS3430_DEVICE_ID, MASK_ID, AMS_TCS3430_REV_ID, MASK_REVID, AMS_TCS3430_REV1},
-	{AMS_TCS3430_DEVICE_ID, MASK_ID, 0, MASK_REVID, AMS_TCS3430_REV0},
-	{0, 0, 0, 0, AMS_TCS3430_LAST_DEVICE}
-};
-
-#define AMS_TCS3430_GAIN_SCALE	(1000)
-static UINT32 const ams_tcs3430_alsGain_conversion[] = {
-	1 * AMS_TCS3430_GAIN_SCALE,
-	4 * AMS_TCS3430_GAIN_SCALE,
-	16 * AMS_TCS3430_GAIN_SCALE,
-	64 * AMS_TCS3430_GAIN_SCALE,
-	128 * AMS_TCS3430_GAIN_SCALE
-};
-
-static UINT8 const ams_tcs3430_als_gains[] = {
-	1,
-	4,
-	16,
-	64,
-	128
-};
-const ams_tcs3430_gainCaliThreshold_t  ams_tcs3430_setGainThreshold[CAL_STATE_GAIN_LAST] = {
-	{0, (100*AMS_TCS3430_FLOAT_TO_FIX)},//set threshold 1x to 0~100
-	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
-	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
-	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
-	{(AMS_TCS3430_FLOAT_TO_FIX/AMS_TCS3430_CAL_THR), (AMS_TCS3430_FLOAT_TO_FIX*AMS_TCS3430_CAL_THR)},
-};
-const ams_tcs3430_deviceRegisterTable_t ams_tcs3430_deviceRegisterDefinition[AMS_TCS3430_DEVREG_REG_MAX] = {
-	{ 0x80, 0x01 },          /* DEVREG_ENABLE */
-	{ 0x81, 0x23 },          /* DEVREG_ATIME */
-	{ 0x83, 0x00 },          /* DEVREG_WTIME */
-	{ 0x84, 0x00 },          /* DEVREG_AILTL */
-	{ 0x85, 0x00 },          /* DEVREG_AILTH */
-	{ 0x86, 0x00 },          /* DEVREG_AIHTL */
-	{ 0x87, 0x00 },          /* DEVREG_AIHTH */
-	{ 0x8C, 0x00 },          /* DEVREG_PERS */
-	{ 0x8D, 0x80 },          /* DEVREG_CFG0 */
-	{ 0x90, 0x00 },          /* DEVREG_CFG1 */
-	{ 0x91, AMS_TCS3430_REV_ID },    /* DEVREG_REVID */
-	{ 0x92, AMS_TCS3430_DEVICE_ID }, /* DEVREG_ID */
-	{ 0x93, 0x00 },          /* DEVREG_STATUS */
-	{ 0x94, 0x00 },          /* DEVREG_CH0DATAL */
-	{ 0x95, 0x00 },          /* DEVREG_CH0DATAH */
-	{ 0x96, 0x00 },          /* DEVREG_CH1DATAL */
-	{ 0x97, 0x00 },          /* DEVREG_CH1DATAH */
-	{ 0x98, 0x00 },          /* DEVREG_CH2DATAL */
-	{ 0x99, 0x00 },          /* DEVREG_CH2DATAH */
-	{ 0x9A, 0x00 },          /* DEVREG_CH3DATAL */
-	{ 0x9B, 0x00 },          /* DEVREG_CH3DATAH */
-	{ 0x9F, 0x04 },          /* DEVREG_CFG2 */       /* Datasheet is wrong. Reset value is 0x04 */
-	{ 0xAB, 0x00 },          /* DEVREG_CFG3 */
-	{ 0xD6, 0x7F },          /* DEVREG_AZ_CONFIG */  /* Datasheet is wrong. Reset value is 0x7F */
-	{ 0xDD, 0x00 },          /* DEVREG_INTENAB */
-};
-
-int AMS_PORT_TCS3430_getByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_t * data, uint8_t len){
-    int ret;
-    if ((handle == NULL) || (data == NULL )){
-	    hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-	    return -EPERM;
-    }
-
-    ret = i2c_smbus_read_i2c_block_data(handle, reg, len, data);
-    if (ret < 0)
-	    dev_err(&handle->dev, "%s: failed at address %x (%d bytes)\n",
-		    __func__, reg, len);
-
-    return ret;
-}
-
-int AMS_PORT_TCS3430_setByte(AMS_PORT_portHndl * handle, uint8_t reg, uint8_t* data, uint8_t len){
+int tcs3430_port_get_byte(struct i2c_client *handle, uint8_t reg, uint8_t *data,
+	uint8_t len)
+{
 	int ret;
-	if ((handle == NULL) || (data == NULL) ){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-	    return -EPERM;
+
+	if (!handle || !data) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EPERM;
 	}
 
-	ret = i2c_smbus_write_i2c_block_data(handle, reg, len, data);
+	ret = i2c_smbus_read_i2c_block_data(handle, reg, len, data);
 	if (ret < 0)
-	    	dev_err(&handle->dev, "%s: failed at address %x (%d bytes)\n",
-		    	__func__, reg, len);
+		hwlog_err("%s: failed\n", __func__);
 
 	return ret;
 }
 
-static int ams_tcs3430_getByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData)
+int tcs3430_port_set_byte(struct i2c_client *handle, uint8_t reg, uint8_t *data,
+	uint8_t len)
 {
-	int read_count = 0;
-	UINT8 length = 1;
+	int ret;
 
-	if (portHndl == NULL || readData == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return read_count;
+	if (!handle || !data) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EFAULT;
 	}
 
-	read_count = AMS_PORT_TCS3430_getByte(portHndl,
-	                        ams_tcs3430_deviceRegisterDefinition[reg].address,
-	                        readData,
-	                        length);
+	ret = i2c_smbus_write_i2c_block_data(handle, reg, len, data);
+	if (ret < 0)
+		hwlog_err("%s: failed\n", __func__);
 
-	AMS_PORT_log_2("I2C reg getByte = 0x%02x, data: 0x%02x\n", ams_tcs3430_deviceRegisterDefinition[reg].address, (UINT8)readData[0]);
-
-	return read_count;
+	return ret;
 }
 
-static int ams_tcs3430_setByte(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 data)
+static int tcs3430_get_byte(struct i2c_client *handle, enum tcs3430_regs_t reg,
+	UINT8 *read_data)
 {
-	int write_count = 0;
-	UINT8 length = 1;
+	int ret;
 
-	if (portHndl == NULL ){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return write_count;
+	if (!handle || !read_data) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EFAULT;
 	}
+	if ((reg < AMS_TCS3430_DEVREG_ENABLE) ||
+		(reg >= AMS_TCS3430_DEVREG_REG_MAX))
+		return -EFAULT;
 
-	write_count = AMS_PORT_TCS3430_setByte(portHndl,
-	                            ams_tcs3430_deviceRegisterDefinition[reg].address,
-	                            &data,
-	                            length);
-	AMS_PORT_log_2("I2C reg setByte = 0x%02x, data: 0x%02x\n", ams_tcs3430_deviceRegisterDefinition[reg].address, (UINT8)data);
-	return write_count;
+	ret = tcs3430_port_get_byte(handle, tcs3430_reg_def[reg].address,
+		read_data, 1);
+	return ret;
 }
 
-static int ams_tcs3430_getBuf(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData, UINT8 length)
+static int tcs3430_set_byte(struct i2c_client *handle, enum tcs3430_regs_t reg,
+	UINT8 data)
 {
-	int read_count = 0;
+	int ret = 0;
 
-	if ((portHndl == NULL) || (readData == NULL) ){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return read_count;
+	if (!handle) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return ret;
 	}
 
-	read_count = AMS_PORT_TCS3430_getByte(portHndl,
-	                        ams_tcs3430_deviceRegisterDefinition[reg].address,
-	                        readData,
-	                        length);
+	ret = tcs3430_port_set_byte(handle, tcs3430_reg_def[reg].address,
+		&data, 1);
+	return ret;
+}
 
-	//PRINT_INFO("I2C reg getBuf  = 0x%x, len= %d, data: 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x\n", ams_tcs3430_deviceRegisterDefinition[reg].address, length,
-	//	(UINT8)readData[0], (UINT8)readData[1], (UINT8)readData[2], (UINT8)readData[3], (UINT8)readData[4], (UINT8)readData[5], (UINT8)readData[6], (UINT8)readData[7] );
-	return read_count;
+static int tcs3430_get_buf(struct i2c_client *handle, enum tcs3430_regs_t reg,
+	UINT8 *read_data, UINT8 length)
+{
+	int ret;
+
+	if (!handle || !read_data) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	ret = tcs3430_port_get_byte(handle, tcs3430_reg_def[reg].address,
+		read_data, length);
+	return ret;
 }
 
 static int ams_tcs3430_report_data(int value[])
 {
-	AMS_PORT_log("ams_tcs3430_report_data\n");
-	return ap_color_report(value, AMS_REPORT_DATA_LEN*sizeof(int));
+	hwlog_debug("ams tcs3430 report data\n");
+	return ap_color_report(value, AMS_REPORT_DATA_LEN * sizeof(int));
 }
-static int ams_tcs3430_setWord(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT16 data)
+
+static int tcs3430_set_word(struct i2c_client *handle, enum tcs3430_regs_t reg,
+	UINT16 data)
 {
-	int write_count = 0;
+	int ret;
 	UINT8 length = sizeof(UINT16);
 	UINT8 buffer[sizeof(UINT16)] = {0};
 
-	if (portHndl == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return write_count;
+	if (!handle) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EFAULT;
 	}
 
 	buffer[0] = ((data >> AMS_ENDIAN_1) & 0xff);
 	buffer[1] = ((data >> AMS_ENDIAN_2) & 0xff);
 
-	write_count = AMS_PORT_TCS3430_setByte(portHndl,
-	                            ams_tcs3430_deviceRegisterDefinition[reg].address,
-	                            &buffer[0],
-	                            length);
-	return write_count;
+	ret = tcs3430_port_set_byte(handle, tcs3430_reg_def[reg].address,
+		&buffer[0], length);
+	return ret;
 }
 
-static int ams_tcs3430_getField(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 * readData, ams_tcs3430_regMask_t mask)
+static int tcs3430_get_field(struct i2c_client *handle, enum tcs3430_regs_t reg,
+	UINT8 *read_data, enum regmask_t mask)
 {
-	int read_count = 0;
-	UINT8 length = 1;
+	int ret;
 
-	if ((portHndl == NULL) || (readData == NULL) ){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return read_count;
+	if (!handle || !read_data) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EFAULT;
 	}
 
-	read_count = AMS_PORT_TCS3430_getByte(portHndl,
-	                            ams_tcs3430_deviceRegisterDefinition[reg].address,
-	                            readData,
-	                            length);
+	ret = tcs3430_port_get_byte(handle, tcs3430_reg_def[reg].address,
+		read_data, 1);
 
-	*readData &= mask;
+	*read_data &= mask;
 
-	return read_count;
+	return ret;
 }
 
-static int ams_tcs3430_setField(AMS_PORT_portHndl * portHndl, ams_tcs3430_deviceRegister_t reg, UINT8 data, ams_tcs3430_regMask_t mask)
+static int tcs3430_set_field(struct i2c_client *handle, enum tcs3430_regs_t reg,
+	UINT8 data, enum regmask_t mask)
 {
-	int write_count = 1;
+	int ret = 0;
 	UINT8 original_data = 0;
-	UINT8 new_data = 0;
+	UINT8 new_data;
 
-	if (portHndl == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return 0;
+	if (!handle) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EFAULT;
 	}
 
-	ams_tcs3430_getByte(portHndl,
-	                    reg,
-	                    &original_data);
+	tcs3430_get_byte(handle, reg, &original_data);
 
-	new_data = original_data & ~mask;
+	new_data = original_data & (~mask);
 	new_data |= (data & mask);
 
-	if (new_data != original_data){
-	    write_count = ams_tcs3430_setByte(portHndl,
-	                    reg,
-	                    new_data);
-	}
+	if (new_data != original_data)
+		ret = tcs3430_set_byte(handle, reg, new_data);
 
-	return write_count;
+	return ret;
 }
 
-static int ams_tcs3430_rgb_report_type(void){
-    return AWB_SENSOR_RAW_SEQ_TYPE_R_G_B_IR;
+static int tcs3430_rgb_report_type(void)
+{
+	return AWB_SENSOR_RAW_SEQ_TYPE_R_G_B_IR;
 }
 
-static ams_tcs3430_deviceIdentifier_e ams_tcs3430_testForDevice(AMS_PORT_portHndl * portHndl){
-	UINT8 chipId = 0;
-	UINT8 revId = 0;
+static enum tcs3430_device_id_t tcs3430_test_id(struct i2c_client *handle)
+{
+	UINT8 chip_id = 0;
+	UINT8 rev_id = 0;
 	UINT8 i = 0;
 
-	if (portHndl == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!handle) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return AMS_UNKNOWN_DEVICE;
 	}
 
-	ams_tcs3430_getByte(portHndl, AMS_TCS3430_DEVREG_ID, &chipId);
-	ams_tcs3430_getByte(portHndl, AMS_TCS3430_DEVREG_REVID, &revId);
-	AMS_PORT_log_2("ams_tcs3430_testForDevice: 0x%02x 0x%02x\n", chipId, revId);
+	tcs3430_get_byte(handle, AMS_TCS3430_DEVREG_ID, &chip_id);
+	tcs3430_get_byte(handle, AMS_TCS3430_DEVREG_REVID, &rev_id);
 
-	do{
-		if (((chipId & deviceIdentifier[i].deviceIdMask) ==
-		    (deviceIdentifier[i].deviceId & deviceIdentifier[i].deviceIdMask)) &&
-		    ((revId & deviceIdentifier[i].deviceRefMask) ==
-		     (deviceIdentifier[i].deviceRef & deviceIdentifier[i].deviceRefMask))){
-		        	return deviceIdentifier[i].device;
-		}
-	    i++;
-	}while (deviceIdentifier[i].device != AMS_TCS3430_LAST_DEVICE);
+	do {
+		if (((chip_id & tcs3430_devids[i].dev_id_mask) ==
+			(tcs3430_devids[i].dev_id &
+			tcs3430_devids[i].dev_id_mask)) &&
+			((rev_id & tcs3430_devids[i].dev_ref_mask) ==
+			(tcs3430_devids[i].dev_ref &
+			tcs3430_devids[i].dev_ref_mask)))
+			return tcs3430_devids[i].device;
+
+		i++;
+	} while (tcs3430_devids[i].device != AMS_TCS3430_LAST_DEVICE);
 
 	return AMS_UNKNOWN_DEVICE;
 }
 
-static void ams_tcs3430_resetAllRegisters(AMS_PORT_portHndl * portHndl){
-	ams_tcs3430_deviceRegister_t i = 0;
+static void tcs3430_reset_regs(struct i2c_client *handle)
+{
+	enum tcs3430_regs_t i;
 
-	if (portHndl == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!handle) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
 
-	AMS_PORT_log("_3430_resetAllRegisters\n");
+	for (i = AMS_TCS3430_DEVREG_ENABLE; i <= AMS_TCS3430_DEVREG_CFG1; i++)
+		tcs3430_set_byte(handle, i, tcs3430_reg_def[i].reset_val);
 
-	for (i = AMS_TCS3430_DEVREG_ENABLE; i <= AMS_TCS3430_DEVREG_CFG1; i++) {
-	    	ams_tcs3430_setByte(portHndl, i, ams_tcs3430_deviceRegisterDefinition[i].resetValue);
-	}
-
-	/* Skipping REVID and ID */
-
-	for (i = AMS_TCS3430_DEVREG_STATUS; i < AMS_TCS3430_DEVREG_REG_MAX; i++) {
-	    	ams_tcs3430_setByte(portHndl, i, ams_tcs3430_deviceRegisterDefinition[i].resetValue);
-	}
+	for (i = AMS_TCS3430_DEVREG_STATUS; i < AMS_TCS3430_DEVREG_REG_MAX; i++)
+		tcs3430_set_byte(handle, i, tcs3430_reg_def[i].reset_val);
 }
 
-static UINT8 ams_tcs3430_gainToReg(UINT32 x){
+static UINT8 tcs3430_gain_to_reg(UINT32 x)
+{
 	UINT8 i;
 
-	for (i = sizeof(ams_tcs3430_alsGain_conversion)/sizeof(UINT32)-1; i != 0; i--) {
-	    	if (x >= ams_tcs3430_alsGain_conversion[i]) break;
-	}
-	AMS_PORT_log_2("ams_tcs3430_gainToReg: %d %d\n", x, i);
-	return (i);
+	for (i = sizeof(tcs3430_als_gain_conv) / sizeof(UINT32) - 1; i != 0; i--)
+		if (x >= tcs3430_als_gain_conv[i])
+			break;
+
+	hwlog_info("tcs3430_gain_to reg: %d %d\n", x, i);
+	return i;
 }
 
 
-static INT32 ams_tcs3430_getGain(void *ctx)
+static INT32 tcs3430_get_gain(const void *ctx)
 {
 	UINT8 cfg1_reg_data = 0;
 	UINT8 cfg2_reg_data = 0;
-	INT32 gain = 0;
+	INT32 gain;
 
-	if (ctx == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return true;
 	}
 
-	ams_tcs3430_getField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG1, &cfg1_reg_data, MASK_AGAIN);
-	ams_tcs3430_getField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG2, &cfg2_reg_data, MASK_HGAIN);
+	tcs3430_get_field(((struct tcs3430_ctx *)ctx)->handle,
+		AMS_TCS3430_DEVREG_CFG1, &cfg1_reg_data, MASK_AGAIN);
+	tcs3430_get_field(((struct tcs3430_ctx *)ctx)->handle,
+		AMS_TCS3430_DEVREG_CFG2, &cfg2_reg_data, MASK_HGAIN);
+	if (cfg1_reg_data >= AMS_TCS3430_GAIN_COUNT) // set max gain val to
+		return 0;
+
 	if (cfg2_reg_data) {
 		if (cfg1_reg_data == AGAIN_64)
-		   	gain = ams_tcs3430_als_gains[cfg1_reg_data + 1];
-		else {
-		   	AMS_PORT_log_Msg(AMS_DEBUG,"WARNING: illegal gain setting, HGAIN set but AGAIN not 64x\n");
-		   	gain = ams_tcs3430_als_gains[cfg1_reg_data]; /* gain is undetermined, but the algorithm
-		                                     * needs a non-zero value */
-		}
-        } else {
-		gain = ams_tcs3430_als_gains[cfg1_reg_data];
+			gain = tcs3430_als_gains[cfg1_reg_data + 1];
+		else
+			gain = tcs3430_als_gains[cfg1_reg_data];
+	} else {
+		gain = tcs3430_als_gains[cfg1_reg_data];
 	}
 	return gain;
 }
 
-static INT32 ams_tcs3430_setGain(void *ctx, int gain)
+static INT32 tcs3430_set_gain(void *dev_ctx, int gain)
 {
 	INT32 ret = 0;
+	UINT32 gain_len;
+	struct tcs3430_ctx *ctx = NULL;
 
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
+	if (!dev_ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return 0;
 	}
+	ctx = dev_ctx;
 
-	AMS_PORT_log_1("ams_tcs3430_setGain: %d\n", gain);
-	if ((UINT32)gain >= ams_tcs3430_alsGain_conversion[(sizeof(ams_tcs3430_alsGain_conversion) / sizeof(uint32_t)) -1]) {
-	   	 /* First, set AGAIN to 64x in CFG1*/
-	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG1, AGAIN_64, MASK_AGAIN);
+	hwlog_info("tcs3430 set gain: %d\n", gain);
+	gain_len = ARRAY_SIZE(tcs3430_als_gain_conv);
+	if (gain_len == 0)
+		return 0;
 
-	    	/* Second set the HGAIN bit in CFG2*/
-	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG2, HGAIN, MASK_HGAIN);
+	if (gain >= tcs3430_als_gain_conv[gain_len - 1]) {
+		// First, set AGAIN to 64x in CFG1
+		ret += tcs3430_set_field(ctx->handle, AMS_TCS3430_DEVREG_CFG1,
+			AGAIN_64, MASK_AGAIN);
+		// Second set the HGAIN bit in CFG2
+		ret += tcs3430_set_field(ctx->handle, AMS_TCS3430_DEVREG_CFG2,
+			HGAIN, MASK_HGAIN);
 	} else {
-	   	 /* Make sure HGAIN bit is clear in CFG2*/
-	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG2, 0, MASK_HGAIN);
+		// Make sure HGAIN bit is clear in CFG2
+		ret += tcs3430_set_field(ctx->handle, AMS_TCS3430_DEVREG_CFG2,
+			0, MASK_HGAIN);
 
-	    	/* Set AGAIN in CFG1 */
-	    ret += ams_tcs3430_setField(((ams_tcs3430_deviceCtx_t *)ctx)->portHndl, AMS_TCS3430_DEVREG_CFG1, ams_tcs3430_gainToReg((UINT32)gain), MASK_AGAIN);
+		// Set AGAIN in CFG1
+		ret += tcs3430_set_field(ctx->handle, AMS_TCS3430_DEVREG_CFG1,
+			tcs3430_gain_to_reg((UINT32)gain), MASK_AGAIN);
 	}
-	((ams_tcs3430_deviceCtx_t *)ctx)->algCtx.als_data.gain =  (UINT32)gain;
+	ctx->alg_ctx.als_data.gain = (UINT32)gain;
 	return ret;
 }
 
-static INT32 ams_tcs3430_setAtimeInMs(ams_tcs3430_deviceCtx_t * ctx, int atime_ms){
-	INT32 ret = 0;
+static INT32 tcs3430_set_atime_ms(struct tcs3430_ctx *ctx, int atime_ms)
+{
+	INT32 ret;
 	UINT8 atime_reg_data;
 
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
+	if (!ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return -EFAULT;
 	}
 
 	atime_reg_data = AMS_TCS3430_MS_TO_ATIME(atime_ms);
-	ret = ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_ATIME, atime_reg_data);
+	ret = tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_ATIME,
+		atime_reg_data);
 
-	return (ret);
+	return ret;
 }
 
-static bool ams_tcs3430_alsRegUpdate(ams_tcs3430_deviceCtx_t * ctx, bool inCalMode){
-
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+static bool tcs3430_als_reg_update(struct tcs3430_ctx *ctx, bool in_cal_mode)
+{
+	if (!ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return true;
 	}
 
-	/* For first integration after AEN */
+	// For first integration after AEN
 	ctx->first_inte = false;
-	if (!(ctx->mode & AMS_TCS3430_MODE_ALS) && !inCalMode)
-	{
-		ctx->algCtx.als_data.gain = 16 * AMS_TCS3430_GAIN_SCALE;
-		ctx->algCtx.als_data.atime_ms = 2;
+	if (!(ctx->mode & AMS_TCS3430_MODE_ALS) && !in_cal_mode) {
+		ctx->alg_ctx.als_data.gain = 16 * AMS_TCS3430_GAIN_SCALE;
+		ctx->alg_ctx.als_data.atime_ms = 2;
 		ctx->first_inte = true;
 	}
 
-	ams_tcs3430_setAtimeInMs(ctx, ctx->algCtx.als_data.atime_ms);
-	ams_tcs3430_setGain(ctx, ctx->algCtx.als_data.gain);
-	ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_PERS, 0x00, MASK_APERS);
-	/* set thresholds such that it would generate an interrupt */
-	ams_tcs3430_setWord(ctx->portHndl, AMS_TCS3430_DEVREG_AILTL, 0xffff);  /* 2 bytes, AILTL and AILTH */
-	ams_tcs3430_setWord(ctx->portHndl, AMS_TCS3430_DEVREG_AIHTL, 0x0000);  /* 2 bytes, AIHTL and AIHTH */
+	tcs3430_set_atime_ms(ctx, ctx->alg_ctx.als_data.atime_ms);
+	tcs3430_set_gain(ctx, ctx->alg_ctx.als_data.gain);
+	tcs3430_set_field(ctx->handle, AMS_TCS3430_DEVREG_PERS, 0, MASK_APERS);
+	// set thresholds such that it would generate an interrupt
+	// 2 bytes, AILTL and AILTH
+	tcs3430_set_word(ctx->handle, AMS_TCS3430_DEVREG_AILTL, 0xffff);
+	// 2 bytes, AIHTL and AIHTH
+	tcs3430_set_word(ctx->handle, AMS_TCS3430_DEVREG_AIHTL, 0x0000);
 
-    return false;
+	return false;
 }
 
-/* --------------------------------------------------------------------*/
-/* Set DCB config parameters                                           */
-/* --------------------------------------------------------------------*/
-static bool ams_tcs3430_deviceSetConfig(ams_tcs3430_deviceCtx_t * ctx, ams_tcs3430_configureFeature_t feature,
-										ams_tcs3430_deviceConfigOptions_t option, UINT32 data, bool inCalMode){
-
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+static bool tcs3430_dev_cfg(struct tcs3430_ctx *ctx,
+	enum tcs3430_feature_t feature, enum tcs3430_cfg_op_t option,
+	UINT32 data, bool in_cal_mode)
+{
+	if (!ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return true;
 	}
-
-	if (feature == AMS_TCS3430_FEATURE_ALS){
-	   	AMS_PORT_log_Msg(AMS_DEBUG, "ams_configureFeature_t  AMS_CONFIG_ALS_LUX\n");
-	    	switch (option)
-	    	{
-	        	case AMS_TCS3430_CONFIG_ENABLE: /* ON / OFF */
-	            	AMS_PORT_log_Msg_1(AMS_DEBUG,"deviceConfigOptions_t   AMS_CONFIG_ENABLE(%u)\n", data);
-	            	AMS_PORT_log_Msg_1(AMS_DEBUG,"current mode            %d\n", ctx->mode);
-	            	if (data == 0) {
-						ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_ENABLE, PON);
-						ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_INTENAB, 0x00);
-						ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_STATUS, (MASK_ASAT | MASK_AINT));
-						ctx->mode = AMS_TCS3430_MODE_OFF;
-	            	} else {
-						ams_tcs3430_alsRegUpdate(ctx, inCalMode);
-						ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_INTENAB, AIEN);
-						ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_ENABLE, (AEN | PON));
-						ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_STATUS, (MASK_ASAT | MASK_AINT));
-						ctx->mode |= AMS_TCS3430_MODE_ALS;
-	            	}
-	            	break;
-	        default:
-	            	break;
-	    	}
+	if (feature != AMS_TCS3430_FEATURE_ALS) {
+		hwlog_info("%s not support feature\n", __func__);
+		return 0;
 	}
+	if (option != AMS_TCS3430_CONFIG_ENABLE) {
+		hwlog_info("%s not support option\n", __func__);
+		return 0;
+	}
+	if (data == 0) {
+		tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_ENABLE, PON);
+		tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_INTENAB, 0x00);
+		tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_STATUS,
+			(MASK_ASAT | MASK_AINT));
+		ctx->mode = AMS_TCS3430_MODE_OFF;
+	} else {
+		tcs3430_als_reg_update(ctx, in_cal_mode);
+		tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_INTENAB, AIEN);
+		tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_ENABLE,
+			(AEN | PON));
+		tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_STATUS,
+			(MASK_ASAT | MASK_AINT));
+		ctx->mode |= AMS_TCS3430_MODE_ALS;
+	}
+
 	return 0;
 }
 
-static void ams_tcs3430_get_max_min_raw(ams_tcs3430_adc_data_t *current_raw, uint32_t* max, uint32_t *min)
+static void tcs3430_get_max_min_raw(struct tcs3430_adc_data_t *curr_raw,
+	uint32_t *max, uint32_t *min)
 {
-	*max = current_raw->x;
-	if (current_raw->y > *max)
-	{
-		*max = current_raw->y;
-	}
-	if (current_raw->z > *max)
-	{
-		*max = current_raw->z;
-	}
-	if (current_raw->ir1 > *max)
-	{
-		*max = current_raw->ir1;
-	}
+	*max = curr_raw->x;
+	if (curr_raw->y > *max)
+		*max = curr_raw->y;
 
-	*min = current_raw->x;
-	if (current_raw->y < *min)
-	{
-		*min = current_raw->y;
-	}
-	if (current_raw->z < *min)
-	{
-		*min = current_raw->z;
-	}
+	if (curr_raw->z > *max)
+		*max = curr_raw->z;
+
+	if (curr_raw->ir1 > *max)
+		*max = curr_raw->ir1;
+
+	*min = curr_raw->x;
+	if (curr_raw->y < *min)
+		*min = curr_raw->y;
+
+	if (curr_raw->z < *min)
+		*min = curr_raw->z;
 }
 
-static bool ams_tcs3430_saturation_check(ams_tcs3430_deviceCtx_t * ctx, ams_tcs3430_adc_data_t *current_raw)
+static bool tcs3430_satu_check(struct tcs3430_ctx *ctx,
+	struct tcs3430_adc_data_t *curr_raw)
 {
-	uint32_t saturation = 0;
-	saturation = ((AMS_TCS3430_MS_TO_ATIME(ctx->algCtx.als_data.atime_ms) + 1) << 10) - 1;//calculate saturation value
-	saturation *= 9;//threadhold ratio 0.9 for saturation
-	saturation /= 10;//threadhold ratio 0.9 for saturation
+	uint32_t satu;
+	UINT16 atime;
 
-	if (current_raw->x > saturation ||
-		current_raw->y > saturation ||
-		current_raw->z > saturation ||
-		current_raw->ir1 > saturation)
-	{
+	atime = ctx->alg_ctx.als_data.atime_ms;
+	// calculate saturation value
+	satu = ((AMS_TCS3430_MS_TO_ATIME(atime) + 1) << 10) - 1;
+	satu = (satu * 9) / 10; // threadhold ratio 0.9 for saturation
+
+	if (curr_raw->x > satu || curr_raw->y > satu ||	curr_raw->z > satu ||
+		curr_raw->ir1 > satu)
 		return true;
-	}
+
 	return false;
 }
 
-static bool ams_tcs343_insufficience_check(ams_tcs3430_deviceCtx_t * ctx, ams_tcs3430_adc_data_t *current_raw)
+static bool tcs3430_insuff_check(struct tcs3430_ctx *ctx,
+	struct tcs3430_adc_data_t *curr_raw)
 {
-	if (current_raw->x < AMS_TCS3430_LOW_LEVEL ||
-		current_raw->y < AMS_TCS3430_LOW_LEVEL ||
-		current_raw->z < AMS_TCS3430_LOW_LEVEL)
-	{
+	if (curr_raw->x < AMS_TCS3430_LOW_LEVEL ||
+		curr_raw->y < AMS_TCS3430_LOW_LEVEL ||
+		curr_raw->z < AMS_TCS3430_LOW_LEVEL)
 		return true;
-	}
+
 	return false;
 }
 
-static bool ams_tcs3430_handleALS(ams_tcs3430_deviceCtx_t * ctx, bool inCalMode){
+static bool tcs3430_handle_als(struct tcs3430_ctx *ctx, bool in_cal_mode)
+{
 	UINT8 adc_data[AMS_TCS3430_ADC_BYTES] = {0};
-	ams_tcs3430_adc_data_t current_raw = {
-		.x   = 0,
-		.y   = 0,
-		.z   = 0,
-		.ir1 = 0,
-		.ir2 = 0};
+	struct tcs3430_adc_data_t curr_raw;
 	uint8_t amux_data = 0;
 	bool re_enable = false;
+	uint32_t max_raw = 0;
+	uint32_t min_raw = 0;
+	UINT32 gain;
 
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
-	}
+	memset(&curr_raw, 0, sizeof(curr_raw));
+	// read ADC data
+	tcs3430_get_buf(ctx->handle, AMS_TCS3430_DEVREG_CH0DATAL, adc_data,
+		AMS_TCS3430_ADC_BYTES);
+	tcs3430_get_field(ctx->handle, AMS_TCS3430_DEVREG_CFG1, &amux_data,
+		MASK_AMUX);
 
-	/* read ADC data */
-	ams_tcs3430_getBuf(ctx->portHndl, AMS_TCS3430_DEVREG_CH0DATAL, adc_data, AMS_TCS3430_ADC_BYTES);
-	ams_tcs3430_getField(ctx->portHndl, AMS_TCS3430_DEVREG_CFG1, &amux_data, MASK_AMUX);
-
-	/* extract raw X/IR2 channel data */
-	switch (ctx->deviceId){
-		case AMS_TCS3430_REV0:{
-			current_raw.x   = (adc_data[0] << 0) | (adc_data[1] << ONE_BYTE_LENGTH_8_BITS);
-			current_raw.y   = (adc_data[2] << 0) | (adc_data[3] << ONE_BYTE_LENGTH_8_BITS);
-			current_raw.ir2 = (adc_data[4] << 0) | (adc_data[5] << ONE_BYTE_LENGTH_8_BITS);
-			if (amux_data == 0){
-				current_raw.z   = (adc_data[6] << 0) | (adc_data[7] << ONE_BYTE_LENGTH_8_BITS);
-			} else {
-				current_raw.ir1 = (adc_data[6] << 0) | (adc_data[7] << ONE_BYTE_LENGTH_8_BITS);
-			}
-			break;
-		}
-		case AMS_TCS3430_REV1:{
-			current_raw.z   = (adc_data[0] << 0) | (adc_data[1] << ONE_BYTE_LENGTH_8_BITS);
-			current_raw.y   = (adc_data[2] << 0) | (adc_data[3] << ONE_BYTE_LENGTH_8_BITS);
-			current_raw.ir1 = (adc_data[4] << 0) | (adc_data[5] << ONE_BYTE_LENGTH_8_BITS);
-			if (amux_data == 0){
-				current_raw.x   = (adc_data[6] << 0) | (adc_data[7] << ONE_BYTE_LENGTH_8_BITS);
-			} else {
-				current_raw.ir2 = (adc_data[6] << 0) | (adc_data[7] << ONE_BYTE_LENGTH_8_BITS);
-			}
-			break;
-		}
-		default:{
-			break;
-		}
-	}
-
-	if (inCalMode)
-	{
-		ctx->updateAvailable |= AMS_TCS3430_FEATURE_ALS;
-		goto handleALS_exit;
-	}
-
-	/* First integration is special */
-	if (ctx->first_inte)
-	{
-		/* Get max and min raw data */
-		uint32_t max_raw, min_raw;
-		ams_tcs3430_get_max_min_raw(&current_raw, &max_raw, &min_raw);
-		AMS_PORT_log_1("ams_tcs3430_handleALS: adc   max=%d\n", (UINT16)max_raw);
-		AMS_PORT_log_1("ams_tcs3430_handleALS: adc   min=%d\n", (UINT16)min_raw);
-
-		/* Decide the proper gain setting */
-		if (max_raw < 100)//threadhold of 128x
-		{
-			ams_tcs3430_setGain(ctx, (128 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 128x
-		}
-		else if (max_raw < 200)//threadhold of 64x
-		{
-			ams_tcs3430_setGain(ctx, (64 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 64x
-		}
-		else if (max_raw < 800)//threadhold of 16x
-		{
-			//Keep 16x Gain
-		}
-		else if (min_raw > 60)//threadhold of 1x
-		{
-			ams_tcs3430_setGain(ctx, (1 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 1x
-		}
+	// extract raw X/IR2 channel data
+	switch (ctx->device_id) {
+	case AMS_TCS3430_REV0:
+		curr_raw.x = (adc_data[0] << 0) | (adc_data[1] << 8);
+		curr_raw.y = (adc_data[2] << 0) | (adc_data[3] << 8);
+		curr_raw.ir2 = (adc_data[4] << 0) | (adc_data[5] << 8);
+		if (amux_data == 0)
+			curr_raw.z = (adc_data[6] << 0) | (adc_data[7] << 8);
 		else
-		{
-			ams_tcs3430_setGain(ctx, (4 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 4x
-		}
-		ctx->algCtx.als_data.atime_ms = AMS_TCS3430_NOMINAL_ATIME_DEFAULT;
-		ams_tcs3430_setAtimeInMs(ctx, ctx->algCtx.als_data.atime_ms);
+			curr_raw.ir1 = (adc_data[6] << 0) | (adc_data[7] << 8);
+		break;
+	case AMS_TCS3430_REV1:
+		curr_raw.z = (adc_data[0] << 0) | (adc_data[1] << 8);
+		curr_raw.y = (adc_data[2] << 0) | (adc_data[3] << 8);
+		curr_raw.ir1 = (adc_data[4] << 0) | (adc_data[5] << 8);
+		if (amux_data == 0)
+			curr_raw.x = (adc_data[6] << 0) | (adc_data[7] << 8);
+		else
+			curr_raw.ir2 = (adc_data[6] << 0) | (adc_data[7] << 8);
+		break;
+	default:
+		break;
+	}
+	if (in_cal_mode) {
+		ctx->update_avai |= AMS_TCS3430_FEATURE_ALS;
+		goto handle_als_exit;
+	}
+
+	// First integration is special
+	if (ctx->first_inte) {
+		// Get max and min raw data
+		tcs3430_get_max_min_raw(&curr_raw, &max_raw, &min_raw);
+		hwlog_info("als data: max =%d, min = %d\n", max_raw, min_raw);
+
+		// Decide the proper gain setting
+		if (max_raw < 100) // raw threadhold of 128x, set to 128
+			tcs3430_set_gain(ctx, (128 * AMS_TCS3430_GAIN_SCALE));
+		else if (max_raw < 200) //raw threadhold of 64x, set to 64
+			tcs3430_set_gain(ctx, (64 * AMS_TCS3430_GAIN_SCALE));
+		else if (max_raw < 800)// raw threadhold of 16x, set to 16
+			hwlog_debug("keep 16x gain\n");
+		else if (min_raw > 60) // raw threadhold of 1x, Set Gain to 1x
+			tcs3430_set_gain(ctx, (1 * AMS_TCS3430_GAIN_SCALE));
+		else // Set Gain to 4x
+			tcs3430_set_gain(ctx, (4 * AMS_TCS3430_GAIN_SCALE));
+
+		ctx->alg_ctx.als_data.atime_ms =
+			AMS_TCS3430_NOMINAL_ATIME_DEFAULT;
+		tcs3430_set_atime_ms(ctx, ctx->alg_ctx.als_data.atime_ms);
 		re_enable = true;
 		ctx->first_inte = false;
-		goto handleALS_exit;
+		goto handle_als_exit;
+	}
+	gain = ctx->alg_ctx.als_data.gain;
+	// Adjust gain setting
+	if (tcs3430_satu_check(ctx, &curr_raw) &&
+		(gain == (4 * AMS_TCS3430_GAIN_SCALE))) {
+		// Set Gain to 1x
+		tcs3430_set_gain(ctx, (1 * AMS_TCS3430_GAIN_SCALE));
+		re_enable = true;
+	} else if ((tcs3430_satu_check(ctx, &curr_raw) &&
+		(gain == (16 * AMS_TCS3430_GAIN_SCALE))) ||
+		(tcs3430_insuff_check(ctx, &curr_raw) &&
+		(gain == (1 * AMS_TCS3430_GAIN_SCALE)))) {
+		// between 1x and 16x, Set Gain to 4x
+		tcs3430_set_gain(ctx, (4 * AMS_TCS3430_GAIN_SCALE));
+		re_enable = true;
+	} else if ((tcs3430_satu_check(ctx, &curr_raw) &&
+		(gain == (64 * AMS_TCS3430_GAIN_SCALE))) ||
+		(tcs3430_insuff_check(ctx, &curr_raw) &&
+		(gain == (4 * AMS_TCS3430_GAIN_SCALE)))) {
+		// between 4x and 64x, set Gain to 16x
+		tcs3430_set_gain(ctx, (16 * AMS_TCS3430_GAIN_SCALE));
+		re_enable = true;
+	} else if ((tcs3430_satu_check(ctx, &curr_raw) &&
+		(gain == (128 * AMS_TCS3430_GAIN_SCALE))) ||
+		(tcs3430_insuff_check(ctx, &curr_raw) &&
+		(gain == (16 * AMS_TCS3430_GAIN_SCALE)))) {
+		// between 16x and 128x, set Gain to 64x
+		tcs3430_set_gain(ctx, (64 * AMS_TCS3430_GAIN_SCALE));
+		re_enable = true;
+	} else if (tcs3430_insuff_check(ctx, &curr_raw) &&
+		(gain == (64 * AMS_TCS3430_GAIN_SCALE))) {
+		// 64x, Set Gain to 128x
+		tcs3430_set_gain(ctx, (128 * AMS_TCS3430_GAIN_SCALE));
+		re_enable = true;
+	} else {
+		ctx->update_avai |= AMS_TCS3430_FEATURE_ALS;
 	}
 
-	/* Adjust gain setting */
-	if (ams_tcs3430_saturation_check(ctx, &current_raw) &&
-			ctx->algCtx.als_data.gain == (4 * AMS_TCS3430_GAIN_SCALE))
-	{
-		ams_tcs3430_setGain(ctx, (1 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 1x
-		re_enable = true;
-	}
-	else if ((ams_tcs3430_saturation_check(ctx, &current_raw) &&
-				ctx->algCtx.als_data.gain == (16 * AMS_TCS3430_GAIN_SCALE)) ||
-			(ams_tcs343_insufficience_check(ctx, &current_raw) &&
-				ctx->algCtx.als_data.gain == (1 * AMS_TCS3430_GAIN_SCALE)))//between 1x and 16x
-	{
-		ams_tcs3430_setGain(ctx, (4 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 4x
-		re_enable = true;
-	}
-	else if ((ams_tcs3430_saturation_check(ctx, &current_raw) &&
-				ctx->algCtx.als_data.gain == (64 * AMS_TCS3430_GAIN_SCALE)) ||
-			(ams_tcs343_insufficience_check(ctx, &current_raw) &&
-				ctx->algCtx.als_data.gain == (4 * AMS_TCS3430_GAIN_SCALE)))//between 4x and 64x
-	{
-		ams_tcs3430_setGain(ctx, (16 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 16x
-		re_enable = true;
-	}
-	else if ((ams_tcs3430_saturation_check(ctx, &current_raw) &&
-				ctx->algCtx.als_data.gain == (128 * AMS_TCS3430_GAIN_SCALE)) ||
-			(ams_tcs343_insufficience_check(ctx, &current_raw) &&
-				ctx->algCtx.als_data.gain == (16 * AMS_TCS3430_GAIN_SCALE)))//between 16x and 128x
-	{
-		ams_tcs3430_setGain(ctx, (64 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 64x
-		re_enable = true;
-	}
-	else if (ams_tcs343_insufficience_check(ctx, &current_raw) &&
-				ctx->algCtx.als_data.gain == (64 * AMS_TCS3430_GAIN_SCALE))//64x
-	{
-		ams_tcs3430_setGain(ctx, (128 * AMS_TCS3430_GAIN_SCALE));//Set Gain to 128x
-		re_enable = true;
-	}
-	else
-	{
-		ctx->updateAvailable |= AMS_TCS3430_FEATURE_ALS;
+handle_als_exit:
+	if (!re_enable) {
+		ctx->alg_ctx.als_data.data_array.x = curr_raw.x;
+		ctx->alg_ctx.als_data.data_array.y = curr_raw.y;
+		ctx->alg_ctx.als_data.data_array.z = curr_raw.z;
+		ctx->alg_ctx.als_data.data_array.ir1 = curr_raw.ir1;
+		ctx->alg_ctx.als_data.data_array.ir2 = curr_raw.ir2;
 	}
 
-handleALS_exit:
-	if (!re_enable)
-	{
-		ctx->algCtx.als_data.datasetArray.x   = current_raw.x;
-		ctx->algCtx.als_data.datasetArray.y   = current_raw.y;
-		ctx->algCtx.als_data.datasetArray.z   = current_raw.z;
-		ctx->algCtx.als_data.datasetArray.ir1 = current_raw.ir1;
-		ctx->algCtx.als_data.datasetArray.ir2 = current_raw.ir2;
-	}
-
-#if 1
-	AMS_PORT_log_2("ams_tcs3430_handleALS: ATIME = %d, AGAIN = %d\n", \
-		(UINT16)ctx->algCtx.als_data.atime_ms, \
-		(UINT32)ctx->algCtx.als_data.gain);
-#endif
+	hwlog_debug("tcs3430 handle_als: ATIME = %d, AGAIN = %d\n",
+		(UINT16)ctx->alg_ctx.als_data.atime_ms,
+		(UINT32)ctx->alg_ctx.als_data.gain);
 
 	return re_enable;
 }
 
-/* --------------------------------------------------------------------*/
-/* Called by the OSAL interrupt service routine                        */
-/* --------------------------------------------------------------------*/
-static bool ams_tcs3430_deviceEventHandler(ams_tcs3430_deviceCtx_t * ctx, bool inCalMode)
+static bool tcs3430_als_event_handler(struct tcs3430_ctx *ctx, bool in_cal_mode)
 {
-    bool ret = false;
+	bool ret = false;
 
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return false;
-	}
+	tcs3430_get_byte(ctx->handle, AMS_TCS3430_DEVREG_STATUS,
+		&ctx->alg_ctx.als_data.status);
 
-	ams_tcs3430_getByte(ctx->portHndl, AMS_TCS3430_DEVREG_STATUS, &ctx->algCtx.als_data.status);
-
-	//PRINT_INFO("ams_tcs3430_deviceEventHandler: 0x%x\n", ctx->algCtx.als_data.status);
-    if (ctx->algCtx.als_data.status & (MASK_AINT)){
-	    if (ctx->mode & AMS_TCS3430_MODE_ALS){
-			ret = ams_tcs3430_handleALS(ctx, inCalMode);
-			ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_STATUS, (MASK_ASAT | MASK_AINT));
+	if (ctx->alg_ctx.als_data.status & (MASK_AINT)) {
+		if (ctx->mode & AMS_TCS3430_MODE_ALS) {
+			ret = tcs3430_handle_als(ctx, in_cal_mode);
+			tcs3430_set_byte(ctx->handle,
+				AMS_TCS3430_DEVREG_STATUS,
+				(MASK_ASAT | MASK_AINT));
 		}
-    }
-    return ret;
+	}
+	return ret;
 }
 
-static bool ams_tcs3430_deviceGetMode(ams_tcs3430_deviceCtx_t * ctx, ams_tcs3430_ams_mode_t *mode)
+static bool tcs3430_get_mode(struct tcs3430_ctx *ctx, enum tcs3430_mode_t *mode)
 {
-	if ((ctx == NULL) || (mode == NULL)){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!ctx || !mode) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return true;
 	}
 
-    *mode = ctx->mode;
-    return false;
-}
-
-static uint32_t ams_tcs3430_deviceGetResult(ams_tcs3430_deviceCtx_t * ctx)
-{
-	if (ctx == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
-	}
-	return ctx->updateAvailable;
-}
-
-static bool ams_tcs3430_deviceGetAls(ams_tcs3430_deviceCtx_t * ctx, export_alsData_t * exportData)
-{
-	if ((ctx == NULL) || (exportData == NULL)){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
-	}
-	ctx->updateAvailable &= ~(AMS_TCS3430_FEATURE_ALS);
-
-	exportData->rawX = ctx->algCtx.als_data.datasetArray.x;
-	exportData->rawY = ctx->algCtx.als_data.datasetArray.y;
-	exportData->rawZ = ctx->algCtx.als_data.datasetArray.z;
-	exportData->rawIR = ctx->algCtx.als_data.datasetArray.ir1;
-	exportData->rawIR2 = ctx->algCtx.als_data.datasetArray.ir2;
-
-    return false;
-}
-
-
-
-/* --------------------------------------------------------------------
- * Return default calibration data
- * --------------------------------------------------------------------*/
-static void ams_tcs3430_getDefaultCalData(ams_tcs3430_calibrationData_t *cal_data)
-{
-	if (cal_data == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return;
-	}
-
-    cal_data->timeBase_us = AMS_TCS3430_USEC_PER_TICK;
-
-    cal_data->calibbrationData.nominal_atime = AMS_TCS3430_NOMINAL_ATIME_DEFAULT;
-    cal_data->calibbrationData.nominal_again = AMS_TCS3430_NOMINAL_AGAIN_DEFAULT;
-
-	return;
-}
-
-static bool ams_tcs3430_deviceInit(ams_tcs3430_deviceCtx_t * ctx, AMS_PORT_portHndl * portHndl)
-{
-    int ret = 0;
-
-	if ((ctx == NULL) || (portHndl == NULL)){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
-	}
-
-    AMS_PORT_log("ams_deviceInit\n");
-
-    memset(ctx, 0, sizeof(ams_tcs3430_deviceCtx_t));
-    ctx->portHndl = portHndl;
-    ctx->mode = AMS_TCS3430_MODE_OFF;
-    ctx->deviceId = ams_tcs3430_testForDevice(ctx->portHndl);
-	AMS_PORT_log("ams_deviceInit - 0\n");
-
-    ams_tcs3430_resetAllRegisters(ctx->portHndl);
-	AMS_PORT_log("ams_deviceInit - 1\n");
-
-    ctx->algCtx.als_data.atime_ms = AMS_TCS3430_NOMINAL_ATIME_DEFAULT;
-    ctx->algCtx.als_data.gain = AMS_TCS3430_AGAIN_DEFAULT;
-
-	ams_tcs3430_setGain(ctx, AMS_TCS3430_AGAIN_DEFAULT);
-
-	AMS_PORT_log("ams_deviceInit - enable\n");
-	ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_ENABLE, (AEN | PON));
-	msleep(8);//sleep 8ms start the AZ_MODE
-	ams_tcs3430_setByte(ctx->portHndl, AMS_TCS3430_DEVREG_ENABLE, PON);
-	AMS_PORT_log("ams_deviceInit - disable\n");
-	AMS_PORT_log("ams_deviceInit - 2\n");
-
-    return ret;
-}
-
-static bool ams_tcs3430_getDeviceInfo(ams_tcs3430_deviceInfo_t * info)
-{
-	if (info == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return true;
-	}
-	memset(info, 0, sizeof(ams_tcs3430_deviceInfo_t));
-	info->memorySize =  sizeof(ams_tcs3430_deviceCtx_t);
-	ams_tcs3430_getDefaultCalData(&info->defaultCalibrationData);
+	*mode = ctx->mode;
 	return false;
 }
 
-void osal_als_timerHndl(unsigned long data)
+static uint32_t tcs3430_get_avai(struct tcs3430_ctx *ctx)
 {
-	struct colorDriver_chip *chip = (struct colorDriver_chip*) data;
+	if (!ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return true;
+	}
 
-	if (chip == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	return ctx->update_avai;
+}
+
+static bool tcs3430_get_als_data(struct tcs3430_ctx *ctx,
+	struct export_alsdata_t *export)
+{
+	ctx->update_avai &= ~(AMS_TCS3430_FEATURE_ALS);
+
+	export->raw_x = ctx->alg_ctx.als_data.data_array.x;
+	export->raw_y = ctx->alg_ctx.als_data.data_array.y;
+	export->raw_z = ctx->alg_ctx.als_data.data_array.z;
+	export->raw_ir = ctx->alg_ctx.als_data.data_array.ir1;
+	export->raw_ir2 = ctx->alg_ctx.als_data.data_array.ir2;
+
+	return false;
+}
+
+static void tcs3430_get_def_cal_data(struct _calibration_t *cal_data)
+{
+	if (!cal_data) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return;
+	}
+
+	cal_data->timebase_us = TCS3430_PER_TICK;
+	cal_data->calibration.nominal_atime = AMS_TCS3430_NOMINAL_ATIME_DEFAULT;
+	cal_data->calibration.nominal_again = AMS_TCS3430_NOMINAL_AGAIN_DEFAULT;
+}
+
+static bool tcs3430_device_init(struct tcs3430_ctx *ctx,
+	struct i2c_client *handle)
+{
+	if (!ctx || !handle) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return true;
+	}
+
+	hwlog_info("ams_deviceInit start\n");
+	memset(ctx, 0, sizeof(struct tcs3430_ctx));
+	ctx->handle = handle;
+	ctx->mode = AMS_TCS3430_MODE_OFF;
+	ctx->device_id = tcs3430_test_id(ctx->handle);
+	tcs3430_reset_regs(ctx->handle);
+	ctx->alg_ctx.als_data.atime_ms = AMS_TCS3430_NOMINAL_ATIME_DEFAULT;
+	ctx->alg_ctx.als_data.gain = AMS_TCS3430_AGAIN_DEFAULT;
+	tcs3430_set_gain(ctx, AMS_TCS3430_AGAIN_DEFAULT);
+	tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_ENABLE, (AEN | PON));
+	msleep(8); // sleep 8ms start the AZ_MODE
+	tcs3430_set_byte(ctx->handle, AMS_TCS3430_DEVREG_ENABLE, PON);
+	hwlog_info("ams_deviceInit end\n");
+	return false;
+}
+
+static void tcs3430_get_dev_info(struct tcs3430_dev_info_t *info)
+{
+	if (!info) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return;
+	}
+	memset(info, 0, sizeof(struct tcs3430_dev_info_t));
+	info->memory_size = sizeof(struct tcs3430_ctx);
+	tcs3430_get_def_cal_data(&info->default_cal_data);
+}
+
+void tcs3430_als_timer_handle(uintptr_t data)
+{
+	struct color_chip *chip = (struct color_chip *)data;
+
+	if (!chip) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
 	schedule_work(&chip->als_work);
 }
 
-static ssize_t osal_als_enable_set(struct colorDriver_chip *chip, uint8_t valueToSet)
+static ssize_t osal_als_enable_set(struct color_chip *chip, uint8_t en)
 {
 	ssize_t rc = 0;
-	ams_tcs3430_ams_mode_t mode = 0;
+	enum tcs3430_mode_t mode = AMS_TCS3430_MODE_OFF;
 
-	if (chip == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!chip) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return true;
 	}
 
-	ams_tcs3430_deviceGetMode(chip->deviceCtx, &mode);
+	tcs3430_get_mode(chip->device_ctx, &mode);
 
-#ifdef CONFIG_AMS_OPTICAL_SENSOR_ALS
-	rc |= ams_tcs3430_deviceSetConfig(chip->deviceCtx, AMS_TCS3430_FEATURE_ALS, AMS_TCS3430_CONFIG_ENABLE, valueToSet, chip->inCalMode);
-#endif
-    hwlog_info("\n\nosal_als_enable_set = %d\n",valueToSet);
+	rc |= tcs3430_dev_cfg(chip->device_ctx, AMS_TCS3430_FEATURE_ALS,
+		AMS_TCS3430_CONFIG_ENABLE, en, chip->in_cal_mode);
+	hwlog_info("%s = %d\n", __func__, en);
 
-#ifndef CONFIG_AMS_OPTICAL_SENSOR_IRQ
-    if (valueToSet){
-		if ((mode & AMS_TCS3430_MODE_ALS) != AMS_TCS3430_MODE_ALS){
-			if(chip->inCalMode == false){
-				msleep(3);// first enable sleep 3ms for auto gain
-				hwlog_info("first enable sleep 3ms \n");
-				schedule_work(&chip->als_work);
-				report_logcount = AMS_REPORT_LOG_COUNT_NUM;
-			}else{
-				mod_timer(&chip->work_timer, jiffies + msecs_to_jiffies(120));//first enable set the timer as 120ms
-				hwlog_info("in calibrate mode timer set as 120ms \n");
-			}
-			dev_info(&chip->client->dev, "osal_als_enable_set: add_timer\n");
+	if (en) {
+		if ((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS) {
+			hwlog_info("osal als enable: timer already running\n");
+			return 0;
+		}
+		// if not enable before now set enable
+		if (chip->in_cal_mode == false) {
+			// first enable sleep 3ms for auto gain
+			msleep(3);
+			hwlog_info("first enable sleep 3ms\n");
+			schedule_work(&chip->als_work);
+			report_logcount = AMS_REPORT_LOG_COUNT_NUM;
 		} else {
-			dev_info(&chip->client->dev, "osal_als_enable_set: timer already running\n");
+			// first enable set the timer as 120ms
+			mod_timer(&chip->work_timer,
+				jiffies + msecs_to_jiffies(120));
+			hwlog_info("in cali mode timer set as 120ms\n");
 		}
-    } else {
-		if ((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS){
-			dev_info(&chip->client->dev, "osal_als_enable_set: del_timer\n");
-		}
-    }
-#endif
+		hwlog_info("osal als enable: add_timer\n");
+	} else {
+		if ((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS)
+			hwlog_info("osal als enable: del_timer\n");
+	}
 
 	return 0;
 }
+
 static int get_cal_para_from_nv(void)
 {
-	int i,ret;
+	int i;
+	int ret;
 
-	ret = read_color_calibrate_data_from_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
-	if(ret < 0){
-		hwlog_err("\nAMS_Driver: %s: fail,use default para!!\n", __func__);
-		for (i = 0; i < CAL_STATE_GAIN_LAST; i++){
-			hwlog_err("\nAMS_Driver: get_cal_para_from_nv: gain[%d]: [%d, %d, %d, %d]\n", i,
-			color_nv_para.calXratio[i], color_nv_para.calYratio[i], color_nv_para.calZratio[i], color_nv_para.calIratio[i]);
+	ret = read_color_calibrate_data_from_nv(RGBAP_CALI_DATA_NV_NUM,
+		RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
+	if (ret < 0) {
+		for (i = 0; i < CAL_STATE_GAIN_LAST; i++) {
+			hwlog_err("%s: fail,use default para\n", __func__);
+			hwlog_err("get cal gain[%d]: [%d, %d, %d, %d]\n", i,
+				color_nv_para.cal_x_ratio[i],
+				color_nv_para.cal_y_ratio[i],
+				color_nv_para.cal_z_ratio[i],
+				color_nv_para.cal_ir_ratio[i]);
 		}
 		return 0;
 	}
 
-	for (i = 0; i < CAL_STATE_GAIN_LAST; i++){
-		hwlog_info("\nAMS_Driver: get_cal_para_from_nv: gain[%d]: [%d, %d, %d, %d]\n", i,
-		color_nv_para.calXratio[i], color_nv_para.calYratio[i], color_nv_para.calZratio[i], color_nv_para.calIratio[i]);
-		if(!color_nv_para.calXratio[i]||!color_nv_para.calYratio[i]
-			||!color_nv_para.calZratio[i]||!color_nv_para.calIratio[i]){
-
-			color_nv_para.calXratio[i] = AMS_TCS3430_FLOAT_TO_FIX ;
-			color_nv_para.calYratio[i]  = AMS_TCS3430_FLOAT_TO_FIX ;
-			color_nv_para.calZratio[i]  = AMS_TCS3430_FLOAT_TO_FIX ;
-			color_nv_para.calIratio[i] = AMS_TCS3430_FLOAT_TO_FIX ;
-		}else if (color_nv_para.calXratio[i]>=FLOAT_TO_FIX_LOW/AMS_TCS3430_CAL_THR
-				&&color_nv_para.calXratio[i]<=FLOAT_TO_FIX_LOW*AMS_TCS3430_CAL_THR
-				&&color_nv_para.calYratio[i]>=FLOAT_TO_FIX_LOW/AMS_TCS3430_CAL_THR
-				&&color_nv_para.calYratio[i]<=FLOAT_TO_FIX_LOW*AMS_TCS3430_CAL_THR
-				&&color_nv_para.calZratio[i]>=FLOAT_TO_FIX_LOW/AMS_TCS3430_CAL_THR
-				&&color_nv_para.calZratio[i]<=FLOAT_TO_FIX_LOW*AMS_TCS3430_CAL_THR
-				&&color_nv_para.calIratio[i]>=FLOAT_TO_FIX_LOW/AMS_TCS3430_CAL_THR
-				&&color_nv_para.calIratio[i]<=FLOAT_TO_FIX_LOW*AMS_TCS3430_CAL_THR){
-			color_nv_para.calXratio[i] *= (AMS_TCS3430_FLOAT_TO_FIX/FLOAT_TO_FIX_LOW);
-			color_nv_para.calYratio[i] *= (AMS_TCS3430_FLOAT_TO_FIX/FLOAT_TO_FIX_LOW);
-			color_nv_para.calZratio[i] *= (AMS_TCS3430_FLOAT_TO_FIX/FLOAT_TO_FIX_LOW);
-			color_nv_para.calIratio[i] *= (AMS_TCS3430_FLOAT_TO_FIX/FLOAT_TO_FIX_LOW);
-			hwlog_info("AMS_Driver: low_level nv calibrate data\n");
+	for (i = 0; i < CAL_STATE_GAIN_LAST; i++) {
+		hwlog_info("get cal gain[%d]: [%d, %d, %d, %d]\n", i,
+			color_nv_para.cal_x_ratio[i],
+			color_nv_para.cal_y_ratio[i],
+			color_nv_para.cal_z_ratio[i],
+			color_nv_para.cal_ir_ratio[i]);
+		if (!color_nv_para.cal_x_ratio[i] ||
+			!color_nv_para.cal_y_ratio[i] ||
+			!color_nv_para.cal_z_ratio[i] ||
+			!color_nv_para.cal_ir_ratio[i]) {
+			color_nv_para.cal_x_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
+			color_nv_para.cal_y_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
+			color_nv_para.cal_z_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
+			color_nv_para.cal_ir_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		} else if ((color_nv_para.cal_x_ratio[i] >= TCS_LOW_THR) &&
+			(color_nv_para.cal_x_ratio[i] <= TCS_HIGH_THR) &&
+			(color_nv_para.cal_y_ratio[i] >= TCS_LOW_THR) &&
+			(color_nv_para.cal_y_ratio[i] <= TCS_HIGH_THR) &&
+			(color_nv_para.cal_z_ratio[i] >= TCS_LOW_THR) &&
+			(color_nv_para.cal_z_ratio[i] <= TCS_HIGH_THR) &&
+			(color_nv_para.cal_ir_ratio[i] >= TCS_LOW_THR) &&
+			(color_nv_para.cal_ir_ratio[i] <= TCS_HIGH_THR)) {
+			color_nv_para.cal_x_ratio[i] *= FLOAT_TO_FIX_LOW;
+			color_nv_para.cal_y_ratio[i] *= FLOAT_TO_FIX_LOW;
+			color_nv_para.cal_z_ratio[i] *= FLOAT_TO_FIX_LOW;
+			color_nv_para.cal_ir_ratio[i] *= FLOAT_TO_FIX_LOW;
+			hwlog_info("low_level nv calibrate data\n");
 		}
 	}
-	for (i = 0; i <= CAL_STATE_GAIN_2; i++){
-		color_nv_para.calXratio[i] = color_nv_para.calXratio[CAL_STATE_GAIN_3] ;
-		color_nv_para.calYratio[i] = color_nv_para.calYratio[CAL_STATE_GAIN_3] ;
-		color_nv_para.calZratio[i] = color_nv_para.calZratio[CAL_STATE_GAIN_3] ;
-		color_nv_para.calIratio[i] = color_nv_para.calIratio[CAL_STATE_GAIN_3] ;
-		if(i == CAL_STATE_GAIN_1){
-			hwlog_info("AMS_Driver: 1xGain equal to 16xGain for nv calibrate data\n");
-		}else if(i == CAL_STATE_GAIN_2){
-			hwlog_info("AMS_Driver: 4xGain equal to 16xGain for nv calibrate data\n");
-		}
+
+	for (i = 0; i <= CAL_STATE_GAIN_2; i++) {
+		color_nv_para.cal_x_ratio[i] =
+			color_nv_para.cal_x_ratio[CAL_STATE_GAIN_3];
+		color_nv_para.cal_y_ratio[i] =
+			color_nv_para.cal_y_ratio[CAL_STATE_GAIN_3];
+		color_nv_para.cal_z_ratio[i] =
+			color_nv_para.cal_z_ratio[CAL_STATE_GAIN_3];
+		color_nv_para.cal_ir_ratio[i] =
+			color_nv_para.cal_ir_ratio[CAL_STATE_GAIN_3];
+		if (i == CAL_STATE_GAIN_1)
+			hwlog_info("1x Gain equal to 16x for nv cali data\n");
+		else if (i == CAL_STATE_GAIN_2)
+			hwlog_info("4x Gain equal to 16x for nv cali data\n");
 	}
 	return 1;
 }
-static int save_cal_para_to_nv(struct colorDriver_chip *chip)
+
+static int save_cal_para_to_nv(struct color_chip *chip)
 {
-	int i = 0, ret;
-	if (chip == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	unsigned int i = 0;
+	int ret;
+
+	if (!chip) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return 0;
 	}
 
-	color_nv_para.nv_Xtarget = chip->calibrationCtx.calXtarget;
-	color_nv_para.nv_Ytarget = chip->calibrationCtx.calYtarget;
-	color_nv_para.nv_Ztarget = chip->calibrationCtx.calZtarget;
-	color_nv_para.nv_IRtarget = chip->calibrationCtx.calIRtarget;
+	color_nv_para.nv_x = chip->cali_ctx.cal_x_tar;
+	color_nv_para.nv_y = chip->cali_ctx.cal_y_tar;
+	color_nv_para.nv_z = chip->cali_ctx.cal_z_tar;
+	color_nv_para.nv_ir = chip->cali_ctx.cal_ir_tar;
 
-	for(i = 0; i < CAL_STATE_GAIN_LAST; i++){
-		color_nv_para.calXratio[i] = chip->calibrationCtx.calXresult[i];
-		color_nv_para.calYratio[i]  = chip->calibrationCtx.calYresult[i];
-		color_nv_para.calZratio[i]  = chip->calibrationCtx.calZresult[i];
-		color_nv_para.calIratio[i] = chip->calibrationCtx.calIRresult[i];
-		hwlog_info("\nAMS_Driver: save_cal_para_to_nv: gain[%d]: [%d, %d, %d, %d]\n", i,
-		color_nv_para.calXratio[i], color_nv_para.calYratio[i], color_nv_para.calZratio[i], color_nv_para.calIratio[i]);
-
+	for (i = 0; i < CAL_STATE_GAIN_LAST; i++) {
+		color_nv_para.cal_x_ratio[i] = chip->cali_ctx.cal_x_rst[i];
+		color_nv_para.cal_y_ratio[i] = chip->cali_ctx.cal_y_rst[i];
+		color_nv_para.cal_z_ratio[i] = chip->cali_ctx.cal_z_rst[i];
+		color_nv_para.cal_ir_ratio[i] = chip->cali_ctx.cal_ir_rst[i];
+		hwlog_info("save nv: gain[%d]: [%d, %d, %d, %d]\n", i,
+			color_nv_para.cal_x_ratio[i],
+			color_nv_para.cal_y_ratio[i],
+			color_nv_para.cal_z_ratio[i],
+			color_nv_para.cal_ir_ratio[i]);
 	}
 
-	ret = write_color_calibrate_data_to_nv(RGBAP_CALI_DATA_NV_NUM, RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
-	if(ret < 0){
-		hwlog_err("\nAMS_Driver: %s: fail\n", __func__);
-	}
+	ret = write_color_calibrate_data_to_nv(RGBAP_CALI_DATA_NV_NUM,
+		RGBAP_CALI_DATA_SIZE, "RGBAP", (char *)&color_nv_para);
+	if (ret < 0)
+		hwlog_err("%s: fail\n", __func__);
 	return 1;
 }
 
-static void osal_calHandl_als(struct colorDriver_chip *chip){
-	export_alsData_t outData;
-	ams_tcs3430_deviceCtx_t * ctx = NULL;
-	uint32_t currentGain = 0;
-	uint32_t result; /* remember, this is for fixed point and can cause lower performance */
+static int tcs3430_als_cali_rgbc(struct rgb_cali_tar_t *cali_val)
+{
+	uint32_t result;
 
-	if (chip == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
-		return;
-	}
-	if (chip->deviceCtx == NULL){
-		hwlog_err("\nAMS_Driver: %s: deviceCtx is NULL\n", __func__);
-		return;
+	result = cali_val->rawdata / AMS_TCS3430_CAL_AVERAGE;
+
+	// cant devide by zero, use the default calibration scaling factor
+	if (result == 0) {
+		// just return defalut ratio
+		hwlog_err("%s, raw data = 0\n", __func__);
+		return AMS_TCS3430_FLOAT_TO_FIX;
 	}
 
-	ctx = chip->deviceCtx;
-	currentGain = (ctx->algCtx.als_data.gain / AMS_TCS3430_GAIN_SCALE);
+	result = cali_val->target_val * (cali_val->again *
+		AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN) / result;
 
-	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
+	if ((result > cali_val->high_th) || (result < cali_val->low_th)) {
+		hwlog_info("%s ratio is out bound[%d, %d]! result = %d\n",
+			__func__, cali_val->low_th, cali_val->high_th, result);
+		color_calibrate_result = false;
+	}
+	return result;
+}
 
-	dev_info(&chip->client->dev, "osal_calHandl_als: state %d\n", chip->calibrationCtx.calState);
-	dev_info(&chip->client->dev, "osal_calHandl_als: count %d\n", chip->calibrationCtx.calSampleCounter);
+static void tcs3430_als_cali_all_rgbc(struct color_sensor_cali_t *cal_raw,
+	enum color_sensor_cal_states cal_idx, struct rgb_cali_tar_t *cali_tar)
+{
+	cali_tar->high_th = tcs3430_gain_thr[cal_idx].high_thr;
+	cali_tar->low_th = tcs3430_gain_thr[cal_idx].low_thr;
 
-	if (chip->calibrationCtx.calState < CAL_STATE_GAIN_LAST && chip->calibrationCtx.calState >= 0){
-		chip->calibrationCtx.calSampleCounter++;
-		chip->calibrationCtx.calXsample += outData.rawX;
-		chip->calibrationCtx.calYsample += outData.rawY;
-		chip->calibrationCtx.calZsample += outData.rawZ;
-		chip->calibrationCtx.calIRsample += outData.rawIR;
+	// X cali
+	hwlog_info("%s cali R channel\n", __func__);
+	cali_tar->rawdata = cal_raw->cal_r_raw;
+	cali_tar->target_val = cal_raw->cal_r_tar;
+	cal_raw->cal_r_rst[cal_idx] = tcs3430_als_cali_rgbc(cali_tar);
 
-		if((chip->calibrationCtx.calState < CAL_STATE_GAIN_LAST) && (chip->calibrationCtx.calState >= 0)){
-			result = (chip->calibrationCtx.calXsample / AMS_TCS3430_CAL_AVERAGE);
-			if (result){
-				result = (chip->calibrationCtx.calXtarget * (currentGain *
-					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr||
-					result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr){
-					hwlog_err("\n %s: ratio is out bound[%d, %d]! calXresult[%d] = %d\n" , __func__,
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
-					color_calibrate_result = false;
-				}
-			} else {
-				/* cant devide by zero, maintain the default calibration scaling factor */
-				result = AMS_TCS3430_FLOAT_TO_FIX;
-			}
-			chip->calibrationCtx.calXresult[chip->calibrationCtx.calState] = result;
+	// Y cali
+	hwlog_info("%s cali G channel\n", __func__);
+	cali_tar->rawdata = cal_raw->cal_g_raw;
+	cali_tar->target_val = cal_raw->cal_g_tar;
+	cal_raw->cal_g_rst[cal_idx] = tcs3430_als_cali_rgbc(cali_tar);
 
-			result = (chip->calibrationCtx.calYsample / AMS_TCS3430_CAL_AVERAGE);
-			if (result){
-				result = (chip->calibrationCtx.calYtarget * (currentGain *
-					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr
-					|| result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr ){
-					hwlog_err("\n %s: ratio is out bound[%d, %d]! calYresult[%d] = %d\n" , __func__,
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
-					color_calibrate_result = false;
-				}
-			} else {
-				/* cant devide by zero, maintain the default calibration scaling factor */
-				result = AMS_TCS3430_FLOAT_TO_FIX;
-			}
-			chip->calibrationCtx.calYresult[chip->calibrationCtx.calState] = result;
+	// Z cali
+	hwlog_info("%s cali B channel\n", __func__);
+	cali_tar->rawdata = cal_raw->cal_b_raw;
+	cali_tar->target_val = cal_raw->cal_b_tar;
+	cal_raw->cal_b_rst[cal_idx] = tcs3430_als_cali_rgbc(cali_tar);
 
-			result = (chip->calibrationCtx.calZsample / AMS_TCS3430_CAL_AVERAGE);
-			if (result){
-				result = (chip->calibrationCtx.calZtarget * (currentGain *
-					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr
-					|| result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr ){
+	// IR cali
+	hwlog_info("%s cali C channel\n", __func__);
+	cali_tar->rawdata = cal_raw->cal_c_raw;
+	cali_tar->target_val = cal_raw->cal_c_tar;
+	cal_raw->cal_c_rst[cal_idx] = tcs3430_als_cali_rgbc(cali_tar);
 
-					hwlog_err("\n %s: ratio is out bound[%d, %d]! calZresult[%d] = %d\n" , __func__,
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
-					color_calibrate_result = false;
-				}
-			} else {
-				/* cant devide by zero, maintain the default calibration scaling factor */
-				result = AMS_TCS3430_FLOAT_TO_FIX;
-			}
-			chip->calibrationCtx.calZresult[chip->calibrationCtx.calState] = result;
+	hwlog_warn("%s, rawdat x = %d, y = %d, z = %d, ir = %d\n",
+		__func__, cal_raw->cal_x_raw, cal_raw->cal_y_raw,
+		cal_raw->cal_z_raw, cal_raw->cal_ir_raw);
 
-			result = (chip->calibrationCtx.calIRsample / AMS_TCS3430_CAL_AVERAGE);
-			if (result){
-				result = (chip->calibrationCtx.calIRtarget * (currentGain *
-					AMS_TCS3430_FLOAT_TO_FIX / AMS_TCS3430_GAIN_OF_GOLDEN)) / result;
-				if(result > ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr||
-					result < ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr ){
+	hwlog_warn("%s, result x = %d, y = %d, z = %d,ir = %d\n",
+		__func__, cal_raw->cal_x_rst[cal_idx],
+		cal_raw->cal_y_rst[cal_idx], cal_raw->cal_z_rst[cal_idx],
+		cal_raw->cal_ir_rst[cal_idx]);
+}
 
-					hwlog_err("\n %s: ratio is out bound[%d, %d]! calIRresult[%d] = %d\n" , __func__,	
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].high_thr,
-						ams_tcs3430_setGainThreshold[chip->calibrationCtx.calState].low_thr, chip->calibrationCtx.calState, result);
-					color_calibrate_result = false;
-				}
-			} else {
-				/* cant devide by zero, maintain the default calibration scaling factor */
-				hwlog_err("\n %s: calIRresult[%d] = 0!!\n" , __func__, chip->calibrationCtx.calState);
-				result = AMS_TCS3430_FLOAT_TO_FIX;
-			}
-			chip->calibrationCtx.calIRresult[chip->calibrationCtx.calState] = result;
+static void tcs3430_cal_handle_als(struct color_chip *chip)
+{
+	struct export_alsdata_t out;
+	struct tcs3430_ctx *ctx = NULL;
+	struct rgb_cali_tar_t cali_temp;
+	uint32_t curr_gain;
 
-			dev_info(&chip->client->dev, "osal_calHandl_als: calXresult  %d\n", chip->calibrationCtx.calXresult[chip->calibrationCtx.calState]);
-			dev_info(&chip->client->dev, "osal_calHandl_als: calYresult  %d\n", chip->calibrationCtx.calYresult[chip->calibrationCtx.calState]);
-			dev_info(&chip->client->dev, "osal_calHandl_als: calZresult  %d\n", chip->calibrationCtx.calZresult[chip->calibrationCtx.calState]);
-			dev_info(&chip->client->dev, "osal_calHandl_als: calIRresult %d\n", chip->calibrationCtx.calIRresult[chip->calibrationCtx.calState]);
+	if (!chip || !chip->device_ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
+		return;
+	}
 
-			chip->calibrationCtx.calState++;
-			chip->calibrationCtx.calSampleCounter = 0;
-			chip->calibrationCtx.calXsample = 0;
-			chip->calibrationCtx.calYsample = 0;
-			chip->calibrationCtx.calZsample = 0;
-			chip->calibrationCtx.calIRsample = 0;
-			if(chip->calibrationCtx.calState < CAL_STATE_GAIN_LAST){
-				osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
-				ctx->algCtx.als_data.gain = ams_tcs3430_alsGain_conversion[chip->calibrationCtx.calState];
-				osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
-			}
+	ctx = chip->device_ctx;
+	curr_gain = (ctx->alg_ctx.als_data.gain / AMS_TCS3430_GAIN_SCALE);
+
+	tcs3430_get_als_data(chip->device_ctx, &out);
+
+	hwlog_info("cali state %d\n", chip->cali_ctx.cal_state);
+	hwlog_info("cali count %d\n", chip->cali_ctx.cal_raw_count);
+
+	if ((chip->cali_ctx.cal_state < CAL_STATE_GAIN_LAST) &&
+		(chip->cali_ctx.cal_state >= 0)) {
+		chip->cali_ctx.cal_raw_count++;
+		chip->cali_ctx.cal_x_raw += out.raw_x;
+		chip->cali_ctx.cal_y_raw += out.raw_y;
+		chip->cali_ctx.cal_z_raw += out.raw_z;
+		chip->cali_ctx.cal_ir_raw += out.raw_ir;
+
+		cali_temp.high_th =
+			tcs3430_gain_thr[chip->cali_ctx.cal_state].high_thr;
+		cali_temp.low_th =
+			tcs3430_gain_thr[chip->cali_ctx.cal_state].low_thr;
+		cali_temp.again = curr_gain;
+		tcs3430_als_cali_all_rgbc(&chip->cali_ctx,
+			chip->cali_ctx.cal_state, &cali_temp);
+
+		chip->cali_ctx.cal_state++;
+		chip->cali_ctx.cal_raw_count = 0;
+		chip->cali_ctx.cal_x_raw = 0;
+		chip->cali_ctx.cal_y_raw = 0;
+		chip->cali_ctx.cal_z_raw = 0;
+		chip->cali_ctx.cal_ir_raw = 0;
+		if (chip->cali_ctx.cal_state < CAL_STATE_GAIN_LAST) {
+			osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
+			ctx->alg_ctx.als_data.gain =
+				tcs3430_als_gain_conv[chip->cali_ctx.cal_state];
+			osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
 		}
-	}
-	else {
-
-		if(true == color_calibrate_result){
+	} else {
+		if (color_calibrate_result == true) {
 			save_cal_para_to_nv(chip);
 			report_calibrate_result = true;
-		}else {
-			dev_err(&chip->client->dev, "color_calibrate_result fail\n");
+		} else {
+			hwlog_err("color_calibrate_result fail\n");
 			report_calibrate_result = false;
 		}
-		chip->inCalMode = false;
+		chip->in_cal_mode = false;
 		osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
-		ams_tcs3430_setGain(chip->deviceCtx, AMS_TCS3430_AGAIN_DEFAULT);
-		if(1 == enable_status_before_calibrate){
+		tcs3430_set_gain(chip->device_ctx, AMS_TCS3430_AGAIN_DEFAULT);
+		if (enable_status_before_calibrate == 1)
 			osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
-		}else{
-			dev_info(&chip->client->dev, "color sensor disabled before calibrate\n");
-		}
-		dev_info(&chip->client->dev, "osal_calHandl_als: done\n");
+		else
+			hwlog_info("color sensor disabled before calibrate\n");
+		hwlog_info("osal_calHandl_als: done\n");
 	}
-	return;
 }
 
-static void  osal_report_als(struct colorDriver_chip *chip)
+static void osal_report_als(struct color_chip *chip)
 {
-	export_alsData_t outData = {0};
-	uint8_t currentGainIndex = 0;
-	uint32_t currentGain = 0;
-	ams_tcs3430_deviceCtx_t * ctx = NULL;
+	struct export_alsdata_t out = {0};
+	uint8_t curr_gain_idx = 0;
+	uint32_t curr_gain = 0;
+	struct tcs3430_ctx *ctx = NULL;
 
-	if (chip == NULL){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!chip || !chip->device_ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
-	ctx = chip->deviceCtx;
+	ctx = chip->device_ctx;
 
-	ams_tcs3430_deviceGetAls(chip->deviceCtx, &outData);
-	if(NULL != ctx){
-		currentGain = ctx->algCtx.als_data.gain;
-	}
-	if (currentGain < ams_tcs3430_alsGain_conversion[CAL_STATE_GAIN_5]){
-		currentGainIndex = ams_tcs3430_gainToReg(currentGain);
-	} else {
-		currentGainIndex = CAL_STATE_GAIN_5;
-	}
+	tcs3430_get_als_data(chip->device_ctx, &out);
+	curr_gain = ctx->alg_ctx.als_data.gain;
 
-	/* adjust the report data when the calibrate ratio is acceptable */
+	if (curr_gain < tcs3430_als_gain_conv[CAL_STATE_GAIN_5])
+		curr_gain_idx = tcs3430_gain_to_reg(curr_gain);
+	else
+		curr_gain_idx = CAL_STATE_GAIN_5;
 
-	outData.rawIR *= color_nv_para.calIratio[currentGainIndex];
-	outData.rawIR /= AMS_TCS3430_FLOAT_TO_FIX;
-	outData.rawX *= color_nv_para.calXratio[currentGainIndex];
-	outData.rawX /= AMS_TCS3430_FLOAT_TO_FIX;
-	outData.rawY *= color_nv_para.calYratio[currentGainIndex];
-	outData.rawY /= AMS_TCS3430_FLOAT_TO_FIX;
-	outData.rawZ *= color_nv_para.calZratio[currentGainIndex];
-	outData.rawZ /= AMS_TCS3430_FLOAT_TO_FIX;
+	// adjust the report data when the calibrate ratio is acceptable
 
+	out.raw_ir *= color_nv_para.cal_ir_ratio[curr_gain_idx];
+	out.raw_ir /= AMS_TCS3430_FLOAT_TO_FIX;
+	out.raw_x *= color_nv_para.cal_x_ratio[curr_gain_idx];
+	out.raw_x /= AMS_TCS3430_FLOAT_TO_FIX;
+	out.raw_y *= color_nv_para.cal_y_ratio[curr_gain_idx];
+	out.raw_y /= AMS_TCS3430_FLOAT_TO_FIX;
+	out.raw_z *= color_nv_para.cal_z_ratio[curr_gain_idx];
+	out.raw_z /= AMS_TCS3430_FLOAT_TO_FIX;
 
-	report_value[0] = (int)outData.rawX;
-	report_value[1] = (int)outData.rawY;
-	report_value[2] = (int)outData.rawZ;
-	report_value[3] = (int)outData.rawIR;
+	report_value[0] = (int)out.raw_x;
+	report_value[1] = (int)out.raw_y;
+	report_value[2] = (int)out.raw_z;
+	report_value[3] = (int)out.raw_ir;
 
 	report_value[0] *= AMS_TCS3430_GAIN_OF_GOLDEN;
-	report_value[0] /= ams_tcs3430_als_gains[currentGainIndex];
+	report_value[0] /= tcs3430_als_gains[curr_gain_idx];
 	report_value[1] *= AMS_TCS3430_GAIN_OF_GOLDEN;
-	report_value[1] /= ams_tcs3430_als_gains[currentGainIndex];
+	report_value[1] /= tcs3430_als_gains[curr_gain_idx];
 	report_value[2] *= AMS_TCS3430_GAIN_OF_GOLDEN;
-	report_value[2] /= ams_tcs3430_als_gains[currentGainIndex];
+	report_value[2] /= tcs3430_als_gains[curr_gain_idx];
 	report_value[3] *= AMS_TCS3430_GAIN_OF_GOLDEN;
-	report_value[3] /= ams_tcs3430_als_gains[currentGainIndex];
+	report_value[3] /= tcs3430_als_gains[curr_gain_idx];
 
 	ams_tcs3430_report_data(report_value);
 	report_logcount++;
-	if(report_logcount >= AMS_REPORT_LOG_COUNT_NUM){
-		AMS_PORT_log_4("COLOR SENSOR tcs3430 report data %d, %d, %d, %d\n",
-			report_value[0], report_value[1], report_value[2], report_value[3]);
-		hwlog_info("\nAMS_Driver: tune Gain[1] and Gain[4] cal_para to Gain[16]nv: currentGain[%d]: [%d, %d, %d, %d]\n",
-			ams_tcs3430_als_gains[currentGainIndex],
-			color_nv_para.calXratio[currentGainIndex],
-			color_nv_para.calYratio[currentGainIndex],
-			color_nv_para.calZratio[currentGainIndex],
-			color_nv_para.calIratio[currentGainIndex]);
-		report_logcount = 0;
-	}
+	if (report_logcount < AMS_REPORT_LOG_COUNT_NUM)
+		return;
+
+	hwlog_info("tcs3430 report data %d, %d, %d, %d\n",
+		report_value[0], report_value[1], report_value[2],
+		report_value[3]);
+	hwlog_info("currentGain[%d]: [%d, %d, %d, %d]\n",
+		tcs3430_als_gains[curr_gain_idx],
+		color_nv_para.cal_x_ratio[curr_gain_idx],
+		color_nv_para.cal_y_ratio[curr_gain_idx],
+		color_nv_para.cal_z_ratio[curr_gain_idx],
+		color_nv_para.cal_ir_ratio[curr_gain_idx]);
+	report_logcount = 0;
 }
 
 int ams_tcs3430_setenable(bool enable)
 {
-	struct colorDriver_chip *chip = p_chip;
+	struct color_chip *chip = p_chip;
 
 	if (enable)
 		osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
 	else
 		osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
 
-	hwlog_info("ams_tcs3430_setenable success\n");
+	hwlog_info("ams tcs3430_setenable success\n");
 	return 1;
 }
 EXPORT_SYMBOL_GPL(ams_tcs3430_setenable);
 
-void ams_show_calibrate(struct colorDriver_chip *chip, color_sensor_output_para * out_para)
+void ams_show_calibrate(struct color_chip *chip,
+	struct color_sensor_output_t *out)
 {
-	int i;
-	if (NULL == out_para || NULL == chip){
-		hwlog_err("ams_store_calibrate input para NULL \n");
+	unsigned int i;
+
+	if (!out || !chip) {
+		hwlog_err("ams show calibrate input para NULL\n");
 		return;
 	}
 
-	if (chip->inCalMode == false){
-		hwlog_err("ams_show_calibrate not in calibration mode \n");
-	}
+	if (chip->in_cal_mode == false)
+		hwlog_err("ams show_calibrate not in calibration mode\n");
 
-	//if (chip->calibrationCtx.calState == CAL_STATE_GAIN_LAST){
-		out_para->result = (UINT32)report_calibrate_result;
-		hwlog_info(" color_calibrate_show result = %d\n", out_para->result);
-		memcpy(out_para->report_ir, chip->calibrationCtx.calIRresult, sizeof(out_para->report_ir));
-		memcpy(out_para->report_x,  chip->calibrationCtx.calXresult,  sizeof(out_para->report_x));
-		memcpy(out_para->report_y,  chip->calibrationCtx.calYresult,  sizeof(out_para->report_y));
-		memcpy(out_para->report_z,  chip->calibrationCtx.calZresult,  sizeof(out_para->report_z));
-	//}
-	for(i = 0;i<CAL_STATE_GAIN_LAST; i++)
-	{
-		hwlog_info(" color_calibrate_show i = %d: %d,%d,%d,%d.\n", i,
-		out_para->report_x[i],out_para->report_y[i],out_para->report_z[i],out_para->report_ir[i]);
-		hwlog_info(" calibrationCtx i = %d: %d,%d,%d,%d.\n", i,
-		chip->calibrationCtx.calXresult[i],chip->calibrationCtx.calYresult[i],
-		chip->calibrationCtx.calZresult[i],chip->calibrationCtx.calIRresult[i]);
+	out->result = (UINT32)report_calibrate_result;
+	hwlog_info("color_calibrate_show result = %d\n", out->result);
+	memcpy(out->report_ir, chip->cali_ctx.cal_ir_rst,
+		sizeof(out->report_ir));
+	memcpy(out->report_x, chip->cali_ctx.cal_x_rst, sizeof(out->report_x));
+	memcpy(out->report_y, chip->cali_ctx.cal_y_rst, sizeof(out->report_y));
+	memcpy(out->report_z, chip->cali_ctx.cal_z_rst, sizeof(out->report_z));
+
+	for (i = 0; i < CAL_STATE_GAIN_LAST; i++) {
+		hwlog_info("color_calibrate_show i = %d: %d,%d,%d,%d\n", i,
+		out->report_x[i], out->report_y[i],
+		out->report_z[i], out->report_ir[i]);
+		hwlog_info(" cali_ctx i = %d: %d,%d,%d,%d.\n", i,
+		chip->cali_ctx.cal_x_rst[i], chip->cali_ctx.cal_y_rst[i],
+		chip->cali_ctx.cal_z_rst[i], chip->cali_ctx.cal_ir_rst[i]);
 
 	}
-	return;
 }
-void ams_store_calibrate(struct colorDriver_chip *chip, color_sensor_input_para *in_para)
+void ams_store_calibrate(struct color_chip *chip,
+	struct color_sensor_input_t *in)
 {
-	ams_tcs3430_deviceCtx_t * ctx = NULL;
-	ams_tcs3430_ams_mode_t mode = 0;
+	struct tcs3430_ctx *ctx = NULL;
+	enum tcs3430_mode_t mode = AMS_TCS3430_MODE_OFF;
 
-	if((NULL == chip) || (NULL == in_para)){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!chip || !in || !chip->device_ctx) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
 
-	if (in_para->enable &&  chip->inCalMode){
-		hwlog_err("ams_store_calibrate: Already in calibration mode.\n");
+	if (in->enable && chip->in_cal_mode) {
+		hwlog_err("Already in calibration mode\n");
 		return;
 	}
 
-	if (in_para->enable){
-		ctx = chip->deviceCtx;
-		dev_info(&chip->client->dev, "ams_store_calibrate: starting calibration mode\n");
-		chip->calibrationCtx.calSampleCounter = 0;
-		chip->calibrationCtx.calXsample = 0;
-		chip->calibrationCtx.calYsample = 0;
-		chip->calibrationCtx.calZsample = 0;
-		chip->calibrationCtx.calIRsample = 0;
-		chip->calibrationCtx.calXtarget= in_para->tar_x; /* calculate targer for gain 1x (assuming its set at 64x) */
-		chip->calibrationCtx.calYtarget= in_para->tar_y;
-		chip->calibrationCtx.calZtarget= in_para->tar_z;
-		chip->calibrationCtx.calIRtarget= in_para->tar_ir;
-		chip->calibrationCtx.calState = CAL_STATE_GAIN_1;
-		if(NULL != ctx){
-			ctx->algCtx.als_data.gain = ams_tcs3430_alsGain_conversion[CAL_STATE_GAIN_1];
-		}
-		ams_tcs3430_deviceGetMode(chip->deviceCtx, &mode);
-		if ((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS){
-			enable_status_before_calibrate = 1;//enabled before calibrate
-			hwlog_info("\nAMS_Driver: %s: enabled before calibrate\n", __func__);
+	ctx = chip->device_ctx;
+	if (in->enable) {
+		hwlog_info("ams store_calibrate: starting calibration mode\n");
+		chip->cali_ctx.cal_raw_count = 0;
+		chip->cali_ctx.cal_x_raw = 0;
+		chip->cali_ctx.cal_y_raw = 0;
+		chip->cali_ctx.cal_z_raw = 0;
+		chip->cali_ctx.cal_ir_raw = 0;
+		// calculate targer for gain 1x (assuming its set at 64x)
+		chip->cali_ctx.cal_x_tar = in->tar_x;
+		chip->cali_ctx.cal_y_tar = in->tar_y;
+		chip->cali_ctx.cal_z_tar = in->tar_z;
+		chip->cali_ctx.cal_ir_tar = in->tar_ir;
+		chip->cali_ctx.cal_state = CAL_STATE_GAIN_1;
+		ctx->alg_ctx.als_data.gain =
+			tcs3430_als_gain_conv[CAL_STATE_GAIN_1];
+
+		tcs3430_get_mode(chip->device_ctx, &mode);
+		if ((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS) {
+			// enabled before calibrate
+			enable_status_before_calibrate = 1;
+			hwlog_info("%s: enabled before calibrate\n", __func__);
 			osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
-			msleep(10);//sleep 10 ms to make sure disable timer
-		}else{
-			enable_status_before_calibrate = 0;//disabled before calibrate
-			hwlog_info("\nAMS_Driver: %s: disabled before calibrate\n", __func__);
+			msleep(10); // sleep 10 ms to make sure disable timer
+		} else {
+			// disabled before calibrate
+			enable_status_before_calibrate = 0;
+			hwlog_info("%s: disabled before calibrate\n", __func__);
 		}
-		chip->inCalMode = true;
-		color_calibrate_result = true;//make the calibrate_result true for calibrate again!!
+		chip->in_cal_mode = true;
+		// make the calibrate_result true for calibrate again
+		color_calibrate_result = true;
 		osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
 	} else {
-		dev_info(&chip->client->dev, "ams_store_calibrate: stopping calibration mode\n");
-		chip->inCalMode = false;
-		}
-	return;
+		hwlog_info("ams store_calibrate: stopping calibration mode\n");
+		chip->in_cal_mode = false;
+	}
 }
-void ams_show_enable(struct colorDriver_chip *chip, int *state)
-{
-	ams_tcs3430_ams_mode_t mode = 0;
 
-	if((NULL == chip) || (NULL == state)){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+void ams_show_enable(struct color_chip *chip, int *state)
+{
+	enum tcs3430_mode_t mode = AMS_TCS3430_MODE_OFF;
+
+	if (!chip || !state) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
-		}
-	
-	ams_tcs3430_deviceGetMode(chip->deviceCtx, &mode);
-	if (mode & AMS_TCS3430_MODE_ALS){
+	}
+
+	tcs3430_get_mode(chip->device_ctx, &mode);
+	if (mode & AMS_TCS3430_MODE_ALS)
 		*state = 1;
-	} else {
+	else
 		*state = 0;
-	}
-	
 }
 
-void ams_store_enable(struct colorDriver_chip *chip, int state)
+void ams_store_enable(struct color_chip *chip, int state)
 {
-	if(NULL == chip){
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!chip) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
+
 	if (state)
 		osal_als_enable_set(chip, AMSDRIVER_ALS_ENABLE);
 	else
 		osal_als_enable_set(chip, AMSDRIVER_ALS_DISABLE);
-
 }
-
 #endif
-
-
-/****************************************************************************
- *                     OSAL Linux Input Driver
- ****************************************************************************/
 
 static void amsdriver_work(struct work_struct *work)
 {
-	int ret = 0;
 	bool re_enable = false;
-	ams_tcs3430_ams_mode_t mode = 0;
-	struct colorDriver_chip *chip = NULL;
+	enum tcs3430_mode_t mode = AMS_TCS3430_MODE_OFF;
+	struct color_chip *chip = NULL;
+	struct tcs3430_ctx *ctx = NULL;
 
-	if (work == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!work) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
-	chip = container_of(work, struct colorDriver_chip, als_work);
-	if (chip == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer chip is NULL\n", __func__);
+	chip = container_of(work, struct color_chip, als_work);
+	if (!chip || !chip->device_ctx) {
+		hwlog_err("%s: Pointer chip is NULL\n", __func__);
 		return;
 	}
+	ctx = chip->device_ctx;
+
 	AMS_MUTEX_LOCK(&chip->lock);
-	if(0 == read_nv_first_in){
-		ret = get_cal_para_from_nv();
-		if(!ret){
-			hwlog_err("\ams_tcs3430: get_cal_para_from_nv fail \n");
-		}
-		read_nv_first_in = -1;// -1: do not read again.
+	if (read_nv_first_in == 0) {
+		get_cal_para_from_nv();
+		read_nv_first_in = -1; // -1: do not read again.
 	}
-	dev_info(&chip->client->dev, "amsdriver_work\n");
-	re_enable = ams_tcs3430_deviceEventHandler((ams_tcs3430_deviceCtx_t*)chip->deviceCtx, chip->inCalMode);
-
-	if (re_enable)
-	{
-		ams_tcs3430_deviceCtx_t* ctx = (ams_tcs3430_deviceCtx_t*)chip->deviceCtx;
-		ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_ENABLE, 0, AEN);
-		ams_tcs3430_setField(ctx->portHndl, AMS_TCS3430_DEVREG_ENABLE, AEN, AEN);
+	hwlog_info("amsdriver work\n");
+	re_enable = tcs3430_als_event_handler(ctx, chip->in_cal_mode);
+	if (re_enable) {
+		tcs3430_set_field(ctx->handle, AMS_TCS3430_DEVREG_ENABLE, 0,
+			MASK_AEN);
+		tcs3430_set_field(ctx->handle, AMS_TCS3430_DEVREG_ENABLE, AEN,
+			MASK_AEN);
 	}
 
-#ifdef CONFIG_AMS_OPTICAL_SENSOR_ALS
-
-	if (ams_tcs3430_deviceGetResult((ams_tcs3430_deviceCtx_t*)chip->deviceCtx) & AMS_TCS3430_FEATURE_ALS){
-		if (chip->inCalMode == false && !re_enable){
-			dev_info(&chip->client->dev, "amsdriver_work: osal_report_als\n");
+	if (tcs3430_get_avai(ctx) & AMS_TCS3430_FEATURE_ALS) {
+		if ((chip->in_cal_mode == false) && !re_enable) {
+			hwlog_info("amsdriver work: osal_report_als\n");
 			osal_report_als(chip);
 		} else {
-			dev_info(&chip->client->dev, "amsdriver_work: calibration mode\n");
-			osal_calHandl_als(chip);
+			hwlog_info("amsdriver work: calibration mode\n");
+			tcs3430_cal_handle_als(chip);
 		}
 	}
-#endif
-	ams_tcs3430_deviceGetMode(chip->deviceCtx, &mode);
+
+	tcs3430_get_mode(ctx, &mode);
 	if (((mode & AMS_TCS3430_MODE_ALS) == AMS_TCS3430_MODE_ALS)) {
-		if (chip->inCalMode == false) {
+		if (chip->in_cal_mode == false) {
 			if (re_enable) {
-				mod_timer(&chip->work_timer, jiffies + msecs_to_jiffies(106));// timer set as 106ms
-				hwlog_info("timer set as 106ms \n");
+				mod_timer(&chip->work_timer,
+					jiffies + msecs_to_jiffies(106));
+				hwlog_info("timer set as 106ms\n");
 			} else {
-				mod_timer(&chip->work_timer, jiffies + HZ/10);// timer set as 100ms
-				hwlog_info("timer set as 100ms \n");
+				mod_timer(&chip->work_timer, jiffies + HZ / 10);
+				hwlog_info("timer set as 100ms\n");
 			}
 		} else {
-			mod_timer(&chip->work_timer, jiffies + msecs_to_jiffies(120));//calibrate mode set timer for 120ms
-			hwlog_info("in calibrate mode mod timer set as 120ms \n");
+			mod_timer(&chip->work_timer,
+				jiffies + msecs_to_jiffies(120));
+			hwlog_info("in calibrate mode, timer set as 120ms\n");
 		}
 	} else {
-		AMS_PORT_log_1("amsdriver_work: not mod timer mode = %d\n", mode);
+		hwlog_info("not mod timer mode = %d\n", mode);
 	}
 	AMS_MUTEX_UNLOCK(&chip->lock);
 }
@@ -1428,12 +1240,14 @@ static void amsdriver_work(struct work_struct *work)
 #ifdef CONFIG_HUAWEI_DSM
 static void amsdriver_dmd_work(struct work_struct *work)
 {
-	if (!dsm_client_ocuppy(shb_dclient)) {
-		if (color_devcheck_dmd_result == false){
-			dsm_client_record(shb_dclient, "ap_color_sensor_detected fail\n");
-			dsm_client_notify(shb_dclient, DSM_AP_ERR_COLORSENSOR_DETECT);
-			hwlog_err("\nAMS_Driver: %s: DMD ap_color_sensor_detected fail\n", __func__);
-		}
+	if (color_devcheck_dmd_result == false) {
+		if (dsm_client_ocuppy(shb_dclient))
+			return;
+		dsm_client_record(shb_dclient,
+			"ap_color_sensor_detected fail\n");
+		dsm_client_notify(shb_dclient,
+			DSM_AP_ERR_COLORSENSOR_DETECT);
+		hwlog_err("%s: tcs3430 detect fail\n", __func__);
 	}
 }
 #endif
@@ -1441,32 +1255,29 @@ static void amsdriver_dmd_work(struct work_struct *work)
 int amsdriver_probe(struct i2c_client *client,
 	const struct i2c_device_id *idp)
 {
-	int ret = 0;
-	int i = 0;
-	struct device *dev = &client->dev;
-	static struct colorDriver_chip *chip = NULL;
-	struct driver_i2c_platform_data *pdata = dev->platform_data;
-	ams_tcs3430_deviceInfo_t amsDeviceInfo;
-	ams_tcs3430_deviceIdentifier_e deviceId;
+	int ret = -1;
+	unsigned int i;
+	struct device *dev = NULL;
+	static struct color_chip *chip;
+	struct tcs3430_dev_info_t ams_dev_info;
+	enum tcs3430_device_id_t device;
 
-	if (client == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!client) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-	/****************************************/
-	/* Validate bus and device registration */
-	/****************************************/
-	hwlog_info(KERN_ERR "\nams_tcs3430: amsdriver_probe()\n");
 
-	dev_info(dev, "%s: client->irq = %d\n", __func__, client->irq);
+	hwlog_info("amsdriver probe\n");
+	dev = &client->dev;
+
 	if (!i2c_check_functionality(client->adapter,
 			I2C_FUNC_SMBUS_BYTE_DATA)) {
-		dev_err(dev, "%s: i2c smbus byte data unsupported\n", __func__);
+		hwlog_err("%s: i2c smbus byte data unsupported\n", __func__);
 		ret = -EOPNOTSUPP;
 		goto init_failed;
 	}
 
-	chip = kzalloc(sizeof(struct colorDriver_chip), GFP_KERNEL);
+	chip = kzalloc(sizeof(struct color_chip), GFP_KERNEL);
 	if (!chip) {
 		ret = -ENOMEM;
 		goto malloc_failed;
@@ -1474,138 +1285,117 @@ int amsdriver_probe(struct i2c_client *client,
 
 	mutex_init(&chip->lock);
 	chip->client = client;
-	chip->pdata = pdata;
+	chip->pdata = dev->platform_data;
 	i2c_set_clientdata(chip->client, chip);
 
 	chip->in_suspend = 0;
-	chip->inCalMode = false;
-	chip->calibrationCtx.calState = 0;
+	chip->in_cal_mode = false;
+	chip->cali_ctx.cal_state = 0;
 
-	for (i = 0; i < CAL_STATE_GAIN_LAST; i++){
-		chip->calibrationCtx.calXresult[i]  = AMS_TCS3430_FLOAT_TO_FIX ;
-		chip->calibrationCtx.calYresult[i]  = AMS_TCS3430_FLOAT_TO_FIX ;
-		chip->calibrationCtx.calZresult[i]  = AMS_TCS3430_FLOAT_TO_FIX ;
-		chip->calibrationCtx.calIRresult[i] = AMS_TCS3430_FLOAT_TO_FIX ;
-		color_nv_para.calXratio[i] = AMS_TCS3430_FLOAT_TO_FIX ;
-		color_nv_para.calYratio[i]  = AMS_TCS3430_FLOAT_TO_FIX ;
-		color_nv_para.calZratio[i]  = AMS_TCS3430_FLOAT_TO_FIX ;
-		color_nv_para.calIratio[i] = AMS_TCS3430_FLOAT_TO_FIX ;
+	for (i = 0; i < CAL_STATE_GAIN_LAST; i++) {
+		chip->cali_ctx.cal_x_rst[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		chip->cali_ctx.cal_y_rst[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		chip->cali_ctx.cal_z_rst[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		chip->cali_ctx.cal_ir_rst[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		color_nv_para.cal_x_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		color_nv_para.cal_y_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		color_nv_para.cal_z_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
+		color_nv_para.cal_ir_ratio[i] = AMS_TCS3430_FLOAT_TO_FIX;
 	}
 
 #ifdef CONFIG_HUAWEI_DSM
 	INIT_DELAYED_WORK(&ams_dmd_work, amsdriver_dmd_work);
 #endif
-	/********************************************************************/
-	/* Validate the appropriate ams device is available for this driver */
-	/********************************************************************/
-    deviceId = ams_tcs3430_testForDevice(chip->client);
-	dev_info(dev, "deviceId: %d\n", deviceId);
-	hwlog_err("\nams_tcs3430: ams_tcs3430_testForDevice() %d \n", deviceId);
+	device = tcs3430_test_id(chip->client);
 
-	if (deviceId == AMS_UNKNOWN_DEVICE) {
-		dev_info(dev, "ams_tcs3430_testForDevice failed: AMS_UNKNOWN_DEVICE\n");
+	if (device == AMS_UNKNOWN_DEVICE) {
+		hwlog_err("tcs3430_test_id failed: AMS_UNKNOWN_DEVICE\n");
 #ifdef CONFIG_HUAWEI_DSM
 		color_devcheck_dmd_result = false;
-		schedule_delayed_work(&ams_dmd_work, msecs_to_jiffies(AP_COLOR_DMD_DELAY_TIME_MS));
+		schedule_delayed_work(&ams_dmd_work,
+			msecs_to_jiffies(AP_COLOR_DMD_DELAY_TIME_MS));
 #endif
 		goto id_failed;
 	}
 
-	dev_info(dev, "ams_tcs3430_testForDevice() ok\n");
+	hwlog_info("tcs3430_test_id ok\n");
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 	set_hw_dev_flag(DEV_I2C_AP_COLOR_SENSOR);
 #endif
-	ams_tcs3430_getDeviceInfo(&amsDeviceInfo);
-	dev_info(dev, "ams_amsDeviceInfo() ok\n");
+	tcs3430_get_dev_info(&ams_dev_info);
+	hwlog_info("ams dev info ok\n");
 
-	chip->deviceCtx = kzalloc(amsDeviceInfo.memorySize, GFP_KERNEL);
-	if (chip->deviceCtx) {
-		ret = ams_tcs3430_deviceInit(chip->deviceCtx, chip->client);
-		if (ret == false){
-			dev_info(dev, "ams_amsDeviceInit() ok\n");
+	chip->device_ctx = kzalloc(ams_dev_info.memory_size, GFP_KERNEL);
+	if (chip->device_ctx) {
+		ret = tcs3430_device_init(chip->device_ctx, chip->client);
+		if (ret == false) {
+			hwlog_info("ams deviceInit ok\n");
 		} else {
-			dev_info(dev, "ams_deviceInit failed.\n");
+			hwlog_info("ams deviceInit failed\n");
 			goto id_failed;
 		}
 	} else {
-		dev_info(dev, "ams_tcs3430 kzalloc failed.\n");
+		hwlog_info("ams_tcs3430 kzalloc failed\n");
 		goto id_failed;
 	}
 
-	/*********************/
-	/* Initialize ALS    */
-	/*********************/
-
-#ifdef CONFIG_AMS_OPTICAL_SENSOR_ALS
-	/* setup */
-	dev_info(dev, "Setup for ALS\n");
-#endif
-
-    init_timer(&chip->work_timer);
-	setup_timer(&chip->work_timer, osal_als_timerHndl, (unsigned long) chip);
-    INIT_WORK(&chip->als_work, amsdriver_work);
+	init_timer(&chip->work_timer);
+	setup_timer(&chip->work_timer, tcs3430_als_timer_handle,
+		(uintptr_t)chip);
+	INIT_WORK(&chip->als_work, amsdriver_work);
 
 	chip->color_show_calibrate_state = ams_show_calibrate;
 	chip->color_store_calibrate_state = ams_store_calibrate;
 	chip->color_enable_show_state = ams_show_enable;
 	chip->color_enable_store_state = ams_store_enable;
-	chip->color_sensor_getGain = ams_tcs3430_getGain;
-	chip->color_sensor_setGain = ams_tcs3430_setGain;
-    chip->color_report_type = ams_tcs3430_rgb_report_type;
-	//dev_set_drvdata(chip->dev, chip);//add by zpl
+	chip->color_sensor_get_gain = tcs3430_get_gain;
+	chip->color_sensor_set_gain = tcs3430_set_gain;
+	chip->color_report_type = tcs3430_rgb_report_type;
 	p_chip = chip;
 
 	ret = color_register(chip);
-	if(ret < 0){
-		hwlog_err("\ams_tcs3430: color_register fail \n");
-	}
-	color_default_enable = ams_tcs3430_setenable;
+	if (ret < 0)
+		hwlog_err("color_register fail\n");
 
-	dev_info(dev, "Probe ok.\n");
+	color_default_enable = ams_tcs3430_setenable;
+	hwlog_info("tcs3430 Probe ok\n");
 	return 0;
 
-	/********************************************************************************/
-	/* Exit points for device functional failures (RemCon, Prox, ALS, Gesture)      */
-	/* This must be unwound in the correct order, reverse from initialization above */
-	/********************************************************************************/
-
-	/********************************************************************************/
-	/* Exit points for general device initialization failures                       */
-	/********************************************************************************/
-
 id_failed:
-	if (chip->deviceCtx) kfree(chip->deviceCtx);
+	if (chip->device_ctx)
+		kfree(chip->device_ctx);
 	i2c_set_clientdata(client, NULL);
+
 malloc_failed:
 	kfree(chip);
 
 init_failed:
-	dev_err(dev, "Probe failed.\n");
+	hwlog_err("tcs3430 Probe failed\n");
 	return ret;
 }
 
 int amsdriver_suspend(struct device *dev)
 {
-	struct colorDriver_chip  *chip = NULL;
+	struct color_chip *chip = NULL;
 
-	if (dev == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!dev) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return -1;
 	}
 	chip = dev_get_drvdata(dev);
-	if (chip == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!chip) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return -1;
 	}
 
-	dev_info(dev, "%s\n", __func__);
+	hwlog_info("%s\n", __func__);
 	AMS_MUTEX_LOCK(&chip->lock);
 	chip->in_suspend = 1;
 
 	if (chip->wake_irq)
 		irq_set_irq_wake(chip->client->irq, 1);
 	else if (!chip->unpowered)
-		dev_info(dev, "powering off\n");
+		hwlog_info("powering off\n");
 	AMS_MUTEX_UNLOCK(&chip->lock);
 
 	return 0;
@@ -1613,68 +1403,54 @@ int amsdriver_suspend(struct device *dev)
 
 int amsdriver_resume(struct device *dev)
 {
-	struct colorDriver_chip *chip = NULL;
+	struct color_chip *chip = NULL;
 
-	if (dev == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!dev) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return -1;
 	}
 	chip = dev_get_drvdata(dev);
-	if (chip == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!chip) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return -1;
 	}
-
-	return 0;
-	AMS_MUTEX_LOCK(&chip->lock);
-
-	chip->in_suspend = 0;
-
-	if (chip->wake_irq) {
-		irq_set_irq_wake(chip->client->irq, 0);
-		chip->wake_irq = 0;
-	}
-
-/* err_power: */
-	AMS_MUTEX_UNLOCK(&chip->lock);
-
 	return 0;
 }
 
 int amsdriver_remove(struct i2c_client *client)
 {
-	struct colorDriver_chip *chip = NULL;
+	struct color_chip *chip = NULL;
 
-	if (client == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!client) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return -1;
 	}
 	chip = i2c_get_clientdata(client);
-	if (chip == NULL) {
-		hwlog_err("\nAMS_Driver: %s: Pointer is NULL\n", __func__);
+	if (!chip) {
+		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return -1;
 	}
 
 	free_irq(client->irq, chip);
 	i2c_set_clientdata(client, NULL);
-	kfree(chip->deviceCtx);
+	kfree(chip->device_ctx);
 	kfree(chip);
 	return 0;
 }
 
 static struct i2c_device_id amsdriver_idtable[] = {
-	{"ams_tcs3430", 0 },
+	{ "ams_tcs3430", 0 },
 	{}
 };
 MODULE_DEVICE_TABLE(i2c, amsdriver_idtable);
 
 static const struct dev_pm_ops amsdriver_pm_ops = {
 	.suspend = amsdriver_suspend,
-	.resume  = amsdriver_resume,
+	.resume = amsdriver_resume,
 };
 
 static const struct of_device_id amsdriver_of_id_table[] = {
-	{.compatible = "ams,tcs3430"},
+	{ .compatible = "ams,tcs3430" },
 	{},
 };
 
@@ -1693,17 +1469,16 @@ static struct i2c_driver amsdriver_driver = {
 static int __init amsdriver_init(void)
 {
 	int rc;
-	hwlog_info("\nams_tcs3430: init()\n");
 
+	hwlog_info("ams_tcs3430: init\n");
 	rc = i2c_add_driver(&amsdriver_driver);
-
-	printk(KERN_ERR "ams_tcs3430:  %d", rc);
+	hwlog_info("ams_tcs3430: %d", rc);
 	return rc;
 }
 
 static void __exit amsdriver_exit(void)
 {
-	hwlog_info("\nams_tcs3430: exit()\n");
+	hwlog_info("ams_tcs3430: exit\n");
 	i2c_del_driver(&amsdriver_driver);
 }
 

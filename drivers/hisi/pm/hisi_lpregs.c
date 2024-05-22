@@ -29,7 +29,7 @@
 #include <linux/hw_power_monitor.h>
 #endif
 #include <linux/console.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <soc_crgperiph_interface.h>
 #include <soc_acpu_baseaddr_interface.h>
 #include <soc_uart_interface.h>
@@ -38,20 +38,26 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
+#ifdef  CONFIG_HISI_PMIC_PMU_SPMI
 #include <linux/mfd/hisi_pmic.h>
+#endif
+#include <securec.h>
 
 #include <linux/hisi/hisi_gpio_auto_gen.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wundef"
 
+#ifdef CONFIG_HISI_LPMCU_BB
 #include "m3_rdr_ddr_map.h"
 #include <lpmcu_runtime.h>
+#endif
 
 #pragma GCC diagnostic pop
 
-
+#ifdef CONFIG_HUAWEI_DUBAI
 #include <chipset_common/dubai/dubai.h>
+#endif
 
 #define PM_BUFFER_SIZE						(256)
 
@@ -87,9 +93,11 @@
 #define PROCESSOR_IOMCU_LENGTH  5
 #define IPC_MBXDATA_MIN			0
 #define IPC_MBXDATA_MAX			8
+#ifdef CONFIG_HUAWEI_DUBAI
 #define IPC_MBXDATA_TAG			2
 #define GET_SHAREMEM_DATA(m)			(((m) & 0xFFFF))
 #define GET_SHAREMEM_SOURCE(m)			(((m) & 0xFF))
+#endif
 #define IPC_MBX_SOURCE_OFFSET(m)		((m) << 6)
 #define IPC_MBX_DSTATUS_OFFSET(m)		(0x0C + ((m) << 6))
 #define IPC_MBXDATA_OFFSET(m, idex)		(0x20 + 4 * (idex) + ((m) << 6))
@@ -107,6 +115,13 @@
 			else	\
 				seq_printf(seq_file, fmt, ##args);	\
 		}
+#define LOWPM_MSG_CONT(seq_file, fmt, args ...) \
+		{		\
+			if (NO_SEQFILE == seq_file)	\
+				printk(KERN_CONT fmt, ##args);	\
+			else	\
+				seq_printf(seq_file, fmt, ##args);	\
+		}
 
 #define CRG_PERRSTDIS2_ip_prst_uart0_BIT    SOC_CRGPERIPH_PERRSTDIS2_ip_prst_uart0_START
 
@@ -114,6 +129,7 @@
 #ifndef SOC_ACPU_PMC_BASE_ADDR
 #define SOC_ACPU_PMC_BASE_ADDR	SOC_ACPU_PMCTRL_BASE_ADDR
 #endif
+#define CTRL_NAME_MAX_LEN		(sizeof(char) * 10)
 
 /* struct sysreg_bases to hold the base address of some system registers.*/
 struct sysreg_base_addr {
@@ -126,7 +142,9 @@ struct sysreg_base_addr {
 	void __iomem *pmic_base;
 	void __iomem *reserved_base;
 	void __iomem *nsipc_base;
+#ifdef	AP_AO_NSIPC_IRQ
 	void __iomem *ao_nsipc_base;
+#endif
 };
 
 struct sysreg_base_addr sysreg_base;
@@ -151,11 +169,16 @@ unsigned int g_lp_pmu_num;
 unsigned int g_pmu_addr_end;
 unsigned int g_lp_clk_num;
 const char **g_lpmcu_irq_name;
+static const char *g_plat_name;
+#ifdef CONFIG_PM_SEC_IO
 void __iomem **g_mg_reg;
 void __iomem **g_cg_reg;
 int g_mg_sec_reg_num;
 int g_cg_sec_reg_num;
+#endif
 
+
+unsigned int g_lp_fpga_flag;
 
 char *processor_name[IPC_PROCESSOR_MAX] = {
 	"gic1",
@@ -183,7 +206,7 @@ static unsigned g_usavedcfg;
 static int g_suspended;
 extern int get_console_index(void);
 
-static struct wake_lock lowpm_wake_lock;
+static struct wakeup_source lowpm_wake_lock;
 
 
 #define BUFFER_LENGTH		40
@@ -221,9 +244,14 @@ static int map_io_regs(void)
 	/* find io group max num */
 	i = 0;
 	while (1) {
-		memset(io_buffer, 0, BUFFER_LENGTH * sizeof(char));
-		snprintf(io_buffer, BUFFER_LENGTH * sizeof(char),
-				"arm,primecell%d", i);
+		ret = memset_s(io_buffer, BUFFER_LENGTH * sizeof(char), 0, BUFFER_LENGTH * sizeof(char));
+		if (ret != EOK) {
+			pr_err("%s: memset_s io_buffer err!\n", __func__);
+			goto err_free_buffer;
+		}
+		ret = snprintf_s(io_buffer, BUFFER_LENGTH * sizeof(char), BUFFER_LENGTH * sizeof(char) - 1, "arm,primecell%d", i);
+		if (ret < 0)
+			pr_err("%s: snprintf_s io_buffer err.\n", __func__);
 		np = of_find_compatible_node(NULL, NULL, io_buffer);
 		if (!np) {
 			pr_err("%s[%d]: gpio%d not find.\n", __func__, __LINE__, i);
@@ -248,9 +276,14 @@ static int map_io_regs(void)
 	}
 
 	for (i = 0; i < g_io_group_num; i++) {
-		memset(io_buffer, 0, BUFFER_LENGTH * sizeof(char));
-		snprintf(io_buffer, BUFFER_LENGTH * sizeof(char),
-				"arm,primecell%d", i);
+		ret = memset_s(io_buffer, BUFFER_LENGTH * sizeof(char), 0, BUFFER_LENGTH * sizeof(char));
+		if (ret != EOK) {
+			pr_err("%s: memset_s io_buffer err!\n", __func__);
+			goto err_free_io;
+		}
+		ret = snprintf_s(io_buffer, BUFFER_LENGTH * sizeof(char), BUFFER_LENGTH * sizeof(char) - 1, "arm,primecell%d", i);
+		if (ret < 0)
+			pr_err("%s: snprintf_s io_buffer err.\n", __func__);
 		np = of_find_compatible_node(NULL, NULL, io_buffer);
 		if (!np) {
 			pr_err("%s[%d]: gpio%d not find.\n", __func__, __LINE__, i);
@@ -269,7 +302,6 @@ static int map_io_regs(void)
 	}
 
 	kfree(io_buffer);
-	io_buffer = NULL;
 	return 0;
 
 err_put_node:
@@ -279,7 +311,6 @@ err_free_io:
 	sysreg_base.gpio_base = NULL;
 err_free_buffer:
 	kfree(io_buffer);
-	io_buffer = NULL;
 err:
 	pr_err("%s: failed!\n", __func__);
 	return ret;
@@ -307,6 +338,7 @@ static int get_ipc_addr(void)
 	}
 	of_node_put(np);
 
+#ifdef AP_AO_NSIPC_IRQ
 	np = of_find_compatible_node(NULL, NULL, "lowpm,ao_ipc");
 	if (!np) {
 		pr_err("%s: dts[%s] node not found\n",
@@ -322,6 +354,7 @@ static int get_ipc_addr(void)
 		goto err_put_node;
 	}
 	of_node_put(np);
+#endif
 
 	return 0;
 
@@ -490,7 +523,7 @@ void debuguart_reinit(void)
 
 	if (uart_idx == 6) {
 		/* enable clk */
-		uregv = readl(SOC_SCTRL_SCLPMCUCLKEN_ADDR(sysreg_base.sysctrl_base))
+		uregv = (unsigned int)readl(SOC_SCTRL_SCLPMCUCLKEN_ADDR(sysreg_base.sysctrl_base))
 				| BIT(SOC_SCTRL_SCLPMCUCLKEN_uart_clk_clkoff_sys_n_START);
 		writel(uregv,
 			SOC_SCTRL_SCLPMCUCLKEN_ADDR(sysreg_base.sysctrl_base));
@@ -559,8 +592,10 @@ void ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned int
 	unsigned int src_id = 0;
 	unsigned int dest_id = 0;
 	unsigned int i = 0;
+#ifdef CONFIG_HUAWEI_DUBAI
 	unsigned int source = 0;
 	unsigned int mem = 0;
+#endif
 
 	ipc_source = readl(base + IPC_MBX_SOURCE_OFFSET(mbx));
 	src_id = proc_mask_to_id(ipc_source);
@@ -585,6 +620,7 @@ void ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned int
 	/*if ((g_usavedcfg & DEBG_SUSPEND_IPC_DATA_SHOW) > 0) {*/
 	for (i = 0; i < IPC_MBXDATA_MAX; i++) {
 		ipc_data = readl(base + IPC_MBXDATA_OFFSET(mbx, i));
+#ifdef CONFIG_HUAWEI_DUBAI
 		if ((src_id < IPC_PROCESSOR_MAX) &&
 			(strncmp(processor_name[src_id], "iomcu", PROCESSOR_IOMCU_LENGTH) == 0)) {
 			if (i == IPC_MBXDATA_MIN) {
@@ -595,6 +631,7 @@ void ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned int
 				dubai_update_wakeup_info("DUBAI_TAG_SENSORHUB_WAKEUP", "mem=%u source=%u", mem, source);
 			}
 		}
+#endif
 		LOWPM_MSG(s, "SR:[MBXDATA%u]:0x%x\n", i, ipc_data); //lint !e666
 	}
 }
@@ -616,6 +653,7 @@ void combo_ipc_irq_show(struct seq_file *s, unsigned int nsipc_state)
 
 }
 
+#ifdef AP_AO_NSIPC_IRQ
 /* ao ipc*/
 char *aoipc_processor_name[AO_IPC_PROCESSOR_MAX] = {
 	"iomcu",
@@ -643,8 +681,10 @@ void ao_ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned 
 	unsigned int src_id = 0;
 	unsigned int dest_id = 0;
 	unsigned int i = 0;
+#ifdef CONFIG_HUAWEI_DUBAI
 	unsigned int source = 0;
 	unsigned int mem = 0;
+#endif
 
 	ipc_source = readl(base + IPC_MBX_SOURCE_OFFSET(mbx));
 	src_id = ao_proc_mask_to_id(ipc_source);
@@ -669,6 +709,7 @@ void ao_ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned 
 	/*if ((g_usavedcfg & DEBG_SUSPEND_IPC_DATA_SHOW) > 0) {*/
 	for (i = 0; i < IPC_MBXDATA_MAX; i++) {
 		ipc_data = readl(base + IPC_MBXDATA_OFFSET(mbx, i));
+#ifdef CONFIG_HUAWEI_DUBAI
 		if ((src_id < AO_IPC_PROCESSOR_MAX) &&
 			(strncmp(aoipc_processor_name[src_id], "iomcu", PROCESSOR_IOMCU_LENGTH) == 0)) {
 			if (i == IPC_MBXDATA_MIN) {
@@ -679,6 +720,7 @@ void ao_ipc_mbx_irq_show(struct seq_file *s, const void __iomem *base, unsigned 
 				dubai_update_wakeup_info("DUBAI_TAG_SENSORHUB_WAKEUP", "mem=%u source=%u", mem, source);
 			}
 		}
+#endif
 		LOWPM_MSG(s, "SR:[MBXDATA%u]:0x%x\n", i, ipc_data); //lint !e666
 	}
 }
@@ -699,6 +741,7 @@ void combo_ao_ipc_irq_show(struct seq_file *s, unsigned int ao_nsipc_state)
 	}
 
 }
+#endif
 
 /****************************************
  *function: pm_status_show
@@ -707,6 +750,7 @@ void combo_ao_ipc_irq_show(struct seq_file *s, unsigned int ao_nsipc_state)
  *****************************************/
 void pm_status_show(struct seq_file *s)
 {
+#ifdef CONFIG_HISI_LPMCU_BB
 	unsigned int wake_status = 0;
 	unsigned int wake_irq = 0;
 	unsigned int wake_irq1 = 0;
@@ -723,9 +767,10 @@ void pm_status_show(struct seq_file *s)
 		}
 	}
 
-	wake_status = readb(sysreg_base.reserved_base + WAKE_STATUS_OFFSET); //lint !e578
+	wake_status = readl(sysreg_base.reserved_base + WAKE_STATUS_OFFSET); //lint !e578
 	LOWPM_MSG(s,
-		"SR:wakelock status, ap:%d, modem:%d, hifi:%d, iomcu:%d, hisee:%d, hotplug:%d,%d.\n",
+		"SR:wakelock status[0x%x], ap:%d, modem:%d, hifi:%d, iomcu:%d, hisee:%d, hotplug:%d,%d.\n",
+		wake_status,
 		(wake_status & AP_MASK) ? 1 : 0,
 		(wake_status & MODEM_MASK) ? 1 : 0,
 		(wake_status & HIFI_MASK) ? 1 : 0,
@@ -733,6 +778,7 @@ void pm_status_show(struct seq_file *s)
 		(wake_status & HISEE_MASK) ? 1 : 0,
 		(wake_status & HOTPLUG_MASK(0)) ? 1 : 0,
 		(wake_status & HOTPLUG_MASK(1)) ? 1 : 0);
+#ifdef CONFIG_HUAWEI_DUBAI
 	dubai_update_wakeup_info("DUBAI_TAG_WAKE_STATUS", "ap=%d modem=%d hifi=%d iomcu=%d hisee=%d hotplug0=%d hotplug1=%d",
 		(wake_status & AP_MASK) ? 1 : 0,
 		(wake_status & MODEM_MASK) ? 1 : 0,
@@ -741,6 +787,7 @@ void pm_status_show(struct seq_file *s)
 		(wake_status & HISEE_MASK) ? 1 : 0,
 		(wake_status & HOTPLUG_MASK(0)) ? 1 : 0,
 		(wake_status & HOTPLUG_MASK(1)) ? 1 : 0);
+#endif
 
 	LOWPM_MSG(s, "SR:system sleeped %u times.\n",
 		readl(sysreg_base.reserved_base + SYS_DSLEEP_CNT_OFFSET)); //lint !e666
@@ -753,6 +800,7 @@ void pm_status_show(struct seq_file *s)
 		readl(sysreg_base.reserved_base + IOMCU_WAKE_CNT_OFFSET),
 		readl(sysreg_base.reserved_base + LPM3_WAKE_CNT_OFFSET)); //lint !e666
 
+#if defined(HISEE_SUSPEND_CNT_OFFSET) && defined(HISEE_RESUME_CNT_OFFSET)
 	LOWPM_MSG(s,
 		"SR:sr times of sub system, ap:s-%u, r-%u, modem:s-%u, r-%u, hifi:s-%u, r-%u, iomcu:s-%u, r-%u, hisee:s-%u, r-%u.\n",
 		readl(sysreg_base.reserved_base + AP_SUSPEND_CNT_OFFSET),
@@ -765,6 +813,19 @@ void pm_status_show(struct seq_file *s)
 		readl(sysreg_base.reserved_base + IOMCU_RESUME_CNT_OFFSET),
 		readl(sysreg_base.reserved_base + HISEE_SUSPEND_CNT_OFFSET),
 		readl(sysreg_base.reserved_base + HISEE_RESUME_CNT_OFFSET)); //lint !e666
+#else
+	LOWPM_MSG(s,
+		"SR:sr times of sub system, ap:s-%u, r-%u, modem:s-%u, r-%u, hifi:s-%u, r-%u, iomcu:s-%u, r-%u.\n",
+		readl(sysreg_base.reserved_base + AP_SUSPEND_CNT_OFFSET),
+		readl(sysreg_base.reserved_base + AP_RESUME_CNT_OFFSET),
+		readl(sysreg_base.reserved_base + MODEM_SUSPEND_CNT_OFFSET),
+		readl(sysreg_base.reserved_base + MODEM_RESUME_CNT_OFFSET),
+		readl(sysreg_base.reserved_base + HIFI_SUSPEND_CNT_OFFSET),
+		readl(sysreg_base.reserved_base + HIFI_RESUME_CNT_OFFSET),
+		readl(sysreg_base.reserved_base + IOMCU_SUSPEND_CNT_OFFSET),
+		readl(sysreg_base.reserved_base + IOMCU_RESUME_CNT_OFFSET)); //lint !e666
+#endif
+
 
 	if (sysreg_base.sysctrl_base != NULL) {
 		LOWPM_MSG(s, "SR:SCINT_STAT:0x%x.\n",
@@ -817,16 +878,22 @@ void pm_status_show(struct seq_file *s)
 	ap_irq = readl(sysreg_base.reserved_base + AP_WAKE_IRQ_OFFSET);
 	if ((g_lpmcu_irq_num > ap_irq)
 		&& (g_lpmcu_irq_name != NULL)){
+#ifdef CONFIG_HUAWEI_DUBAI
 		dubai_update_wakeup_info("DUBAI_TAG_AP_WAKE_IRQ", "name=%s", g_lpmcu_irq_name[ap_irq]);
+#endif
 		LOWPM_MSG(s, "SR:AP WAKE IRQ(LPM3 NVIC): %d (%s)\n",
 				ap_irq, g_lpmcu_irq_name[ap_irq]);
 	} else {
 		LOWPM_MSG(s,
 			"SR:AP WAKE IRQ(LPM3 NVIC): %d (no exist)\n", ap_irq);
 	}
+
+
 	if (IRQ_COMB_GIC_IPC == ap_irq){
 		combo_ipc_irq_show(s, readl(sysreg_base.reserved_base + AP_NSIPC_IRQ_OFFSET));
+#ifdef AP_AO_NSIPC_IRQ
 		combo_ao_ipc_irq_show(s, readl(sysreg_base.reserved_base + AP_AO_NSIPC_IRQ_OFFSET));
+#endif
 	}
 
 	LOWPM_MSG(s, "light sleep 0x%x times,resume 0x%x times.\n",
@@ -835,14 +902,18 @@ void pm_status_show(struct seq_file *s)
 
 	LOWPM_MSG(s, "sleep 0x%x times.\n",
 		readl(sysreg_base.reserved_base + SYS_SLEEP_CNT_OFFSET)); //lint !e666
+
+
+
+#endif /* CONFIG_HISI_LPMCU_BB */
 }
 
 void set_wakelock(int iflag)
 {
-	if ((1 == iflag) && (0 == wake_lock_active(&lowpm_wake_lock)))
-		wake_lock(&lowpm_wake_lock);
-	else if ((0 == iflag) && (0 != wake_lock_active(&lowpm_wake_lock)))
-		wake_unlock(&lowpm_wake_lock); //lint !e455
+	if ((1 == iflag) && (0 == lowpm_wake_lock.active))
+		__pm_stay_awake(&lowpm_wake_lock);
+	else if ((0 == iflag) && (0 != lowpm_wake_lock.active))
+		__pm_relax(&lowpm_wake_lock); //lint !e455
 } //lint !e454 !e456
 
 #define GPIO_DIR(x)		((x) + 0x400)
@@ -854,11 +925,14 @@ void show_iomg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 {
 	void __iomem *addr = NULL;
 	int value = 0;
+#ifdef CONFIG_PM_SEC_IO
 	int j = 1;
+#endif
 
 	if(NULL == hisi_iocfg_lookups)
 		return;
 	if (hisi_iocfg_lookups[i].iomg_offset != -1) {
+#ifdef CONFIG_PM_SEC_IO
 	if ((g_mg_sec_reg_num > 0)
 			&&(g_mg_reg != NULL)) {
 		addr = (void __iomem *)(uintptr_t)(hisi_iocfg_lookups[i].iomg_base
@@ -871,6 +945,7 @@ void show_iomg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 				return;
 		}
 	}
+#endif
 
 		addr = ioremap(hisi_iocfg_lookups[i].iomg_base
 				+ hisi_iocfg_lookups[i].iomg_offset, 0x4);
@@ -910,9 +985,12 @@ void show_iocg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 {
 	void __iomem *addr = NULL;
 	int value = 0;
+#ifdef CONFIG_PM_SEC_IO
 	int j = 1;
+#endif
 	if(NULL == hisi_iocfg_lookups)
 		return;
+#ifdef CONFIG_PM_SEC_IO
 	if ((g_cg_sec_reg_num > 0)
 			&&(g_cg_reg != NULL)) {
 		addr = (void __iomem *)(uintptr_t)(hisi_iocfg_lookups[i].iocg_base
@@ -925,6 +1003,7 @@ void show_iocg_reg(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups)
 				return;
 		}
 	}
+#endif
 
 	addr = ioremap(hisi_iocfg_lookups[i].iocg_base
 			+ hisi_iocfg_lookups[i].iocg_offset, 0x4);
@@ -962,8 +1041,8 @@ void show_gpio_info(unsigned int i, struct iocfg_lp *hisi_iocfg_lookups, unsigne
 		addr = GPIO_DIR(sysreg_base.gpio_base[hisi_iocfg_lookups[i].gpio_group_id]);
 		addr1 = GPIO_DATA(sysreg_base.gpio_base[hisi_iocfg_lookups[i].gpio_group_id], hisi_iocfg_lookups[i].ugpio_bit); //lint !e679
 
-		value = GPIO_IS_SET(readl(addr), hisi_iocfg_lookups[i].ugpio_bit);
-		data = GPIO_IS_SET(readl(addr1), hisi_iocfg_lookups[i].ugpio_bit);
+		value = GPIO_IS_SET((u32)readl(addr), hisi_iocfg_lookups[i].ugpio_bit);
+		data = GPIO_IS_SET((u32)readl(addr1), hisi_iocfg_lookups[i].ugpio_bit);
 		printk("[0x%x 0x%x]gpio - %s", value, data, value ? "O" : "I ");
 
 		if (value)
@@ -994,7 +1073,42 @@ void dbg_io_status_show(void)
 	if (!(g_usavedcfg & DEBG_SUSPEND_IO_SHOW))
 		return;
 
-	hisi_iocfg_lookups = boardid_tables[0].iocfg;
+	if (0 == g_lp_fpga_flag) {
+		for (i = 0; i < sizeof(boardid_tables) / sizeof(boardid_tables[0]); i++) {
+			if (strnstr(g_plat_name, "es", strlen(g_plat_name))
+					&& strnstr(boardid_tables[i].boardname, "chip_es", sizeof(boardid_tables[i].boardname))) {
+				hisi_iocfg_lookups = boardid_tables[i].iocfg;
+				pr_info("[%s]chip es board\n", __func__);
+				break;
+			}
+			if (strnstr(g_plat_name, "cs2", strlen(g_plat_name))
+					&& strnstr(boardid_tables[i].boardname, "chip_cs2", sizeof(boardid_tables[i].boardname))) {
+				hisi_iocfg_lookups = boardid_tables[i].iocfg;
+				pr_info("[%s]chip cs2 board\n", __func__);
+				break;
+			}
+			if (strnstr(g_plat_name, "cs", strlen(g_plat_name))
+					&& strnstr(boardid_tables[i].boardname, "chip_cs", sizeof(boardid_tables[i].boardname))) {
+				hisi_iocfg_lookups = boardid_tables[i].iocfg;
+				pr_info("[%s]chip cs board\n", __func__);
+				break;
+			}
+			if (strnstr(boardid_tables[i].boardname, "chip", sizeof(boardid_tables[i].boardname))) {
+				hisi_iocfg_lookups = boardid_tables[i].iocfg;
+				pr_info("[%s]chip board\n", __func__);
+				break;
+			}
+
+		}
+	} else {
+		for (i = 0; i < sizeof(boardid_tables) / sizeof(boardid_tables[0]); i++) {
+			if (strnstr(boardid_tables[i].boardname, "fpga", sizeof(boardid_tables[i].boardname))) {
+				hisi_iocfg_lookups = boardid_tables[i].iocfg;
+				pr_info("[%s]fpga board\n", __func__);
+				break;
+			}
+		}
+	}
 
 	if (NULL == hisi_iocfg_lookups) {
 		pr_err("%s: hisi_iocfg_lookups is null\n", __func__);
@@ -1042,7 +1156,11 @@ void dbg_pmu_status_show(void)
 	printk("PMU_CTRL register value list:\n");
 
 	for (i = 0x0; i <= g_pmu_addr_end; i++) {
+#ifdef	CONFIG_HISI_PMIC_PMU_SPMI
 		uregv = hisi_pmic_reg_read(i);
+#else
+		uregv = readl(PMUSSI_REG(i));
+#endif
 		printk("PMU_CTRL 0x%02X=0x%02X", i, uregv);
 		printk("\t");
 
@@ -1094,6 +1212,7 @@ void clk_showone(char *ctrl_name, int index)
 	u32 bitval = 0;
 	u32 regoff = 0;
 	u32 bit_idx = 0;
+	int ret;
 	void __iomem *regbase = NULL;
 
 	if((NULL == g_clk_lookups)
@@ -1104,15 +1223,21 @@ void clk_showone(char *ctrl_name, int index)
 
 	switch (g_clk_lookups[index]->reg_base) {
 	case SOC_ACPU_SCTRL_BASE_ADDR:
-		strncpy(ctrl_name, "SYSCTRL", sizeof(char) * 10);
+		ret = strncpy_s(ctrl_name, CTRL_NAME_MAX_LEN, "SYSCTRL", CTRL_NAME_MAX_LEN - 1);
+		if (ret != EOK)
+			pr_err("%s: strncpy_s sctrl err\n", __func__);
 		regbase = sysreg_base.sysctrl_base;
 		break;
 	case SOC_ACPU_PERI_CRG_BASE_ADDR:
-		strncpy(ctrl_name, "CRGPERI", sizeof(char) * 10);
+		ret = strncpy_s(ctrl_name, CTRL_NAME_MAX_LEN, "CRGPERI", CTRL_NAME_MAX_LEN - 1);
+		if (ret != EOK)
+			pr_err("%s: strncpy_s peri_crg err\n", __func__);
 		regbase = sysreg_base.crg_base;
 		break;
 	case SOC_ACPU_PMC_BASE_ADDR:
-		strncpy(ctrl_name, "PMCCTRL", sizeof(char) * 10);
+		ret = strncpy_s(ctrl_name, CTRL_NAME_MAX_LEN, "PMCCTRL", CTRL_NAME_MAX_LEN - 1);
+		if (ret != EOK)
+			pr_err("%s: strncpy_s pmc err\n", __func__);
 		regbase = sysreg_base.pctrl_base;
 		break;
 	}
@@ -1330,23 +1455,32 @@ void sysreg_showone(char *ctrl_name, int index)
 {
 	u32 regval = 0;
 	u32 regoff = 0;
+	int ret;
 	void __iomem *regbase = NULL;
 
 	switch (sysreg_lookups[index].reg_base) {
 	case SOC_ACPU_SCTRL_BASE_ADDR:
-		strncpy(ctrl_name, "SYSCTRL", sizeof(char) * 10);
+		ret = strncpy_s(ctrl_name, CTRL_NAME_MAX_LEN, "SYSCTRL", CTRL_NAME_MAX_LEN - 1);
+		if (ret != EOK)
+			pr_err("%s: strncpy_s sctrl err\n", __func__);
 		regbase = sysreg_base.sysctrl_base;
 		break;
 	case SOC_ACPU_PERI_CRG_BASE_ADDR:
-		strncpy(ctrl_name, "CRGPERI", sizeof(char) * 10);
+		ret = strncpy_s(ctrl_name, CTRL_NAME_MAX_LEN, "CRGPERI", CTRL_NAME_MAX_LEN - 1);
+		if (ret != EOK)
+			pr_err("%s: strncpy_s peri_crg err\n", __func__);
 		regbase = sysreg_base.crg_base;
 		break;
 	case SOC_ACPU_PCTRL_BASE_ADDR:
-		strncpy(ctrl_name, "PCTRL", sizeof(char) * 10);
+		ret = strncpy_s(ctrl_name, CTRL_NAME_MAX_LEN, "PCTRL", CTRL_NAME_MAX_LEN - 1);
+		if (ret != EOK)
+			pr_err("%s: strncpy_s pctrl err\n", __func__);
 		regbase = sysreg_base.pctrl_base;
 		break;
 	case SOC_ACPU_PMC_BASE_ADDR:
-		strncpy(ctrl_name, "PMCTRL", sizeof(char) * 10);
+		ret = strncpy_s(ctrl_name, CTRL_NAME_MAX_LEN, "PMCTRL", CTRL_NAME_MAX_LEN - 1);
+		if (ret != EOK)
+			pr_err("%s: strncpy_s pmc err\n", __func__);
 		regbase = sysreg_base.pmctrl_base;
 		break;
 	default:
@@ -1380,7 +1514,6 @@ void hisi_sysregs_dump(void)
 		sysreg_showone(ctrl_name, i);
 
 	kfree(ctrl_name);
-	ctrl_name = NULL;
 
 	pr_info("[%s] %d leave.\n", __func__, __LINE__);
 }
@@ -1411,7 +1544,6 @@ void dbg_clk_status_show(void)
 		clk_showone(ctrl_name, i);
 
 	kfree(ctrl_name);
-	ctrl_name = NULL;
 
 	pr_info("[%s] %d leave.\n", __func__, __LINE__);
 }
@@ -1448,9 +1580,14 @@ static int init_pmu_lookup_table(void)
 
 	/* init pmu idx and lookup table */
 	for (i = 0; i < g_lp_pmu_num; i++) {
-		memset(buffer, 0, BUFFER_LENGTH * sizeof(char));
-		snprintf(buffer, BUFFER_LENGTH * sizeof(char),
-				"hisilicon, lp_pmu%d", i);
+		ret = memset_s(buffer, BUFFER_LENGTH * sizeof(char), 0, BUFFER_LENGTH * sizeof(char));
+		if (ret != EOK) {
+			pr_err("%s: memset_s buffer err!\n", __func__);
+			goto err_free_lookups;
+		}
+		ret = snprintf_s(buffer, BUFFER_LENGTH * sizeof(char), BUFFER_LENGTH * sizeof(char) - 1, "hisilicon, lp_pmu%d", i);
+		if (ret < 0)
+			pr_err("%s: snprintf_s buffer err.\n", __func__);
 		np = of_find_compatible_node(NULL, NULL, buffer);
 		if (!np) {
 			pr_err("%s[%d]: lp_pmu%d not find.\n", __func__, __LINE__, i);
@@ -1510,7 +1647,6 @@ static int init_pmu_lookup_table(void)
 	}
 
 	kfree(buffer);
-	buffer = NULL;
 	pr_info("%s: %d init success.\n", __func__, __LINE__);
 	return ret;
 
@@ -1524,7 +1660,6 @@ err_free_pmu_idx:
 	g_hisi_pmu_idx = NULL;
 err_free_buffer:
 	kfree(buffer);
-	buffer = NULL;
 err:
 	pr_err("%s init failed.\n", __func__);
 	return ret;
@@ -1564,9 +1699,14 @@ static int init_pmu_table(void)
 	/* find lp_pmu max num */
 	i = 0;
 	while (1) {
-		memset(buffer, 0, BUFFER_LENGTH * sizeof(char));
-		snprintf(buffer, BUFFER_LENGTH * sizeof(char),
-				"hisilicon, lp_pmu%d", i);
+		ret = memset_s(buffer, BUFFER_LENGTH * sizeof(char), 0, BUFFER_LENGTH * sizeof(char));
+		if (ret != EOK) {
+			pr_err("%s: memset_s buffer err.\n", __func__);
+			goto err_free_buffer;
+		}
+		ret = snprintf_s(buffer, BUFFER_LENGTH * sizeof(char), BUFFER_LENGTH * sizeof(char) - 1, "hisilicon, lp_pmu%d", i);
+		if (ret < 0)
+			pr_err("%s: snprintf_s buffer err.\n", __func__);
 		np = of_find_compatible_node(NULL, NULL, buffer);
 		if (!np) {
 			pr_err("%s[%d]: lp_pmu%d not find.\n", __func__, __LINE__, i);
@@ -1586,13 +1726,11 @@ static int init_pmu_table(void)
 	}
 
 	kfree(buffer);
-	buffer = NULL;
 	pr_info("%s, init pmu table success.\n", __func__);
 	return ret;
 
 err_free_buffer:
 	kfree(buffer);
-	buffer = NULL;
 err:
 	pr_err("%s init failed.\n", __func__);
 	return ret;
@@ -1631,9 +1769,14 @@ static int init_clk_lookup_table(u32 reg_num)
 					__func__, __LINE__, k, i);
 			goto err_free_lookups;
 		}
-		memset(buffer, 0, BUFFER_LENGTH * sizeof(char));
-		snprintf(buffer, BUFFER_LENGTH * sizeof(char),
-				"hisilicon, lp_clk%d", i);
+		ret = memset_s(buffer, BUFFER_LENGTH * sizeof(char), 0, BUFFER_LENGTH * sizeof(char));
+		if (ret != EOK) {
+			pr_err("%s: memset_s buffer err.\n", __func__);
+			goto err_free_lookups;
+		}
+		ret = snprintf_s(buffer, BUFFER_LENGTH * sizeof(char), BUFFER_LENGTH * sizeof(char) - 1, "hisilicon, lp_clk%d", i);
+		if (ret < 0)
+			pr_err("%s: snprintf_s buffer err.\n", __func__);
 		np = of_find_compatible_node(NULL, NULL, buffer);
 		if (!np) {
 			pr_err("%s[%d]: lp_clk%d not find.\n", __func__, __LINE__, i);
@@ -1685,7 +1828,6 @@ static int init_clk_lookup_table(u32 reg_num)
 	}
 
 	kfree(buffer);
-	buffer = NULL;
 	pr_info("%s: %d init success.\n", __func__, __LINE__);
 	return ret;
 
@@ -1696,7 +1838,6 @@ err_free_lookups:
 	g_clk_lookups = NULL;
 err_free_buffer:
 	kfree(buffer);
-	buffer = NULL;
 err:
 	pr_err("%s init failed.\n", __func__);
 	return ret;
@@ -1731,9 +1872,14 @@ static int init_clk_table(void)
 	/* find lp_clk max num */
 	i = 0;
 	while (1) {
-		memset(buffer, 0, BUFFER_LENGTH * sizeof(char));
-		snprintf(buffer, BUFFER_LENGTH * sizeof(char),
-				"hisilicon, lp_clk%d", i);
+		ret = memset_s(buffer, BUFFER_LENGTH * sizeof(char), 0, BUFFER_LENGTH * sizeof(char));
+		if (ret != EOK) {
+			pr_err("%s: memset_s buffer err.\n", __func__);
+			goto err_free_buffer;
+		}
+		ret = snprintf_s(buffer, BUFFER_LENGTH * sizeof(char), BUFFER_LENGTH * sizeof(char) - 1, "hisilicon, lp_clk%d", i);
+		if (ret < 0)
+			pr_err("%s: snprintf_s buffer err.\n", __func__);
 		np = of_find_compatible_node(NULL, NULL, buffer);
 		if (!np) {
 			pr_err("%s[%d]: lp_clk%d not find.\n", __func__, __LINE__, i);
@@ -1760,19 +1906,18 @@ static int init_clk_table(void)
 	}
 
 	kfree(buffer);
-	buffer = NULL;
 	pr_info("%s, init clk table success.\n", __func__);
 
 	return ret;
 
 err_free_buffer:
 	kfree(buffer);
-	buffer = NULL;
 err:
 	pr_err("%s init failed.\n", __func__);
 	return ret;
 }
 
+#ifdef CONFIG_PM_SEC_IO
 static int init_sec_io(struct device_node *np)
 {
 	int ret = 0;
@@ -1838,6 +1983,7 @@ err:
 	return ret;
 
 }
+#endif
 
 
 
@@ -1846,7 +1992,6 @@ static int init_lowpm_data(void)
 	int ret = 0;
 	u32 i = 0;
 	struct device_node *np = NULL;
-	const char *plat_name = NULL;
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,lowpm_func");
 	if (!np) {
@@ -1856,19 +2001,21 @@ static int init_lowpm_data(void)
 		goto err;
 	}
 
-	ret = of_property_read_string(np, "plat-name", &plat_name);
+	ret = of_property_read_string(np, "plat-name", &g_plat_name);
 	if (ret) {
 		pr_err("%s[%d], no plat-name!\n", __func__, __LINE__);
 		ret = -ENODEV;
 		goto err_put_node;
 	}
 
+#ifdef CONFIG_PM_SEC_IO
 	/*init sec IO*/
 	ret = init_sec_io(np);
 	if (ret < 0) {
 		pr_err("%s:%d init sec IO failed!\n", __func__,__LINE__);
 		goto err_put_node;
 	}
+#endif
 
 
 	/* init lpmcu irq table */
@@ -1927,7 +2074,8 @@ err:
  ******************************************************************/
 static int lowpm_func_probe(struct platform_device *pdev)
 {
-	int ret = 0;
+	struct device_node *np = NULL;
+	int ret;
 
 
 	pr_info("[%s] %d enter.\n", __func__, __LINE__);
@@ -1952,9 +2100,24 @@ static int lowpm_func_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	wake_lock_init(&lowpm_wake_lock, WAKE_LOCK_SUSPEND, "lowpm_func");
+	wakeup_source_init(&lowpm_wake_lock, "lowpm_func");
+
+#ifndef CONFIG_HISI_SR_DEBUG_SLEEP
+	set_wakelock(1);
+#endif
 
 
+	np = of_find_compatible_node(NULL, NULL, "hisilicon,lowpm_func");
+	if (!np) {
+		pr_err("%s: hisilicon,lowpm_func No compatible node found\n",
+				__func__);
+		return -ENODEV;
+	}
+
+	ret = of_property_read_u32_array(np, "fpga_flag", &g_lp_fpga_flag, 1);
+	if (ret) {
+		pr_err("%s , no fpga_flag.\n", __func__);
+	}
 
 	pr_info("[%s] %d leave.\n", __func__, __LINE__);
 
@@ -1975,6 +2138,7 @@ static int lowpm_func_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static int lowpm_func_suspend(struct platform_device *pdev,
 		pm_message_t state)
 {
@@ -1987,6 +2151,10 @@ static int lowpm_func_resume(struct platform_device *pdev)
 	g_suspended = 0;
 	return 0;
 }
+#else
+#define lowpm_func_suspend	NULL
+#define lowpm_func_resume	NULL
+#endif
 
 #define MODULE_NAME		"hisilicon,lowpm_func"
 

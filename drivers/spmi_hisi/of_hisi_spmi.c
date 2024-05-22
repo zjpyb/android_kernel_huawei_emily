@@ -215,10 +215,10 @@ static void of_spmi_populate_resources(struct of_spmi_dev_info *d_info,
 
 {
 	uint32_t num_irq = r_info->num_irq, num_reg = r_info->num_reg;
-	unsigned int i;
-	const  __be32 *addrp;
-	uint64_t size;
-	uint32_t flags;
+	unsigned int i = 0;
+	const  __be32 *addrp = NULL;
+	uint64_t size = 0;
+	uint32_t flags = 0;
 
 	if ((num_irq || num_reg) && (res != NULL)) {
 		for (i = 0; i < num_reg; i++, res++){
@@ -292,8 +292,8 @@ static int of_spmi_create_device(struct of_spmi_dev_info *d_info,
 {
 	struct spmi_controller *ctrl = d_info->ctrl;
 	struct spmi_boardinfo *b_info = &d_info->b_info;
-	void *result;
-	int rc;
+	void *result = NULL;
+	int rc = 0;
 
 	rc = of_modalias_node(node, b_info->name, sizeof(b_info->name));
 	if (rc < 0) {
@@ -351,7 +351,7 @@ static void of_spmi_walk_dev_container(struct of_spmi_dev_info *d_info,
 {
 	struct of_spmi_res_info r_info = {};
 	struct spmi_controller *ctrl = d_info->ctrl;
-	struct device_node *node;
+	struct device_node *node = NULL;
 	int rc, i, num_dev_node = 0;
 
 	if (!of_device_is_available(container))
@@ -422,7 +422,7 @@ static void of_spmi_walk_slave_container(struct of_spmi_dev_info *d_info,
 					 struct device_node *container)
 {
 	struct spmi_controller *ctrl = d_info->ctrl;
-	struct device_node *node;
+	struct device_node *node = NULL;
 	int rc;
 
 	for_each_child_of_node(container, node) {

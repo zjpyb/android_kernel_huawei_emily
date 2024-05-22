@@ -1,4 +1,22 @@
+/*
+ * antenna_board_adc_match.c
+ *
+ * Antenna board match driver,match the antenna board by adc.
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
+#include "antenna_board_adc_match.h"
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -7,25 +25,29 @@
 #include <linux/hisi/hisi_adc.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/antenna_board_match/antenna_board_match.h>
-#include "antenna_board_adc_match.h"
 
+/*
+ * 2: adc match range array have two member, min and max.
+ * 820: is min default range provided by hardware.
+ * 975: is max default range provided by hardware.
+ */
+#define ADC_MATCH_RANGE    2
+#define ADC_MATCH_RANGE_MIN    820
+#define ADC_MATCH_RANGE_MAX    975
 #define HWLOG_TAG antenna_board_adc_match
 HWLOG_REGIST();
 
 static int board_adc_channel = DEFAULT_ANTENNA_BOARD_ADC_CHANNEL;
-/* ADC match range,[820,975] is default range provided by hardware */
-static int antenna_adc_match_range[2] = { 820, 975 };
 
-/*
- * Function:       check_match_by_adc
- * Discription:    check if main board is match with the rf board
- * Parameters:     none
- * Return value:   0-not match or 1-match
- */
+static int antenna_adc_match_range[ADC_MATCH_RANGE] = {
+	ADC_MATCH_RANGE_MIN,
+	ADC_MATCH_RANGE_MAX,
+};
+
 int check_match_by_adc(void)
 {
-	int ret = 0;
-	int rf_voltage = 0;
+	int ret;
+	int rf_voltage;
 
 	rf_voltage = hisi_adc_get_value(board_adc_channel);
 	hwlog_info("Antenna board adc voltage = %d\n", rf_voltage);
@@ -34,7 +56,7 @@ int check_match_by_adc(void)
 		rf_voltage <= antenna_adc_match_range[1]) {
 		ret = 1;
 	} else {
-		hwlog_err("adc voltage is not in range, Antenna_board_match error!\n");
+		hwlog_err("adc voltage isn't in range, Antenna_board_match error!\n");
 		ret = 0;
 	}
 
@@ -43,7 +65,7 @@ int check_match_by_adc(void)
 
 int get_voltage_by_adc(void)
 {
-	int voltage = 0;
+	int voltage;
 
 	voltage = hisi_adc_get_value(board_adc_channel);
 	hwlog_info("Antenna board adc voltage = %d\n", voltage);
@@ -51,10 +73,10 @@ int get_voltage_by_adc(void)
 	return voltage;
 }
 
-/*lint -save -e* */
+/* lint -save -e* */
 static void parse_dts(struct antenna_adc_match_info *di)
 {
-	struct device_node *np;
+	struct device_node *np = NULL;
 
 	np = di->dev->of_node;
 	if (np == NULL) {
@@ -65,14 +87,15 @@ static void parse_dts(struct antenna_adc_match_info *di)
 	/* adc channel */
 	if (of_property_read_u32(np, "antenna_board_adc_channel",
 		&board_adc_channel))
-		hwlog_err("dts:can not get antenna board adc channel,use default channel: %d!\n", board_adc_channel);
+		hwlog_err("dts: can't get adc channel, use default channel: %d!\n",
+			board_adc_channel);
 	hwlog_info("get antenna board adc channel = %d!\n", board_adc_channel);
 
-	/* match range */
 	if (of_property_read_u32_array(np, "antenna_board_match_range",
-		antenna_adc_match_range, 2))
-		hwlog_err("%s, antenna_board_match_range not exist, use default array!\n", __func__);
-	hwlog_info("antenna_adc_match_range: min = %d,max = %d\n",
+		antenna_adc_match_range, ADC_MATCH_RANGE))
+		hwlog_err("%s: match range not exist, use default array!\n",
+			__func__);
+	hwlog_info("antenna_adc_match_range: min = %d, max = %d\n",
 		antenna_adc_match_range[0], antenna_adc_match_range[1]);
 }
 
@@ -84,13 +107,11 @@ struct antenna_device_ops adc_match_ops = {
 static int antenna_board_adc_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct antenna_adc_match_info *di;
+	struct antenna_adc_match_info *di = NULL;
 
 	di = kzalloc(sizeof(*di), GFP_KERNEL);
-	if (!di) {
-		hwlog_err("alloc di failed\n");
+	if (!di)
 		return -ENOMEM;
-	}
 
 	di->dev = &pdev->dev;
 
@@ -104,7 +125,7 @@ static int antenna_board_adc_probe(struct platform_device *pdev)
 		goto adc_match_fail0;
 	}
 
-	/*caution:if di is used in other function, delete the below two lines*/
+	/* if di is used in other function, delete the below two lines */
 	kfree(di);
 	di = NULL;
 
@@ -117,11 +138,7 @@ adc_match_fail0:
 	return -1;
 }
 
-/* lint -restore */
-/* lint -save -esym(528,* ) -e19 */
-/*
- * probe match table
- */
+/* probe match table */
 static const struct of_device_id antenna_board_adc_table[] = {
 	{
 		.compatible = "huawei,antenna_board_adc_match",
@@ -130,9 +147,7 @@ static const struct of_device_id antenna_board_adc_table[] = {
 	{},
 };
 
-/*
- * antenna board match driver
- */
+/* antenna board match adc driver */
 static struct platform_driver antenna_board_adc_driver = {
 	.probe = antenna_board_adc_probe,
 	.driver = {
@@ -142,23 +157,11 @@ static struct platform_driver antenna_board_adc_driver = {
 	},
 };
 
-/*
- * Function: antenna_board_match_init
- * Description: antenna board match module initialization
- * Parameters:  Null
- * return value: 0-sucess or others-fail
- */
 static int __init antenna_board_adc_init(void)
 {
 	return platform_driver_register(&antenna_board_adc_driver);
 }
 
-/*
- * Function:       antenna_board_match_exit
- * Description:    antenna board match module exit
- * Parameters:   NULL
- * return value:  NULL
- */
 static void __exit antenna_board_adc_exit(void)
 {
 	platform_driver_unregister(&antenna_board_adc_driver);
@@ -166,7 +169,6 @@ static void __exit antenna_board_adc_exit(void)
 
 module_init(antenna_board_adc_init);
 module_exit(antenna_board_adc_exit);
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("huawei antenna board adc driver");
-MODULE_AUTHOR("HUAWEI Inc");
-/*lint -restore*/
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

@@ -152,7 +152,11 @@ int st_chip_initialization(struct fts_ts_info *info)
 
 	TS_LOG_INFO("chip calibrate and initialization\n");
 
-	st_systemreset(info);
+	error = st_systemreset(info);
+	if (error) {
+		TS_LOG_ERR("Cannot reset the device\n");
+		return -ENOMEM;
+	}
 	st_wait_controller_ready(info);
 	ret = st_init_flash_reload(info);
 	if (!ret)
@@ -161,7 +165,11 @@ int st_chip_initialization(struct fts_ts_info *info)
 	//initialization error, retry initialization
 	for(retry = 0; retry <= INIT_FLAG_CNT; retry++){
 		st_chip_powercycle(info);
-		st_systemreset(info);
+		error = st_systemreset(info);
+		if (error) {
+			TS_LOG_ERR("Cannot reset the device\n");
+			return -ENOMEM;
+		}
 		st_wait_controller_ready(info);	
 		ret = st_init_flash_reload(info);
 		if(ret == 0)
@@ -172,6 +180,10 @@ int st_chip_initialization(struct fts_ts_info *info)
 	if(ret != 0){ //initialization error
 		TS_LOG_INFO("fts initialization 3 times error\n");
 		error = st_systemreset(info);
+		if (error) {
+			TS_LOG_ERR("Cannot reset the device\n");
+			return -ENOMEM;
+		}
 		st_wait_controller_ready(info);
 		error += st_command(info, SENSEON);
 		mdelay(5);
@@ -363,7 +375,7 @@ fts_updat:
 	TS_LOG_INFO("Flash programming...\n");
 	ret = st_systemreset(info);
 	if (ret) {
-		TS_LOG_ERR("Cannot reset the device 00\n");
+		TS_LOG_ERR("Cannot reset the device\n");
 		goto fw_done;
 	}
 	st_wait_controller_ready(info);

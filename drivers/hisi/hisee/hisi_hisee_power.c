@@ -33,6 +33,7 @@
 #include <linux/hisi/kirin_partition.h>
 #include <linux/clk.h>
 #include <linux/mm.h>
+#include <securec.h>
 #include "soc_acpu_baseaddr_interface.h"
 #include "soc_sctrl_interface.h"
 #include "hisi_hisee.h"
@@ -64,10 +65,12 @@ static struct semaphore g_hisee_poweroff_sem;
 static struct mutex g_poweron_timeout_mutex;
 static struct list_head g_unhandled_timer_list;
 
+#ifdef CONFIG_HISI_HISEE_MNTN
 extern int hisee_mntn_can_power_up_hisee(void);
 extern u32 hisee_mntn_get_vote_val_lpm3(void);
 extern u32 hisee_mntn_get_vote_val_atf(void);
 extern int hisee_mntn_collect_vote_value_cmd(void);
+#endif
 void hisee_power_ctrl_init(void)
 {
 	g_vote_record_method = HISEE_POWER_VOTE_RECORD_PRO;
@@ -148,6 +151,7 @@ end:
 	set_errno_and_return(ret);
 }
 
+#ifdef CONFIG_HISI_SMX_PROCESS
 int smx_process(hisee_power_operation op_type, unsigned int op_cosid, int power_cmd)
 {
 	int ret = SMX_PROCESS_UNSUPPORT;
@@ -183,6 +187,7 @@ int smx_process(hisee_power_operation op_type, unsigned int op_cosid, int power_
 	}
 	return ret;
 }
+#endif
 
 static int hisee_set_power_vote_status(u32 vote_process, hisee_power_cmd power_cmd)
 {
@@ -324,7 +329,7 @@ exit:
 }/*lint !e454 !e456*/
 
 /* the process_id can only be 0-3 */
-int hisee_get_cosid_processid(void *buf, unsigned int *cos_id, unsigned int *process_id)
+int hisee_get_cosid_processid(const void *buf, unsigned int *cos_id, unsigned int *process_id)
 {
 	int ret = HISEE_OK;
 	unsigned char *arg_vector = (unsigned char *)buf;
@@ -356,7 +361,7 @@ int hisee_get_cosid_processid(void *buf, unsigned int *cos_id, unsigned int *pro
 	return ret;
 }
 
-int hisee_poweron_booting_func(void *buf, int para)
+int hisee_poweron_booting_func(const void *buf, int para)
 {
 	int ret;
 	unsigned int cos_id = COS_IMG_ID_0;
@@ -369,6 +374,7 @@ int hisee_poweron_booting_func(void *buf, int para)
 		pr_err("%s() hisee_get_cosid failed ret=%d\n", __func__, ret);
 		goto end;
 	}
+#ifdef CONFIG_HISI_HISEE_MNTN
 	/*don't power up hisee, if current is dm mode and cos has not been upgraded,
 	 *of there will be many hisee exception log reporting to apr.
 	 *COS_FLASH is the specific cos_flash image, bypass the judgement*/
@@ -376,6 +382,7 @@ int hisee_poweron_booting_func(void *buf, int para)
 		ret = HISEE_ERROR;
 		goto end;
 	}
+#endif
 
 	if ((HISEE_POWER_VOTE_RECORD_PRO == g_vote_record_method)
 				&& ((MAX_POWER_PROCESS_ID <= process_id) || (COS_PROCESS_TIMEOUT == process_id))) {
@@ -401,7 +408,7 @@ end:
 	set_errno_and_return(ret);
 }/*lint !e715*/
 
-int hisee_poweron_upgrade_func(void *buf, int para)
+int hisee_poweron_upgrade_func(const void *buf, int para)
 {
 	int ret;
 	unsigned int hisee_lcs_mode = 0;
@@ -454,7 +461,7 @@ end:
 	set_errno_and_return(ret);
 }/*lint !e715*/
 
-int hisee_poweroff_func(void *buf, int para)
+int hisee_poweroff_func(const void *buf, int para)
 {
 	int ret;
 	unsigned int cos_id = COS_IMG_ID_0;
@@ -533,7 +540,7 @@ static int hisee_poweroff_daemon_body(void *arg)
 
 static int create_hisee_poweroff_daemon(void)
 {
-	struct task_struct *hisee_poweroff_daemon;
+	struct task_struct *hisee_poweroff_daemon = NULL;
 
 	/* create semaphore for daemon to wait poweroff signal */
 	sema_init(&g_hisee_poweroff_sem, 0);
@@ -551,7 +558,7 @@ static int create_hisee_poweroff_daemon(void)
 
 static void poweroff_handle(unsigned long arg)
 {
-	timer_entry_list *p_timer_entry = (timer_entry_list *)arg;
+	timer_entry_list *p_timer_entry = (timer_entry_list *)(uintptr_t)arg;
 
 	atomic_set(&(p_timer_entry->handled), 1);/*lint !e1058*/
 
@@ -580,7 +587,7 @@ static int parse_arg_get_id(void *buf, unsigned int *id)
 	}
 }
 
-static int parse_arg_get_timeout(void *buf, int para, unsigned int *time, unsigned int *id)
+static int parse_arg_get_timeout(const void *buf, int para, unsigned int *time, unsigned int *id)
 {
 	char *p = (char *)buf;
 	char *cmd = p;
@@ -631,11 +638,11 @@ static int parse_arg_get_timeout(void *buf, int para, unsigned int *time, unsign
 }
 
 /* poweron hisee and add a timer to poweroff hisee _msecs_ ms later */
-int hisee_poweron_timeout_func(void *buf, int para)
+int hisee_poweron_timeout_func(const void *buf, int para)
 {
 	int ret = HISEE_OK;
-	struct timer_list *p_timer;
-	timer_entry_list *p_timer_entry;
+	struct timer_list *p_timer = NULL;
+	timer_entry_list *p_timer_entry = NULL;
 	unsigned int msecs = 0;
 	unsigned int id = 0;
 	ret = parse_arg_get_timeout(buf, para, &msecs, &id);
@@ -663,7 +670,7 @@ int hisee_poweron_timeout_func(void *buf, int para)
 	p_timer = &(p_timer_entry->timer);
 	init_timer(p_timer);
 	p_timer->function = poweroff_handle;
-	p_timer->data     = (unsigned long)p_timer_entry;
+	p_timer->data     = (unsigned long)(uintptr_t)p_timer_entry;
 	p_timer->expires  = jiffies + msecs_to_jiffies(msecs) + 1; /*+1 makes timeout >= msecs*/
 
 	if (0 == g_unhandled_timer_cnt) {
@@ -754,8 +761,10 @@ int wait_hisee_ready(hisee_state ready_state, unsigned int timeout_ms)
 	return HISEE_WAIT_READY_TIMEOUT;
 }
 
+#ifdef CONFIG_HICOS_MISCIMG_PATCH
 extern char *g_patch_buff_virt;
 extern phys_addr_t g_patch_buff_phy;
+#endif
 
 /** check whether the hisee is ready
  * @buf: output, return the hisee ready status
@@ -764,8 +773,10 @@ ssize_t hisee_check_ready_show(struct device *dev, struct device_attribute *attr
 {
 	hisee_state state;
 	int ret;
+#ifdef CONFIG_HISI_HISEE_MNTN
 	u32	vote_lpm3;
 	u32	vote_atf;
+#endif
 
 	if (NULL == buf) {
 		pr_err("%s buf paramters is null\n", __func__);
@@ -773,8 +784,17 @@ ssize_t hisee_check_ready_show(struct device *dev, struct device_attribute *attr
 	}
 	state = (hisee_state)atfd_hisee_smc((u64)HISEE_FN_MAIN_SERVICE_CMD, (u64)CMD_GET_STATE, (u64)0, (u64)0);
 	if (HISEE_STATE_COS_READY == state) {
-		snprintf(buf, (u64)3, "%d,", 0);
-		strncat(buf, "cos ready", (unsigned long)strlen("cos ready"));
+		ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (u64)3, "%d,", 0);
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s(): snprintf1 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
+		ret = strncat_s(buf, HISEE_BUF_SHOW_LEN, "cos ready", (unsigned long)strlen("cos ready"));
+		if (ret != EOK) {
+			pr_err("%s(): strncat err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
+#ifdef CONFIG_HICOS_MISCIMG_PATCH
 	/*free memory alloc in hisee_cos_patch_read only once.*/
 	if (HISEE_COS_PATCH_FREE_CNT == atomic_inc_return(&g_is_patch_free)) {
 		if (NULL != g_patch_buff_virt) {
@@ -785,22 +805,41 @@ ssize_t hisee_check_ready_show(struct device *dev, struct device_attribute *attr
 		}
 	}
 	atomic_dec(&g_is_patch_free);
+#endif
 	} else if (HISEE_STATE_POWER_DOWN == state
 				|| HISEE_STATE_POWER_UP == state
 				|| HISEE_STATE_MISC_READY == state
 				|| HISEE_STATE_POWER_DOWN_DOING == state
 				|| HISEE_STATE_POWER_UP_DOING == state) {
-		snprintf(buf, (u64)3, "%d,", 1);
-		strncat(buf, "cos unready", (unsigned long)strlen("cos unready"));
+		ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (u64)3, "%d,", 1);
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s(): snprintf2 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
+		ret = strncat_s(buf, HISEE_BUF_SHOW_LEN, "cos unready", (unsigned long)strlen("cos unready"));
+		if (ret != EOK) {
+			pr_err("%s(): strncat_s err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 	} else {
-		snprintf(buf, (u64)4, "%d,", -1);
-		strncat(buf, "failed", (unsigned long)strlen("failed"));
+		ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (u64)4, "%d,", -1);
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s(): snprintf3 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
+		ret = strncat_s(buf, HISEE_BUF_SHOW_LEN, "failed", (unsigned long)strlen("failed"));
+		if (ret != EOK) {
+			pr_err("%s(): strncat_s err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 	}
 	if (HISEE_STATE_COS_READY != state) {
+#ifdef CONFIG_HISI_HISEE_MNTN
 		hisee_mntn_collect_vote_value_cmd();
 		vote_lpm3 = hisee_mntn_get_vote_val_lpm3();
 		vote_atf = hisee_mntn_get_vote_val_atf();
 		pr_err("%s(): votes:lpm3 0x%08x atf 0x%08x kernel 0x%lx\n", __func__, vote_lpm3, vote_atf, g_power_vote_status.value);
+#endif
 	}
 	pr_err("%s(): state=%d, %s\n", __func__, (int)state, buf);
 	return (ssize_t)strlen(buf);

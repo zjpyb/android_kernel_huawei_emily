@@ -44,6 +44,8 @@ ssize_t effect_ce_store(struct device* dev, struct device_attribute* attr, const
 ssize_t lcd_effect_sre_show(struct device *dev, struct device_attribute *attr, char *buf);
 ssize_t lcd_effect_sre_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 ssize_t effect_bl_show(struct device* dev, struct device_attribute* attr, char* buf);
+ssize_t effect_bl_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count);
 ssize_t effect_bl_enable_show(struct device* dev, struct device_attribute* attr, char* buf);
 ssize_t effect_bl_enable_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
 ssize_t effect_metadata_show(struct device* dev, struct device_attribute* attr, char* buf);
@@ -90,6 +92,7 @@ ssize_t lcd_bl_mode_store(struct device* dev, struct lcdkit_panel_data* lcdkit_i
 ssize_t lcd_support_bl_mode_show(struct device* dev, struct lcdkit_panel_data* lcdkit_info, char* buf);
 ssize_t lcd_ldo_check_show(struct device* dev, char* buf);
 ssize_t lcd_mipi_config_store(struct device* dev, struct lcdkit_panel_data* lcdkit_info, const char* buf);
+ssize_t lcd_panel_sncode_show(struct device *dev, char *buf);
 extern int lcdkit_get_vsp_voltage(void);
 extern int lcdkit_get_vsn_voltage(void);
 #endif

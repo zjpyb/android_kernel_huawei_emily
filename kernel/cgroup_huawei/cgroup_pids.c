@@ -39,29 +39,30 @@
 #include <linux/eventfd.h>
 #include <linux/poll.h>
 #include <linux/file.h>
+#include <linux/version.h>
 
 #define PIDS_MAX (PID_MAX_LIMIT + 1ULL)
 
 struct pids_cgroup {
-	struct cgroup_subsys_state	css;
+	struct cgroup_subsys_state css;
 
 	/*
 	 * Use 64-bit types so that we can safely represent "max" as
 	 * (PID_MAX_LIMIT + 1).
 	 */
-	atomic64_t			counter;
-	int64_t				limit;
+	atomic64_t counter;
+	int64_t limit;
 
-	/*each group_pids is default limit*/
-	int64_t				group_soft_limit;
-	int64_t				group_limit;
+	/* each group_pids is default limit */
+	int64_t group_soft_limit;
+	int64_t group_limit;
 	/* The list of pid_event structs. */
-	struct		list_head event_list;
+	struct list_head event_list;
 	/* Have to grab the lock on events traversal or modifications. */
-	spinlock_t		event_list_lock;
-	struct list_head		group_pids_list;
+	spinlock_t event_list_lock;
+	struct list_head group_pids_list;
 
-	int64_t				token;
+	int64_t token;
 };
 
 static struct pids_cgroup *css_pids(struct cgroup_subsys_state *css)
@@ -76,21 +77,21 @@ static struct pids_cgroup *task_pids(struct task_struct *task)
 
 static struct pids_cgroup *parent_pids(struct pids_cgroup *pids)
 {
-		return css_pids(pids->css.parent);
+	return css_pids(pids->css.parent);
 }
 
 struct group_pids {
 	/* All the tasks in the same QoS group are in this list */
-	struct list_head	head;
+	struct list_head head;
 	/* Linked to the global group_pids_list */
-	struct list_head	node;
-	int64_t				soft_limit;
-	int64_t				limit;
+	struct list_head node;
+	int64_t soft_limit;
+	int64_t limit;
 
-	atomic64_t	counter;
-	int64_t		token;
-	/*true: has signal to user space, at default, it is false, no */
-	bool	signal;
+	atomic64_t counter;
+	int64_t token;
+	/* true: has signal to user space, at default, it is false, no */
+	bool signal;
 };
 
 static void pids_event(struct pids_cgroup *pids, struct group_pids *gp);
@@ -110,7 +111,7 @@ static int group_pids_try_charge(struct group_pids *gp, int num)
 		return -ENOMEM;
 	}
 	if (new > gp->soft_limit) {
-		/*send a pid over soft limit event to user space*/
+		/* send a pid over soft limit event to user space */
 		return -EDQUOT;
 	}
 	return 0;
@@ -142,11 +143,11 @@ static void group_pids_migrate(struct task_struct *tsk, struct group_pids *gp)
 	tsk->group_pids = gp;
 }
 
-static int group_pids_max_show(struct seq_file *m, void *V)
+static int group_pids_max_show(struct seq_file *m, void *v)
 {
 	struct pids_cgroup *pids = css_pids(seq_css(m));
-	struct group_pids *gp;
-	struct task_struct *task;
+	struct group_pids *gp = NULL;
+	struct task_struct *task = NULL;
 
 	spin_lock(&group_pids_lock);
 
@@ -167,23 +168,25 @@ static int group_pids_max_show(struct seq_file *m, void *V)
 	return 0;
 }
 
-static int group_pids_limit_show(struct seq_file *m, void *V)
+static int group_pids_limit_show(struct seq_file *m, void *v)
 {
 	struct pids_cgroup *pids = css_pids(seq_css(m));
 
 	seq_printf(m, "%llu,%llu\n",
-			   (long long)pids->group_soft_limit,
-			   (long long)pids->group_limit);
+		   (long long)pids->group_soft_limit,
+		   (long long)pids->group_limit);
 	return 0;
 }
 
 static ssize_t group_pids_limit_write(struct kernfs_open_file *of,
-				    char *buf, size_t nbytes, loff_t off)
+				      char *buf, size_t nbytes, loff_t off)
 {
 	struct pids_cgroup *pids = css_pids(of_css(of));
-	struct group_pids *gp;
-	int64_t soft_limit, max;
+	struct group_pids *gp = NULL;
+	int64_t soft_limit = 0;
+	int64_t max = 0;
 
+	/* 2: the number of successful values returned */
 	if (sscanf(buf, "%llu,%llu", &soft_limit, &max) != 2)
 		return -EINVAL;
 
@@ -204,13 +207,11 @@ static ssize_t group_pids_limit_write(struct kernfs_open_file *of,
 	return nbytes;
 }
 
-
-static struct cgroup_subsys_state *pids_css_alloc(
-				    struct cgroup_subsys_state *parent_css)
+static struct cgroup_subsys_state *pids_css_alloc(struct cgroup_subsys_state *parent_css)
 {
-	struct pids_cgroup *pids;
+	struct pids_cgroup *pids = NULL;
 
-	pids = kzalloc(sizeof(struct pids_cgroup), GFP_KERNEL);
+	pids = kzalloc(sizeof(*pids), GFP_KERNEL);
 	if (!pids)
 		return ERR_PTR(-ENOMEM);
 
@@ -229,8 +230,7 @@ static void pids_css_free(struct cgroup_subsys_state *css)
 	kfree(css_pids(css));
 }
 
-
-/**
+/*
  * pids_cancel - uncharge the local pid count
  * @pids: the pid cgroup state
  * @num: the number of pids to cancel
@@ -247,20 +247,20 @@ static void pids_cancel(struct pids_cgroup *pids, int num)
 	WARN_ON_ONCE(atomic64_add_negative(-num, &pids->counter));
 }
 
-/**
+/*
  * pids_uncharge - hierarchically uncharge the pid count
  * @pids: the pid cgroup state
  * @num: the number of pids to uncharge
  */
 static void pids_uncharge(struct pids_cgroup *pids, int num)
 {
-	struct pids_cgroup *p;
+	struct pids_cgroup *p = NULL;
 
 	for (p = pids; p; p = parent_pids(p))
 		pids_cancel(p, num);
 }
 
-/**
+/*
  * pids_charge - hierarchically charge the pid count
  * @pids: the pid cgroup state
  * @num: the number of pids to charge
@@ -271,13 +271,13 @@ static void pids_uncharge(struct pids_cgroup *pids, int num)
  */
 static void pids_charge(struct pids_cgroup *pids, int num)
 {
-	struct pids_cgroup *p;
+	struct pids_cgroup *p = NULL;
 
 	for (p = pids; p; p = parent_pids(p))
 		atomic64_add(num, &p->counter);
 }
 
-/**
+/*
  * pids_try_charge - hierarchically try to charge the pid count
  * @pids: the pid cgroup state
  * @num: the number of pids to charge
@@ -288,7 +288,8 @@ static void pids_charge(struct pids_cgroup *pids, int num)
  */
 static int pids_try_charge(struct pids_cgroup *pids, int num)
 {
-	struct pids_cgroup *p, *q;
+	struct pids_cgroup *p = NULL;
+	struct pids_cgroup *q = NULL;
 
 	for (p = pids; p; p = parent_pids(p)) {
 		int64_t new = atomic64_add_return(num, &p->counter);
@@ -313,8 +314,8 @@ static struct pids_cgroup *pids_attach_old_cs;
 
 static int pids_can_attach(struct cgroup_taskset *tset)
 {
-	struct cgroup_subsys_state *css;
-	struct pids_cgroup *pids;
+	struct cgroup_subsys_state *css = NULL;
+	struct pids_cgroup *pids = NULL;
 
 	/* used later by pids_attach() */
 	pids_attach_old_cs = task_pids(cgroup_taskset_first(tset, &css));
@@ -342,18 +343,18 @@ static void pids_cancel_attach(struct cgroup_taskset *tset)
 }
 
 static void pids_attach(struct cgroup_taskset *tset)
-{ 
-	struct cgroup_subsys_state *css;
-	struct pids_cgroup *pids;
-	struct task_struct *task;
+{
+	struct cgroup_subsys_state *css = NULL;
+	struct pids_cgroup *pids = NULL;
+	struct task_struct *task = NULL;
 	int64_t num = 0;
 
-	cgroup_taskset_first(tset,&css);
+	cgroup_taskset_first(tset, &css);
 	pids = css_pids(css);
 
 	spin_lock(&group_pids_lock);
 
-	cgroup_taskset_for_each(task,css,tset) {
+	cgroup_taskset_for_each(task, css, tset) {
 		num++;
 		pids_uncharge(pids_attach_old_cs, 1);
 
@@ -389,7 +390,7 @@ int cgroup_pids_can_fork(void)
 	ret = group_pids_try_charge(current->group_pids, 1);
 	if (ret == -ENOMEM) {
 		pr_warn("Pid %d(%s) over pids cgroup hard_limit\n",
-		     task_tgid_vnr(current), current->comm);
+			task_tgid_vnr(current), current->comm);
 		pids_uncharge(pids, 1);
 	} else if (ret == -EDQUOT) {
 		pids_event(pids, current->group_pids);
@@ -402,7 +403,6 @@ int cgroup_pids_can_fork(void)
 
 void cgroup_pids_cancel_fork(void)
 {
-
 	struct pids_cgroup *pids = NULL;
 
 	rcu_read_lock();
@@ -428,13 +428,13 @@ static void pids_fork(struct task_struct *tsk)
 
 static void pids_exit(struct task_struct *task)
 {
-	struct css_set *cset;
-	struct cgroup_subsys_state *old_css;
-	struct pids_cgroup *pids;
- 
+	struct css_set *cset = NULL;
+	struct cgroup_subsys_state *old_css = NULL;
+	struct pids_cgroup *pids = NULL;
+
 	cset = task_css_set(task);
 	if (!cset)
-	return;
+		return;
 
 	old_css = cset->subsys[pids_cgrp_id];
 	pids = css_pids(old_css);
@@ -456,11 +456,11 @@ static void pids_exit(struct task_struct *task)
 }
 
 static int pids_max_write(struct cgroup_subsys_state *css,
-		     struct cftype *cft, s64 max)
+			  struct cftype *cft, s64 max)
 {
 	struct pids_cgroup *pids = css_pids(css);
 
-	if (max < 0 || max > INT_MAX)
+	if ((max < 0) || (max > INT_MAX))
 		return -EINVAL;
 
 	/*
@@ -471,8 +471,7 @@ static int pids_max_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
-static s64 pids_max_show(struct cgroup_subsys_state *css,
-		     struct cftype *cft)
+static s64 pids_max_show(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct pids_cgroup *pids = css_pids(css);
 
@@ -480,29 +479,29 @@ static s64 pids_max_show(struct cgroup_subsys_state *css,
 }
 
 static s64 pids_current_read(struct cgroup_subsys_state *css,
-		     struct cftype *cft)
+			     struct cftype *cft)
 {
 	struct pids_cgroup *pids = css_pids(css);
 
 	return atomic64_read(&pids->counter);
 }
 
-/**
- *a notify eventfd to report which process to over the process number limit
+/*
+ * a notify eventfd to report which process to over the process number limit
  */
 struct pids_event {
 	struct eventfd_ctx *efd;
 	struct list_head node;
 };
 
-/**
+/*
  * when a process have soft limit
  */
 static void pids_event(struct pids_cgroup *pids, struct group_pids *gp)
 {
-	struct pids_event *ev;
+	struct pids_event *ev = NULL;
 
-	/*is gp has signal to user space, protect by group_pids_lock*/
+	/* is gp has signal to user space, protect by group_pids_lock */
 	if (gp->signal)
 		return;
 
@@ -512,14 +511,13 @@ static void pids_event(struct pids_cgroup *pids, struct group_pids *gp)
 		gp->signal = true;
 	}
 	spin_unlock(&pids->event_list_lock);
-
 }
 
-static int group_pids_events_show(struct seq_file *m, void *V)
+static int group_pids_events_show(struct seq_file *m, void *v)
 {
 	struct pids_cgroup *pids = css_pids(seq_css(m));
-	struct group_pids *gp;
-	struct task_struct *task;
+	struct group_pids *gp = NULL;
+	struct task_struct *task = NULL;
 	int64_t count;
 
 	spin_lock(&group_pids_lock);
@@ -534,31 +532,24 @@ static int group_pids_events_show(struct seq_file *m, void *V)
 			continue;
 
 		seq_printf(m, "%llu %lu %lu %llu\n",
-			    (long long)gp->token,
-			    (long)task_tgid_vnr(task),
-			    (long)from_kuid_munged(current_user_ns(), task_uid(task)),
-			    (long long)count);
+			   (long long)gp->token,
+			   (long)task_tgid_vnr(task),
+			   (long)from_kuid_munged(current_user_ns(), task_uid(task)),
+			   (long long)count);
 	}
 	spin_unlock(&group_pids_lock);
 	return 0;
 }
 
-
 /*
  * cgroup_event represents events which userspace want to receive.
  */
 struct pids_cgroup_event {
-	/*
-	 * memcg which the event belongs to.
-	 */
+	/* memcg which the event belongs to. */
 	struct pids_cgroup *pids;
-	/*
-	 * eventfd to signal userspace about the event.
-	 */
+	/* eventfd to signal userspace about the event. */
 	struct eventfd_ctx *eventfd;
-	/*
-	 * Each of these stored in a list by the cgroup.
-	 */
+	/* Each of these stored in a list by the cgroup. */
 	struct list_head list;
 	/*
 	 * register_event() callback will be used to add new userspace
@@ -573,21 +564,27 @@ struct pids_cgroup_event {
 	 * if you want provide notification functionality.
 	 */
 	void (*unregister_event)(struct pids_cgroup *pids,
-				 struct eventfd_ctx *eventfd);
+				  struct eventfd_ctx *eventfd);
 	/*
 	 * All fields below needed to unregister event when
 	 * userspace closes eventfd.
 	 */
 	poll_table pt;
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
+	struct wait_queue_head *wqh;
+	struct wait_queue_entry wait;
+#else
 	wait_queue_head_t *wqh;
 	wait_queue_t wait;
+#endif
 	struct work_struct remove;
 };
 
 static int pids_cgroup_usage_register_event(struct pids_cgroup *pids,
-			    struct eventfd_ctx *eventfd, const char *args)
+					    struct eventfd_ctx *eventfd,
+					    const char *args)
 {
-	struct pids_event *ev;
+	struct pids_event *ev = NULL;
 
 	ev = kzalloc(sizeof(*ev), GFP_KERNEL);
 	if (!ev)
@@ -602,9 +599,9 @@ static int pids_cgroup_usage_register_event(struct pids_cgroup *pids,
 }
 
 static void pids_cgroup_usage_unregister_event(struct pids_cgroup *pids,
-			    struct eventfd_ctx *eventfd)
+					       struct eventfd_ctx *eventfd)
 {
-	struct pids_event *ev;
+	struct pids_event *ev = NULL;
 
 	spin_lock(&pids->event_list_lock);
 	list_for_each_entry(ev, &pids->event_list, node) {
@@ -628,17 +625,13 @@ static void pids_cgroup_usage_unregister_event(struct pids_cgroup *pids,
  *
  * Please deprecate this and replace with something simpler if at all
  * possible.
- */
-
-/*
- * Unregister event and free resources.
  *
+ * Unregister event and free resources.
  * Gets called from workqueue.
  */
 static void pids_event_remove(struct work_struct *work)
 {
-	struct pids_cgroup_event *event =
-		container_of(work, struct pids_cgroup_event, remove);
+	struct pids_cgroup_event *event = container_of(work, struct pids_cgroup_event, remove);
 	struct pids_cgroup *pids = event->pids;
 
 	remove_wait_queue(event->wqh, &event->wait);
@@ -655,16 +648,18 @@ static void pids_event_remove(struct work_struct *work)
 
 /*
  * Gets called on POLLHUP on eventfd when user closes it.
- *
  * Called with wqh->lock held and interrupts disabled.
  */
-static int pids_event_wake(wait_queue_t *wait, unsigned mode,
-			    int sync, void *key)
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
+static int pids_event_wake(struct wait_queue_entry *wait, unsigned int mode,
+#else
+static int pids_event_wake(wait_queue_t *wait, unsigned int mode,
+#endif
+			   int sync, void *key)
 {
-	struct pids_cgroup_event *event =
-		container_of(wait, struct pids_cgroup_event, wait);
+	struct pids_cgroup_event *event = container_of(wait, struct pids_cgroup_event, wait);
 	struct pids_cgroup *pids = event->pids;
-	unsigned long flags = (unsigned long)key;
+	uintptr_t flags = (uintptr_t)key;
 
 	if (flags & POLLHUP) {
 		/*
@@ -692,10 +687,14 @@ static int pids_event_wake(wait_queue_t *wait, unsigned mode,
 }
 
 static void pids_event_ptable_queue_proc(struct file *file,
-		wait_queue_head_t *wqh, poll_table *pt)
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
+					 struct wait_queue_head *wqh,
+#else
+					 wait_queue_head_t *wqh,
+#endif
+					 poll_table *pt)
 {
-	struct pids_cgroup_event *event =
-		container_of(pt, struct pids_cgroup_event, pt);
+	struct pids_cgroup_event *event = container_of(pt, struct pids_cgroup_event, pt);
 
 	event->wqh = wqh;
 	add_wait_queue(wqh, &event->wait);
@@ -703,24 +702,23 @@ static void pids_event_ptable_queue_proc(struct file *file,
 
 /*
  * DO NOT USE IN NEW FILES.
- *
  * Parse input and register new cgroup event handler.
- *
  * Input must be in format '<event_fd> <control_fd> <args>'.
  * Interpretation of args is defined by control file implementation.
  */
 static ssize_t pids_write_event_control(struct kernfs_open_file *of,
-					 char *buf, size_t nbytes, loff_t off)
+					char *buf, size_t nbytes, loff_t off)
 {
 	struct cgroup_subsys_state *css = of_css(of);
 	struct pids_cgroup *pids = css_pids(css);
-	struct pids_cgroup_event *event;
-	struct cgroup_subsys_state *cfile_css;
-	unsigned int efd, cfd;
+	struct pids_cgroup_event *event = NULL;
+	struct cgroup_subsys_state *cfile_css = NULL;
+	unsigned int efd;
+	unsigned int cfd;
 	struct fd efile;
 	struct fd cfile;
-	const char *name;
-	char *endp;
+	const char *name = NULL;
+	char *endp = NULL;
 	int ret;
 
 	buf = strstrip(buf);
@@ -774,7 +772,6 @@ static ssize_t pids_write_event_control(struct kernfs_open_file *of,
 	 * to be done via struct cftype but cgroup core no longer knows
 	 * about these events.  The following is crude but the whole thing
 	 * is for compatibility anyway.
-	 *
 	 * DO NOT ADD NEW FILES.
 	 */
 	name = cfile.file->f_path.dentry->d_name.name;
@@ -834,7 +831,8 @@ out_kfree:
 static void pids_css_offline(struct cgroup_subsys_state *css)
 {
 	struct pids_cgroup *pids = css_pids(css);
-	struct pids_cgroup_event *event, *tmp;
+	struct pids_cgroup_event *event = NULL;
+	struct pids_cgroup_event *tmp = NULL;
 
 	/*
 	 * Unregister events and notify userspace.
@@ -851,37 +849,37 @@ static void pids_css_offline(struct cgroup_subsys_state *css)
 
 static struct cftype files[] = {
 	{
-		.name = "max",
-		.write_s64 = pids_max_write,
-		.read_s64 = pids_max_show,
-		.flags = CFTYPE_NOT_ON_ROOT,
+	 .name = "max",
+	 .write_s64 = pids_max_write,
+	 .read_s64 = pids_max_show,
+	 .flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{
-		.name = "current",
-		.read_s64 = pids_current_read,
+	 .name = "current",
+	 .read_s64 = pids_current_read,
 	},
 	{
-		.name = "group_limit",
-		.seq_show = group_pids_limit_show,
-		.write = group_pids_limit_write,
-		.flags = CFTYPE_NOT_ON_ROOT,
+	 .name = "group_limit",
+	 .seq_show = group_pids_limit_show,
+	 .write = group_pids_limit_write,
+	 .flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{
-		.name = "group_tasks",
-		.seq_show = group_pids_max_show,
-		.flags = CFTYPE_NOT_ON_ROOT,
+	 .name = "group_tasks",
+	 .seq_show = group_pids_max_show,
+	 .flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{
-		.name = "cgroup.event_control",		/* XXX: for compat */
-		.write = pids_write_event_control,
-		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE,
+	 .name = "cgroup.event_control", /* XXX: for compat */
+	 .write = pids_write_event_control,
+	 .flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE,
 	},
 	{
-		.name = "group_event",
-		.seq_show = group_pids_events_show,
-		.flags = CFTYPE_NOT_ON_ROOT,
+	 .name = "group_event",
+	 .seq_show = group_pids_events_show,
+	 .flags = CFTYPE_NOT_ON_ROOT,
 	},
-	{ }	/* terminate */
+	{} /* terminate */
 };
 
 struct cgroup_subsys pids_cgrp_subsys = {

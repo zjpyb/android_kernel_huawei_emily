@@ -88,9 +88,14 @@ enum WakeCondition{
     WAKE_ADD,
     WAKE_SCRN_ON,
     WAKE_SCRN_OFF,
-    WAKE_CLR_DOZE
+    WAKE_CLR_DOZE,
+    WAKE_ENTER_DOZE
 };
-
+enum FilterType{
+    TYPE_HEAD = 0,
+    TYPE_ICMP = 1,
+    TYPE_TAIL
+};
 static struct task_struct *WifiFilterThread = NULL;
 static wait_queue_head_t mythread_wq;
 static int wake_up_condition = WAKE_INIT;
@@ -124,6 +129,9 @@ static wifi_filter_item_info g_item_info;
 static int wifi_filter_fb_notifier_cb(struct notifier_block *self,
     unsigned long event, void *data)
 {
+    struct fb_event *fb_event;
+    int *blank = NULL;
+
     if (!bIsSupportWifiFilter) {
         return NOTIFY_DONE;
     }
@@ -131,8 +139,8 @@ static int wifi_filter_fb_notifier_cb(struct notifier_block *self,
         return NOTIFY_DONE;
     }
 
-    struct fb_event *fb_event = data;
-    int *blank = fb_event->data;
+    fb_event = data;
+    blank = fb_event->data;
 
     if (NULL == blank) {
         return NOTIFY_DONE;
@@ -183,6 +191,7 @@ int hw_register_wlan_filter(struct hw_wlan_filter_ops *ops)
     gWlanFilterOps.clear_filters        = ops->clear_filters;
     gWlanFilterOps.get_filter_pkg_stat  = ops->get_filter_pkg_stat;
     gWlanFilterOps.set_filter_enable    = ops->set_filter_enable;
+    gWlanFilterOps.set_filter_enable_ex = ops->set_filter_enable_ex;
     /*
      * get wifi chip type
      */
@@ -212,6 +221,7 @@ int hw_unregister_wlan_filter()
     gWlanFilterOps.clear_filters        = NULL;
     gWlanFilterOps.get_filter_pkg_stat  = NULL;
     gWlanFilterOps.set_filter_enable    = NULL;
+    gWlanFilterOps.set_filter_enable_ex = NULL;
     spin_lock_bh(&g_item_info.item_lock);
     if (g_item_info.p_items_data != NULL) {
         kfree(g_item_info.p_items_data);
@@ -346,7 +356,7 @@ void get_filter_info(
     const struct xt_table_info *private,
     const struct ipt_entry *e)
 {
-    bool success;
+    bool success = false;
     spin_lock_bh(&g_item_info.item_lock);
 
     if (!bIsSupportWifiFilter) {
@@ -383,7 +393,7 @@ void get_filter_info(
 
 void get_filter_infoEx(struct sk_buff *skb)
 {
-    bool success;
+    bool success = false;
     spin_lock_bh(&g_item_info.item_lock);
 
     if (!bIsSupportWifiFilter) {
@@ -498,6 +508,9 @@ int hw_set_net_filter_enable(int enable)
         }
         wake_up_condition = WAKE_CLR_DOZE;
         wake_up_interruptible(&mythread_wq);
+    } else {
+        wake_up_condition = WAKE_ENTER_DOZE;
+        wake_up_interruptible(&mythread_wq);
     }
     return 0;
 }
@@ -529,6 +542,14 @@ static int wifi_filter_threadfn(void *data)
             break;
         case WAKE_CLR_DOZE:
             hw_clear_doze_item();
+            if (gWlanFilterOps.set_filter_enable_ex != NULL) {
+                gWlanFilterOps.set_filter_enable_ex(TYPE_ICMP,false);
+            }
+            break;
+        case WAKE_ENTER_DOZE:
+            if (gWlanFilterOps.set_filter_enable_ex != NULL) {
+                gWlanFilterOps.set_filter_enable_ex(TYPE_ICMP,true);
+            }
             break;
         default:
             break;

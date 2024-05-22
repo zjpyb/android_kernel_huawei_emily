@@ -17,6 +17,7 @@
 #include <linux/hisi/hi64xx/hi64xx_resmgr.h>
 #include <linux/hisi/hi64xx/hi64xx_irq.h>
 #include <linux/hisi/hi64xx/hi_cdc_ctrl.h>
+#include <linux/types.h>
 
 #ifndef OK
 #define OK            0
@@ -30,7 +31,7 @@
 #define MSG_SEND_RETRIES 0
 #define HIFI_SEC_MAX_NUM 32
 
-#define INT_TO_ADDR(low,high) (void*) (unsigned long)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
+#define INT_TO_ADDR(low,high) (void*) (uintptr_t)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
 #define GET_LOW32(x) (unsigned int)(((unsigned long long)(unsigned long)(x))&0xffffffffULL)
 #define GET_HIG32(x) (unsigned int)((((unsigned long long)(unsigned long)(x))>>32)&0xffffffffULL)
 
@@ -244,6 +245,8 @@ struct hi64xx_dsp_ops {
 	void (*wtd_enable)(bool);
 	/* config uart */
 	void (*uart_enable)(bool);
+	/* config i2c */
+	void (*i2c_enable)(bool);
 	/* notify 64xx dsp */
 	void (*notify_dsp)(void);
 	/* suspend proc */
@@ -295,6 +298,7 @@ struct hi64xx_dsp_config {
 	unsigned int mlib_to_ap_msg_addr;
 	unsigned int mlib_to_ap_msg_size;
 	enum bustype_select bus_sel;
+	bool dsp_48m_enable;
 };
 
 typedef int (*cmd_process_func)(struct krn_param_io_buf *);

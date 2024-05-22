@@ -46,6 +46,7 @@
 #include "PPP/Inc/link.h"
 #include "PPP/Inc/pap.h"
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 #define MAXPAPCODE 3 /* "\?\?\?", "REQUEST", "SUCCESS", "FAILURE" */
 
@@ -299,4 +300,5 @@ PPP_ZC_STRU * pap_Input(struct link *l, PPP_ZC_STRU *pstMem)
   return VOS_NULL_PTR;
 }
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

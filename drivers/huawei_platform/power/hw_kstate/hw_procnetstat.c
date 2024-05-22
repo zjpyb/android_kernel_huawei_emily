@@ -26,6 +26,11 @@
 #include <net/sock.h>
 #include <net/inet_sock.h>
 #include <linux/string.h>
+#include <huawei_platform/power/hw_kcollect.h>
+#include <securec.h>
+#ifdef CONFIG_HUAWEI_DUBAI
+#include <chipset_common/dubai/dubai.h>
+#endif
 
 #define MAX_PATH_LENGTH 255
 #define PROC_NAME_LENGTH 16
@@ -33,7 +38,11 @@
 #define STAT_HASHTABLE_SIZE 10
 #define MAX_CTRL_CMD_LENGTH 512
 #define MAX_SHARED_UID_NUM 80
+#define MAX_STATS_NUM 100
 #define CTRL_SET_SHARED_UID 1
+#define CTRL_SET_STATS_UID 2
+#define CTRL_SET_STATS_PID 3
+
 #define DEFAULT_SHARED_UID_NUMBER 4
 
 #define PROC_NET_INFO_NODE "proc_netstat"
@@ -46,6 +55,14 @@
 /* max store 80 shared uids */
 static int shared_uids[MAX_SHARED_UID_NUM] = {0};
 static int shared_uid_num = 0;
+
+/* max store 100 stats uids */
+static int stats_uids[MAX_STATS_NUM] = {0};
+static int stats_uid_num = 0;
+
+/* max store 100 stats pids */
+static int stats_pids[MAX_STATS_NUM] = {0};
+static int stats_pid_num = 0;
 
 /* stat_splock used to stat data */
 static DEFINE_RWLOCK(stat_splock);
@@ -119,14 +136,18 @@ static struct iface_stat *find_or_create_iface_entry(const char *if_name)
 
 /*lint -e666*/
 static struct proc_stat *find_or_create_proc_entry(struct iface_stat *iface_entry,
-													const char *proc_name, uid_t uid)
+	const char *proc_name, uid_t uid)
 {
 	struct proc_stat *proc_entry;
 	uint32_t hash_code;
 	char key[KEY_LENGTH] = {0};
 
 	/* proc name _ uid is the key */
-	snprintf(key, (KEY_LENGTH - 1), "%s_%d", proc_name, uid);
+	if (snprintf_s(key, KEY_LENGTH, (KEY_LENGTH - 1), "%s_%d", proc_name, uid) < 0) {
+		pr_err("%s, failed to copy\n", __func__);
+		return NULL;
+	}
+
 	/* use crc32 of proc_name for hash */
 	hash_code = crc32(0, key, strlen(key));
 
@@ -135,6 +156,7 @@ static struct proc_stat *find_or_create_proc_entry(struct iface_stat *iface_entr
 			return proc_entry;
 		}
 	}
+
 	proc_entry = kzalloc(sizeof(struct proc_stat), GFP_ATOMIC);
 	if (!proc_entry) {
 		pr_err("%s, no mem\n", __func__);
@@ -142,7 +164,13 @@ static struct proc_stat *find_or_create_proc_entry(struct iface_stat *iface_entr
 	}
 
 	strlcpy(proc_entry->proc_name, proc_name, PROC_NAME_LENGTH);
-	memset(&proc_entry->data, 0, sizeof(proc_entry->data));
+
+	if (memset_s(&proc_entry->data, sizeof(proc_entry->data), 0, sizeof(proc_entry->data)) != EOK) {
+		pr_err("%s, failed to memset_s\n", __func__);
+		kfree(proc_entry);
+		return NULL;
+	}
+
 	proc_entry->hash_code = hash_code;
 	proc_entry->pid = -1;
 	proc_entry->uid = uid;
@@ -156,7 +184,7 @@ static struct proc_stat *find_or_create_proc_entry(struct iface_stat *iface_entr
 /* get data entry to store net data */
 /*lint -e666 -e429*/
 static struct data_entry *get_data_entry(struct iface_stat *iface_entry,
-											pid_t pid, uid_t uid)
+	pid_t pid, uid_t uid)
 {
 	struct pid_stat *pid_entry;
 	struct proc_stat *proc_entry;
@@ -164,14 +192,14 @@ static struct data_entry *get_data_entry(struct iface_stat *iface_entry,
 
 	/* first check pid table */
 	hash_for_each_possible(iface_entry->pid_stat_table, pid_entry, node, pid) {
-		if (pid_entry->pid == pid && pid_entry->uid == uid) {
+		if ((pid_entry->pid == pid) && (pid_entry->uid == uid)) {
 			return &(pid_entry->data);
 		}
 	}
 
 	/* then check proc table, for some just dead pid. */
 	hash_for_each(iface_entry->proc_stat_table, bkt, proc_entry, node) {
-		if (proc_entry->pid == pid && proc_entry->uid == uid) {
+		if ((proc_entry->pid == pid) && (proc_entry->uid == uid)) {
 			return &(proc_entry->data);
 		}
 	}
@@ -185,7 +213,12 @@ static struct data_entry *get_data_entry(struct iface_stat *iface_entry,
 
 	pid_entry->pid = pid;
 	pid_entry->uid = uid;
-	memset(&pid_entry->data, 0, sizeof(pid_entry->data));
+	if (memset_s(&pid_entry->data, sizeof(pid_entry->data), 0, sizeof(pid_entry->data)) != EOK) {
+		pr_err("%s, failed to memset_s\n", __func__);
+		kfree(pid_entry);
+		return NULL;
+	}
+
 	INIT_HLIST_NODE(&pid_entry->node);
 	hash_add(iface_entry->pid_stat_table, &pid_entry->node, pid);
 
@@ -235,16 +268,13 @@ static void add_to_default_data_entry(const char *if_name, uint len, uint hooknu
 		write_unlock_bh(&stat_splock);
 		return;
 	}
+
 	update_data_entry(&proc_entry->data, hooknum, len);
 	write_unlock_bh(&stat_splock);
 }
 
 /* add data to pid or proc hash table */
-static void add_to_pid_stat(struct iface_stat *iface_entry,
-							pid_t pid,
-							uid_t uid,
-							uint len,
-							uint hooknum)
+static void add_to_pid_stat(struct iface_stat *iface_entry, pid_t pid, uid_t uid, uint len, uint hooknum)
 {
 	struct data_entry *data_entry;
 
@@ -282,8 +312,74 @@ static bool is_shared_uid(uid_t uid)
 	return ret;
 }
 
-/* account data to hash table */
-void account_data(pid_t pid, uint len, const char *if_name, uint hooknum, int uid)
+static int set_packet_stats(const char *curr_pointer, int *stats_arr, int *stats_num)
+{
+	int val;
+	int index = 0;
+	int ret = 0;
+	char *blank = NULL;
+
+	while ((blank = strchr(curr_pointer, ' ')) != NULL) {
+		ret = sscanf(curr_pointer, "%d", &val);
+		if (ret == -1) {/* -1 means no num found */
+			pr_err("%s, invald packet stats key\n", __func__);
+			break;
+		}
+
+		if (index < MAX_STATS_NUM) {
+			stats_arr[index] = val;
+			index++;
+		} else {
+			pr_info("%s, packet stats key size more than limit, not store\n", __func__);
+			break;
+		}
+		curr_pointer = ++blank;
+	}
+	*stats_num = index;
+
+	return 0;
+}
+
+static int update_packet_stats(int *stats_arr, int *stats_num, int key)
+{
+	int size = *stats_num;
+	int ret = -1;
+	int i;
+
+	for(i = 0 ; i < size; i++) {
+		if (stats_arr[i] == key) {
+			stats_arr[i] = stats_arr[size - 1];
+			size--;
+			break;
+		}
+	}
+	if (*stats_num > size) {
+		*stats_num = size;
+		ret = 0;
+	}
+
+	return ret;
+}
+
+static void report_stats_packet(uid_t uid, pid_t pid)
+{
+	int ret;
+
+	write_lock_bh(&stat_splock);
+	ret = update_packet_stats (stats_uids, &stats_uid_num, uid);
+	if (ret == 0) {
+		hw_packet_cb(uid, -1);
+	} else {
+		ret = update_packet_stats (stats_pids, &stats_pid_num, pid);
+		if (ret == 0) {
+			hw_packet_cb(uid, pid);
+		}
+	}
+	write_unlock_bh(&stat_splock);
+}
+
+/* stat data to hash table */
+void stat_data(pid_t pid, uint len, const char *if_name, uint hooknum, int uid)
 {
 	struct iface_stat *iface_entry;
 
@@ -302,9 +398,7 @@ void account_data(pid_t pid, uint len, const char *if_name, uint hooknum, int ui
 }
 
 /* hook to get data to account */
-static unsigned int hook_datastat(void *priv,
-							struct sk_buff *skb,
-							const struct nf_hook_state *state)
+static unsigned int hook_datastat(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
 	struct socket *socket;
 	struct file *filp;
@@ -315,8 +409,11 @@ static unsigned int hook_datastat(void *priv,
 	pid_t pid = -1;
 	bool isDefault = false;
 	const char *proc_name = NULL;
+#ifdef CONFIG_HUAWEI_DUBAI
+	uid_t pkg_uid = -1;
+#endif
 
-	if (0 == shared_uid_num) {
+	if ((shared_uid_num == 0) && (stats_uid_num == 0) && (stats_pid_num == 0)) {
 		return NF_ACCEPT;
 	}
 
@@ -332,10 +429,11 @@ static unsigned int hook_datastat(void *priv,
 	/* check run-time state */
 	if (NF_INET_LOCAL_OUT == hook) {
 		dev = state->out;
-	} else if (hook == NF_INET_LOCAL_IN) {
+	} else if (NF_INET_LOCAL_IN == hook) {
 		dev = state->in;
 	}
-	if (NULL == dev || NULL == dev->name) {
+
+	if (NULL == dev) {
 		goto exit;
 	}
 
@@ -359,8 +457,11 @@ static unsigned int hook_datastat(void *priv,
 	if (NULL != socket) {
 		filp = socket->file;
 		pid = socket->pid;
-		if (NULL != filp && NULL != filp->f_cred) {
+		if ((NULL != filp) && (NULL != filp->f_cred)) {
 			uid = from_kuid(&init_user_ns, filp->f_cred->fsuid);
+#ifdef CONFIG_HUAWEI_DUBAI
+			pkg_uid = uid;
+#endif
 		}
 	} else {
 		/* sk->sk_socket is null, should account to default*/
@@ -373,10 +474,19 @@ static unsigned int hook_datastat(void *priv,
 		goto account_default_and_exit;
 	}
 
+#ifdef CONFIG_HUAWEI_DUBAI
+	dubai_send_app_wakeup(skb, hook, state->pf, pkg_uid, pid);
+#endif
+
+	if (hook == NF_INET_LOCAL_IN) {
+		report_stats_packet(uid, pid);
+	}
+
 	if (is_shared_uid(uid) == false) {
 		return NF_ACCEPT;
 	}
-	account_data(pid, skb->len, dev->name, hook, uid);
+
+	stat_data(pid, skb->len, dev->name, hook, uid);
 	return NF_ACCEPT;
 
 account_default_and_exit:
@@ -431,7 +541,7 @@ static void calc_pid_to_proc(struct pid_stat *pid_entry, struct proc_stat *proc_
 }
 
 /* move dead pid to proc */
-static void move_dead_pid_to_proc(struct iface_stat *iface_entry, struct pid_stat *pid_entry, char *proc_name)
+static void move_dead_pid_to_proc(struct iface_stat *iface_entry, struct pid_stat *pid_entry, const char *proc_name)
 {
 	struct proc_stat *proc_entry;
 
@@ -454,12 +564,13 @@ static int process_exit_callback(struct notifier_block *self, ulong cmd, void *v
 	unsigned long bkt;
 	uid_t uid;
 
+	/* 0 means not set share uid */
 	if (0 == shared_uid_num) {
 		return NOTIFY_OK;
 	}
 
 	/* ignore child threads, only care about main process. */
-	if (!task || task != task->group_leader) {
+	if (!task || (task != task->group_leader)) {
 		return NOTIFY_OK;
 	}
 
@@ -480,6 +591,7 @@ static int process_exit_callback(struct notifier_block *self, ulong cmd, void *v
 			if (pid_entry->pid != task->pid) {
 				continue;
 			}
+
 			move_dead_pid_to_proc(iface_entry, pid_entry, task->comm);
 			hash_del(&pid_entry->node);
 			kfree(pid_entry);
@@ -506,11 +618,11 @@ static ssize_t ctrl_stat_write(struct file *file, const char __user *buffer, siz
 	int cmd;
 	int val;
 	int index = DEFAULT_SHARED_UID_NUMBER;
-	char *curr_pointer;
-	char *blank;
+	char *curr_pointer = NULL;
+	char *blank = NULL;
 	int ret;
 	int i;
-	bool valid;
+	bool valid = false;
 
 	if ((count <= 0) || (count >= MAX_CTRL_CMD_LENGTH)) {
 		pr_err("%s, invalid count %ld\n", __func__, count);
@@ -548,6 +660,7 @@ static ssize_t ctrl_stat_write(struct file *file, const char __user *buffer, siz
 					write_unlock_bh(&stat_splock);
 					return -EINVAL;
 				}
+
 				valid = false;
 				for (i = 0; i < DEFAULT_SHARED_UID_NUMBER; i++) {
 					if (shared_uids[i] == val) {
@@ -555,16 +668,26 @@ static ssize_t ctrl_stat_write(struct file *file, const char __user *buffer, siz
 						break;
 					}
 				}
-				if (!valid && index >= DEFAULT_SHARED_UID_NUMBER && index < MAX_SHARED_UID_NUM) {
+
+				if (!valid && (index >= DEFAULT_SHARED_UID_NUMBER) && (index < MAX_SHARED_UID_NUM)) {
 					shared_uids[index] = val;
 					index++;
 				}
+
 				if (index >= MAX_SHARED_UID_NUM) {
 					break;
 				}
 				curr_pointer = ++blank;
 			}
 			shared_uid_num = index;
+			break;
+		}
+		case CTRL_SET_STATS_UID: {
+			set_packet_stats(curr_pointer, stats_uids, &stats_uid_num);
+			break;
+		}
+		case CTRL_SET_STATS_PID: {
+			set_packet_stats(curr_pointer, stats_pids, &stats_pid_num);
 			break;
 		}
 		default:
@@ -662,9 +785,9 @@ static int __init procnetstat_init(void)
 
 	/* register data hook function */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
- 	err = nf_register_hooks(netstat_nf_hooks, ARRAY_SIZE(netstat_nf_hooks));
+	err = nf_register_hooks(netstat_nf_hooks, ARRAY_SIZE(netstat_nf_hooks));
 #else
- 	err = nf_register_net_hooks(&init_net, netstat_nf_hooks, ARRAY_SIZE(netstat_nf_hooks));
+	err = nf_register_net_hooks(&init_net, netstat_nf_hooks, ARRAY_SIZE(netstat_nf_hooks));
 #endif
 	if (err < 0) {
 		pr_err("nf_register_hooks_err\n");
@@ -675,10 +798,13 @@ static int __init procnetstat_init(void)
 nf_register_hooks_err:
 	profile_event_unregister(PROFILE_TASK_EXIT, &netstat_process_nb);
 	remove_proc_entry(CTRL, parent);
+
 mk_proc_ctrl_err:
 	remove_proc_entry(STATS, parent);
+
 mk_proc_stats_err:
 	remove_proc_entry(PROC_NET_INFO_NODE, init_net.proc_net);
+
 mk_proc_dir_err:
 	return -1;
 }

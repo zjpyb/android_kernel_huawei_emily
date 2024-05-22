@@ -40,15 +40,15 @@
 #undef HWLOG_TAG
 #endif
 
-#define HWLOG_TAG direct_charger_ps
+#define HWLOG_TAG direct_charge_ps
 HWLOG_REGIST();
 
-static int scp_ps_by_5vboost;
-static int scp_ps_by_charger;
+static u32 scp_ps_by_5vboost;
+static u32 scp_ps_by_charger;
 
-static int is_need_bst_ctrl;
+static u32 is_need_bst_ctrl;
 static int bst_ctrl;
-static int bst_ctrl_use_common_gpio;
+static u32 bst_ctrl_use_common_gpio;
 
 int direct_charge_set_bst_ctrl(int enable)
 {
@@ -67,7 +67,7 @@ int direct_charge_set_bst_ctrl(int enable)
 	return ret;
 }
 
-static int scp_power_enable_by_5vboost(int enable)
+static int scp_ps_enable_by_5vboost(int enable)
 {
 	int ret = 0;
 
@@ -86,7 +86,7 @@ static int scp_power_enable_by_5vboost(int enable)
 	return ret;
 }
 
-static int scp_power_enable_by_charger(int enable)
+static int scp_ps_enable_by_charger(int enable)
 {
 	int ret = 0;
 
@@ -94,89 +94,82 @@ static int scp_power_enable_by_charger(int enable)
 
 	if (scp_ps_by_charger) {
 #ifdef CONFIG_HUAWEI_CHARGER_AP
-		ret |= charge_otg_mode_enable(enable, OTG_CTRL_DC);
+		ret |= charge_otg_mode_enable(enable, VBUS_CH_USER_DC);
 #endif /* CONFIG_HUAWEI_CHARGER_AP */
 	}
 
 	return ret;
 }
 
-static int scp_power_enable_by_dummy(int enable)
+static int scp_ps_enable_by_dummy(int enable)
 {
 	hwlog_info("by_dummy=dummy, enable=%d\n", enable);
 
 	return 0;
 }
 
-static struct scp_power_supply_ops scp_ps_dummy_ops = {
-	.scp_power_enable = scp_power_enable_by_dummy,
+static struct direct_charge_pps_ops scp_ps_dummy_ops = {
+	.power_supply_enable = scp_ps_enable_by_dummy,
 };
 
-static struct scp_power_supply_ops scp_ps_5vboost_ops = {
-	.scp_power_enable = scp_power_enable_by_5vboost,
+static struct direct_charge_pps_ops scp_ps_5vboost_ops = {
+	.power_supply_enable = scp_ps_enable_by_5vboost,
 };
 
-static struct scp_power_supply_ops scp_ps_charger_ops = {
-	.scp_power_enable = scp_power_enable_by_charger,
+static struct direct_charge_pps_ops scp_ps_charger_ops = {
+	.power_supply_enable = scp_ps_enable_by_charger,
 };
 
 int direct_charge_ps_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct device_node *np = (&pdev->dev)->of_node;
+	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
-	if (of_property_read_u32(np, "boost_5v_support_scp_power",
-		&scp_ps_by_5vboost)) {
-		hwlog_err("boost_5v_support_scp_power dts read failed\n");
-		scp_ps_by_5vboost = 0;
-	}
-	hwlog_info("scp_ps_by_5vboost=%d\n", scp_ps_by_5vboost);
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
 
-	if (of_property_read_u32(np, "huawei_charger_support_scp_power",
-		&scp_ps_by_charger)) {
-		hwlog_err("huawei_charger_support_scp_power dts read failed\n");
-		scp_ps_by_charger = 0;
-	}
-	hwlog_info("scp_ps_by_charger=%d\n", scp_ps_by_charger);
+	np = pdev->dev.of_node;
 
-	if (of_property_read_u32(np, "is_need_bst_ctrl", &is_need_bst_ctrl)) {
-		hwlog_err("is_need_bst_ctrl dts read failed\n");
-		is_need_bst_ctrl = 0;
-	}
-	hwlog_info("is_need_bst_ctrl=%d\n", is_need_bst_ctrl);
-
-	if (of_property_read_u32(np, "bst_ctrl_use_common_gpio",
-		&bst_ctrl_use_common_gpio)) {
-		hwlog_err("bst_ctrl_use_common_gpio dts read failed\n");
-		bst_ctrl_use_common_gpio = 0;
-	}
-	hwlog_info("bst_ctrl_use_common_gpio=%d\n", bst_ctrl_use_common_gpio);
+	(void)power_dts_read_u32(np, "boost_5v_support_scp_power",
+		&scp_ps_by_5vboost, 0);
+	(void)power_dts_read_u32(np, "huawei_charger_support_scp_power",
+		&scp_ps_by_charger, 0);
+	(void)power_dts_read_u32(np, "is_need_bst_ctrl",
+		&is_need_bst_ctrl, 0);
+	(void)power_dts_read_u32(np, "bst_ctrl_use_common_gpio",
+		&bst_ctrl_use_common_gpio, 0);
 
 	if ((is_need_bst_ctrl) && (!bst_ctrl_use_common_gpio)) {
 		bst_ctrl = of_get_named_gpio(np, "bst_ctrl", 0);
 		hwlog_info("bst_ctrl=%d\n", bst_ctrl);
 
 		if (!gpio_is_valid(bst_ctrl)) {
-			hwlog_err("gpio(bst_ctrl) is not valid\n");
+			hwlog_err("gpio is not valid\n");
 			return -1;
 		}
 
 		ret = gpio_request(bst_ctrl, "bst_ctrl");
 		if (ret) {
-			hwlog_err("gpio(bst_ctrl) request fail\n");
+			hwlog_err("gpio request fail\n");
 			gpio_free(bst_ctrl);
 			return -1;
 		}
 	}
 
-	/* regisger dummy power supply ops */
-	scp_power_supply_ops_register(&scp_ps_dummy_ops);
+	/* regisger dummy protocol power supply ops */
+	ret = direct_charge_pps_ops_register(&scp_ps_dummy_ops);
+	if (ret) {
+		hwlog_err("(dummy)scp power supply ops register fail\n");
+		goto fail_register_ops;
+	} else {
+		hwlog_info("(dummy)scp power supply ops register ok\n");
+	}
 
-	/* regisger 5vboost power supply ops */
+	/* regisger 5vboost protocol power supply ops */
 	if (scp_ps_by_5vboost) {
-		ret = scp_power_supply_ops_register(&scp_ps_5vboost_ops);
+		ret = direct_charge_pps_ops_register(&scp_ps_5vboost_ops);
 		if (ret) {
 			hwlog_err("(5vboost)scp power supply ops register fail\n");
 			goto fail_register_ops;
@@ -185,9 +178,9 @@ int direct_charge_ps_probe(struct platform_device *pdev)
 		}
 	}
 
-	/* regisger charger power supply ops */
+	/* regisger charger protocol power supply ops */
 	if (scp_ps_by_charger) {
-		ret = scp_power_supply_ops_register(&scp_ps_charger_ops);
+		ret = direct_charge_pps_ops_register(&scp_ps_charger_ops);
 		if (ret) {
 			hwlog_err("(charger)scp power supply ops register fail\n");
 			goto fail_register_ops;

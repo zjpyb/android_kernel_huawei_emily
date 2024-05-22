@@ -29,6 +29,7 @@
 #include <linux/kthread.h>
 
 #define UART_NR			14
+#define A53_cluster0_cpu1       1
 
 enum {
 	REG_DR,
@@ -184,6 +185,7 @@ struct uart_tx_unit {
 	unsigned int		dmacr;		/* dma control reg */
 	unsigned int		im;		/* interrupt mask */
 	unsigned int		old_status;
+	unsigned int		bind_int_flag;
 	unsigned int		fifosize;	/* vendor-specific */
 	unsigned int		old_cr;		/* state during shutdown */
 	bool			autorts;

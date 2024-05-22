@@ -1,56 +1,55 @@
-/**
- * @file tee_client_api.h
- *
- * Copyright(C), 2008-2013, Huawei Tech. Co., Ltd. ALL RIGHTS RESERVED. \n
- *
- * 描述：定义非安全客户端接口\n
- */
+/*
+  * Copyright (c) Huawei Technologies Co., Ltd. 2016-2019. All rights reserved.
+  * Description: Function declaration for libteec interface for kernel CA.
+  * Author: qiqingchao  q00XXXXXX
+  * Create: 2016-06-21
+  */
 
-/** @defgroup TEEC_API 客户端(非安全侧)接口
- */
-/**@defgroup TEEC_BASIC_FUNC 通用接口
- *@ingroup TEEC_API
-*/
+
+/* @defgroup TEEC_API 客户端(非安全侧)接口
+  * @defgroup TEEC_BASIC_FUNC 通用接口
+  * @ingroup TEEC_API
+  */
 
 #ifndef _TEEK_CLIENT_API_H_
 #define _TEEK_CLIENT_API_H_
-
+#include "teek_ns_client.h"
 #include "teek_client_type.h"
 
-/**
- * @ingroup TEEC_BASIC_FUNC
- * 用于计算非安全世界与安全世界传递参数的数值
- */
-#define TEEC_PARAM_TYPES(param0Type, param1Type, param2Type, param3Type) \
-	((param3Type) << 12 | (param2Type) << 8 | \
-	 (param1Type) << 4 | (param0Type))
+/*
+  * @ingroup TEEC_BASIC_FUNC
+  * 用于计算非安全世界与安全世界传递参数的数值
+  */
+#define TEEC_PARAM_TYPES(param0_type, param1_type, param2_type, param3_type) \
+		((param3_type) << 12 | (param2_type) << 8 | \
+		 (param1_type) << 4 | (param0_type))
 
-/**
+/*
  * @ingroup TEEC_BASIC_FUNC
  * 用于计算paramTypes中字段index的数值
  */
-#define TEEC_PARAM_TYPE_GET(paramTypes, index) \
-	(((paramTypes) >> (4*(index))) & 0x0F)
+#define TEEC_PARAM_TYPE_GET(param_types, index) \
+		(((param_types) >> ((index) << 2)) & 0x0F)
 
-/**
+/*
  * @ingroup TEEC_BASIC_FUNC
- * 当参数类型为#TEEC_Value时，如果成员变量a或b没有给定值，需赋予此值，
+ * 当参数类型为#teec_value时，如果成员变量a或b没有给定值，需赋予此值，
  * 表示没有用到此成员变量
  */
 #define TEEC_VALUE_UNDEF 0xFFFFFFFF
 
 /*
- * Function:      TEEK_IsAgentAlive
+ * Function:        teek_is_agent_alive
  * Description:   This function check if the special agent is launched.
- *              Used For HDCP key.
- *                e.g. If sfs agent is not alive,
- *                you can not do HDCP key write to SRAM.
+ *                         Used For HDCP key.
+ *                         e.g. If sfs agent is not alive,
+ *                         you can not do HDCP key write to SRAM.
  * Parameters:   agent_id.
- * Return:      1:agent is alive
- *              0:agent not exsit.
+ * Return:          1:agent is alive
+ *                        0:agent not exsit.
  */
-int TEEK_IsAgentAlive(unsigned int agent_id);
-/**
+int teek_is_agent_alive(unsigned int agent_id);
+/*
  * @ingroup  TEEC_BASIC_FUNC
  * @brief 初始化TEE环境
  *
@@ -73,9 +72,9 @@ int TEEK_IsAgentAlive(unsigned int agent_id);
  * @see TEEC_FinalizeContext
  * @since V100R002C00B301
  */
-TEEC_Result TEEK_InitializeContext(const char *name, TEEC_Context *context);
+teec_result teek_initialize_context(const char *name, teec_context *context);
 
-/**
+/*
  * @ingroup  TEEC_BASIC_FUNC
  * @brief 关闭TEE环境
  *
@@ -93,9 +92,9 @@ TEEC_Result TEEK_InitializeContext(const char *name, TEEC_Context *context);
  * @see TEEC_InitializeContext
  * @since V100R002C00B301
  */
-void TEEK_FinalizeContext(TEEC_Context *context);
+void teek_finalize_context(teec_context *context);
 
-/**
+/*
  * @ingroup  TEEC_BASIC_FUNC
  * @brief 打开会话
  *
@@ -134,13 +133,13 @@ void TEEK_FinalizeContext(TEEC_Context *context);
  * @see TEEC_CloseSession
  * @since V100R002C00B301
  */
-TEEC_Result TEEK_OpenSession(TEEC_Context *context,
-			     TEEC_Session *session,
-			     const TEEC_UUID *destination,
-			     uint32_t connectionMethod,
-			     const void *connectionData,
-			     TEEC_Operation *operation,
-			     uint32_t *returnOrigin);
+teec_result teek_open_session(teec_context *context,
+	teec_session *session,
+	const teec_uuid *destination,
+	uint32_t connection_method,
+	const void *connection_data,
+	teec_operation *operation,
+	uint32_t *returnOrigin);
 
 /**
  * @ingroup  TEEC_BASIC_FUNC
@@ -160,7 +159,7 @@ TEEC_Result TEEK_OpenSession(TEEC_Context *context,
  * @see TEEC_OpenSession
  * @since V100R002C00B301
  */
-void TEEK_CloseSession(TEEC_Session *session);
+void teek_close_session(teec_session *session);
 
 /**
  * @ingroup  TEEC_BASIC_FUNC
@@ -188,10 +187,10 @@ void TEEK_CloseSession(TEEC_Session *session);
  * @see 无
  * @since V100R002C00B301
  */
-TEEC_Result TEEK_InvokeCommand(TEEC_Session *session,
-			       uint32_t commandID,
-			       TEEC_Operation *operation,
-			       uint32_t *returnOrigin);
+teec_result teek_invoke_command(teec_session *session,
+	uint32_t commandID,
+	teec_operation *operation,
+	uint32_t *returnOrigin);
 
 /**
  * @ingroup  TEEC_BASIC_FUNC
@@ -217,8 +216,8 @@ TEEC_Result TEEK_InvokeCommand(TEEC_Session *session,
  * @see TEEC_AllocateSharedMemory
  * @since V100R002C00B301
  */
-TEEC_Result TEEK_RegisterSharedMemory(TEEC_Context *context,
-				      TEEC_SharedMemory *sharedMem);
+teec_result teek_register_shared_memory(teec_context *context,
+	teec_sharedmemory *sharedMem);
 
 /**
  * @ingroup  TEEC_BASIC_FUNC
@@ -243,8 +242,8 @@ TEEC_Result TEEK_RegisterSharedMemory(TEEC_Context *context,
  * @see TEEC_RegisterSharedMemory
  * @since V100R002C00B301
  */
-TEEC_Result TEEK_AllocateSharedMemory(TEEC_Context *context,
-				      TEEC_SharedMemory *sharedMem);
+teec_result teek_allocate_shared_memory(teec_context *context,
+	teec_sharedmemory *sharedMem);
 
 /**
  * @ingroup  TEEC_BASIC_FUNC
@@ -266,7 +265,7 @@ TEEC_Result TEEK_AllocateSharedMemory(TEEC_Context *context,
  * @see TEEC_RegisterSharedMemory | TEEC_AllocateSharedMemory
  * @since V100R002C00B301
  */
-void TEEK_ReleaseSharedMemory(TEEC_SharedMemory *sharedMem);
+void teek_release_shared_memory(teec_sharedmemory *sharedMem);
 
 /**
  * @ingroup  TEEC_BASIC_FUNC
@@ -287,7 +286,40 @@ void TEEK_ReleaseSharedMemory(TEEC_SharedMemory *sharedMem);
  * @see 无
  * @since V100R002C00B309
  */
+void teek_request_cancellation(teec_operation *operation);
+
+/* begin: for KERNEL-HAL out interface */
+int TEEK_IsAgentAlive(unsigned int agent_id);
+
+TEEC_Result TEEK_InitializeContext(const char *name, TEEC_Context *context);
+
+void TEEK_FinalizeContext(TEEC_Context *context);
+
+TEEC_Result TEEK_OpenSession(TEEC_Context *context,
+	TEEC_Session *session,
+	const TEEC_UUID *destination,
+	uint32_t connectionMethod,
+	const void *connectionData,
+	TEEC_Operation *operation,
+	uint32_t *returnOrigin);
+
+void TEEK_CloseSession(TEEC_Session *session);
+
+TEEC_Result TEEK_InvokeCommand(TEEC_Session *session,
+	uint32_t commandID,
+	TEEC_Operation *operation,
+	uint32_t *returnOrigin);
+
+TEEC_Result TEEK_RegisterSharedMemory(TEEC_Context *context,
+	TEEC_SharedMemory *sharedMem);
+
+TEEC_Result TEEK_AllocateSharedMemory(TEEC_Context *context,
+	TEEC_SharedMemory *sharedMem);
+
+void TEEK_ReleaseSharedMemory(TEEC_SharedMemory *sharedMem);
+
 void TEEK_RequestCancellation(TEEC_Operation *operation);
 
-#endif
+/* end: for KERNEL-HAL out interface */
 
+#endif

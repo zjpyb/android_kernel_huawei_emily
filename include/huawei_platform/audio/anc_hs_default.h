@@ -1,12 +1,20 @@
 /*
- * anc_max14744.h -- anc headset driver
+ * anc_hs_default.h
  *
- * Copyright (c) 2014 Huawei Technologies CO., Ltd.
+ * analog headset default driver
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2014-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
+
 #ifndef ANC_DEFAULT
 #define ANC_DEFAULT
 
@@ -15,10 +23,9 @@
 #ifdef CONFIG_ANC_DEFAULT
 void anc_max14744_refresh_headset_type(int headset_type);
 #else
-void anc_max14744_refresh_headset_type(int headset_type)
+inline void anc_max14744_refresh_headset_type(int headset_type)
 {
-	return;
 }
-#endif //CONFIG_ANC_DEFAULT
+#endif
 
-#endif //ANC_DEFAULT
+#endif /* ANC_DEFAULT */

@@ -11,7 +11,8 @@
 #include <linux/mutex.h>
 #include <sound/soc.h>
 #include <linux/jiffies.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/hisi/hi64xx/hi64xx_vad.h>
 #include <linux/hisi/hi64xx/hi64xx_irq.h>
 #include <hi64xx_algo_interface.h>
@@ -24,7 +25,7 @@
 struct hi64xx_vad_platform_data {
 	struct snd_soc_codec	*codec;;
 	struct hi64xx_irq		*irq;
-	struct wake_lock		soundtrigger_wake_lock;
+	struct wakeup_source	soundtrigger_wake_lock;
 	unsigned short			fast_mode_enable;
 };
 
@@ -36,10 +37,7 @@ static irqreturn_t hi64xx_sound_trigger_handler(int irq, void *data)
 		(struct hi64xx_vad_platform_data *)data;
 	unsigned int soundtrigger_event = 0;
 
-	WARN_ON(NULL == pdata);
-	WARN_ON(NULL == vad_data);
-
-	wake_lock_timeout(&pdata->soundtrigger_wake_lock, msecs_to_jiffies(1000));
+	__pm_wakeup_event(&pdata->soundtrigger_wake_lock, 1000);
 
 	/* clr VAD INTR */
 	snd_soc_write(pdata->codec, HI64xx_VAD_INT_SET, 0);
@@ -89,7 +87,7 @@ int hi64xx_vad_init(struct snd_soc_codec *codec, struct hi64xx_irq *irq)
 	vad_data->irq = irq;
 	vad_data->fast_mode_enable = 0;
 
-	wake_lock_init(&vad_data->soundtrigger_wake_lock, WAKE_LOCK_SUSPEND, "hisi-6402-soundtrigger");
+	wakeup_source_init(&vad_data->soundtrigger_wake_lock, "hisi-6402-soundtrigger");
 
 	/* irq request : sound triger */
 	ret = hi64xx_irq_request_irq(vad_data->irq, IRQ_VAD, hi64xx_sound_trigger_handler, "sound_triger", vad_data);
@@ -108,12 +106,13 @@ int hi64xx_vad_deinit()
 	if (!vad_data)
 		return -EINVAL;
 
-	wake_lock_destroy(&vad_data->soundtrigger_wake_lock);
+	wakeup_source_trash(&vad_data->soundtrigger_wake_lock);
 
 	if (vad_data->irq)
 		hi64xx_irq_free_irq(vad_data->irq, IRQ_VAD, vad_data);
 
 	kfree(vad_data);
+	vad_data = NULL;
 
 	return 0;
 }

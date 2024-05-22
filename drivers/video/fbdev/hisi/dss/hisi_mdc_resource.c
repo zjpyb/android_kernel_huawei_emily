@@ -12,6 +12,7 @@
  */
 
 #include "hisi_fb.h"
+#include "hisi_mmbuf_manager.h"
 
 //lint -save -e768
 
@@ -23,15 +24,8 @@ static int mdc_refresh_handle_thread(void *data)
 	while (!kthread_should_stop()) {
 		ret = wait_event_interruptible(hisifd->mdc_ops.refresh_handle_wait, hisifd->need_refresh);
 		if (!ret && hisifd->need_refresh) {
-			char *envp[2];
-			char buf[64];
-			snprintf(buf, sizeof(buf), "Refresh=1");
-			envp[0] = buf;
-			envp[1] = NULL;
-			kobject_uevent_env(&(hisifd->fbi->dev->kobj), KOBJ_CHANGE, envp);
-
+			hisi_fb_frame_refresh(hisifd, "mdc");
 			hisifd->need_refresh = false;
-			HISI_FB_INFO("Refresh=1!\n");
 		}
 	}
 	return 0;
@@ -42,12 +36,15 @@ static int mdc_chn_request_handle(struct hisi_fb_data_type *hisifd,
 {
 	unsigned int i;
 	mdc_chn_info_t *mdc_chn = NULL;
-	mdc_func_ops_t *mdc_ops;
+	mdc_func_ops_t *mdc_ops = NULL;
+	uint32_t mmbuf_mdc_reserved_size;
 
 	if (!hisifd || !chn_info) {
 		HISI_FB_ERR("hisifd or chn_info is null.\n");
 		return -EINVAL;
 	}
+
+	mmbuf_mdc_reserved_size = dss_mmbuf_reserved_info[SERVICE_MDC].size;
 
 	mdc_ops = &(hisifd->mdc_ops);
 	if (mdc_ops->chan_num > MAX_MDC_CHANNEL) {
@@ -84,28 +81,24 @@ static int mdc_chn_request_handle(struct hisi_fb_data_type *hisifd,
 		/* chn available */
 		if ((chn_info->rch_need_cap & CAP_HFBCD) == CAP_HFBCD) {
 			if ((chn_info->mmbuf_size == 0)
-				|| (chn_info->mmbuf_size > MMBUF_SIZE_MDC_MAX)
+				|| (chn_info->mmbuf_size > mmbuf_mdc_reserved_size)
 				|| (chn_info->mmbuf_size & (MMBUF_ADDR_ALIGN - 1))) {
 
 				HISI_FB_ERR("fb%d, mmbuf size is invalid, size = %d!\n",
 					hisifd->index, chn_info->mmbuf_size);
 				return -EINVAL;
 			}
-
-			chn_info->mmbuf_addr = MMBUF_SIZE_MAX + MMBUF_BASE;//hisi_dss_mmbuf_alloc(hisifd->mmbuf_gen_pool, chn_info->mmbuf_size);
 		}
 
 		if ((chn_info->rch_need_cap & CAP_AFBCD) == CAP_AFBCD) {
 			if ((chn_info->mmbuf_size == 0)
-				|| (chn_info->mmbuf_size > MMBUF_SIZE_MDC_MAX)
+				|| (chn_info->mmbuf_size > mmbuf_mdc_reserved_size)
 				|| (chn_info->mmbuf_size & (MMBUF_ADDR_ALIGN - 1))) {
 
 				HISI_FB_ERR("fb%d, mmbuf size is invalid, size = %d!\n",
 					hisifd->index, chn_info->mmbuf_size);
 				return -EINVAL;
 			}
-
-			chn_info->mmbuf_addr = MMBUF_SIZE_MAX + MMBUF_BASE;//hisi_dss_mmbuf_alloc(hisifd->mmbuf_gen_pool, chn_info->mmbuf_size);
 		}
 
 		chn_info->rch_idx = mdc_chn->rch_idx;
@@ -146,7 +139,6 @@ static int mdc_chn_request_handle(struct hisi_fb_data_type *hisifd,
 		}
 
 		if ((mdc_chn->status == MDC_USED) && (chn_info->hold_flag == HWC_REQUEST)) {
-
 			continue;
 		}
 
@@ -159,28 +151,24 @@ static int mdc_chn_request_handle(struct hisi_fb_data_type *hisifd,
 		/* chn available */
 		if ((chn_info->rch_need_cap & CAP_HFBCD) == CAP_HFBCD) {
 			if ((chn_info->mmbuf_size == 0)
-				|| (chn_info->mmbuf_size > MMBUF_SIZE_MDC_MAX)
+				|| (chn_info->mmbuf_size > mmbuf_mdc_reserved_size)
 				|| (chn_info->mmbuf_size & (MMBUF_ADDR_ALIGN - 1))) {
 
 				HISI_FB_ERR("fb%d, mmbuf size is invalid, size = %d!\n",
 					hisifd->index, chn_info->mmbuf_size);
 				return -EINVAL;
 			}
-
-			chn_info->mmbuf_addr = MMBUF_SIZE_MAX + MMBUF_BASE;//hisi_dss_mmbuf_alloc(hisifd->mmbuf_gen_pool, chn_info->mmbuf_size);
 		}
 
 		if ((chn_info->rch_need_cap & CAP_AFBCD) == CAP_AFBCD) {
 			if ((chn_info->mmbuf_size == 0)
-				|| (chn_info->mmbuf_size > MMBUF_SIZE_MDC_MAX)
+				|| (chn_info->mmbuf_size > mmbuf_mdc_reserved_size)
 				|| (chn_info->mmbuf_size & (MMBUF_ADDR_ALIGN - 1))) {
 
 				HISI_FB_ERR("fb%d, mmbuf size is invalid, size = %d!\n",
 					hisifd->index, chn_info->mmbuf_size);
 				return -EINVAL;
 			}
-
-			chn_info->mmbuf_addr = MMBUF_SIZE_MAX + MMBUF_BASE;//hisi_dss_mmbuf_alloc(hisifd->mmbuf_gen_pool, chn_info->mmbuf_size);
 		}
 
 		chn_info->rch_idx = mdc_chn->rch_idx;
@@ -204,7 +192,7 @@ int mdc_chn_release_handle(struct hisi_fb_data_type *hisifd,
 {
 	unsigned int i;
 	mdc_chn_info_t *mdc_chn = NULL;
-	mdc_func_ops_t *mdc_ops;
+	mdc_func_ops_t *mdc_ops = NULL;
 
 	if (!hisifd || !chn_info) {
 		HISI_FB_ERR("hisifd or chn_info is null.\n");
@@ -289,7 +277,7 @@ int hisi_mdc_chn_request(struct fb_info *info, void __user *argp)
 		}
 	}
 
-	if (mdc_ops->chn_request_handle) {
+	if (mdc_ops->chn_request_handle != NULL) {
 		if (mdc_ops->chn_request_handle(hisifd, &chn_info)) {
 			HISI_FB_INFO("fb%d, request chn failed!\n", hisifd->index);
 			up(&mdc_ops->mdc_req_sem);
@@ -300,7 +288,7 @@ int hisi_mdc_chn_request(struct fb_info *info, void __user *argp)
 	ret = copy_to_user(argp, &chn_info, sizeof(mdc_ch_info_t));
 	if (ret) {
 		HISI_FB_ERR("fb%d, copy to user failed! ret=%d.", hisifd->index, ret);
-		if (mdc_ops->chn_release_handle) {
+		if (mdc_ops->chn_release_handle != NULL) {
 			mdc_ops->chn_release_handle(hisifd, &chn_info);
 		}
 	}
@@ -346,7 +334,7 @@ int hisi_mdc_chn_release(struct fb_info *info, const void __user *argp)
 		return -EINVAL;
 	}
 
-	if (mdc_ops->chn_release_handle) {
+	if (mdc_ops->chn_release_handle != NULL) {
 		ret = mdc_ops->chn_release_handle(hisifd, &chn_info);
 	}
 
@@ -357,9 +345,9 @@ int hisi_mdc_chn_release(struct fb_info *info, const void __user *argp)
 int hisi_mdc_resource_init(struct hisi_fb_data_type *hisifd, unsigned int platform)
 {
 	int ret = 0;
-	mdc_func_ops_t *mdc_ops;
+	mdc_func_ops_t *mdc_ops = NULL;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is null pointer!\n");
 		return -EINVAL;
 	}
@@ -446,6 +434,20 @@ int hisi_mdc_resource_init(struct hisi_fb_data_type *hisifd, unsigned int platfo
 			mdc_ops->mdc_channel[1].wb_composer_type = DSS_WB_COMPOSE_COPYBIT;
 			mdc_ops->mdc_channel[1].status = FREE;
 			mdc_ops->mdc_channel[1].drm_used= 0;
+			break;
+
+		case FB_ACCEL_DSSV350:
+			mdc_ops->chan_num = 1;
+			mdc_ops->mdc_channel[0].cap_available = CAP_BASE | CAP_DIM \
+				| CAP_SCL | CAP_YUV_PACKAGE \
+				| CAP_YUV_SEMI_PLANAR | CAP_YUV_PLANAR \
+				| CAP_YUV_DEINTERLACE | CAP_HFBCD | CAP_AFBCD;
+			mdc_ops->mdc_channel[0].rch_idx = DSS_RCHN_V0;
+			mdc_ops->mdc_channel[0].wch_idx = DSS_WCHN_W0;
+			mdc_ops->mdc_channel[0].ovl_idx = DSS_OVL2;
+			mdc_ops->mdc_channel[0].wb_composer_type = DSS_WB_COMPOSE_COPYBIT;
+			mdc_ops->mdc_channel[0].status = FREE;
+			mdc_ops->mdc_channel[0].drm_used= 0;
 			break;
 
 		default:

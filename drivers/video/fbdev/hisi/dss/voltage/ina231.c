@@ -20,6 +20,7 @@
 #include <linux/workqueue.h>
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
 #include "ina231.h"
+#include <linux/types.h>
 
 struct class *ina231_class;
 struct ina231_data *g_idata = NULL;
@@ -133,7 +134,7 @@ static ssize_t ina231_store_debug(struct device *dev, struct device_attribute *a
 		return -EINVAL;
 	}
 
-	ret = sscanf(buf, "config=0x%x, calibration=0x%x, mask_en=0x%x, alert_limit=0x%x", 
+	ret = sscanf(buf, "config=0x%x, calibration=0x%x, mask_en=0x%x, alert_limit=0x%x",
 				(unsigned int *)&config, (unsigned int *)&calibration, (unsigned int *)&mask_en, (unsigned int *)&alert_limit);
 	if (ret < 0) {
 		INA231_ERR("check your input!\n");
@@ -308,7 +309,9 @@ static void ina231_monitor_wq_handler(struct work_struct *work)
 		}
 		INA231_DEBUG("current_data = %d\n", current_data);
 		mutex_lock(&idata->mutex_lock);
+	#ifdef CONFIG_HISI_COUL
 		battery_voltage = hisi_battery_voltage();
+	#endif
 		if (battery_voltage) {
 			s_battery_voltage = battery_voltage;
 		} else {
@@ -327,7 +330,7 @@ static void ina231_monitor_timer_func(unsigned long data)
 	unsigned long expires = 0;
 	struct ina231_data *idata = NULL;
 
-	idata = (struct ina231_data *)data;
+	idata = (struct ina231_data *)(uintptr_t)data;
 	if (NULL == idata) {
 		INA231_ERR("idata is NULL\n");
 		return;
@@ -427,7 +430,7 @@ static int ina231_probe(struct i2c_client *client, const struct i2c_device_id *i
 	INIT_WORK(&(idata->wq), ina231_monitor_wq_handler);
 	init_timer(&(idata->ina321_timer));
 	idata->ina321_timer.function = ina231_monitor_timer_func;
-	idata->ina321_timer.data = (unsigned long)idata;
+	idata->ina321_timer.data = (unsigned long)(uintptr_t)idata;
 	idata->ina321_timer.expires = jiffies + INA231_SAMPLE_TIME * HZ;
 	add_timer(&(idata->ina321_timer));
 	idata->num = 1;

@@ -57,10 +57,17 @@
 #define DMA_NORMAL_LEFT_CH_UNMASK	0x8
 #define DMA_NORMAL_RIGHT_CH_UNMASK	0x10
 
+#ifdef CONFIG_SND_SOC_HI6405
+#define DMA_FAST_LEFT_CH_NUM 	14
+#define DMA_FAST_RIGHT_CH_NUM	0      /* unused channel */
+#define DMA_NORMAL_LEFT_CH_NUM	7
+#define DMA_NORMAL_RIGHT_CH_NUM	8
+#else
 #define DMA_FAST_LEFT_CH_NUM 	4
-#define DMA_FAST_RIGHT_CH_NUM	8
+#define DMA_FAST_RIGHT_CH_NUM	8      /* unused channel */
 #define DMA_NORMAL_LEFT_CH_NUM	3
 #define DMA_NORMAL_RIGHT_CH_NUM	7
+#endif
 
 #define DMA_CH_INT_CLR 0x1
 #define DMA_ENABLE_BIT 0
@@ -131,7 +138,7 @@ struct st_fast_status{
 	int fast_status;
 };
 
-#define INT_TO_ADDR(low,high) (void*) (unsigned long)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
+#define INT_TO_ADDR(low,high) (void*) (uintptr_t)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
 
 #define HWLOCK_WAIT_TIME	50
 

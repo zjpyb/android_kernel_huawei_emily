@@ -70,7 +70,7 @@ static int ltc7820_set_freq(int freq)
 {
 	struct ltc7820_device_info *di = g_ltc7820_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -80,14 +80,14 @@ static int ltc7820_set_freq(int freq)
 	hwlog_info("set_freq freq=%d\n", freq);
 	return 0;
 }
-#endif
+#endif /* POWER_MODULE_DEBUG_FUNCTION */
 
 static void ltc7820_int_en(bool en)
 {
 	struct ltc7820_device_info *di = g_ltc7820_dev;
 	unsigned long flags;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
@@ -107,7 +107,7 @@ static int ltc7820_charge_enable(int enable)
 {
 	struct ltc7820_device_info *di = g_ltc7820_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -124,6 +124,7 @@ static int ltc7820_charge_enable(int enable)
 		ltc7820_init_finish_flag = LTC7820_NOT_INIT;
 		ltc7820_int_notify_enable_flag = LTC7820_DISABLE_INT_NOTIFY;
 	}
+
 	hwlog_info("charge_enable enable=%d\n", enable);
 	return 0;
 }
@@ -131,9 +132,9 @@ static int ltc7820_charge_enable(int enable)
 static int ltc7820_is_device_close(void)
 {
 	struct ltc7820_device_info *di = g_ltc7820_dev;
-	int gpio_value = LTC7820_CHIP_DISABLE;
+	int gpio_value;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 1;
 	}
@@ -147,7 +148,7 @@ static int ltc7820_charge_init(void)
 {
 	struct ltc7820_device_info *di = g_ltc7820_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -160,29 +161,35 @@ static int ltc7820_charge_init(void)
 
 static int ltc7820_charge_exit(void)
 {
-	int ret = 0;
 	struct ltc7820_device_info *di = g_ltc7820_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
 
-	ret = ltc7820_charge_enable(LTC7820_CHIP_DISABLE);
-
-	return ret;
+	return ltc7820_charge_enable(LTC7820_CHIP_DISABLE);
 }
 
 static void ltc7820_interrupt_work(struct work_struct *work)
 {
-	struct ltc7820_device_info *di;
-	struct nty_data *data;
-	struct atomic_notifier_head *direct_charge_fault_notifier_list;
+	struct ltc7820_device_info *di = NULL;
+	struct nty_data *data = NULL;
+	struct atomic_notifier_head *fault_notifier_list = NULL;
+
+	if (!work) {
+		hwlog_err("work is null\n");
+		return;
+	}
 
 	di = container_of(work, struct ltc7820_device_info, irq_work);
-	data = &(di->nty_data);
+	if (!di) {
+		hwlog_err("di is null\n");
+		return;
+	}
 
-	direct_charge_sc_get_fault_notifier(&direct_charge_fault_notifier_list);
+	data = &(di->nty_data);
+	sc_get_fault_notifier(&fault_notifier_list);
 
 	data->event1 = 0;
 	data->event2 = 0;
@@ -191,8 +198,8 @@ static void ltc7820_interrupt_work(struct work_struct *work)
 	if (ltc7820_int_notify_enable_flag == LTC7820_ENABLE_INT_NOTIFY) {
 		hwlog_info("ltc7820 chip error happened\n");
 
-		atomic_notifier_call_chain(direct_charge_fault_notifier_list,
-			DIRECT_CHARGE_FAULT_LTC7820, data);
+		atomic_notifier_call_chain(fault_notifier_list,
+			DC_FAULT_LTC7820, data);
 	}
 
 	/* clear irq */
@@ -203,7 +210,7 @@ static irqreturn_t ltc7820_interrupt(int irq, void *_di)
 {
 	struct ltc7820_device_info *di = _di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -216,7 +223,7 @@ static irqreturn_t ltc7820_interrupt(int irq, void *_di)
 	else
 		hwlog_info("ltc7820 ignore init int\n");
 
-	hwlog_info("ltc7820 int happened(%d)\n", ltc7820_init_finish_flag);
+	hwlog_info("ltc7820 int happened\n");
 
 	ltc7820_int_en(false);
 
@@ -238,24 +245,21 @@ static struct loadswitch_ops ltc7820_sysinfo_ops = {
 
 static int ltc7820_probe(struct platform_device *pdev)
 {
-	int ret = 0;
+	int ret;
 	struct ltc7820_device_info *di = NULL;
 
 	hwlog_info("probe begin\n");
 
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_ltc7820_dev = di;
-
 	di->pdev = pdev;
 	di->dev = &pdev->dev;
-	if (di->pdev == NULL || di->dev == NULL || di->dev->of_node == NULL) {
-		hwlog_err("device_node is null\n");
-		ret = -EINVAL;
-		goto ltc7820_fail_0;
-	}
 	di->dev_node = di->dev->of_node;
 
 	INIT_WORK(&di->irq_work, ltc7820_interrupt_work);
@@ -264,20 +268,20 @@ static int ltc7820_probe(struct platform_device *pdev)
 	hwlog_info("gpio_en=%d\n", di->gpio_en);
 
 	if (!gpio_is_valid(di->gpio_en)) {
-		hwlog_err("gpio(gpio_en) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto ltc7820_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_en, "ltc7820_gpio_en");
 	if (ret) {
-		hwlog_err("gpio(gpio_en) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto ltc7820_fail_0;
 	}
 
 	ret = gpio_direction_output(di->gpio_en, LTC7820_CHIP_DISABLE);
 	if (ret) {
-		hwlog_err("gpio(gpio_en) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto ltc7820_fail_1;
 	}
 
@@ -285,20 +289,20 @@ static int ltc7820_probe(struct platform_device *pdev)
 	hwlog_info("gpio_freq=%d\n", di->gpio_freq);
 
 	if (!gpio_is_valid(di->gpio_freq)) {
-		hwlog_err("gpio(gpio_freq) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto ltc7820_fail_1;
 	}
 
 	ret = gpio_request(di->gpio_freq, "ltc7820_gpio_freq");
 	if (ret) {
-		hwlog_err("gpio(gpio_freq) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto ltc7820_fail_1;
 	}
 
 	ret = gpio_direction_output(di->gpio_freq, LTC7820_FREQ_DISABLE);
 	if (ret) {
-		hwlog_err("gpio(gpio_freq) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto ltc7820_fail_2;
 	}
 
@@ -306,26 +310,26 @@ static int ltc7820_probe(struct platform_device *pdev)
 	hwlog_info("gpio_int=%d\n", di->gpio_int);
 
 	if (!gpio_is_valid(di->gpio_int)) {
-		hwlog_err("gpio(gpio_int) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto ltc7820_fail_2;
 	}
 
 	ret = gpio_request(di->gpio_int, "ltc7820_gpio_int");
 	if (ret) {
-		hwlog_err("gpio(gpio_int) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto ltc7820_fail_2;
 	}
 
 	ret = gpio_direction_input(di->gpio_int);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) set input fail\n");
+		hwlog_err("gpio set input fail\n");
 		goto ltc7820_fail_3;
 	}
 
 	di->irq_int = gpio_to_irq(di->gpio_int);
 	if (di->irq_int < 0) {
-		hwlog_err("gpio(gpio_int) map to irq fail\n");
+		hwlog_err("gpio map to irq fail\n");
 		ret = -EINVAL;
 		goto ltc7820_fail_3;
 	}
@@ -333,7 +337,7 @@ static int ltc7820_probe(struct platform_device *pdev)
 	ret = request_irq(di->irq_int, ltc7820_interrupt,
 		IRQF_TRIGGER_FALLING, "ltc7820_int_irq", di);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) irq request fail\n");
+		hwlog_err("gpio irq request fail\n");
 		di->irq_int = -1;
 		goto ltc7820_fail_3;
 	}
@@ -357,9 +361,7 @@ static int ltc7820_probe(struct platform_device *pdev)
 		hwlog_err("ltc7820 wireless_sc sysinfo ops register fail\n");
 		goto ltc7820_fail_4;
 	}
-
-	/* ltc7820 not support batinfo register */
-#endif
+#endif /* CONFIG_WIRELESS_CHARGER */
 
 	di->chip_already_init = 1;
 
@@ -377,8 +379,9 @@ ltc7820_fail_2:
 ltc7820_fail_1:
 	gpio_free(di->gpio_en);
 ltc7820_fail_0:
-	g_ltc7820_dev = NULL;
 	devm_kfree(&pdev->dev, di);
+	g_ltc7820_dev = NULL;
+
 	return ret;
 }
 
@@ -387,6 +390,9 @@ static int ltc7820_remove(struct platform_device *pdev)
 	struct ltc7820_device_info *di = platform_get_drvdata(pdev);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	if (di->gpio_en)
 		gpio_free(di->gpio_en);

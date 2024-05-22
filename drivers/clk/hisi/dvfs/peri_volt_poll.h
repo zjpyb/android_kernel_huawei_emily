@@ -27,10 +27,17 @@ enum {
 	PERI_VOLT_3,
 };
 
+enum {
+	PERI_AVS_DISABLE = 0,
+	PERI_AVS_ENABLE,
+};
+
 struct peri_volt_poll *peri_volt_poll_get(unsigned int dev_id, const char *name);
 unsigned int peri_get_volt(struct peri_volt_poll *pvp);
 int peri_set_volt(struct peri_volt_poll *pvp, unsigned int volt);
 int peri_poll_stat(struct peri_volt_poll *pvp);
 int peri_get_temperature(struct peri_volt_poll *pvp);
+int peri_set_avs(struct peri_volt_poll *pvp, unsigned int avs);
+int peri_wait_avs_update(struct peri_volt_poll *pvp);
 
 #endif /* __PERIVOLT_POLL_INTERNAL_H */

@@ -21,22 +21,26 @@
 #define STP_NAME_SE_HOOK       "se-hook"
 #define STP_NAME_ROOT_PROCS    "root-procs"
 #define STP_NAME_SETIDS        "setids"
+#define STP_NAME_KEY_FILES     "key-files"
 #define STP_NAME_EIMA          "eima"
+#define STP_NAME_RODATA        "rodata"
+#define STP_NAME_USERCOPY      "usercopy"
+#define STP_NAME_CFI           "cfi"
 #define STP_NAME_MOD_SIGN      "mod-sign"
 #define STP_NAME_PTRACE        "ptrace"
 #define STP_NAME_HKIP          "hkip"
-#define STP_NAME_USERCOPY      "usercopy"
-#define STP_NAME_CFI           "cfi"
 #define STP_NAME_ITRUSTEE      "itrustee"
 #define STP_NAME_DOUBLE_FREE   "double-free"
 
-#define STP_ID_KCODE           0x00000381
-#define STP_ID_KCODE_SYSCALL   0x00000382
+#define STP_ID_KCODE           0x00000282
+#define STP_ID_KCODE_SYSCALL   0x00000283
 #define STP_ID_SE_ENFROCING    0x00000383
-#define STP_ID_SE_HOOK         0x00000384
+#define STP_ID_SE_HOOK         0x00000284
 #define STP_ID_ROOT_PROCS      0x00000385
 #define STP_ID_SETIDS          0x00000380
+#define STP_ID_KEY_FILES       0x00000202
 #define STP_ID_EIMA            0x00000280
+#define STP_ID_RODATA          0x00000281
 #define STP_ID_USERCOPY        0x00000180
 #define STP_ID_CFI             0x00000181
 #define STP_ID_MOD_SIGN        0x00000182
@@ -53,7 +57,7 @@ typedef union {
 		u32 para;
 		u32 feat;
 	} s;
-} STP_PROC_TYPE;
+} stp_proc_type;
 
 enum stp_proc_feature {
 	KERNEL_STP_SCAN = 0,
@@ -77,14 +81,15 @@ enum stp_item_category {
 	SE_HOOK,
 	ROOT_PROCS,
 	SETIDS,
+	KEY_FILES,
 	EIMA,
+	USERCOPY,
+	CFI,
 	MOD_SIGN,
 	PTRACE,
 	HKIP,
-	CFI,
 	ITRUSTEE,
 	DOUBLE_FREE,
-
 	STP_ITEM_MAX,
 };
 
@@ -123,32 +128,34 @@ struct stp_item {
 #ifdef CONFIG_HW_KERNEL_STP
 int kernel_stp_scanner_register(stp_cb callbackfunc);
 /* the caller needed to check the return value */
-extern struct stp_item_info *get_item_info_by_idx(int idx);
+extern const struct stp_item_info *get_item_info_by_idx(int idx);
 
-extern struct stp_item_info item_info[];
+extern const struct stp_item_info item_info[];
 #else
 static inline int kernel_stp_scanner_register(stp_cb callbackfunc)
 {
 	return 0;
 }
 /* the caller needed to check the return value */
-static inline struct stp_item_info *get_item_info_by_idx(int idx)
+static inline const struct stp_item_info *get_item_info_by_idx(int idx)
 {
 	return NULL;
 }
 
-static struct stp_item_info item_info[] = {
+static const struct stp_item_info item_info[] = {
 	[KCODE]        = { STP_ID_KCODE, STP_NAME_KCODE },
 	[SYSCALL]      = { STP_ID_KCODE_SYSCALL, STP_NAME_KCODE_SYSCALL },
 	[SE_ENFROCING] = { STP_ID_SE_ENFROCING, STP_NAME_SE_ENFROCING },
 	[SE_HOOK]      = { STP_ID_SE_HOOK, STP_NAME_SE_HOOK },
 	[ROOT_PROCS]   = { STP_ID_ROOT_PROCS, STP_NAME_ROOT_PROCS },
 	[SETIDS]       = { STP_ID_SETIDS, STP_NAME_SETIDS },
+	[KEY_FILES]    = { STP_ID_KEY_FILES, STP_NAME_KEY_FILES },
 	[EIMA]         = { STP_ID_EIMA, STP_NAME_EIMA },
+	[USERCOPY]     = { STP_ID_USERCOPY, STP_NAME_USERCOPY },
+	[CFI]          = { STP_ID_CFI, STP_NAME_CFI },
 	[MOD_SIGN]     = { STP_ID_MOD_SIGN, STP_NAME_MOD_SIGN },
 	[PTRACE]       = { STP_ID_PTRACE, STP_NAME_PTRACE },
 	[HKIP]         = { STP_ID_HKIP, STP_NAME_HKIP },
-	[CFI]          = { STP_ID_CFI, STP_NAME_CFI },
 	[ITRUSTEE]     = { STP_ID_ITRUSTEE, STP_NAME_ITRUSTEE },
 	[DOUBLE_FREE]  = { STP_ID_DOUBLE_FREE, STP_NAME_DOUBLE_FREE },
 };
@@ -164,10 +171,10 @@ static struct stp_item_info item_info[] = {
  *     -1, upload failed.
  */
 #ifdef CONFIG_HW_KERNEL_STP
-int kernel_stp_upload(struct stp_item result, char *addition_info);
+int kernel_stp_upload(struct stp_item result, const char *addition_info);
 
 #else
-static inline int kernel_stp_upload(struct stp_item result, char *addition_info)
+static inline int kernel_stp_upload(struct stp_item result, const char *addition_info)
 {
 	return 0;
 }

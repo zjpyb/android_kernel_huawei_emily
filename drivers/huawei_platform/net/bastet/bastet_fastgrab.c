@@ -138,9 +138,9 @@ static uint8_t BST_FG_ProcWXPacket_DL(
 	uint8_t *pData,
 	uint32_t ulLength)
 {
-	BST_FG_KEYWORD_STRU *pstKwdIns;
-	BST_FG_KEYWORD_STRU *pstKwdInsNew;
-	bool         bFound;
+	BST_FG_KEYWORD_STRU *pstKwdIns = NULL;
+	BST_FG_KEYWORD_STRU *pstKwdInsNew = NULL;
+	bool bFound = false;
 
 	if (BST_FG_WECHAT_PUSH != pstSock->fg_Spec)
 		return 0;
@@ -684,7 +684,7 @@ static bool BST_FG_Check_AccUid(uid_t lUid)
 void BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg)
 {
 	uid_t lSockUid;
-	bool  bFound;
+	bool  bFound = false;
 
 	if(( NULL == pstSock ) || ( NULL == msg ))
 	{
@@ -732,7 +732,7 @@ void BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg)
 bool BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg)
 {
 	uid_t lSockUid;
-	bool  bFound;
+	bool  bFound = false;
 
 	if(( NULL == pstSock ) || ( NULL == msg ))
 	{
@@ -838,6 +838,9 @@ void BST_FG_HongBao_Process(struct sock *pstSock, uid_t lSockUid, uint8_t ucProt
 			BASTET_LOGI("BST_FG_CUSTOM:hongbao congestion stop,HZ is %u", HZ);
 			return;
 		}
+#ifdef CONFIG_HW_DPIMARK_MODULE
+		BST_FG_SetAppType(pstSock, (BST_FG_ACC_BITMAP | BST_FG_CONGESTION_BITMAP));
+#endif
 	}
 }
 
@@ -852,6 +855,12 @@ void BST_FG_Custom_Process(struct sock *pstSock, struct msghdr *msg, uint8_t ucP
 	unsigned long timeout;
 	BST_FG_CUSTOM_INFO *pastCustomInfo = NULL;
 	struct inet_connection_sock *pInetSock;
+
+	if ((!sk_fullsock(pstSock)) || sock_flag(pstSock, SOCK_DEAD) ||
+		(pstSock->sk_state == TCP_TIME_WAIT)) {
+		BASTET_LOGD("BST_FG_Custom_Process fail,wrong sk_state");
+		return;
+	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
 	lSockUid = sock_i_uid(pstSock).val;
@@ -900,7 +909,9 @@ void BST_FG_Custom_Process(struct sock *pstSock, struct msghdr *msg, uint8_t ucP
 		ucDiscardTimer = pastCustomInfo->ucDiscardTimer;
 		BST_FG_SetDiscardTimer(pstSock, ucDiscardTimer);
 	}
-
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	BST_FG_SetAppType(pstSock, pastCustomInfo->ucAppType);
+#endif
 #ifdef CONFIG_HW_DPIMARK_MODULE
 	BASTET_LOGD("BST_FG_CUSTOM:DPI_MARK is 0x%x",pstSock->__sk_common.skc_hwdpi_mark);
 #endif

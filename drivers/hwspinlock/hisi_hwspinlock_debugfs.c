@@ -48,7 +48,7 @@ static int locked;
 static struct hwspinlock *debugfs_hwspinlock_request_specific(int id,
 						int *b_id, int *n_locks)
 {
-	struct hwspinlock_hisi *hwlockinfo;
+	struct hwspinlock_hisi *hwlockinfo = NULL;
 	struct hwspinlock *_hwlock;
 
 	_hwlock = hwspin_lock_request_specific(id);
@@ -88,19 +88,26 @@ static int debugfs_hwspinlock_lock_free(struct hwspinlock *_hwlock)
 */
 static int debugfs_hwspinlock_trylock_timeout(int id, int timeout, int unlock)
 {
-	struct hwspinlock_hisi *hwlockinfo, *hwunlockinfo;
+	struct hwspinlock_hisi *hwlockinfo = NULL;
+	struct hwspinlock_hisi *hwunlockinfo = NULL;
 	int ret = 0;
 	int val0, val1 = 0;
 
-	if (0 == timeout)
+	if (0 == timeout) {
 		ret = hwspin_trylock(hwlock);
-	else if (timeout > 0) {
+		if (ret) {
+			pr_err("%s: hwspinlock trylock failed!\n", __func__);
+			goto _timout;
+		}
+	} else if (timeout > 0) {
 		ret = hwspin_lock_timeout(hwlock, timeout);
 		if (ret) {
 			pr_err("%s: hwspinlock timeout!\n", __func__);
 			goto _timout;
 		}
-	}
+	} else
+		pr_err("%s: timeout is invalid!\n", __func__);
+
 	hwlockinfo = (struct hwspinlock_hisi *)(hwlock->priv);
 	val0 = readl(hwlockinfo->address + RESOURCE_LOCK_STAT_OFFSET);
 	locked = 1;
@@ -121,7 +128,7 @@ static int debugfs_show(struct seq_file *s, void *data)
 {
 	int base_id, num_locks;
 	int i;
-	struct hwspinlock *_hwlock;
+	struct hwspinlock *_hwlock = NULL;
 
 	base_id = 0;
 	num_locks = 64;
@@ -145,21 +152,21 @@ static int debugfs_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, debugfs_show, inode->i_private);
 }
-
 extern struct hwspinlock *hwspin_lock_lookup(unsigned int id);
+/*lint -save -e690*/
 static ssize_t
 debugfs_write(struct file *filp, const char __user *ubuf, size_t cnt, loff_t *ppos)
 {
-	struct hwspinlock *__hwlock;
-	char buf[128];
+	struct hwspinlock *__hwlock = NULL;
+	char buf[128] = {0};
 	char *cmd = NULL;
 	char *_cmd = NULL;
-	int id;
-	int timeout;
-	int unlock;
-	int ret ;
+	int id = 0;
+	int timeout = 0;
+	int unlock = 0;
+	int ret = 0;
 
-	if (NULL == ubuf || 0 == cnt){
+	if ((NULL == ubuf) || (0 == cnt) || (cnt > ARRAY_SIZE(buf))){
 		pr_err("buf is null !\n");
 		return (-EINVAL);
 	}
@@ -307,7 +314,7 @@ debugfs_write(struct file *filp, const char __user *ubuf, size_t cnt, loff_t *pp
 out:
 	return cnt;
 }
-
+/*lint -restore*/
 static const struct file_operations hwspinlock_debugfs_ops = {
 	.open		= debugfs_open,
 	.read		= seq_read,
@@ -342,4 +349,3 @@ module_exit(hwspinlock_debugfs_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Hwspinlock debugfs driver for hisi");
-MODULE_AUTHOR("z00241933 <zhaokai1@hisilicon.com>");

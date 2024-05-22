@@ -20,7 +20,7 @@
 #include <linux/of_device.h>
 #include <linux/slab.h>
 #include <linux/clk.h>
-
+#include <securec.h>
 #include "clk-kirin-common.h"
 #include "hisi-kirin-ppll.h"
 
@@ -34,10 +34,13 @@ static int kirin_ppll_enable_open(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 	/*en*/
 	switch (ppll) {
 	case PPLL2:
+	case PPLL2_B:
 	case PPLL3:
 	case PPLL5:
 	case PPLL6:
 	case PPLL7:
+	case FNPLL1:
+	case FNPLL4:
 		val = BIT(ppll_clk->gt_ctrl[1] + PLL_MASK_OFFSET);
 		writel(val ,ppll_clk->addr + ppll_clk->gt_ctrl[0]);/*gt  1'b0*/
 		val = BIT(ppll_clk->en_ctrl[1] + PLL_MASK_OFFSET);
@@ -58,10 +61,13 @@ static void kirin_ppll_nogate(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 	/*output clock not gate*/
 	switch (ppll) {
 	case PPLL2:
+	case PPLL2_B:
 	case PPLL3:
 	case PPLL5:
 	case PPLL6:
 	case PPLL7:
+	case FNPLL1:
+	case FNPLL4:
 		val = BIT(ppll_clk->bypass_ctrl[1] + PLL_MASK_OFFSET);
 		writel(val ,ppll_clk->addr + ppll_clk->bypass_ctrl[0]);/*bypass  1'b0*/
 		val = BIT(ppll_clk->gt_ctrl[1] + PLL_MASK_OFFSET);
@@ -83,10 +89,13 @@ static int kirin_ppll_enable_ready(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 
 	switch (ppll) {
 	case PPLL2:
+	case PPLL2_B:
 	case PPLL3:
 	case PPLL5:
 	case PPLL6:
 	case PPLL7:
+	case FNPLL1:
+	case FNPLL4:
 		do {
 			val = readl(ppll_clk->endisable_addr + ppll_clk->pll_ctrl0);//lint !e732
 			val &= BIT(PPLLCTRL0_LOCK);
@@ -109,10 +118,13 @@ static void kirin_ppll_disable(struct hi3xxx_ppll_clk *ppll_clk, int ppll)
 	/*output clock gate*/
 	switch (ppll) {
 	case PPLL2:
+	case PPLL2_B:
 	case PPLL3:
 	case PPLL5:
 	case PPLL6:
 	case PPLL7:
+	case FNPLL1:
+	case FNPLL4:
 		/*output clock gate*/
 		val = BIT(ppll_clk->gt_ctrl[1] + PLL_MASK_OFFSET);
 		writel(val, ppll_clk->addr + ppll_clk->gt_ctrl[0]);/*gt 1'b0*/
@@ -142,10 +154,13 @@ static int get_ppll_state(struct hi3xxx_ppll_clk *ppll_clk)
 
 	switch (ppll) {
 	case PPLL2:
+	case PPLL2_B:
 	case PPLL3:
 	case PPLL5:
 	case PPLL6:
 	case PPLL7:
+	case FNPLL1:
+	case FNPLL4:
 		/*en need 1*/
 		val = readl(ppll_clk->addr + ppll_clk->en_ctrl[0]);
 		if(!(val & BIT(ppll_clk->en_ctrl[1])))
@@ -236,16 +251,18 @@ static struct clk_ops kirin_ppll_ops = {
 
 static void __init kirin_ppll_setup(struct device_node *np)
 {
-	struct hi3xxx_ppll_clk *ppll_clk;
-	struct clk_init_data *init;
-	struct clk *clk;
-	const char *clk_name, *parent_names;
+	struct hi3xxx_ppll_clk *ppll_clk = NULL;
+	struct clk_init_data *init = NULL;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL;
+	const char *parent_names = NULL;
 	u32 en_cmd[LPM3_CMD_LEN] = {0};
 	u32 dis_cmd[LPM3_CMD_LEN] = {0};
 	u32 en_ctrl[PLL_REG_NUM] = {0};
 	u32 gt_ctrl[PLL_REG_NUM] = {0};
 	u32 bypass_ctrl[PLL_REG_NUM] = {0};
 	u32 pll_ctrl0 = 0;
+	u32 pllctrl0_base = HS_PMCTRL;
 	void __iomem *reg_base;
 	u32 lock_id = 0;
 	u32 clock_id = 0;
@@ -300,6 +317,13 @@ static void __init kirin_ppll_setup(struct device_node *np)
 			return;
 		}
 	}
+	if (of_property_read_bool(np, "hisilicon,pll-ctrl0-base-reg")) {
+		if (of_property_read_u32(np, "hisilicon,pll-ctrl0-base-reg", &pllctrl0_base)) {
+			pr_err("[%s] node %s doesn't pll-ctrl0-base-reg property!\n",
+				__func__, np->name);
+			return;
+		}
+	}
 	if (of_property_read_bool(np, "hwspinlock-id")) {
 		if (of_property_read_u32_array(np, "hwspinlock-id", &lock_id, 1)) {
 			pr_err("[%s] %s node doesn't have hwspinlock-id property!\n", __func__, np->name);
@@ -321,12 +345,9 @@ static void __init kirin_ppll_setup(struct device_node *np)
 	}
 	/* initialize the reference count */
 	ppll_clk->ref_cnt = 0;
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 	init->ops = &kirin_ppll_ops;
 	init->flags = CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED;
 	init->parent_names = &parent_names;
@@ -338,9 +359,11 @@ static void __init kirin_ppll_setup(struct device_node *np)
 	}
 	ppll_clk->lock = &hs_clk.lock;
 	ppll_clk->hw.init = init;
+	/*PLL gt,en,by reg_base*/
 	ppll_clk->addr = reg_base;
 	ppll_clk->sctrl = NULL;
-	ppll_clk->endisable_addr = hs_clk_base(HS_PMCTRL);
+	/*PLL ctrl0 reg_base*/
+	ppll_clk->endisable_addr = hs_clk_base(pllctrl0_base);
 	ppll_clk->flags = lock_id;
 	ppll_clk->clock_id = clock_id;
 	ppll_clk->clk_hwlock = NULL;
@@ -364,11 +387,11 @@ static void __init kirin_ppll_setup(struct device_node *np)
 err_clk:
 	iounmap(ppll_clk->sctrl);
 	ppll_clk->sctrl = NULL;
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(ppll_clk);
-	ppll_clk = NULL;
 err_ppll_clk:
 	return;
 }
@@ -475,7 +498,7 @@ static void ppll_check_lock(const void __iomem *addr, int ppll, int lock_bit)
 	timeout = 0;
 	do {
 		val = readl(addr);//lint !e732
-		val &= BIT(lock_bit);
+		val &= BIT((unsigned int)lock_bit);
 		timeout++;
 		if(AP_PPLL_STABLE_TIME < timeout)
 			pr_err("%s: ppll-%d enable is timeout\n", __func__,ppll);
@@ -634,33 +657,19 @@ static struct clk_ops hi3xxx_ppll_ops = {
 	.disable		= hi3xxx_multicore_ppll_disable,
 };
 
-static inline u32 hi3xxx_clk_check_crg_type(struct device_node *np){
-	u32 crg_type = -1;/*lint !e570 */
-	/*default value is HS_CRGCTRL, only if dts tree has clk-crg-type property*/
-	if (of_property_read_bool(np, "clk-crg-type")) {
-		if (of_property_read_u32(np, "clk-crg-type", &crg_type)) {
-			pr_err("[%s] %s clk-crg-type property is null!\n",
-				 __func__, np->name);
-		}
-	} else {
-		crg_type = (unsigned int)HS_CRGCTRL;
-	}
-	return crg_type;
-}
-
 static void __init hi3xxx_ppll_setup(struct device_node *np)
 {
-	struct hi3xxx_ppll_clk *ppll_clk;
-	struct clk_init_data *init;
-	struct clk *clk;
-	const char *clk_name, *parent_names;
+	struct hi3xxx_ppll_clk *ppll_clk = NULL;
+	struct clk_init_data *init = NULL;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, *parent_names = NULL;
 	u32 en_cmd[LPM3_CMD_LEN] = {0};
 	u32 dis_cmd[LPM3_CMD_LEN] = {0};
-	void __iomem *reg_base;
+	void __iomem *reg_base = NULL;
 	u32 lock_id = 0;
 	u32 clock_id = 0;
 	u32 i;
-	u32 crg_type = -1;/*lint !e570 */
+	u32 crg_type;
 
 	reg_base = hs_clk_get_base(np);
 	if (!reg_base) {
@@ -696,8 +705,6 @@ static void __init hi3xxx_ppll_setup(struct device_node *np)
 		}
 	}
 
-	crg_type = hi3xxx_clk_check_crg_type(np);
-
 	parent_names = of_clk_get_parent_name(np, 0);
 
 	ppll_clk = kzalloc(sizeof(struct hi3xxx_ppll_clk), GFP_KERNEL);
@@ -707,12 +714,9 @@ static void __init hi3xxx_ppll_setup(struct device_node *np)
 	}
 	/* initialize the reference count */
 	ppll_clk->ref_cnt = 0;
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 	init->ops = &hi3xxx_ppll_ops;
 	init->flags = CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED;
 	init->parent_names = &parent_names;
@@ -726,6 +730,7 @@ static void __init hi3xxx_ppll_setup(struct device_node *np)
 	ppll_clk->hw.init = init;
 	ppll_clk->addr = reg_base;
 	ppll_clk->sctrl = NULL;
+	crg_type = hisi_clk_crg_type_get(np, HS_CRGCTRL);
 	ppll_clk->endisable_addr = hs_clk_base(crg_type);
 	ppll_clk->flags = lock_id;
 	ppll_clk->clock_id = clock_id;
@@ -744,11 +749,11 @@ static void __init hi3xxx_ppll_setup(struct device_node *np)
 err_clk:
 	iounmap(ppll_clk->sctrl);
 	ppll_clk->sctrl = NULL;
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(ppll_clk);
-	ppll_clk = NULL;
 err_ppll_clk:
 	return;
 }

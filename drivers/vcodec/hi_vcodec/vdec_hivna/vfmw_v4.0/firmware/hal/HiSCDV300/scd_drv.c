@@ -1,14 +1,5 @@
-/*
- * vdec driver for scd master
- *
- * Copyright (c) 2017 Hisilicon Limited
- *
- * Author: gaoyajun<gaoyajun@hisilicon.com>
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation.
- *
- */
+
+
 #include "public.h"
 #include "scd_drv.h"
 #include "vfmw_intf.h"
@@ -17,75 +8,76 @@
 #include "smmu.h"
 #endif
 // cppcheck-suppress *
-#define SCD_CHECK_CFG_ADDR_RETURN(scdcfg, else_print, startPhy, endPhy) \
-do {\
-        if ((scdcfg == 0) || (scdcfg < startPhy) || (scdcfg > endPhy)) {\
-                dprint(PRN_FATAL, "%s (%s) is out of range \n", __func__, else_print);\
-                return SCDDRV_ERR;\
-        }\
-} while(0)
-static SCDDRV_SLEEP_STAGE_E  s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_NONE;
-static SCD_STATE_REG_S gScdStateReg;
-static SCD_STATE_E s_SCDState = SCD_IDLE;
+#define scd_check_cfg_addr_return(scdcfg, else_print, start_phy, end_phy) \
+do { \
+	if (((scdcfg) == 0) || ((scdcfg) < (start_phy)) || ((scdcfg) > (end_phy)) { \
+		dprint(PRN_FATAL, "%s (%s) is out of range\n", __func__, else_print); \
+		return SCDDRV_ERR; \
+	} \
+} while (0)
+static scd_drv_sleep_stage_e  e_scd_drv_sleep_stage = SCDDRV_SLEEP_STAGE_NONE;
+static scd_state_reg_s g_scd_state_reg;
+static scd_state_e scd_state = SCD_IDLE;
 
-static VOID PrintScdVtrlReg(VOID);
+static VOID print_scd_vtrl_reg(void);
 
-SINT32 SCDDRV_ResetSCD(VOID)
+SINT32 scd_drv_reset_scd(void)
 {
 	UINT32 tmp;
 	UINT32 i;
 	UINT32 reg_rst_ok;
 	UINT32 reg;
-	UINT32 *pScdResetReg   = NULL;
-	UINT32 *pScdResetOkReg = NULL;
+	UINT32 *p_scd_reset_reg   = NULL;
+	UINT32 *p_scd_reset_ok_reg = NULL;
 
-	pScdResetReg   = (UINT32 *) MEM_Phy2Vir(gSOFTRST_REQ_Addr);
-	pScdResetOkReg = (UINT32 *) MEM_Phy2Vir(gSOFTRST_OK_ADDR);
+	p_scd_reset_reg   = (UINT32 *) mem_phy_2_vir(g_soft_rst_req_addr);
+	p_scd_reset_ok_reg = (UINT32 *) mem_phy_2_vir(g_soft_rst_ok_addr);
 
-	if (pScdResetReg == NULL || pScdResetOkReg == NULL) {
+	if (p_scd_reset_reg == NULL || p_scd_reset_ok_reg == NULL) {
 		dprint(PRN_FATAL, "scd reset register map fail\n");
 		return VF_ERR_SYS;
 	}
 
-	tmp = RD_SCDREG(REG_SCD_INT_MASK);
+	tmp = rd_scd_reg(REG_SCD_INT_MASK);
 
 
-	reg = *(volatile UINT32 *)pScdResetReg;
-	*(volatile UINT32 *)pScdResetReg = reg | (UINT32) (1 << SCD_RESET_CTRL_BIT);
+	reg = *(volatile UINT32 *)p_scd_reset_reg;
+	*(volatile UINT32 *)p_scd_reset_reg =
+		reg | (UINT32)(1 << SCD_RESET_CTRL_BIT);
 
-	for (i = 0; i < 100; i++) {
-		reg_rst_ok = *(volatile UINT32 *)pScdResetOkReg;
+	for (i = 0; i < RESET_SCD_COUNT; i++) {
+		reg_rst_ok = *(volatile UINT32 *)p_scd_reset_ok_reg;
 		if (reg_rst_ok & (1 << SCD_RESET_OK_BIT))
 			break;
-		VFMW_OSAL_uDelay(10);
+		VFMW_OSAL_U_DELAY(VFMW_OSAL_DELAY_TIME);
 	}
 
-	if (i >= 100)
+	if (i >= RESET_SCD_COUNT)
 		dprint(PRN_FATAL, "%s reset failed\n", __func__);
 	else
 		dprint(PRN_ALWS, "%s reset success\n", __func__);
 
-	*(volatile UINT32 *)pScdResetReg = reg & (UINT32) (~(1 << SCD_RESET_CTRL_BIT));
+	*(volatile UINT32 *)p_scd_reset_reg =
+		reg & (UINT32)(~(1 << SCD_RESET_CTRL_BIT));
 
+	wr_scd_reg(REG_SCD_INT_MASK, tmp);
 
-	WR_SCDREG(REG_SCD_INT_MASK, tmp);
-
-	s_SCDState = SCD_IDLE;
+	scd_state = SCD_IDLE;
 	return FMW_OK;
 }
 
-SINT32 SCDDRV_PrepareSleep(VOID)
+SINT32 scd_drv_prepare_sleep(void)
 {
 	SINT32 ret = SCDDRV_OK;
 
-	VFMW_OSAL_SemaDown(G_SCD_SEM);
-	if (s_eScdDrvSleepStage == SCDDRV_SLEEP_STAGE_NONE) {
-		if (SCD_IDLE == s_SCDState) {
-			dprint(PRN_ALWS, "%s, idle state \n", __func__);
-			s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_SLEEP;
+	VFMW_OSAL_SEMA_DOWN(G_SCD_SEM);
+	if (e_scd_drv_sleep_stage == SCDDRV_SLEEP_STAGE_NONE) {
+		if (scd_state == SCD_IDLE) {
+			dprint(PRN_ALWS, "%s, idle state\n", __func__);
+			e_scd_drv_sleep_stage = SCDDRV_SLEEP_STAGE_SLEEP;
 		} else {
-			dprint(PRN_ALWS, "%s, decoded state \n", __func__);
-			s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_PREPARE;
+			dprint(PRN_ALWS, "%s, decoded state\n", __func__);
+			e_scd_drv_sleep_stage = SCDDRV_SLEEP_STAGE_PREPARE;
 		}
 
 		ret = SCDDRV_OK;
@@ -93,232 +85,249 @@ SINT32 SCDDRV_PrepareSleep(VOID)
 		ret = SCDDRV_ERR;
 	}
 
-	VFMW_OSAL_SemaUp(G_SCD_SEM);
+	VFMW_OSAL_SEMA_UP(G_SCD_SEM);
 	return ret;
 }
 
-SCDDRV_SLEEP_STAGE_E SCDDRV_GetSleepStage(VOID)
+scd_drv_sleep_stage_e scd_drv_get_sleep_stage(void)
 {
-	return s_eScdDrvSleepStage;
+	return e_scd_drv_sleep_stage;
 }
 
-VOID SCDDRV_SetSleepStage(SCDDRV_SLEEP_STAGE_E sleepState)
+VOID scd_drv_set_sleep_stage(scd_drv_sleep_stage_e sleep_state)
 {
-	VFMW_OSAL_SemaDown(G_SCD_SEM);
-	s_eScdDrvSleepStage = sleepState;
-	VFMW_OSAL_SemaUp(G_SCD_SEM);
+	VFMW_OSAL_SEMA_DOWN(G_SCD_SEM);
+	e_scd_drv_sleep_stage = sleep_state;
+	VFMW_OSAL_SEMA_UP(G_SCD_SEM);
 }
 
-VOID SCDDRV_ForceSleep(VOID)
+VOID scd_drv_force_sleep(void)
 {
-	dprint(PRN_ALWS, "%s, force state \n", __func__);
-	VFMW_OSAL_SemaDown(G_SCD_SEM);
-	if (s_eScdDrvSleepStage != SCDDRV_SLEEP_STAGE_SLEEP) {
-		SCDDRV_ResetSCD();
-		s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_SLEEP;
+	dprint(PRN_ALWS, "%s, force state\n", __func__);
+	VFMW_OSAL_SEMA_DOWN(G_SCD_SEM);
+	if (e_scd_drv_sleep_stage != SCDDRV_SLEEP_STAGE_SLEEP) {
+		scd_drv_reset_scd();
+		e_scd_drv_sleep_stage = SCDDRV_SLEEP_STAGE_SLEEP;
 	}
-	VFMW_OSAL_SemaUp(G_SCD_SEM);
+	VFMW_OSAL_SEMA_UP(G_SCD_SEM);
 }
 
-VOID SCDDRV_ExitSleep(VOID)
+VOID scd_drv_exit_sleep(void)
 {
-	VFMW_OSAL_SemaDown(G_SCD_SEM);
-	s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_NONE;
-	VFMW_OSAL_SemaUp(G_SCD_SEM);
+	VFMW_OSAL_SEMA_DOWN(G_SCD_SEM);
+	e_scd_drv_sleep_stage = SCDDRV_SLEEP_STAGE_NONE;
+	VFMW_OSAL_SEMA_UP(G_SCD_SEM);
 }
 
-static SINT32 SCDDRV_CheckAddress(UADDR scdcfg, HI_U32 startPhy, HI_U32 endPhy)
+static SINT32 scd_drv_check_address(UADDR scdcfg, hi_u32 start_phy, hi_u32 end_phy)
 {
-	if ((scdcfg == 0) || (scdcfg < startPhy) || (scdcfg > endPhy)) {
+	if ((scdcfg == 0) || (scdcfg < start_phy) || (scdcfg > end_phy))
 		return SCDDRV_ERR;
-	}
 
 	return SCDDRV_OK;
 }
 
-SINT32 SCDDRV_CheckCfgAddress(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMemMap)
+SINT32 scd_drv_check_cfg_address(
+	scd_config_reg_s *p_sm_ctrl_reg, mem_buffer_s *p_scd_mem_map)
 {
 	UINT32 i;
 	SINT32 ret = SCDDRV_OK;
-	HI_U32 u32StartOutPutPhyAddr;
-	HI_U32 u32EndOutPutPhyAddr;
-	/* SINT32 DownMsgMaxOffset = (SM_MAX_DOWNMSG_SIZE + 15) & (~15);  */
-	SINT32 UpMsgMaxOffset   = (SM_MAX_UPMSG_SIZE + 15) & (~15);
-	UINT32 maxScdBufNum     = (pSmCtrlReg->ScdOutputBufNum + SCD_SHAREFD_OUTPUT_BUF) < SCD_SHAREFD_MAX ?
-								(pSmCtrlReg->ScdOutputBufNum + SCD_SHAREFD_OUTPUT_BUF) : SCD_SHAREFD_MAX;
+	hi_u32 start_output_phy_addr;
+	hi_u32 end_output_phy_addr;
+	SINT32 up_msg_max_offset   = (SM_MAX_UPMSG_SIZE + UP_MSG_MAX_OFFSET) & (~UP_MSG_MAX_OFFSET);
+	UINT32 max_scd_buf_num     = (p_sm_ctrl_reg->scd_output_buf_num +
+		SCD_SHAREFD_OUTPUT_BUF) < SCD_SHAREFD_MAX ?
+		(p_sm_ctrl_reg->scd_output_buf_num + SCD_SHAREFD_OUTPUT_BUF) :
+		SCD_SHAREFD_MAX;
 
-	for (i = SCD_SHAREFD_MESSAGE_POOL; i < maxScdBufNum; i++) {
-		if ((INVALID_SHAREFD == pScdMemMap[i].u32ShareFd)
-			|| (pScdMemMap[i].u8IsMapped == 0)) {
-			dprint(PRN_FATAL, "%s parameter error: buffer no map. index: %d, isMapped: %d, shareFd: %d \n",
-				__func__, i, pScdMemMap[i].u8IsMapped, pScdMemMap[i].u32ShareFd);
+	for (i = SCD_SHAREFD_MESSAGE_POOL; i < max_scd_buf_num; i++) {
+		if ((p_scd_mem_map[i].share_fd == INVALID_SHAREFD)
+			|| (p_scd_mem_map[i].is_mapped == 0)) {
+			dprint(PRN_FATAL, "%s parameter error: buffer no map. index: %d, isMapped: %d, shareFd: %d\n",
+				__func__, i, p_scd_mem_map[i].is_mapped,
+				p_scd_mem_map[i].share_fd);
 			return SCDDRV_ERR;
 		}
 	}
 
-	if ((pSmCtrlReg->DownMsgPhyAddr == 0)
-		|| (pSmCtrlReg->DownMsgPhyAddr < pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].startPhyAddr)
-		|| (pSmCtrlReg->DownMsgPhyAddr
-			> (pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].startPhyAddr
-				+ pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u32Size
-				/* - DownMsgMaxOffset */))) {
-		dprint(PRN_FATAL, "%s DownMsgPhyAddr is out of range \n", __func__);
+	if ((p_sm_ctrl_reg->down_msg_phy_addr == 0)
+		|| (p_sm_ctrl_reg->down_msg_phy_addr <
+			p_scd_mem_map[SCD_SHAREFD_MESSAGE_POOL].start_phy_addr)
+			|| (p_sm_ctrl_reg->down_msg_phy_addr
+			> (p_scd_mem_map[SCD_SHAREFD_MESSAGE_POOL].start_phy_addr
+			   + p_scd_mem_map[SCD_SHAREFD_MESSAGE_POOL].size))) {
+		dprint(PRN_FATAL, "%s down_msg_phy_addr is out of range\n", __func__);
 		return SCDDRV_ERR;
 	}
-	if ((pSmCtrlReg->UpMsgPhyAddr == 0)
-		|| (pSmCtrlReg->UpMsgPhyAddr < pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].startPhyAddr)
-		|| (pSmCtrlReg->UpMsgPhyAddr
-			> (pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].startPhyAddr
-				+ pScdMemMap[SCD_SHAREFD_MESSAGE_POOL].u32Size
-				/* - UpMsgMaxOffset */))) {
-		dprint(PRN_FATAL, "%s UpMsgPhyAddr  is out of range \n", __func__);
+	if ((p_sm_ctrl_reg->up_msg_phy_addr == 0)
+		|| (p_sm_ctrl_reg->up_msg_phy_addr <
+			p_scd_mem_map[SCD_SHAREFD_MESSAGE_POOL].start_phy_addr)
+		|| (p_sm_ctrl_reg->up_msg_phy_addr
+			> (p_scd_mem_map[SCD_SHAREFD_MESSAGE_POOL].start_phy_addr
+			   + p_scd_mem_map[SCD_SHAREFD_MESSAGE_POOL].size
+			   /* - up_msg_max_offset */))) {
+		dprint(PRN_FATAL, "%s up_msg_phy_addr  is out of range\n", __func__);
 		return SCDDRV_ERR;
 	}
-	if ((pSmCtrlReg->UpLen < 0)
-		|| (pSmCtrlReg->UpLen > UpMsgMaxOffset)) {
-		dprint(PRN_FATAL, "%s UpLen is out of range \n", __func__);
+	if ((p_sm_ctrl_reg->up_len < 0)
+		|| (p_sm_ctrl_reg->up_len > up_msg_max_offset)) {
+		dprint(PRN_FATAL, "%s up_len is out of range\n", __func__);
 		return SCDDRV_ERR;
 	}
 
 
-	for (i = SCD_SHAREFD_OUTPUT_BUF; i < maxScdBufNum; i++) {
-		u32StartOutPutPhyAddr = pScdMemMap[i].startPhyAddr;
-		u32EndOutPutPhyAddr   = pScdMemMap[i].startPhyAddr + pScdMemMap[i].u32Size;
+	for (i = SCD_SHAREFD_OUTPUT_BUF; i < max_scd_buf_num; i++) {
+		start_output_phy_addr = p_scd_mem_map[i].start_phy_addr;
+		end_output_phy_addr   = p_scd_mem_map[i].start_phy_addr +
+			p_scd_mem_map[i].size;
 		ret = SCDDRV_OK;
-		ret += SCDDRV_CheckAddress(pSmCtrlReg->BufferFirst,
-			u32StartOutPutPhyAddr, u32EndOutPutPhyAddr);
-		ret += SCDDRV_CheckAddress(pSmCtrlReg->BufferLast,
-			u32StartOutPutPhyAddr, u32EndOutPutPhyAddr);
-		ret += SCDDRV_CheckAddress(pSmCtrlReg->BufferIni,
-			pSmCtrlReg->BufferFirst, pSmCtrlReg->BufferLast);
+		ret += scd_drv_check_address(p_sm_ctrl_reg->buffer_first,
+			start_output_phy_addr, end_output_phy_addr);
+		ret += scd_drv_check_address(p_sm_ctrl_reg->buffer_last,
+			start_output_phy_addr, end_output_phy_addr);
+		ret += scd_drv_check_address(p_sm_ctrl_reg->buffer_ini,
+			p_sm_ctrl_reg->buffer_first, p_sm_ctrl_reg->buffer_last);
 
-		if (SCDDRV_OK == ret) {
+		if (ret == SCDDRV_OK)
 			break;
-		}
 	}
 
 	return ret;
 }
 
-SINT32 SCDDRV_WriteReg(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMemMap)
+SINT32 scd_drv_write_reg(scd_config_reg_s *p_sm_ctrl_reg, mem_buffer_s *p_scd_mem_map)
 {
 	SINT32 ret;
 
-	if (s_SCDState != SCD_IDLE)
+	if (scd_state != SCD_IDLE)
 		return SCDDRV_ERR;
 
-	ret = SCDDRV_CheckCfgAddress(pSmCtrlReg, pScdMemMap);
+	ret = scd_drv_check_cfg_address(p_sm_ctrl_reg, p_scd_mem_map);
 	if (ret) {
-		dprint(PRN_FATAL, "SCDDRV_CheckCfgAddress check failed\n");
+		dprint(PRN_FATAL, "scd_drv_check_cfg_address check failed\n");
 		return SCDDRV_ERR;
 	}
 
-	s_SCDState = SCD_WORKING;
-	WR_SCDREG(REG_SCD_INI_CLR, 1);
+	scd_state = SCD_WORKING;
+	wr_scd_reg(REG_SCD_INI_CLR, 1);
 
 	// LIST_ADDRESS
-	WR_SCDREG(REG_LIST_ADDRESS, (unsigned int)pSmCtrlReg->DownMsgPhyAddr);
+	wr_scd_reg(REG_LIST_ADDRESS, (unsigned int)p_sm_ctrl_reg->down_msg_phy_addr);
 
 	// UP_ADDRESS
-	WR_SCDREG(REG_UP_ADDRESS, (UINT32) pSmCtrlReg->UpMsgPhyAddr);
+	wr_scd_reg(REG_UP_ADDRESS, (UINT32) p_sm_ctrl_reg->up_msg_phy_addr);
 
 	// UP_LEN
-	WR_SCDREG(REG_UP_LEN, (UINT32) pSmCtrlReg->UpLen);
+	wr_scd_reg(REG_UP_LEN, (UINT32) p_sm_ctrl_reg->up_len);
 
 	// BUFFER_FIRST
-	WR_SCDREG(REG_BUFFER_FIRST, (UINT32) pSmCtrlReg->BufferFirst);
+	wr_scd_reg(REG_BUFFER_FIRST, (UINT32) p_sm_ctrl_reg->buffer_first);
 
 	// BUFFER_LAST
-	WR_SCDREG(REG_BUFFER_LAST, (UINT32) pSmCtrlReg->BufferLast);
+	wr_scd_reg(REG_BUFFER_LAST, (UINT32) p_sm_ctrl_reg->buffer_last);
 
 	// BUFFER_INI
-	WR_SCDREG(REG_BUFFER_INI, (UINT32) pSmCtrlReg->BufferIni);
+	wr_scd_reg(REG_BUFFER_INI, (UINT32) p_sm_ctrl_reg->buffer_ini);
 
 	// SCD_PROTOCOL
 #ifdef ENV_SOS_KERNEL
-	WR_SCDREG(REG_SCD_PROTOCOL, (UINT32) ((pSmCtrlReg->ScdLowdlyEnable << 8)
-		| (1 << 7)    /* sec mode */
-		| ((pSmCtrlReg->SliceCheckFlag << 4) & 0x10)
-		| (pSmCtrlReg->ScdProtocol & 0x0f)));
+	wr_scd_reg(REG_SCD_PROTOCOL, (UINT32)((p_sm_ctrl_reg->scd_lowdly_enable << SCD_LOWDLY_ENABLE_OFFSET) |
+	    (1 << SCD_DRV_REG_OFFSET) | ((p_sm_ctrl_reg->slice_check_flag << SLICE_CHECK_FLAG_OFFSET) & SLICE_CHECK_FLAG_OPR) |
+	    (p_sm_ctrl_reg->scd_protocol & SCD_PROTOCOL_OFFSET)));
 #ifdef HIVDEC_SMMU_SUPPORT
-	SMMU_SetMasterReg(SCD, SECURE_ON, SMMU_OFF);
+	smmu_set_master_reg(SCD, SECURE_ON, SMMU_OFF);
 #endif
 
 #else
-	WR_SCDREG(REG_SCD_PROTOCOL, (UINT32) ((pSmCtrlReg->ScdLowdlyEnable << 8)
-		| ((pSmCtrlReg->SliceCheckFlag << 4) & 0x10)
-		| (pSmCtrlReg->ScdProtocol & 0x0f)));
+	wr_scd_reg(REG_SCD_PROTOCOL, (UINT32)((p_sm_ctrl_reg->scd_lowdly_enable << SCD_LOWDLY_ENABLE_OFFSET) |
+		((p_sm_ctrl_reg->slice_check_flag << SLICE_CHECK_FLAG_OFFSET) & SLICE_CHECK_FLAG_OPR) |
+		(p_sm_ctrl_reg->scd_protocol & SCD_PROTOCOL_OFFSET)));
 #ifdef HIVDEC_SMMU_SUPPORT
-	SMMU_SetMasterReg(SCD, SECURE_OFF, SMMU_ON);
+	smmu_set_master_reg(SCD, SECURE_OFF, SMMU_ON);
 #endif
 
 #endif
 
 #ifndef SCD_BUSY_WAITTING
-	WR_SCDREG(REG_SCD_INT_MASK, 0);
+	wr_scd_reg(REG_SCD_INT_MASK, 0);
 #endif
 
-	PrintScdVtrlReg();
+	print_scd_vtrl_reg();
 
 	// SCD_START
-	WR_SCDREG(REG_SCD_START, 0);
-	WR_SCDREG(REG_SCD_START, (UINT32) (pSmCtrlReg->ScdStart & 0x01));
+	wr_scd_reg(REG_SCD_START, 0);
+	wr_scd_reg(REG_SCD_START, (UINT32)(p_sm_ctrl_reg->scd_start & 0x01));
 
 	return SCDDRV_OK;
 }
 
-VOID SCDDRV_SaveStateReg(VOID)
+VOID scd_drv_save_state_reg(void)
 {
-	gScdStateReg.ScdProtocol = RD_SCDREG(REG_SCD_PROTOCOL);
-	gScdStateReg.Scdover     = RD_SCDREG(REG_SCD_OVER);
-	gScdStateReg.ScdInt      = RD_SCDREG(REG_SCD_INT);
-	gScdStateReg.ScdNum      = RD_SCDREG(REG_SCD_NUM);
-	gScdStateReg.ScdRollAddr = RD_SCDREG(REG_ROLL_ADDR);
-	gScdStateReg.SrcEaten    = RD_SCDREG(REG_SRC_EATEN);
-	gScdStateReg.UpLen       = RD_SCDREG(REG_UP_LEN);
+	g_scd_state_reg.scd_protocol = rd_scd_reg(REG_SCD_PROTOCOL);
+	g_scd_state_reg.scd_over     = rd_scd_reg(REG_SCD_OVER);
+	g_scd_state_reg.scd_int      = rd_scd_reg(REG_SCD_INT);
+	g_scd_state_reg.scd_num      = rd_scd_reg(REG_SCD_NUM);
+	g_scd_state_reg.scd_roll_addr = rd_scd_reg(REG_ROLL_ADDR);
+	g_scd_state_reg.src_eaten    = rd_scd_reg(REG_SRC_EATEN);
+	g_scd_state_reg.up_len       = rd_scd_reg(REG_UP_LEN);
 }
 
-VOID SCDDRV_init(VOID)
+VOID scd_drv_init(void)
 {
-	memset(&gScdStateReg, 0, sizeof(gScdStateReg)); /* unsafe_function_ignore: memset */
-	s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_NONE;
-	s_SCDState = SCD_IDLE;
+	hi_s32 ret;
+
+	ret = memset_s(&g_scd_state_reg, sizeof(g_scd_state_reg), 0,
+		sizeof(g_scd_state_reg));
+	if (ret != EOK) {
+		dprint(PRN_FATAL, " %s %d memset_s err in function\n", __func__, __LINE__);
+		return;
+	}
+	e_scd_drv_sleep_stage = SCDDRV_SLEEP_STAGE_NONE;
+	scd_state = SCD_IDLE;
 }
 
-VOID SCDDRV_DeInit(VOID)
+VOID scd_drv_deinit(void)
 {
-	s_eScdDrvSleepStage = SCDDRV_SLEEP_STAGE_NONE;
-	s_SCDState = SCD_IDLE;
+	e_scd_drv_sleep_stage = SCDDRV_SLEEP_STAGE_NONE;
+	scd_state = SCD_IDLE;
 }
 
-VOID SCDDRV_ISR(VOID)
+VOID scd_drv_isr(void)
 {
-	SINT32 dat = 0;
-	dat = RD_SCDREG(REG_SCD_OVER) & 0x01;
+	SINT32 dat;
+
+	dat = rd_scd_reg(REG_SCD_OVER) & 0x01;
 
 	if ((dat & 1) == 0) {
 		dprint(PRN_FATAL, "End0: SM_SCDIntServeProc()\n");
 		return;
 	}
 
-	SCDDRV_SaveStateReg();
-	WR_SCDREG(REG_SCD_INI_CLR, 1);
-	VFMW_OSAL_GiveEvent(G_SCDHWDONEEVENT);
+	scd_drv_save_state_reg();
+	wr_scd_reg(REG_SCD_INI_CLR, 1);
+	VFMW_OSAL_GIVE_EVENT(G_SCDHWDONEEVENT);
 }
 
-VOID SCDDRV_GetRegState(SCD_STATE_REG_S *pScdStateReg)
+VOID scd_drv_get_reg_state(scd_state_reg_s *p_scd_state_reg)
 {
-	memcpy(pScdStateReg, &gScdStateReg, sizeof(*pScdStateReg)); /* unsafe_function_ignore: memcpy */
-	s_SCDState = SCD_IDLE;
+	hi_s32 ret;
+
+	ret = memcpy_s(p_scd_state_reg, sizeof(*p_scd_state_reg),
+		&g_scd_state_reg, sizeof(g_scd_state_reg));
+	if (ret != EOK) {
+		dprint(PRN_FATAL, " %s %d memcpy_s err in function\n", __func__, __LINE__);
+		return;
+	}
+	scd_state = SCD_IDLE;
 }
 
-SINT32 WaitSCDFinish(VOID)
+SINT32 wait_scd_finish(void)
 {
 	SINT32 i;
 
-	if (SCD_WORKING == s_SCDState) {
+	if (scd_state == SCD_WORKING) {
 		for (i = 0; i < SCD_TIME_OUT_COUNT; i++) {
-			if ((RD_SCDREG(REG_SCD_OVER) & 1))
+			if ((rd_scd_reg(REG_SCD_OVER) & 1))
 				return SCDDRV_OK;
 		}
 
@@ -328,42 +337,49 @@ SINT32 WaitSCDFinish(VOID)
 	}
 }
 
-static VOID PrintScdVtrlReg(VOID)
+static VOID print_scd_vtrl_reg(void)
 {
-	SCD_CONFIG_REG_S SmCtrlReg;
-	memset(&SmCtrlReg, 0, sizeof(SmCtrlReg)); /* unsafe_function_ignore: memset */
+	scd_config_reg_s sm_ctrl_reg;
+	hi_s32 ret;
 
-	SmCtrlReg.DownMsgPhyAddr = RD_SCDREG(REG_LIST_ADDRESS);
-	SmCtrlReg.UpMsgPhyAddr   = RD_SCDREG(REG_UP_ADDRESS);
-	SmCtrlReg.UpLen          = RD_SCDREG(REG_UP_LEN);
-	SmCtrlReg.BufferFirst    = RD_SCDREG(REG_BUFFER_FIRST);
-	SmCtrlReg.BufferLast     = RD_SCDREG(REG_BUFFER_LAST);
-	SmCtrlReg.BufferIni      = RD_SCDREG(REG_BUFFER_INI);
-	SmCtrlReg.ScdProtocol    = RD_SCDREG(REG_SCD_PROTOCOL);
-	SmCtrlReg.ScdStart       = RD_SCDREG(REG_SCD_START);
+	ret = memset_s(&sm_ctrl_reg, sizeof(sm_ctrl_reg), 0, sizeof(sm_ctrl_reg));
+	if (ret != EOK) {
+		dprint(PRN_FATAL, " %s %d memset_s err in function\n", __func__, __LINE__);
+		return;
+	}
+
+	sm_ctrl_reg.down_msg_phy_addr = rd_scd_reg(REG_LIST_ADDRESS);
+	sm_ctrl_reg.up_msg_phy_addr   = rd_scd_reg(REG_UP_ADDRESS);
+	sm_ctrl_reg.up_len          = rd_scd_reg(REG_UP_LEN);
+	sm_ctrl_reg.buffer_first    = rd_scd_reg(REG_BUFFER_FIRST);
+	sm_ctrl_reg.buffer_last     = rd_scd_reg(REG_BUFFER_LAST);
+	sm_ctrl_reg.buffer_ini      = rd_scd_reg(REG_BUFFER_INI);
+	sm_ctrl_reg.scd_protocol    = rd_scd_reg(REG_SCD_PROTOCOL);
+	sm_ctrl_reg.scd_start       = rd_scd_reg(REG_SCD_START);
 
 	dprint(PRN_SCD_REGMSG, "***Print Scd Vtrl Reg Now\n");
-	dprint(PRN_SCD_REGMSG, "DownMsgPhyAddr : %pK\n", (void *)(uintptr_t)(SmCtrlReg.DownMsgPhyAddr));
-	dprint(PRN_SCD_REGMSG, "UpMsgPhyAddr : %pK\n", (void *)(uintptr_t)(SmCtrlReg.UpMsgPhyAddr));
-	dprint(PRN_SCD_REGMSG, "UpLen : %d\n", SmCtrlReg.UpLen);
-	dprint(PRN_SCD_REGMSG, "BufferFirst : %pK\n", (void *)(uintptr_t)(SmCtrlReg.BufferFirst));
-	dprint(PRN_SCD_REGMSG, "BufferLast : %pK\n", (void *)(uintptr_t)(SmCtrlReg.BufferLast));
-	dprint(PRN_SCD_REGMSG, "BufferIni : %pK\n", (void *)(uintptr_t)(SmCtrlReg.BufferIni));
-	dprint(PRN_SCD_REGMSG, "ScdProtocol : %d\n", SmCtrlReg.ScdProtocol);
-	dprint(PRN_SCD_REGMSG, "ScdStart : %d\n", SmCtrlReg.ScdStart);
+	dprint(PRN_SCD_REGMSG, "down_msg_phy_addr : %pK\n", (void *)(uintptr_t)(sm_ctrl_reg.down_msg_phy_addr));
+	dprint(PRN_SCD_REGMSG, "up_msg_phy_addr : %pK\n", (void *)(uintptr_t)(sm_ctrl_reg.up_msg_phy_addr));
+	dprint(PRN_SCD_REGMSG, "up_len : %d\n", sm_ctrl_reg.up_len);
+	dprint(PRN_SCD_REGMSG, "buffer_first : %pK\n", (void *)(uintptr_t)(sm_ctrl_reg.buffer_first));
+	dprint(PRN_SCD_REGMSG, "buffer_last : %pK\n", (void *)(uintptr_t)(sm_ctrl_reg.buffer_last));
+	dprint(PRN_SCD_REGMSG, "buffer_ini : %pK\n", (void *)(uintptr_t)(sm_ctrl_reg.buffer_ini));
+	dprint(PRN_SCD_REGMSG, "scd_protocol : %d\n", sm_ctrl_reg.scd_protocol);
+	dprint(PRN_SCD_REGMSG, "scd_start : %d\n", sm_ctrl_reg.scd_start);
 }
 
 #ifdef ENV_ARMLINUX_KERNEL
-SINT32 SCDDRV_IsScdIdle(VOID)
+SINT32 scd_drv_is_scd_idle(void)
 {
 	SINT32 ret = SCDDRV_OK;
-	if (SCD_IDLE == s_SCDState) {
+
+	if (scd_state == SCD_IDLE) {
 		ret = SCDDRV_OK;
-	} else if (SCD_WORKING == s_SCDState) {
+	} else if (scd_state == SCD_WORKING) {
 		ret = SCDDRV_ERR;
 	} else {
 		ret = SCDDRV_ERR;
-		dprint(PRN_ERROR, "%s : s_SCDState : %d is wrong\n", __func__, s_SCDState);
+		dprint(PRN_ERROR, "%s : scd_state : %d is wrong\n", __func__, scd_state);
 	}
 	return ret;
 }

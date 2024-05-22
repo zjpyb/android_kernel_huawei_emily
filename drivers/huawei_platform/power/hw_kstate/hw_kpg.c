@@ -15,8 +15,9 @@
 #include <linux/suspend.h>
 #include <linux/pm_wakeup.h>
 #include <linux/err.h>
+#include <securec.h>
 #include <huawei_platform/power/hw_kstate.h>
-
+#include <uapi/linux/android/binder.h>
 
 typedef enum {
 	SET_WAKELOCK_TIMEOUT = 0,
@@ -24,12 +25,13 @@ typedef enum {
 	SET_ALL_WAKELOCK_TIMEOUT = 2,
 	CANCEL_ALL_WAKELOCK_TIMEOUT = 3,
 	STOP_WAKELOCK = 4,
-	STOP_ALL_KERNEL_WAKELOCK = 5
+	STOP_ALL_KERNEL_WAKELOCK = 5,
+	FREEZED_PID = 6
 } PG_COMMAND_ORDER;
 
-
 #define HW_PG_LOCK_NAME_MAX_LEN (64)
-/*command received*/
+
+/* command received */
 typedef struct {
 	u8 cmd;
 	u8 lock_timeout;
@@ -44,6 +46,7 @@ typedef struct {
 static int pg_cb(CHANNEL_ID src, PACKET_TAG tag, const char *data, size_t len)
 {
 	int ret = 0;
+	int tagetPid = 0;
 	PG_CMD pg_cmd;
 
 	if (IS_ERR_OR_NULL(data)) {
@@ -52,33 +55,46 @@ static int pg_cb(CHANNEL_ID src, PACKET_TAG tag, const char *data, size_t len)
 	}
 
 	/* set wakelock */
-	memset(&pg_cmd, 0, sizeof(PG_CMD));
-	memcpy(&pg_cmd, data, len<(sizeof(PG_CMD)-1)?len:(sizeof(PG_CMD)-1));
+	if (memset_s(&pg_cmd, sizeof(PG_CMD), 0, sizeof(PG_CMD)) != EOK) {
+		pr_err("pg_cb %s: failed to memset_s\n", __func__);
+		return -1;
+	}
+
+	if (memcpy_s(&pg_cmd, sizeof(PG_CMD), data, (len < (sizeof(PG_CMD) - 1)) ? len : (sizeof(PG_CMD) - 1)) != EOK) {
+		pr_err("pg_cb %s: failed to memcpy_s\n", __func__);
+		return -1;
+	}
 
 	switch (pg_cmd.cmd) {
 		case SET_WAKELOCK_TIMEOUT:
 			ret = wakeup_source_set(pg_cmd.name, pg_cmd.lock_timeout);
 			break;
 		case CANCEL_WAKELOCK_TIMEOUT:
-			ret = wakeup_source_set(pg_cmd.name, 0);
+			ret = wakeup_source_set(pg_cmd.name, 0); /* 0 is default to cancel */
 			break;
 		case SET_ALL_WAKELOCK_TIMEOUT:
-
 			break;
 		case CANCEL_ALL_WAKELOCK_TIMEOUT:
-			ret = wakeup_source_set_all(0);
+			ret = wakeup_source_set_all(0); /* 0 is default to cancel */
 			break;
 		case STOP_WAKELOCK:
 			ret = wake_unlockByName(pg_cmd.name);
 			break;
-       case STOP_ALL_KERNEL_WAKELOCK:
-           ret = wake_unlockAll(30*60*1000);
-           break;
+		case STOP_ALL_KERNEL_WAKELOCK:
+			ret = wake_unlockAll(30*60*1000); /* 1800000 is max wakelock time */
+			break;
+		case FREEZED_PID:
+			tagetPid = simple_strtol(pg_cmd.name, NULL, 10);
+			if (tagetPid > 0) {
+				check_binder_calling_work(tagetPid);
+			}
+			break;
 		default:
 			return -1;
 	}
 
 	pr_debug("pg_cb %s: src=%d tag=%d len=%d \n", __func__, src, tag, (int) len);
+
 	return ret;
 }
 
@@ -88,7 +104,6 @@ static struct kstate_opt kpg_opt = {
 	.dst = CHANNEL_ID_NETLINK,
 	.hook = pg_cb,
 };
-
 
 static int __init kpg_init(void)
 {
@@ -100,6 +115,7 @@ static int __init kpg_init(void)
 	} else {
 		pr_info("hw_kpg %s: kstate_register_hook success\n", __func__);
 	}
+
 	return ret;
 }
 

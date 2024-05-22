@@ -27,7 +27,6 @@
 #include <linux/rbtree_augmented.h>
 #include <linux/cpu.h>
 #include <linux/hugetlb.h>
-#include <linux/mm.h>
 #include <linux/pagemap.h>
 #include <linux/vmalloc.h>
 #include <asm/tlbflush.h>
@@ -41,14 +40,16 @@
 #include <linux/blkdev.h>
 #include <linux/syscalls.h>
 #include <linux/version.h>
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#include <linux/sched/mm.h>
 #include <linux/delayacct.h>
 #else
+#include <linux/mm.h>
 #include <log/log_usertype.h>
 #endif
-#include "../drivers/hisi/tzdriver/libhwsecurec/securec.h"
+#include <securec.h>
 
-#define CGROUP_WORKINGSET_VERSION	(11)
+#define CGROUP_WORKINGSET_VERSION	(12)
 
 #define FILE_PAGESEQ_BITS				16
 #define PAGE_STAGE_NUM_BITS			3
@@ -82,6 +83,8 @@
 	((1U << FILE_OFFSET_BITS) - 1)
 #define MAX_TOUCHED_PAGES_COUNT	\
 	((1ULL << FILE_PAGESEQ_BITS) - 1)
+#define CONTIGUOUS_PAGE_COUNT_BITS	\
+	(8 * sizeof(uint32_t) - PAGE_STAGE_NUM_BITS - PAGE_MAJOR_BITS)
 
 #define FILPS_PER_PAGE	\
 	(PAGE_SIZE / sizeof(struct page *))
@@ -106,8 +109,12 @@
 
 #define CARE_BLKIO_MIN_THRESHOLD					20
 #define BLKIO_PERCENTAGE_THRESHOLD_FOR_UPDATE	2
-#define CACHE_MISSED_PERCENTAGE_THRESHOLD_FOR_BLKIO	80
+#define BLKIO_MULTIPLE_FOR_UPDATE					2
+#define CACHE_MISSED_THRESHOLD_FOR_BLKIO		20
+#define AF_CLEARED_BLKIO_SCALE					2
 
+#define TWO					2
+#define ONE_HUNDRED			100
 #define TOTAL_RAM_PAGES_1G	(1 << 18)
 #define MAX_RECORD_COUNT_ON_1G	5
 #define MAX_RECORD_COUNT_ON_2G	10
@@ -133,6 +140,7 @@ enum ws_monitor_states {
 	E_MONITOR_STATE_ABORT,
 	E_MONITOR_STATE_PREREAD,
 	E_MONITOR_STATE_BACKUP,
+	E_MONITOR_STATE_CLEARYOUNG,
 	E_MONITOR_STATE_MAX
 };
 
@@ -158,6 +166,8 @@ enum ws_cgroup_states {
 		(E_CGROUP_STATE_ONLINE | E_MONITOR_STATE_PREREAD),
 	E_CGROUP_STATE_MONITOR_BACKUP =
 		(E_CGROUP_STATE_ONLINE | E_MONITOR_STATE_BACKUP),
+	E_CGROUP_STATE_MONITOR_CLEARYOUNG =
+		(E_CGROUP_STATE_ONLINE | E_MONITOR_STATE_CLEARYOUNG),
 	E_CGROUP_STATE_MAX,
 };
 
@@ -265,6 +275,7 @@ struct s_ws_record {
 	struct mutex mutex;
 	/*the state of a record*/
 	unsigned state;
+	uint8_t isAfCleared;
 #ifdef CONFIG_TASK_DELAY_ACCT
 	/*the blkio count of main thread when first time on prereading*/
 	unsigned short leader_blkio_cnt;
@@ -302,9 +313,10 @@ struct s_ws_backup_record_header {
 	/*tell us if or not need collect again*/
 	unsigned short need_update;
 #else
-	unsigned padding1;
-	unsigned padding2;
+	unsigned short padding1;
+	unsigned short padding2;
 #endif
+	uint8_t isAfCleared;
 };
 
 struct s_workingset {
@@ -326,6 +338,7 @@ struct s_workingset {
 	unsigned int pageseq_count;
 	/*the alloc index of pagecache array*/
 	unsigned int alloc_index;
+	bool clearYoung;
 	bool shrinker_enabled;
 	struct shrinker shrinker;
 	struct list_head file_list;
@@ -337,9 +350,9 @@ struct s_cachepage_info {
 	struct file *filp;
 	unsigned	start_offset;
 	/*the count of contiguous pagecache*/
-	unsigned count:(16 - PAGE_STAGE_NUM_BITS);
-	unsigned stage:PAGE_STAGE_NUM_BITS;
-	unsigned pid:16;
+	unsigned int count:CONTIGUOUS_PAGE_COUNT_BITS;
+	unsigned int stage:PAGE_STAGE_NUM_BITS;
+	unsigned int isMajar:PAGE_MAJOR_BITS;
 };
 
 struct s_ws_collector {
@@ -369,6 +382,11 @@ struct s_readpages_control {
 	unsigned nr_adjusted;
 };
 
+struct s_clear_param {
+	struct vm_area_struct *vma;
+	unsigned long nrCleared;
+};
+
 static spinlock_t g_record_list_lock;
 static LIST_HEAD(g_record_list);
 static bool g_module_initialized;
@@ -385,13 +403,22 @@ static const char *moniter_states[E_MONITOR_STATE_MAX] = {
 	"STOP",
 	"ABORT",
 	"PREREAD",
-	"BACKUP"
+	"BACKUP",
+	"CLEARYOUNG"
+};
+static const char * const gExcludedDir[] = {
+	"/data/data/",
+	"/data/user_de/",
+	"/dev/",
+	"/bin/",
+	"/etc/selinux/",
+	NULL
 };
 
 /*dynamic debug informatioins controller*/
 static bool ws_debug_enable;
 module_param_named(debug_enable, ws_debug_enable, bool, S_IRUSR | S_IWUSR);
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 #define ws_dbg(x...) \
 	do { \
 		if (ws_debug_enable) \
@@ -555,6 +582,99 @@ static int workingset_register_shrinker(struct s_workingset *ws)
 	ws->shrinker.seeks = DEFAULT_SEEKS;
 
 	return register_shrinker(&ws->shrinker);
+}
+
+/*********************************
+* clear all ptes of process young code
+**********************************/
+static int ClearPteYoungRange(
+	pmd_t *pmd, unsigned long addr,
+	unsigned long end, struct mm_walk *walk)
+{
+	struct s_clear_param *cp = walk->private;
+	struct vm_area_struct *vma = cp->vma;
+	pte_t *pte, ptent;
+	spinlock_t *ptl;
+	struct page *page;
+
+	split_huge_pmd(vma, pmd, addr);
+	if (pmd_trans_unstable(pmd))
+		return 0;
+
+	pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+	for (; addr != end; pte++, addr += PAGE_SIZE) {
+		ptent = *pte;
+		if (!pte_present(ptent))
+			continue;
+		if (!pte_young(ptent))
+			continue;
+		page = vm_normal_page(vma, addr, ptent);
+		if (!page)
+			continue;
+
+		if (PageSwapBacked(page))
+			continue;
+
+		cp->nrCleared++;
+		ptep_test_and_clear_young(vma, addr, pte);
+	}
+
+	pte_unmap_unlock(pte - 1, ptl);
+
+	return 0;
+}
+
+static int WorkingsetClearPteYoungOfProcess(int pid)
+{
+	int ret = 0;
+	struct task_struct *task;
+	struct mm_struct *mm;
+	struct vm_area_struct *vma;
+	struct mm_walk clearYoungWalk = {};
+	struct s_clear_param cp;
+
+	if (pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	task = find_task_by_vpid(pid);
+	if (!task) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+	get_task_struct(task);
+	rcu_read_unlock();
+
+	mm = get_task_mm(task);
+	if (!mm)
+		goto out;
+	clearYoungWalk.mm = mm;
+	clearYoungWalk.pmd_entry = ClearPteYoungRange;
+
+	down_read(&mm->mmap_sem);
+	cp.nrCleared = 0;
+	clearYoungWalk.private = &cp;
+	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+		if (is_vm_hugetlb_page(vma))
+			continue;
+
+		if (!vma->vm_file)
+			continue;
+
+		cp.vma = vma;
+		walk_page_range(
+			vma->vm_start, vma->vm_end, &clearYoungWalk);
+	}
+	/**
+	* Entries with the Access flag set to 0 are never held in the TLB,
+	* meaning software does not have to flush the entry from the TLB
+	* after setting the flag.
+	*/
+	up_read(&mm->mmap_sem);
+	mmput(mm);
+out:
+	put_task_struct(task);
+	return ret;
 }
 
 /*********************************
@@ -990,6 +1110,7 @@ static void workingset_recycle_record_rcrdlocked(struct s_ws_record *record)
 	record->leader_blkio_cnt = 0;
 	record->need_update = 0;
 #endif
+	record->isAfCleared = 0;
 	record->state = 0;
 }
 
@@ -1005,9 +1126,15 @@ static int workingset_get_record_header(struct file *filp,
 {
 	int ret = 0;
 	int length;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	loff_t pos = 0;
 
+	length = kernel_read(filp, (char *)header,
+		sizeof(struct s_ws_backup_record_header), &pos);
+#else
 	length = kernel_read(filp, 0, (char *)header,
 		sizeof(struct s_ws_backup_record_header));
+#endif
 	if (sizeof(struct s_ws_backup_record_header) != length) {
 		pr_err("%s line %d: kernel_read failed, len = %d\n",
 			__func__, __LINE__, length);
@@ -1050,7 +1177,12 @@ static int workingset_record_writeback_playload_rcrdlocked(struct file *filp,
 	unsigned pathnode_size;
 	unsigned idx;
 	ssize_t writed_len;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	loff_t pos = sizeof(struct s_ws_backup_record_header);
+#else
+	loff_t pos_val = sizeof(struct s_ws_backup_record_header);
+	loff_t *pos = &pos_val;
+#endif
 
 	pathnode_size = sizeof(struct s_path_node) *
 				record->data.file_cnt;
@@ -1073,7 +1205,9 @@ static int workingset_record_writeback_playload_rcrdlocked(struct file *filp,
 		goto out;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	pos += pathnode_size;
+#endif
 	for (idx = 0; idx < record->data.file_cnt; idx++) {
 		if (!record->data.file_array[idx].path)
 			continue;
@@ -1099,7 +1233,9 @@ static int workingset_record_writeback_playload_rcrdlocked(struct file *filp,
 			ret = -EIO;
 			goto out;
 		}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 		pos += length;
+#endif
 	}
 
 	length = sizeof(unsigned) * record->data.pageseq_cnt;
@@ -1111,7 +1247,6 @@ static int workingset_record_writeback_playload_rcrdlocked(struct file *filp,
 		ret = -EINVAL;
 		goto out;
 	}
-
 	checksum = crc_val;
 	writed_len = kernel_write(filp,
 		(char *)record->data.cacheseq, length, pos);
@@ -1122,15 +1257,20 @@ static int workingset_record_writeback_playload_rcrdlocked(struct file *filp,
 		goto out;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	pos += length;
 	/*truncate invalid data if it is existed.*/
 	if (vfs_truncate(&filp->f_path, pos))
-		pr_warn("%s %s vfs_truncate failed!",
+		pr_warn("%s %s vfs_truncate failed!\n",
 		__func__, record->owner.record_path);
-
 	*pplayload_length = pos - sizeof(struct s_ws_backup_record_header);
+#else
+	if (vfs_truncate(&filp->f_path, pos_val))
+		pr_warn("%s %s vfs_truncate failed!\n",
+		__func__, record->owner.record_path);
+	*pplayload_length = pos_val - sizeof(struct s_ws_backup_record_header);
+#endif
 	*pchecksum = checksum;
-
 out:
 	return ret;
 }
@@ -1149,6 +1289,9 @@ static bool workingset_backup_record_rcrdlocked(struct s_ws_record *record)
 	unsigned crc_val;
 	size_t offset;
 	ssize_t writed_len;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	loff_t pos = 0;
+#endif
 
 	if (!record->data.file_cnt || !record->data.pageseq_cnt ||
 		!record->owner.record_path)
@@ -1169,10 +1312,6 @@ static bool workingset_backup_record_rcrdlocked(struct s_ws_record *record)
 		/*in the case, we update the header of record only.*/
 		if (workingset_get_record_header(filp, offset, &header))
 			goto out;
-#ifdef CONFIG_TASK_DELAY_ACCT
-		header.leader_blkio_cnt = record->leader_blkio_cnt;
-		header.need_update = record->need_update;
-#endif
 	} else {
 		/*we write back the playload of record first.*/
 		if (workingset_record_writeback_playload_rcrdlocked(filp,
@@ -1183,11 +1322,12 @@ static bool workingset_backup_record_rcrdlocked(struct s_ws_record *record)
 		header.pageseq_cnt = record->data.pageseq_cnt;
 		header.page_sum = record->data.page_sum;
 		header.record_version = CGROUP_WORKINGSET_VERSION;
-#ifdef CONFIG_TASK_DELAY_ACCT
-		header.leader_blkio_cnt = record->leader_blkio_cnt;
-		header.need_update = record->need_update;
-#endif
 	}
+#ifdef CONFIG_TASK_DELAY_ACCT
+	header.leader_blkio_cnt = record->leader_blkio_cnt;
+	header.need_update = record->need_update;
+#endif
+	header.isAfCleared = record->isAfCleared;
 
 	/*the last, we write back the playload of record.*/
 	crc_val = workingset_crc32c(0,
@@ -1200,7 +1340,11 @@ static bool workingset_backup_record_rcrdlocked(struct s_ws_record *record)
 
 	header.header_crc = crc_val;
 	header.magic = WORKINGSET_RECORD_MAGIC;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	writed_len = kernel_write(filp, (char *)&header, sizeof(header), 0);
+#else
+	writed_len = kernel_write(filp, (char *)&header, sizeof(header), &pos);
+#endif
 	if (sizeof(header) == writed_len)
 		ret = true;
 	else {
@@ -1510,12 +1654,14 @@ static int workingset_prepare_record_space_wsrcrdlocked(
 	int ret = 0;
 	struct s_ws_data *data = &record->data;
 	struct page **page_array = NULL;
-	void *playload;
+	void *playload = NULL;
 	unsigned playload_pages;
 	unsigned idx = 0;
+	bool invalid_parameters = !playload_size ||
+		(!data->page_array && data->array_page_cnt) ||
+		(data->page_array && !data->array_page_cnt);
 
-	if ((!data->page_array && data->array_page_cnt)
-		|| (data->page_array && !data->array_page_cnt)) {
+	if (invalid_parameters) {
 		pr_err("%s: array=%d, page_cnt=%u never happend!\n",
 			__func__, !!data->page_array, data->array_page_cnt);
 		ret = -EINVAL;
@@ -1588,7 +1734,10 @@ static struct s_ws_record *workingset_get_record_from_backup(
 	unsigned idx = 0;
 	unsigned pathnode_size;
 	unsigned len;
-	void *playload;
+	void *playload = NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	loff_t pos = sizeof(header);
+#endif
 
 	filp = filp_open(owner->record_path, O_LARGEFILE | O_RDONLY, 0);
 	if (IS_ERR_OR_NULL(filp))
@@ -1610,8 +1759,12 @@ static struct s_ws_record *workingset_get_record_from_backup(
 	if (ret)
 		goto alloc_space_fail;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	ret = kernel_read(filp, playload, header.playload_length, &pos);
+#else
 	ret = kernel_read(filp,
 		sizeof(header), playload, header.playload_length);
+#endif
 	if (header.playload_length != ret) {
 		pr_err("%s line %d: kernel_read failed! ret=%d\n",
 			__func__, __LINE__, ret);
@@ -1650,6 +1803,7 @@ static struct s_ws_record *workingset_get_record_from_backup(
 	record->leader_blkio_cnt = header.leader_blkio_cnt;
 	record->need_update = header.need_update;
 #endif
+	record->isAfCleared = header.isAfCleared;
 	pathnode_size = sizeof(struct s_path_node) * header.file_cnt;
 	for (idx = 0, len = 0; idx < header.file_cnt; idx++) {
 		if (!data->file_array[idx].path)
@@ -1754,6 +1908,7 @@ static void workingset_destroy_data(struct s_workingset *ws, bool is_locked)
 	kfree(ws->owner.record_path);
 
 	ws->owner.uid = 0;
+	ws->owner.pid = 0;
 	ws->owner.name = NULL;
 	ws->owner.record_path = NULL;
 	ws->repeated_count = 0;
@@ -1766,6 +1921,7 @@ static void workingset_destroy_data(struct s_workingset *ws, bool is_locked)
 	ws->file_count = 0;
 	ws->pageseq_count = 0;
 	ws->alloc_index = 0;
+	ws->clearYoung = false;
 	if (!is_locked)
 		mutex_unlock(&ws->mutex);
 }
@@ -1794,6 +1950,9 @@ static const char *workingset_state_strs(unsigned int state)
 	break;
 	case E_CGROUP_STATE_MONITOR_BACKUP:
 		monitor_state = E_MONITOR_STATE_BACKUP;
+	break;
+	case E_CGROUP_STATE_MONITOR_CLEARYOUNG:
+		monitor_state = E_MONITOR_STATE_CLEARYOUNG;
 	break;
 	case E_CGROUP_STATE_MONITOR_STOP:
 		monitor_state = E_MONITOR_STATE_STOP;
@@ -1851,6 +2010,7 @@ static int workingset_css_online(struct cgroup_subsys_state *css)
 	ws->leader_blkio_base = 0;
 #endif
 	ws->alloc_index = 0;
+	ws->clearYoung = false;
 	INIT_LIST_HEAD(&ws->file_list);
 
 	if (!workingset_register_shrinker(ws))
@@ -1895,7 +2055,6 @@ static int workingset_can_attach(struct cgroup_taskset *tset)
 	return g_module_initialized ? 0 : -ENODEV;
 }
 
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
 /*
  * Tasks can be migrated into a different workingset anytime regardless of its
  * current state.  workingset_attach() is responsible for making new tasks
@@ -1909,7 +2068,6 @@ static void workingset_attach(struct cgroup_taskset *tset)
 {
 	struct task_struct *task;
 	struct cgroup_subsys_state *new_css;
-	struct mutex *old_lock = NULL;
 
 	rcu_read_lock();
 
@@ -1919,13 +2077,6 @@ static void workingset_attach(struct cgroup_taskset *tset)
 		if (new_css == NULL)
 			continue;
 		ws = css_workingset(new_css);
-		if (old_lock != &ws->mutex) {
-			if (old_lock)
-				mutex_unlock(old_lock);
-			old_lock = &ws->mutex;
-			mutex_lock(old_lock);
-		}
-
 		if ((ws->state & E_CGROUP_STATE_MONITOR_INWORKING)
 			== E_CGROUP_STATE_MONITOR_INWORKING) {
 			task->flags |= PF_WSCG_MONITOR;
@@ -1934,14 +2085,11 @@ static void workingset_attach(struct cgroup_taskset *tset)
 		}
 	}
 
-	if (old_lock)
-		mutex_unlock(old_lock);
 	rcu_read_unlock();
 }
 /*lint +e454*/
 /*lint +e455*/
 /*lint +e456*/
-#endif
 
 #ifdef CONFIG_TASK_DELAY_ACCT
 static void workingset_blkio_monitor_wslocked(struct s_workingset *ws,
@@ -1975,40 +2123,12 @@ static void workingset_blkio_monitor_wslocked(struct s_workingset *ws,
 			ws->leader_blkio_cnt +=
 				(unsigned short)(tsk->delays->blkio_count
 				- ws->leader_blkio_base);
+		ws_dbg(
+			"%s: state=%s, nr_blkio=%u, delta=%u\n", __func__,
+			workingset_state_strs(monitor_state),
+			tsk->delays->blkio_count, ws->leader_blkio_cnt);
 		put_task_struct(tsk);
 	}
-}
-#endif
-
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
-static void enter_workingset_cgroup(struct s_workingset *ws)
-{
-	struct css_task_iter it;
-	struct task_struct *task;
-
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
-	css_task_iter_start(&ws->css, 0, &it);
-#else
-	css_task_iter_start(&ws->css, &it);
-#endif
-	while ((task = css_task_iter_next(&it)))
-		task->flags |= PF_WSCG_MONITOR;
-	css_task_iter_end(&it);
-}
-
-static void exit_workingset_cgroup(struct s_workingset *ws)
-{
-	struct css_task_iter it;
-	struct task_struct *task;
-
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
-	css_task_iter_start(&ws->css, 0, &it);
-#else
-	css_task_iter_start(&ws->css, &it);
-#endif
-	while ((task = css_task_iter_next(&it)))
-		task->flags &= ~PF_WSCG_MONITOR;
-	css_task_iter_end(&it);
 }
 #endif
 
@@ -2028,16 +2148,10 @@ static void workingset_apply_state(struct s_workingset *ws,
 #ifdef CONFIG_TASK_DELAY_ACCT
 		if ((monitor_state & E_CGROUP_STATE_MONITORING)
 			&& !(ws->state & E_CGROUP_STATE_MONITORING)) {
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
-			enter_workingset_cgroup(ws);
-#endif
 			workingset_blkio_monitor_wslocked(ws, monitor_state);
 		} else if ((ws->state & E_CGROUP_STATE_MONITORING)
 			&& !(monitor_state & E_CGROUP_STATE_MONITORING)) {
 			workingset_blkio_monitor_wslocked(ws, monitor_state);
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
-			exit_workingset_cgroup(ws);
-#endif
 		}
 #endif
 		if ((ws->stage_num < PAGE_STAGE_NUM_MASK)
@@ -2115,6 +2229,11 @@ static ssize_t workingset_get_target_state(struct s_workingset *ws, char *buf,
 	} else if (strcmp(buf, workingset_state_strs(
 		E_CGROUP_STATE_MONITOR_BACKUP)) == 0) {
 		workingset_writeback_all_records();
+		nr_write = nbytes;
+	} else if (strcmp(buf, workingset_state_strs(
+		E_CGROUP_STATE_MONITOR_CLEARYOUNG)) == 0) {
+		ws->clearYoung = true;
+		WorkingsetClearPteYoungOfProcess(ws->owner.pid);
 		nr_write = nbytes;
 	} else {
 		nr_write = -EINVAL;
@@ -2218,12 +2337,11 @@ static ssize_t workingset_state_write(struct kernfs_open_file *of,
 			return nr_write;
 	}
 
-	ws_dbg("%s: uid=%u, name=%s, old_state=%s\n", __func__, ws->owner.uid,
-		ws->owner.name, workingset_state_strs(ws->state));
-
 	if (target_state != E_CGROUP_STATE_MONITOR_PREREAD)
 		workingset_change_state(ws, target_state);
 
+	ws_dbg("%s: uid=%u, name=%s, state=%s\n", __func__, ws->owner.uid,
+		ws->owner.name, workingset_state_strs(ws->state));
 	workingset_prereader_handler(ws, target_state);
 
 	workingset_collector_stop_handler(css, ws, target_state);
@@ -2232,8 +2350,6 @@ static ssize_t workingset_state_write(struct kernfs_open_file *of,
 	if (target_state == E_CGROUP_STATE_MONITOR_PREREAD)
 		workingset_writeback_last_record_if_need();
 
-	ws_dbg("%s: uid=%u, name=%s, new_state=%s\n", __func__, ws->owner.uid,
-		ws->owner.name, workingset_state_strs(ws->state));
 	return nbytes;
 }
 
@@ -2274,11 +2390,11 @@ static int workingset_data_parse_owner(struct s_workingset *ws,
 {
 	int ret = 0;
 	char *str = owner_string;
-	char *token;
+	char *token = NULL;
 	int pid;
 	unsigned uid, len;
-	char *owner_name;
-	char *record_path;
+	char *owner_name = NULL;
+	char *record_path = NULL;
 
 	/*the 1th: uid*/
 	STRSEP_BLANK(str, token, ret);
@@ -2397,11 +2513,11 @@ static int workingset_data_read(struct seq_file *m, void *v)
 
 	ws = css_workingset(css);
 	mutex_lock(&ws->mutex);
-#ifdef CONFIG_HW_CGROUP_WORKINGSET_DEBUG
 	seq_printf(m, "Uid: %u\n", ws->owner.uid);
 	seq_printf(m, "Pid: %d\n", ws->owner.pid);
 	seq_printf(m, "Name: %s\n",
 		ws->owner.name ? ws->owner.name : "Unknow");
+#ifdef CONFIG_HW_CGROUP_WORKINGSET_DEBUG
 	seq_printf(m, "RecordPath: %s\n",
 		ws->owner.record_path ? ws->owner.record_path : "Unknow");
 #endif
@@ -2417,6 +2533,73 @@ static int workingset_data_read(struct seq_file *m, void *v)
 	return 0;
 }
 
+/* workingset_clear_record -
+ * clear the record of owner from the comming string.
+ * @owner_string the comming string.
+ *
+ */
+static int workingset_clear_record(char *owner_string)
+{
+	int ret = 0;
+	char *str = owner_string;
+	char *token;
+	unsigned int len;
+	struct s_ws_record *record = NULL;
+	struct list_head *pos;
+	struct list_head *head = &g_record_list;
+
+	token = strsep(&str, " ");
+	if (token == NULL) {
+		ret = -EINVAL;
+		goto out;
+	}
+	len = strlen(token); /* lint !e668 */
+	if (len <= 0 || len >= OWNER_MAX_CHAR) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	spin_lock(&g_record_list_lock);
+	list_for_each(pos, head) {
+		record = container_of(pos, struct s_ws_record, list);
+		if ((record->state & E_RECORD_STATE_USED)
+			&& !strcmp(record->owner.name, token)) {
+			record->state &= ~E_RECORD_STATE_USED;
+			list_move_tail(pos, head);
+			ret = E_RECORD_STATE_USED;
+			break;
+		}
+	}
+	spin_unlock(&g_record_list_lock);
+
+	if (ret)
+		ws_dbg("%s: invalidate the record of %s successfully!\n",
+			__func__, token);
+	return 0;
+
+out:
+	return ret;
+}
+
+static ssize_t workingset_clear_record_write(
+	struct kernfs_open_file *of, char *buf, size_t nbytes, loff_t off)
+{
+	int ret;
+
+	if (!g_module_initialized)
+		return -ENODEV;
+
+	if (!buf)
+		return -EINVAL;
+
+	buf = strstrip(buf);
+	ret = workingset_clear_record(buf);
+	if (ret)
+		return ret;
+	else
+		return nbytes;
+}
+
 static struct cftype files[] = {
 	{
 		.name = "state",
@@ -2430,6 +2613,11 @@ static struct cftype files[] = {
 		.seq_show = workingset_data_read,
 		.write = workingset_data_write,
 	},
+	{
+		.name = "clearRecord",
+		.flags = CFTYPE_ONLY_ON_ROOT,
+		.write = workingset_clear_record_write,
+	},
 	{ }	/* terminate */
 };
 
@@ -2439,9 +2627,7 @@ struct cgroup_subsys workingset_cgrp_subsys = {
 	.css_offline	= workingset_css_offline,
 	.css_free	= workingset_css_free,
 	.can_attach = workingset_can_attach,
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
 	.attach = workingset_attach,
-#endif
 	.legacy_cftypes	= files,
 };
 
@@ -2451,11 +2637,18 @@ static int get_file_path_and_hashcode(struct file *file, char *buf,
 {
 	unsigned int path_len;
 	char *filepath;
+	int i = 0;
 
 	filepath = d_path(&file->f_path, buf, buf_size - 1);
 	if (IS_ERR_OR_NULL(filepath))
 		return -1;
 
+	while (gExcludedDir[i] != NULL) {
+		if (strncmp(filepath, gExcludedDir[i],
+		    strlen(gExcludedDir[i])) == 0)
+			return -1;
+		i++;
+	}
 	path_len = strlen(filepath);
 	*str_path = filepath;
 	*len = path_len;
@@ -2503,7 +2696,7 @@ static int workingset_record_fileinfo_if_need_wslocked(struct s_workingset *ws,
 	struct list_head *pos;
 	struct list_head *head;
 	unsigned int path_len;
-	char *filepath;
+	char *filepath = NULL;
 	unsigned hashcode;
 	char buf[PATH_MAX_CHAR] = {'\0',};
 
@@ -2534,8 +2727,6 @@ static int workingset_record_fileinfo_if_need_wslocked(struct s_workingset *ws,
 		/*get the path string of file and hashcode of path string.*/
 		if (get_file_path_and_hashcode(file, buf, PATH_MAX_CHAR,
 			&filepath, &path_len, &hashcode)) {
-			pr_warn("%s, get_file_path_and_hashcode failed!\n",
-				__func__);
 			ret = -EINVAL;
 			goto out;
 		}
@@ -2569,7 +2760,7 @@ static int workingset_record_fileinfo_if_need_wslocked(struct s_workingset *ws,
 			goto out;
 		}
 
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 		ret = vfs_getattr_nosec(&file->f_path, &stat, STATX_UID, KSTAT_QUERY_FLAGS);
 #else
 		ret = vfs_getattr_nosec(&file->f_path, &stat);
@@ -2625,24 +2816,12 @@ static int workingset_dealwith_pagecache_wslocked(struct s_cachepage_info *info,
 	bool is_existed_file = false;
 	struct file *file = info->filp;
 	unsigned offset = info->start_offset;
-	int pid = info->pid;
 	unsigned count = info->count;
 	unsigned stage = info->stage;
 	struct s_pagecache_info *pagecache;
 	struct s_file_info *file_info = NULL;
-	int major_touched;
-#if KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE
 	unsigned repeat_count = 0;
 	int page_count_delta = 0;
-#else
-	unsigned repeat_count;
-	int page_count_delta;
-#endif
-
-	if (pid == ws->owner.pid)
-		major_touched = 1;
-	else
-		major_touched = 0;
 
 	/*get position of current file in file list*/
 	file_idx = workingset_record_fileinfo_if_need_wslocked(ws, file,
@@ -2664,7 +2843,7 @@ static int workingset_dealwith_pagecache_wslocked(struct s_cachepage_info *info,
 		CREATE_HANDLE(file_idx, (offset + count));
 	/*insert page offset range to the range tree of file*/
 	if (workingset_range_rb_insert(&file_info->rbroot, pagecache,
-		major_touched, stage, &repeat_count, &page_count_delta)) {
+		info->isMajar, stage, &repeat_count, &page_count_delta)) {
 		ws->repeated_count += repeat_count;
 		ws->page_sum += count - repeat_count;
 		ws->pageseq_count += page_count_delta;
@@ -2896,7 +3075,7 @@ static int workingset_collector_prepare_record_space_wsrcrdlocked(
 {
 	int ret;
 	struct s_ws_data *data = &record->data;
-	void *playload;
+	void *playload = NULL;
 	unsigned pathnode_size;
 	unsigned playload_size;
 
@@ -2976,40 +3155,46 @@ fill_data_fail:
 	return ret;
 }
 
-static void workingset_preread_qos_wsrcrdlocked(struct s_workingset *ws,
-	struct s_ws_record *record)
+static void workingset_preread_qos_wsrcrdlocked(
+	struct s_workingset *ws, struct s_ws_record *record)
 {
-	if (ws->leader_blkio_cnt > (record->data.pageseq_cnt *
-		BLKIO_PERCENTAGE_THRESHOLD_FOR_UPDATE / 100)) {
-		record->need_update = 1;
-		if (!(record->state & E_RECORD_STATE_DIRTY))
-			record->state |= E_RECORD_STATE_DIRTY |
-			E_RECORD_STATE_UPDATE_HEADER_ONLY;
+	bool need_dirty = false;
 
-		ws_dbg("%s, blkio=%u, pages = %u\n", __func__,
-			ws->leader_blkio_cnt, record->data.pageseq_cnt);
-	} else if (!record->leader_blkio_cnt
+	if (!record->leader_blkio_cnt
 		&& (record->state & E_RECORD_STATE_UPDATE_BASE_BLKIO)
 		&& ws->leader_blkio_cnt) {
 		record->leader_blkio_cnt = ws->leader_blkio_cnt;
-		if (!(record->state & E_RECORD_STATE_DIRTY))
-			record->state |= E_RECORD_STATE_DIRTY |
-				E_RECORD_STATE_UPDATE_HEADER_ONLY;
-
-		ws_dbg("%s, preread first blkio count = %u\n", __func__,
-			ws->leader_blkio_cnt);
+		need_dirty = true;
+		ws_dbg("%s, preread first blkio count = %u\n",
+			__func__, ws->leader_blkio_cnt);
 	} else if (record->leader_blkio_cnt
 		&& (ws->leader_blkio_cnt >= CARE_BLKIO_MIN_THRESHOLD)
-		&& (record->leader_blkio_cnt * 2 < ws->leader_blkio_cnt)) {
+		&& (record->leader_blkio_cnt * BLKIO_MULTIPLE_FOR_UPDATE <
+		ws->leader_blkio_cnt)) {
 		record->need_update = 1;
-		if (!(record->state & E_RECORD_STATE_DIRTY))
-			record->state |= E_RECORD_STATE_DIRTY |
-				E_RECORD_STATE_UPDATE_HEADER_ONLY;
-
+		need_dirty = true;
 		ws_dbg("%s, base blkio=%u,current blkio=%u\n", __func__,
 			record->leader_blkio_cnt, ws->leader_blkio_cnt);
+	} else if (ws->leader_blkio_cnt > record->leader_blkio_cnt
+		+ (record->data.pageseq_cnt
+		* BLKIO_PERCENTAGE_THRESHOLD_FOR_UPDATE / ONE_HUNDRED)) {
+		if (!(record->state & E_RECORD_STATE_UPDATE_BASE_BLKIO)
+			&& !record->leader_blkio_cnt) {
+			record->leader_blkio_cnt = ws->leader_blkio_cnt;
+			ws_dbg("%s, preread base blkio count = %u\n",
+				__func__, ws->leader_blkio_cnt);
+		} else {
+			record->need_update = 1;
+			ws_dbg("%s, blkio=%u, pages = %u\n",
+				__func__, ws->leader_blkio_cnt,
+				record->data.pageseq_cnt);
+		}
+		need_dirty = true;
 	}
-	record->state &= ~E_RECORD_STATE_UPDATE_BASE_BLKIO;
+
+	if (need_dirty && !(record->state & E_RECORD_STATE_DIRTY))
+		record->state |= E_RECORD_STATE_DIRTY |
+		E_RECORD_STATE_UPDATE_HEADER_ONLY;
 	ws->leader_blkio_cnt = 0;
 	ws->leader_blkio_base = 0;
 }
@@ -3030,7 +3215,9 @@ static struct s_ws_record *workingset_get_record_wslocked(
 		 */
 		if (!ws->file_count || !ws->pageseq_count) {
 			mutex_lock(&record->mutex);
-			workingset_preread_qos_wsrcrdlocked(ws, record);
+			if (record->isAfCleared == 0)
+				workingset_preread_qos_wsrcrdlocked(ws, record);
+			record->state &= ~E_RECORD_STATE_UPDATE_BASE_BLKIO;
 			mutex_unlock(&record->mutex);
 			return NULL;
 		}
@@ -3053,8 +3240,8 @@ static struct s_ws_record *workingset_get_record_wslocked(
 static void workingset_collector_do_record_locked(struct s_workingset *ws,
 	unsigned long discard_count)
 {
-	struct s_ws_record *record;
-	bool is_exist;
+	struct s_ws_record *record = NULL;
+	bool is_exist = false;
 
 	if (!ws)
 		return;
@@ -3092,13 +3279,16 @@ static void workingset_collector_do_record_locked(struct s_workingset *ws,
 		ret = workingset_collector_read_data_wsrcrdlocked(ws,
 			record, is_exist);
 		if (!ret) {
+			if (ws->clearYoung)
+				record->isAfCleared = 1;
 			if (!is_exist) {
 				/**
 				 * we'll recollect info for the second times
 				 * because there were some permit dialog
 				 * in the first time.
 				 */
-				record->need_update = 1;
+				if (!ws->clearYoung)
+					record->need_update = 1;
 				workingset_insert_record_to_list_head(record);
 			}
 			ws_dbg("%s: %ufls %usqs, pgs=%u,rpt=%lu,dscd=%lu\n",
@@ -3178,7 +3368,7 @@ static int workingset_page_cache_read(struct s_readpages_control *rpc)
 		else if (ret == -EEXIST)
 			ret = 0; /* losing race to add is OK */
 
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		put_page(page);
 #else
 		page_cache_release(page);
@@ -3216,7 +3406,7 @@ static bool workingset_adjust_page_lru(struct page *page)
 			struct lruvec *lruvec;
 			struct zone *zone = page_zone(page);
 
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 			spin_lock_irq(zone_lru_lock(zone));
 			lruvec = mem_cgroup_page_lruvec(page,
 				zone->zone_pgdat);
@@ -3226,7 +3416,8 @@ static bool workingset_adjust_page_lru(struct page *page)
 #endif
 #ifdef CONFIG_TASK_PROTECT_LRU
 			if (PageLRU(page) && !PageProtect(page) &&
-				!PageSwapBacked(page)) {
+				!PageSwapBacked(page) &&
+				!PageUnevictable(page)) {
 				struct list_head *head;
 
 				head = get_protect_head_lru(lruvec, page);
@@ -3234,13 +3425,14 @@ static bool workingset_adjust_page_lru(struct page *page)
 				adjusted = true;
 			}
 #else
-			if (PageLRU(page) && !PageSwapBacked(page)) {
+			if (PageLRU(page) && !PageSwapBacked(page) &&
+				!PageUnevictable(page)) {
 				list_move(&page->lru,
 					&lruvec->lists[page_lru(page)]);
 				adjusted = true;
 			}
 #endif
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 			spin_unlock_irq(zone_lru_lock(zone));
 #else
 			spin_unlock_irq(&zone->lru_lock);
@@ -3281,7 +3473,7 @@ static int workingset_read_pages(struct address_space *mapping,
 			(mapping_gfp_mask(mapping) & ~__GFP_FS)
 			| __GFP_COLD | GFP_NOFS))
 			mapping->a_ops->readpage(filp, page);
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		put_page(page);
 #else
 		page_cache_release(page);
@@ -3316,7 +3508,7 @@ static int workingset_page_cache_range_read(struct s_readpages_control *rpc)
 	if (isize == 0)
 		goto out;
 
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	end_index = ((isize - 1) >> PAGE_SHIFT);
 #else
 	end_index = ((isize - 1) >> PAGE_CACHE_SHIFT);
@@ -3463,7 +3655,7 @@ static bool workingset_filepage_is_need_skip_read(struct s_ws_data *data,
 	unsigned *pfile_idx, unsigned *stage_end)
 {
 	bool ret = false;
-	bool is_major_page;
+	bool is_major_page = false;
 	unsigned file_idx;
 	unsigned stage_num;
 
@@ -3499,7 +3691,6 @@ out:
 static void workingset_read_filepages_rcrdlocked(struct s_ws_record *record,
 	struct file **filpp)
 {
-	int flags = O_RDONLY;
 	struct s_readpages_control rpc;
 	struct s_ws_data *data = &record->data;
 	struct page *page;
@@ -3518,8 +3709,6 @@ static void workingset_read_filepages_rcrdlocked(struct s_ws_record *record,
 	 * in some case, io request is congested, so we must be ensure
 	 * read file page of main thread touched first.
 	 */
-	if (force_o_largefile())
-		flags |= O_LARGEFILE;
 try_next:
 	for (idx = stage_begin; idx < stage_end; idx++) {
 		if (!(idx%100) && atomic_read(&g_preread_abort))
@@ -3573,9 +3762,8 @@ try_next:
 	 * when many file pages are not present, the blkio count of main
 	 * thread can be consider as the base blkio of prereading.
 	 */
-	if (present_pages_cnt <
-		((data->page_sum * CACHE_MISSED_PERCENTAGE_THRESHOLD_FOR_BLKIO)
-		/ 100))
+	if ((((ONE_HUNDRED - CACHE_MISSED_THRESHOLD_FOR_BLKIO)
+		* data->page_sum) / ONE_HUNDRED) > present_pages_cnt)
 		record->state |= E_RECORD_STATE_UPDATE_BASE_BLKIO;
 
 	ws_dbg("%s %s,%u fls,%u sqs,%u pgs,prsnt %u,mv %u,rd %u\n",
@@ -3664,7 +3852,7 @@ static int workingset_collect_kworkthread(void *p)
 }
 
 static int workingset_cachepage_info_init(struct file *file,
-	pgoff_t start_offset, unsigned count, unsigned pid,
+	pgoff_t start_offset, unsigned count, bool isMajar,
 	struct s_cachepage_info *info)
 {
 	if (unlikely(!file) ||
@@ -3677,7 +3865,7 @@ static int workingset_cachepage_info_init(struct file *file,
 	info->filp = file;
 	info->start_offset = (unsigned)start_offset;
 	info->count = count;
-	info->pid = pid;
+	info->isMajar = isMajar;
 	return 0;
 }
 
@@ -3687,10 +3875,16 @@ void workingset_pagecache_record(struct file *file, pgoff_t start_offset,
 	struct s_cachepage_info info, *target_space;
 	struct task_struct *task = current;
 	unsigned remain_space;
-	bool mmap_only;
+	bool mmap_only = false;
+	bool isMajar;
 
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+	isMajar = task->static_vip;
+#else
+	isMajar = task->pid == task->tgid;
+#endif
 	if (workingset_cachepage_info_init(file, start_offset,
-		count, task->pid, &info))
+		count, isMajar, &info))
 		return;
 
 	spin_lock(&g_collector->lock);
@@ -3699,10 +3893,9 @@ void workingset_pagecache_record(struct file *file, pgoff_t start_offset,
 		return;
 	}
 
-	mmap_only =
+	mmap_only = !isMajar &&
 		(g_collector->monitor->state == E_CGROUP_STATE_MONITOR_PAUSED);
-	if ((!is_pagefault && mmap_only)
-		|| (task->tgid != g_collector->monitor->owner.pid)) {
+	if (!is_pagefault && mmap_only) {
 		spin_unlock(&g_collector->lock);
 		return;
 	}
@@ -3719,7 +3912,7 @@ void workingset_pagecache_record(struct file *file, pgoff_t start_offset,
 	 * file page of main thread only.
 	 */
 	if (remain_space < COLLECTOR_REMAIN_CACHE_LOW_WATER) {
-		if ((task->pid != task->tgid) ||
+		if (!isMajar ||
 			(remain_space <= sizeof(struct s_cachepage_info))) {
 			g_collector->discard_count++;
 			spin_unlock(&g_collector->lock);
@@ -3767,7 +3960,7 @@ static int __init cgroup_workingset_init(void)
 	if (!g_collector)
 		goto create_collector_fail;
 
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	page = alloc_pages_node(NUMA_NO_NODE, GFP_KERNEL,
 						  COLLECTOR_CACHE_SIZE_ORDER);
 #else
@@ -3802,13 +3995,12 @@ static int __init cgroup_workingset_init(void)
 		g_max_records_count = MAX_RECORD_COUNT_ON_2G;
 	else
 		g_max_records_count = MAX_RECORD_COUNT_ON_1G;
-	ws_dbg("%s, totalram %lu pages, max count of records = %u\n",
-		__func__, totalram_pages, g_max_records_count);
+
 	g_module_initialized = true;
 	return 0;
 
 create_collector_thread_fail:
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	__free_pages(virt_to_page(g_collector->circle_buffer),
 					COLLECTOR_CACHE_SIZE_ORDER);
 #else
@@ -3830,7 +4022,7 @@ static void __exit cgroup_workingset_exit(void)
 {
 	kthread_stop(g_collector->collector_thread);
 	g_collector->collector_thread = NULL;
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	__free_pages(virt_to_page(g_collector->circle_buffer),
 					COLLECTOR_CACHE_SIZE_ORDER);
 #else

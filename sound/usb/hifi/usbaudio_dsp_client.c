@@ -214,7 +214,7 @@ static int parse_uac_endpoint_attributes(struct snd_usb_audio *chip,
 {
 	/* parsed with a v1 header here. that's ok as we only look at the
 	 * header first which is the same for both versions */
-	struct uac_iso_endpoint_descriptor *csep;
+	struct uac_iso_endpoint_descriptor *csep = NULL;
 	struct usb_interface_descriptor *altsd = get_iface_desc(alts);
 	int attributes = 0;
 
@@ -258,15 +258,15 @@ static int parse_uac_endpoint_attributes(struct snd_usb_audio *chip,
 
 static int snd_usb_parse_audio_interface(struct snd_usb_audio *chip, int iface_no, struct list_head *fp_list)
 {
-	struct usb_device *dev;
-	struct usb_interface *iface;
-	struct usb_host_interface *alts;
-	struct usb_interface_descriptor *altsd;
+	struct usb_device *dev = NULL;
+	struct usb_interface *iface = NULL;
+	struct usb_host_interface *alts = NULL;
+	struct usb_interface_descriptor *altsd = NULL;
 	int i, altno, stream;
 	unsigned int format = 0, num_channels = 0;
 	struct audioformat *fp = NULL;
 	int num, protocol, clock = 0;
-	struct uac_format_type_i_continuous_descriptor *fmt;
+	struct uac_format_type_i_continuous_descriptor *fmt = NULL;
 	unsigned int chconfig;
 
 	dev = chip->dev;
@@ -309,7 +309,7 @@ static int snd_usb_parse_audio_interface(struct snd_usb_audio *chip, int iface_n
 		case UAC_VERSION_1: {
 			struct uac1_as_header_descriptor *as =
 				snd_usb_find_csint_desc(alts->extra, alts->extralen, NULL, UAC_AS_GENERAL);
-			struct uac_input_terminal_descriptor *iterm;
+			struct uac_input_terminal_descriptor *iterm = NULL;
 
 			if (!as) {
 				dev_err(&dev->dev,
@@ -338,8 +338,8 @@ static int snd_usb_parse_audio_interface(struct snd_usb_audio *chip, int iface_n
 		}
 
 		case UAC_VERSION_2: {
-			struct uac2_input_terminal_descriptor *input_term;
-			struct uac2_output_terminal_descriptor *output_term;
+			struct uac2_input_terminal_descriptor *input_term = NULL;
+			struct uac2_output_terminal_descriptor *output_term = NULL;
 			struct uac2_as_header_descriptor *as =
 				snd_usb_find_csint_desc(alts->extra, alts->extralen, NULL, UAC_AS_GENERAL);
 
@@ -460,8 +460,8 @@ static int snd_usb_parse_audio_interface(struct snd_usb_audio *chip, int iface_n
 static int snd_usb_create_stream(struct snd_usb_audio *chip, int ctrlif, int interface, struct list_head *fp_list)
 {
 	struct usb_device *dev = chip->dev;
-	struct usb_host_interface *alts;
-	struct usb_interface_descriptor *altsd;
+	struct usb_host_interface *alts = NULL;
+	struct usb_interface_descriptor *altsd = NULL;
 	struct usb_interface *iface = usb_ifnum_to_if(dev, interface);
 
 	if (!iface) {
@@ -509,9 +509,9 @@ static int snd_usb_create_stream(struct snd_usb_audio *chip, int ctrlif, int int
 static int snd_usb_create_streams(struct snd_usb_audio *chip, int ctrlif, struct list_head *fp_list)
 {
 	struct usb_device *dev = chip->dev;
-	struct usb_host_interface *host_iface;
-	struct usb_interface_descriptor *altsd;
-	void *control_header;
+	struct usb_host_interface *host_iface = NULL;
+	struct usb_interface_descriptor *altsd = NULL;
+	void *control_header = NULL;
 	int i, protocol;
 
 	/* find audiocontrol interface */
@@ -697,9 +697,9 @@ bool hifi_channel_compare(struct audioformat *fp, struct usbaudio_pcm_cfg *pcm_c
 
 bool hifi_usbaudio_protocal_compare(struct usb_device *dev, struct audioformat *fp)
 {
-	struct usb_host_interface *alts;
-	struct usb_interface_descriptor *altsd;
-	struct usb_interface *iface;
+	struct usb_host_interface *alts = NULL;
+	struct usb_interface_descriptor *altsd = NULL;
+	struct usb_interface *iface = NULL;
 
 	iface = usb_ifnum_to_if(dev, fp->iface);
 	if (WARN_ON(!iface))
@@ -787,7 +787,7 @@ void hifi_samplerate_table_filled(struct audioformat *fp, struct usbaudio_format
 
 bool is_headphone(struct list_head *fp_list)
 {
-	struct audioformat *fp;
+	struct audioformat *fp = NULL;
 	bool is_hp = true;
 	list_for_each_entry(fp, fp_list, list) {
 		if (fp->endpoint & USB_DIR_IN) {
@@ -799,11 +799,12 @@ bool is_headphone(struct list_head *fp_list)
 
 bool match_hifi_format(struct usb_device *dev, struct list_head *fp_list, struct usbaudio_pcms *pcms, u32 usb_id)
 {
-	struct audioformat *fp, *n;
-	struct usb_host_interface *alts;
-	struct usb_interface_descriptor *altsd;
-	struct usb_interface *iface;
-	struct usb_endpoint_descriptor *epd;
+	struct audioformat *fp = NULL;
+	struct audioformat *n = NULL;
+	struct usb_host_interface *alts = NULL;
+	struct usb_interface_descriptor *altsd = NULL;
+	struct usb_interface *iface = NULL;
+	struct usb_endpoint_descriptor *epd = NULL;
 	struct usbaudio_pcm_cfg pcm_cfg[2];
 	int dir = 0;
 	int i = 0;
@@ -954,8 +955,8 @@ bool is_usbaudio_device(struct usb_device *udev)
 	}
 
 	for (i = 0; i < nintf; ++i) {
-		struct usb_interface_cache *intfc;
-		struct usb_host_interface *alt;
+		struct usb_interface_cache *intfc = NULL;
+		struct usb_host_interface *alt = NULL;
 
 		intfc = config->intf_cache[i];
 		alt = &intfc->altsetting[0];
@@ -1132,9 +1133,9 @@ void usbaudio_nv_check_complete(unsigned int usb_id)
 static int usbaudio_set_interface(int direction, struct snd_usb_audio *chip, struct usbaudio_pcms *pcms, unsigned int running, unsigned int rate)
 {
 	int ret;
-	struct usb_host_interface *alts;
-	struct usb_interface *iface;
-	struct usbaudio_formats *fmt;
+	struct usb_host_interface *alts = NULL;
+	struct usb_interface *iface = NULL;
+	struct usbaudio_formats *fmt = NULL;
 	struct audioformat cur_audiofmt;
 
 	fmt = &pcms->fmts[direction];
@@ -1151,6 +1152,8 @@ static int usbaudio_set_interface(int direction, struct snd_usb_audio *chip, str
 	ret = usb_set_interface(chip->dev, fmt->iface, 0);
 	if (ret < 0) {
 		pr_err("%d:%d: usb_set_interface failed (%d)\n", fmt->iface, 0, ret);
+		if (ret == -ETIMEDOUT)
+			hisi_usb_stop_hifi_usb_reset_power();
 		return ret;
 	}
 
@@ -1158,6 +1161,8 @@ static int usbaudio_set_interface(int direction, struct snd_usb_audio *chip, str
 		ret = usb_set_interface(chip->dev, fmt->iface, fmt->altsetting);
 		if (ret < 0) {
 			pr_err("%d:%d: usb_set_interface failed (%d)\n", fmt->iface, fmt->altsetting, ret);
+			if (ret == -ETIMEDOUT)
+				hisi_usb_stop_hifi_usb_reset_power();
 			return ret;
 		}
 

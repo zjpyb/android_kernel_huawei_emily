@@ -149,8 +149,8 @@ struct thermal_cooling_device *
 board_power_cooling_register (struct device_node *np, get_power_t get_power)
 {
 	int ret;
-	struct board_cooling_device *board_cdev;
-	struct thermal_cooling_device *cool_dev;
+	struct board_cooling_device *board_cdev = NULL;
+	struct thermal_cooling_device *cool_dev = NULL;
 	char name[THERMAL_NAME_LENGTH];
 
 	ret = of_property_count_elems_of_size(np, "power", (int)sizeof(u32));
@@ -161,13 +161,13 @@ board_power_cooling_register (struct device_node *np, get_power_t get_power)
 	}
 
 	board_cdev = kzalloc(sizeof(*board_cdev), GFP_KERNEL);
-	if (!board_cdev)
+	if (board_cdev == NULL)
 		return ERR_PTR((long)-ENOMEM);
 
 	board_cdev->max_level = (unsigned int)ret;
 	board_cdev->power_table = kzalloc(sizeof(*board_cdev->power_table) *
 					  board_cdev->max_level, GFP_KERNEL);
-	if (!board_cdev->power_table) {
+	if (board_cdev->power_table == NULL) {
 		cool_dev = ERR_PTR((long)-ENOMEM);
 		goto free_board_cdev;
 	}
@@ -218,9 +218,9 @@ EXPORT_SYMBOL(board_power_cooling_register);
 
 void board_cooling_unregister(struct thermal_cooling_device *cdev)
 {
-	struct board_cooling_device *board_cdev;
+	struct board_cooling_device *board_cdev = NULL;
 
-	if (!cdev)
+	if (cdev == NULL)
 		return;
 
 	board_cdev = cdev->devdata;

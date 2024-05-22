@@ -17,6 +17,7 @@
  */
 
 #include <linux/blkdev.h>
+#include <linux/genhd.h>
 #include <linux/device-mapper.h>
 #include <linux/fs.h>
 #include <linux/kdev_t.h>
@@ -25,8 +26,15 @@
 #include <linux/vmalloc.h>
 #include <linux/ctype.h>
 #include <linux/blk_types.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/dax.h>
+#endif
 
 #define DM_MSG_PREFIX "row"
+
+#define SECTORS_PER_PAGE_SHIFT  (PAGE_SHIFT - SECTOR_SHIFT)
+#define SECTORS_PER_PAGE        (1 << SECTORS_PER_PAGE_SHIFT)
 
 struct dm_row {
 	struct rw_semaphore lock;
@@ -52,6 +60,7 @@ struct dm_row {
 
 	/* Hook flag for origin block device's mrfn */
 	unsigned int mrfn_hook;
+#define HOOK_MAGIC      0x4B4F4F48
 
 	/* make_request_fn of origin block device */
 	make_request_fn *mrfn;
@@ -60,210 +69,72 @@ struct dm_row {
 	unsigned long *wr_bitmap;
 
 	/* pointer to the DM device itself */
-	struct block_device *bd_self;
+	struct block_device *bdev_self;
 };
 
-/*
- * One of these per registered origin, held in the _origins hash
- */
-struct origin {
-	/* The origin device */
-	struct block_device *bdev;
-
-	struct list_head hash_list;
-
-	/* List of rows for this origin */
-	struct list_head rows;
-};
+static LIST_HEAD(g_rows_list);
+static DECLARE_RWSEM(g_rows_sem);
 
 /*
- * This structure is allocated for each origin target
+ * find the dm_row with the input arg as origin device
  */
-struct dm_origin {
-	struct dm_dev *dev;
-	struct dm_target *ti;
-	struct list_head hash_list;
-};
-
-/*
- * Size of the hash table for origin volumes. If we make this
- * the size of the minors list then it should be nearly perfect
- */
-#define ORIGIN_HASH_SIZE 256
-#define ORIGIN_MASK      0xFF
-
-static struct list_head *_origins;
-static struct list_head *_dm_origins;
-static struct rw_semaphore _origins_lock;
-
-static inline int bdev_equal(struct block_device *lhs, struct block_device *rhs)
+static struct dm_row *lookup_row(struct gendisk *origin)
 {
-	/*
-	 * There is only ever one instance of a particular block
-	 * device so we can compare pointers safely.
-	 */
-	return lhs == rhs;
-}
+	struct dm_row *s = NULL;
 
-static int init_origin_hash(void)
-{
-	int i;
+	down_read(&g_rows_sem);
 
-	_origins = kmalloc_array(ORIGIN_HASH_SIZE, sizeof(struct list_head),
-			GFP_KERNEL);
-	if (!_origins) {
-		DMERR("unable to allocate memory for _origins");
-		return -ENOMEM;
-	}
-	for (i = 0; i < ORIGIN_HASH_SIZE; i++)
-		INIT_LIST_HEAD(_origins + i);
-
-	_dm_origins = kmalloc_array(ORIGIN_HASH_SIZE, sizeof(struct list_head),
-			GFP_KERNEL);
-	if (!_dm_origins) {
-		DMERR("unable to allocate memory for _dm_origins");
-		kfree(_origins);
-		return -ENOMEM;
-	}
-	for (i = 0; i < ORIGIN_HASH_SIZE; i++)
-		INIT_LIST_HEAD(_dm_origins + i);
-
-	init_rwsem(&_origins_lock);
-
-	return 0;
-}
-
-static void exit_origin_hash(void)
-{
-	kfree(_origins);
-	kfree(_dm_origins);
-}
-
-static unsigned int origin_hash(struct block_device *bdev)
-{
-	return (unsigned int)(bdev->bd_dev & ORIGIN_MASK);
-}
-
-static struct origin *__lookup_origin(struct block_device *origin)
-{
-	struct list_head *ol = NULL;
-	struct origin *o = NULL;
-
-	ol = &_origins[origin_hash(origin)];
-	list_for_each_entry(o, ol, hash_list) {
-		if (bdev_equal(o->bdev, origin))
-			return o;
+	list_for_each_entry(s, &g_rows_list, list) {
+		if (s->origin->bdev->bd_disk == origin) {
+			up_read(&g_rows_sem);
+			return s;
+		}
 	}
 
+	up_read(&g_rows_sem);
 	return NULL;
 }
 
-static void __insert_origin(struct origin *o)
-{
-	struct list_head *sl = &_origins[origin_hash(o->bdev)];
-
-	list_add_tail(&o->hash_list, sl);
-}
-
-static void __insert_row(struct origin *o, struct dm_row *s)
-{
-	struct dm_row *l = NULL;
-
-	/* Sort the list according to chunk size, largest-first smallest-last */
-	list_for_each_entry(l, &o->rows, list) {
-		if (l->chunk_size < s->chunk_size)
-			break;
-	}
-
-	list_add_tail(&s->list, &l->list);
-}
-
 /*
- * Make a note of the row and its origin so we can look it
- * up when the origin has a write on it.
- *
- * Also validate row exception store handovers.
- * On success, returns 1 if this registration is a handover destination,
- * otherwise returns 0.
+ * On success, returns 0.
+ * return -EEXIST for already existed dm_row.
  */
 static int register_row(struct dm_row *row)
 {
-	struct origin *o = NULL;
-	struct origin *new_o = NULL;
-	struct block_device *bdev = row->origin->bdev;
-	int r = 0;
+	struct dm_row *s = NULL;
 
-	new_o = kmalloc(sizeof(*new_o), GFP_KERNEL);
-	if (!new_o)
-		return -ENOMEM;
+	down_write(&g_rows_sem);
 
-	down_write(&_origins_lock);
-
-	o = __lookup_origin(bdev);
-	if (o) {
-		kfree(new_o);
-	} else {
-		/* New origin */
-		o = new_o;
-
-		/* Initialise the struct */
-		INIT_LIST_HEAD(&o->rows);
-		o->bdev = bdev;
-
-		__insert_origin(o);
+	list_for_each_entry(s, &g_rows_list, list) {
+		if (s->origin->bdev == row->origin->bdev) {
+			up_write(&g_rows_sem);
+			return -EEXIST;
+		}
 	}
 
-	__insert_row(o, row);
+	list_add_tail(&row->list, &g_rows_list);
 
-	up_write(&_origins_lock);
+	up_write(&g_rows_sem);
+	return 0;
+}
 
-	return r;
+static void unregister_row(struct dm_row *row)
+{
+	struct dm_row *s = NULL;
+
+	down_write(&g_rows_sem);
+
+	list_for_each_entry(s, &g_rows_list, list) {
+		if (s == row)
+			list_del(&s->list);
+	}
+
+	up_write(&g_rows_sem);
 }
 
 /*
- * Move row to correct place in list according to chunk size.
+ * The following implements a ROW (Redirect On Write) type Device-Mapper
  */
-static void reregister_row(struct dm_row *s)
-{
-	struct origin *o = NULL;
-	struct block_device *bdev = s->origin->bdev;
-
-	down_write(&_origins_lock);
-
-	list_del(&s->list);
-
-	o = __lookup_origin(bdev);
-	if (o)
-		__insert_row(o, s);
-
-	up_write(&_origins_lock);
-}
-
-static void unregister_row(struct dm_row *s)
-{
-	struct origin *o = NULL;
-
-	down_write(&_origins_lock);
-
-	o = __lookup_origin(s->origin->bdev);
-
-	list_del(&s->list);
-	if (o && list_empty(&o->rows)) {
-		list_del(&o->hash_list);
-		kfree(o);
-	}
-
-	up_write(&_origins_lock);
-}
-
-/*
- * Methods implementing a ROW (Redirect On Write) type Device-Mapper
- */
-
-#define HOOK_MAGIC      0x4B4F4F48
-
-#define SECTORS_PER_PAGE_SHIFT  (PAGE_SHIFT - SECTOR_SHIFT)
-#define SECTORS_PER_PAGE        (1 << SECTORS_PER_PAGE_SHIFT)
 
 /*
  * Forward declaration and external reference
@@ -333,6 +204,13 @@ bad_type:
 	return r;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+static inline void bio_set_dev(struct bio *bio, struct block_device *bdev)
+{
+	bio->bi_bdev = bdev;
+}
+#endif
+
 /*
  * Return the number of sectors in the device.
  */
@@ -353,8 +231,6 @@ static void row_attach_queue(struct dm_row *row)
 {
 	struct request_queue *q = bdev_get_queue(row->origin->bdev);
 
-	BUG_ON(q == NULL);
-
 	if (dm_target_is_row_bio_target(row->ti->type)) {
 		spin_lock_irq(q->queue_lock);
 		if (row->mrfn_hook == 0) {
@@ -374,8 +250,6 @@ static void row_detach_queue(struct dm_row *row)
 {
 	struct request_queue *q = bdev_get_queue(row->origin->bdev);
 
-	BUG_ON(q == NULL);
-
 	if (dm_target_is_row_bio_target(row->ti->type)) {
 		spin_lock_irq(q->queue_lock);
 		if (row->mrfn_hook == HOOK_MAGIC) {
@@ -386,7 +260,7 @@ static void row_detach_queue(struct dm_row *row)
 	}
 }
 
-static void row_fix_bio_cieinfo(struct bio *bio, const struct bio *base_bio)
+static void row_fix_bio_uieinfo(struct bio *bio, const struct bio *base_bio)
 {
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
 	unsigned int bvec_off;
@@ -406,22 +280,12 @@ static void row_fix_bio_cieinfo(struct bio *bio, const struct bio *base_bio)
 #endif
 }
 
-static void row_skip_hisi_bio_count(struct bio *bio)
-{
-#ifdef CONFIG_HISI_BLK_CORE
-	bio->hisi_bio.io_in_count &= ~HISI_IO_IN_COUNT_SET;
-	bio->hisi_bio.io_in_count |= HISI_IO_IN_COUNT_SKIP_ENDIO;
-#endif
-}
-
 /*
  * Origin device's make_request_fn replacer as bio transfer
  */
 static blk_qc_t row_make_request(struct request_queue *q, struct bio *bio)
 {
-	struct origin *o = NULL;
 	struct dm_row *s = NULL;
-	struct mapped_device *md = NULL;
 	struct request_queue *dm_q = NULL;
 
 	/*
@@ -430,24 +294,13 @@ static blk_qc_t row_make_request(struct request_queue *q, struct bio *bio)
 	 * while the bio has sectors, bi_sector and bi_bdev is top
 	 * blkdev remapped.
 	 */
-	down_read(&_origins_lock);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	s = lookup_row(bio->bi_disk);
+#else
+	s = lookup_row(bio->bi_bdev->bd_contains->bd_disk);
+#endif
 
-	o = __lookup_origin(bio->bi_bdev->bd_contains);
-	BUG_ON(o == NULL);
-
-	/*
-	 * make sure only one target now, or else bio should be
-	 * duplicated to diverse to each row device.
-	 */
-	BUG_ON(!list_is_singular(&o->rows));
-
-	s = list_first_entry(&o->rows, struct dm_row, list);
-	md = dm_table_get_md(s->ti->table);
-	BUG_ON(md == NULL);
-
-	up_read(&_origins_lock);
-
-	dm_q = bdev_get_queue(s->bd_self);
+	dm_q = bdev_get_queue(s->bdev_self);
 	dm_q->make_request_fn(dm_q, bio);
 
 	return BLK_QC_T_NONE;
@@ -489,7 +342,9 @@ static int dm_row_get_device(struct dm_target *ti,
 
 	ddev->bdev = bdev;
 	format_dev_t(ddev->name, dev);
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	ddev->dax_dev = dax_get_by_host(bdev->bd_disk->disk_name);
+#endif
 	*result = ddev;
 	return 0;
 }
@@ -502,6 +357,10 @@ static void dm_row_put_device(struct dm_target *ti, struct dm_dev *d)
 		return;
 
 	blkdev_put(d->bdev, d->mode);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	put_dax(d->dax_dev);
+	d->dax_dev = NULL;
+#endif
 	d->bdev = NULL;
 	kfree(d);
 }
@@ -516,7 +375,6 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	char *cow_path = NULL;
 	dev_t origin_dev;
 	dev_t cow_dev;
-	struct origin *o = NULL;
 	unsigned int args_used;
 	unsigned long bmp_len;
 	fmode_t origin_mode = FMODE_READ;
@@ -527,7 +385,7 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (argc != 4) {
 		ti->error = "DM row requires exactly 4 arguments";
 		DMERR("DM row requires exactly 4 arguments");
-		goto bad;
+		return err;
 	}
 
 	s = kmalloc(sizeof(struct dm_row), GFP_KERNEL);
@@ -535,7 +393,7 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "Cannot allocate private dm_row structure";
 		DMERR("Cannot allocate private dm_row structure");
 		err = -ENOMEM;
-		goto bad;
+		return err;
 	}
 
 	origin_path = argv[0];
@@ -549,15 +407,6 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad_origin;
 	}
 	origin_dev = s->origin->bdev->bd_dev;
-
-	down_read(&_origins_lock);
-	o = __lookup_origin(s->origin->bdev);
-	up_read(&_origins_lock);
-	if (o) {
-		ti->error = "Existing dm-row for origin device";
-		DMERR("Existing dm-row for origin device");
-		goto bad_origin;
-	}
 
 	cow_path = argv[0];
 	argv++;
@@ -582,13 +431,13 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	if (err) {
 		ti->error = "Couldn't create exception store";
 		DMERR("Couldn't create exception store");
-		goto bad_store;
+		goto bad_mapinfo;
 	}
 	if (s->chunk_size != SECTORS_PER_PAGE) {
 		ti->error = "Chunk size must equal to PAGE_SIZE";
 		DMERR("Chunk size must equal to PAGE_SIZE");
 		err = -EINVAL;
-		goto bad_store;
+		goto bad_mapinfo;
 	}
 
 	argv += args_used;
@@ -611,17 +460,17 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "Origin disk size is too large";
 		DMERR("Origin disk size is too large");
 		err = -EINVAL;
-		goto bad_alloc_bitmap;
+		goto bad_mapinfo;
 	}
 	s->wr_bitmap = kcalloc(bmp_len, sizeof(long), GFP_KERNEL);
 	if (!s->wr_bitmap) {
 		ti->error = "Could not allocate block mapping bitmap";
 		DMERR("Could not allocate block mapping bitmap");
 		err = -ENOMEM;
-		goto bad_alloc_bitmap;
+		goto bad_mapinfo;
 	}
 
-	s->bd_self = NULL;
+	s->bdev_self = NULL;
 	s->mrfn_hook = 0;
 
 	ti->private = s;
@@ -630,36 +479,33 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->num_discard_bios = 1;
 	ti->discards_supported = false;
 	ti->split_discard_bios = false;
-	ti->discard_zeroes_data_unsupported = false;
 	ti->per_io_data_size = 0;
 
 	/* Add row to the list of snapshots for this origin */
 	err = register_row(s);
-	if (err == -ENOMEM) {
-		ti->error = "Register dm-row failed";
-		DMERR("Register dm-row failed");
-		goto bad_load_and_register;
+	if (err == -EEXIST) {
+		ti->error = "Existing dm-row for origin device";
+		DMERR("Existing dm-row for origin device");
+		goto exist_origin;
 	}
 
 	err = dm_set_target_max_io_len(ti, s->chunk_size);
 	if (err) {
 		ti->error = "Set dm-row target max io len failed";
 		DMERR("Set dm-row target max io len failed");
-		goto bad_set_max;
+		goto invalid_chunk_size;
 	}
 
 	DMINFO("%s: Construct row mapped-device ok", __func__);
-
 	return 0;
 
-bad_set_max:
+invalid_chunk_size:
 	unregister_row(s);
 
-bad_load_and_register:
+exist_origin:
 	kfree(s->wr_bitmap);
 
-bad_alloc_bitmap:
-bad_store:
+bad_mapinfo:
 	dm_put_device(ti, s->cow);
 
 bad_cow:
@@ -667,8 +513,6 @@ bad_cow:
 
 bad_origin:
 	kfree(s);
-
-bad:
 	return err;
 }
 
@@ -682,7 +526,6 @@ static void row_status(struct dm_target *ti, status_type_t type,
 
 	switch (type) {
 	case STATUSTYPE_INFO:
-
 		down_read(&row->lock);
 
 		if (!row->valid)
@@ -691,7 +534,6 @@ static void row_status(struct dm_target *ti, status_type_t type,
 			DMEMIT("Unknown");
 
 		up_read(&row->lock);
-
 		break;
 
 	case STATUSTYPE_TABLE:
@@ -706,7 +548,6 @@ static void row_status(struct dm_target *ti, status_type_t type,
 		DMEMIT(" N %llu", (unsigned long long)row->chunk_size);
 
 		up_read(&row->lock);
-
 		break;
 	}
 }
@@ -718,19 +559,9 @@ static int row_iterate_devices(struct dm_target *ti,
 	int r;
 
 	r = fn(ti, row->origin, 0, ti->len, data);
-
 	if (!r)
 		r = fn(ti, row->cow, 0, get_dev_size(row->cow->bdev), data);
 
-	return r;
-}
-
-static int row_preresume(struct dm_target *ti)
-{
-	int r = 0;
-	struct dm_row *s = ti->private;
-
-	(void)s;
 	return r;
 }
 
@@ -741,28 +572,23 @@ static void row_resume(struct dm_target *ti)
 
 	DMINFO("%s: Resume row mapped-device", __func__);
 
-	/* Now we have correct chunk size, reregister */
-	reregister_row(s);
-
-	down_write(&s->lock);
-	s->active = 1;
-	up_write(&s->lock);
-
 	/* Hold the dm device and its queue */
 	down_write(&s->lock);
 
-	if (s->bd_self != NULL)
+	s->active = 1;
+
+	if (s->bdev_self != NULL)
 		goto out_unlock;
-	s->bd_self = bdget_disk(dm_disk(dm_table_get_md(ti->table)), 0);
-	if (s->bd_self == NULL) {
+	s->bdev_self = bdget_disk(dm_disk(dm_table_get_md(ti->table)), 0);
+	if (s->bdev_self == NULL) {
 		DMERR("Get dm-row device blockdev failed");
 		goto out_unlock;
 	}
-	err = blkdev_get(s->bd_self, FMODE_READ | FMODE_WRITE, NULL);
+	err = blkdev_get(s->bdev_self, FMODE_READ | FMODE_WRITE, NULL);
 	if (err) {
 		DMERR("Open dm-row device itself failed");
 		/* bd has been put in __blkdev_get if failed */
-		s->bd_self = NULL;
+		s->bdev_self = NULL;
 		goto out_unlock;
 	}
 
@@ -783,9 +609,9 @@ static void row_presuspend(struct dm_target *ti)
 
 	s->active = 0;
 
-	if (s->bd_self) {
-		blkdev_put(s->bd_self, FMODE_READ | FMODE_WRITE);
-		s->bd_self = NULL;
+	if (s->bdev_self) {
+		blkdev_put(s->bdev_self, FMODE_READ | FMODE_WRITE);
+		s->bdev_self = NULL;
 	}
 
 	up_write(&s->lock);
@@ -838,14 +664,14 @@ static int row_message(struct dm_target *ti, unsigned int argc, char **argv)
 		return -EINVAL;
 	}
 
-	if (!strcasecmp(argv[0], "attach_queue")) {
+	if (strcasecmp(argv[0], "attach_queue") == 0) {
 		if (s->active == 0) {
 			DMERR("Device inactive for message '%s'", argv[0]);
 			return -EINVAL;
 		}
 		row_attach_queue(s);
 		return 0;
-	} else if (!strcasecmp(argv[0], "detach_queue")) {
+	} else if (strcasecmp(argv[0], "detach_queue") == 0) {
 		/* shall know what you are doing when using this message */
 		if (s->active == 0) {
 			DMERR("Device inactive for message '%s'", argv[0]);
@@ -853,10 +679,10 @@ static int row_message(struct dm_target *ti, unsigned int argc, char **argv)
 		}
 		row_detach_queue(s);
 		return 0;
-	} else {
-		DMERR("%s: Unsupported message '%s'", __func__, argv[0]);
-		return -EINVAL;
 	}
+
+	DMERR("%s: Unsupported message '%s'", __func__, argv[0]);
+	return -EINVAL;
 }
 
 /*
@@ -874,7 +700,11 @@ static void submit_bio_wait_endio(struct bio *bio)
 {
 	struct submit_bio_ret *ret = bio->bi_private;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	ret->error = bio->bi_status;
+#else
 	ret->error = bio->bi_error;
+#endif
 	complete(&ret->event);
 }
 
@@ -987,8 +817,8 @@ static int row_read_fill_chunk(struct dm_row *s, struct bio *ref)
 	 * linux version < 4.4
 	 */
 	sector = ref->bi_iter.bi_sector & ~s->chunk_mask;
-	bio->bi_bdev = s->origin->bdev;
-	bio_set_op_attrs(bio, REQ_OP_READ, READ_SYNC);
+	bio_set_dev(bio, s->origin->bdev);
+	bio->bi_opf = REQ_OP_READ | REQ_SYNC;
 	bio->bi_iter.bi_sector = sector;
 
 	err = bio_add_pages(bio, pg_cnt);
@@ -997,28 +827,27 @@ static int row_read_fill_chunk(struct dm_row *s, struct bio *ref)
 		goto free_bio;
 	}
 
-	row_fix_bio_cieinfo(bio, ref);
-	row_skip_hisi_bio_count(bio);
+	row_fix_bio_uieinfo(bio, ref);
 
 	/* read from original device */
 	q = bdev_get_queue(s->origin->bdev);
 	err = submit_bio_mkreq_wait(s->mrfn, q, bio);
 	if (err) {
-		DMERR("%s: Queue bio[READ] to origin dev failed", __func__);
+		DMERR("%s: Queue bio[RD] to origin dev failed", __func__);
 		goto free_pages;
 	}
 
 	/* write to cow device */
 	bio_reset(bio);
-	bio->bi_bdev = s->cow->bdev;
-	bio_set_op_attrs(bio, REQ_OP_WRITE, WRITE_SYNC);
+	bio_set_dev(bio, s->cow->bdev);
+	bio->bi_opf = REQ_OP_WRITE | REQ_SYNC | REQ_NOIDLE;
 	bio->bi_iter.bi_sector = sector;
 	bio->bi_iter.bi_size = pg_cnt * PAGE_SIZE;
 
 	/* reassign bi_vcnt reset by bio_reset */
 	bio->bi_vcnt = pg_cnt;
 
-	row_fix_bio_cieinfo(bio, ref);
+	row_fix_bio_uieinfo(bio, ref);
 
 	/*
 	 * invoke the dest target mrfn directly rather than
@@ -1026,11 +855,10 @@ static int row_read_fill_chunk(struct dm_row *s, struct bio *ref)
 	 * current->bio_list and only return to wait
 	 * when the current request is blocked
 	 */
-	row_skip_hisi_bio_count(bio);
 	q = bdev_get_queue(s->cow->bdev);
 	err = submit_bio_mkreq_wait(q->make_request_fn, q, bio);
 	if (err)
-		DMERR("%s: Queue bio[WRITE] to cow dev failed", __func__);
+		DMERR("%s: Queue bio[WR] to cow dev failed", __func__);
 
 free_pages:
 	bio_delete_pages(bio);
@@ -1045,11 +873,6 @@ static int row_map(struct dm_target *ti, struct bio *bio)
 	struct dm_row *s = ti->private;
 	int err = DM_MAPIO_REMAPPED;
 	sector_t chunk;
-
-	if (s->mrfn == NULL) {
-		DMERR("%s: Original rfn shall NOT be null", __func__);
-		BUG_ON(s->mrfn == NULL);
-	}
 
 	down_write(&s->lock);
 
@@ -1084,16 +907,16 @@ static int row_map(struct dm_target *ti, struct bio *bio)
 			++chunk;
 		}
 
-		bio->bi_bdev = s->cow->bdev;
+		bio_set_dev(bio, s->cow->bdev);
 		goto out_remapped;
 	}
 
 	/* Fix and add the inline cryption key info HERE to the cloned bio */
-	row_fix_bio_cieinfo(bio, dm_get_tio_bio(bio));
+	row_fix_bio_uieinfo(bio, dm_get_tio_bio(bio));
 
 	/* If the block is already remapped - use that, or else remap it */
 	if (test_bit(chunk, s->wr_bitmap)) {
-		bio->bi_bdev = s->cow->bdev;
+		bio_set_dev(bio, s->cow->bdev);
 		goto out_remapped;
 	}
 	/*
@@ -1106,36 +929,35 @@ static int row_map(struct dm_target *ti, struct bio *bio)
 		if (unlikely(row_bio_full_chunk(s, bio) == 0)) {
 			int res;
 
-			DMINFO("%s: Recved bio[WRITE] is not chunk aligned",
-				__func__);
+			DMINFO("%s: Recv bio[WR] NOT chunk aligned", __func__);
 			res = row_read_fill_chunk(s, bio);
 			if (res) {
-				DMERR("%s: Read and fill chunk failed",
-					__func__);
+				DMERR("%s: Overlap chunk failed", __func__);
 				err = res;
 				goto out_unlock;
 			}
 		}
 
 		set_bit(chunk, s->wr_bitmap);
-		bio->bi_bdev = s->cow->bdev;
+		bio_set_dev(bio, s->cow->bdev);
 		goto out_remapped;
 	} else {
-		bio->bi_bdev = s->origin->bdev;
-		row_skip_hisi_bio_count(bio);
+		bio_set_dev(bio, s->origin->bdev);
 		/*
 		 * always SUBMITTED for avoid infinite remapping loop.
 		 * we can do some duplicate check both in mrfn redirection pipe
 		 * and in this map handler. that is not a problem,
 		 * but we want to simply use the mrfn pipe implementation
 		 */
-		s->mrfn(bdev_get_queue(bio->bi_bdev), bio);
+		s->mrfn(bdev_get_queue(s->origin->bdev), bio);
 		goto out_submitted;
 	}
 
 out_endio:
-	row_skip_hisi_bio_count(bio);
-	bio->bi_error = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (bio->bi_disk == NULL)
+		bio_set_dev(bio, s->bdev_self);
+#endif
 	bio_endio(bio);
 out_submitted:
 	err = DM_MAPIO_SUBMITTED;
@@ -1162,7 +984,6 @@ static struct target_type row_target = {
 	.dtr     = row_dtr,
 	.map     = row_map,
 	.presuspend = row_presuspend,
-	.preresume  = row_preresume,
 	.message = row_message,
 	.resume  = row_resume,
 	.status  = row_status,
@@ -1184,25 +1005,12 @@ static int __init dm_row_init(void)
 		return r;
 	}
 
-	r = init_origin_hash();
-	if (r) {
-		DMERR("DM row init origin hash failed, err %d", r);
-		goto bad_origin_hash;
-	}
-
 	return 0;
-
-bad_origin_hash:
-	dm_unregister_target(&row_target);
-
-	return r;
 }
 
 static void __exit dm_row_exit(void)
 {
 	dm_unregister_target(&row_target);
-
-	exit_origin_hash();
 }
 
 /* Module hooks */

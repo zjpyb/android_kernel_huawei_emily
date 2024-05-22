@@ -48,8 +48,8 @@ enum {
 	REG_UFS_VERSION				= 0x08,
 	REG_CONTROLLER_DEV_ID			= 0x10,
 	REG_CONTROLLER_PROD_ID			= 0x14,
-	REG_CONTROLLER_AHIT			= 0x18,
-	REG_INTERRUPT_STATUS			= 0x20,
+    REG_CONTROLLER_AHIT         = 0x18,
+    REG_INTERRUPT_STATUS            = 0x20,
 	REG_INTERRUPT_ENABLE			= 0x24,
 	REG_CONTROLLER_STATUS			= 0x30,
 	REG_CONTROLLER_ENABLE			= 0x34,
@@ -73,7 +73,13 @@ enum {
 	REG_UIC_COMMAND_ARG_1			= 0x94,
 	REG_UIC_COMMAND_ARG_2			= 0x98,
 	REG_UIC_COMMAND_ARG_3			= 0x9C,
-	REG_SPACE_SIZE				= 0xA0,
+
+	UFSHCI_REG_SPACE_SIZE			= 0xA0,
+
+	REG_UFS_CCAP				= 0x100,
+	REG_UFS_CRYPTOCAP			= 0x104,
+
+	UFSHCI_CRYPTO_REG_SPACE_SIZE		= 0x400,
 };
 
 /* Controller capability masks */
@@ -86,15 +92,19 @@ enum {
 	MASK_INLINE_ENCRYPTO_SUPPORT		= 0x10000000,
 };
 
+#define UFS_MASK(mask, offset)		((mask) << (offset))
+
 /* UFS Version 08h */
 #define MINOR_VERSION_NUM_MASK		UFS_MASK(0xFFFF, 0)
 #define MAJOR_VERSION_NUM_MASK		UFS_MASK(0xFFFF, 16)
 
 /* Controller UFSHCI version */
-enum { UFSHCI_VERSION_10 = 0x00010000, /* 1.0 */
-       UFSHCI_VERSION_11 = 0x00010100, /* 1.1 */
-       UFSHCI_VERSION_20 = 0x00020000, /* 2.0 */
-       UFSHCI_VERSION_21 = 0x00000210, /* 2.1 */
+enum {
+	UFSHCI_VERSION_10 = 0x00010000, /* 1.0 */
+	UFSHCI_VERSION_11 = 0x00010100, /* 1.1 */
+	UFSHCI_VERSION_20 = 0x00000200, /* 2.0 */
+	UFSHCI_VERSION_21 = 0x00000210, /* 2.1 */
+	UFSHCI_VERSION_30 = 0x00000300, /* 3.0 */
 };
 
 /*
@@ -130,6 +140,8 @@ enum { UFSHCI_VERSION_10 = 0x00010000, /* 1.0 */
 #define SYSTEM_BUS_FATAL_ERROR			UFS_BIT(17)
 #define CRYPTO_ENGINE_FATAL_ERROR		UFS_BIT(18)
 
+#define HISI_DME_LINKUP_FAIL    UFS_BIT(19)
+
 #define UFSHCD_UIC_PWR_MASK	(UIC_HIBERNATE_ENTER |\
 				UIC_HIBERNATE_EXIT |\
 				UIC_POWER_MODE)
@@ -159,6 +171,11 @@ enum { UFSHCI_VERSION_10 = 0x00010000, /* 1.0 */
 #define DEVICE_ERROR_INDICATOR			UFS_BIT(5)
 #define UIC_POWER_MODE_CHANGE_REQ_STATUS_MASK	UFS_MASK(0x7, 8)
 
+#define UFSHCD_STATUS_READY	(UTP_TRANSFER_REQ_LIST_READY |\
+				UTP_TASK_REQ_LIST_READY |\
+				UIC_COMMAND_READY)
+
+
 enum {
 	PWR_OK		= 0x0,
 	PWR_LOCAL	= 0x01,
@@ -177,6 +194,7 @@ enum {
 #define UIC_PHY_ADAPTER_LAYER_ERROR			UFS_BIT(31)
 #define UIC_PHY_ADAPTER_LAYER_ERROR_CODE_MASK		0x1F
 #define UIC_PHY_ADAPTER_LAYER_ERROR_LINE_RESET		UFS_BIT(4)
+#define UIC_PHY_ADAPTER_LAYER_LANE_ERR_MASK		0xF
 
 /* UECDL - Host UIC Error Code Data Link Layer 3Ch */
 #define UIC_DATA_LINK_LAYER_ERROR		UFS_BIT(31)
@@ -410,6 +428,29 @@ struct request_desc_header {
  * @prd_table_length: Physical region descriptor length DW-7
  * @prd_table_offset: Physical region descriptor offset DW-7
  */
+struct hisi_utp_transfer_req_desc {
+
+	/* DW 0-3 */
+	struct request_desc_header header;
+
+	/* DW 4-5*/
+	__le32  command_desc_base_addr_lo;
+	__le32  command_desc_base_addr_hi;
+
+	/* DW 6 */
+	__le16  response_upiu_length;
+	__le16  response_upiu_offset;
+
+	/* DW 7 */
+	__le16  prd_table_length;
+	__le16  prd_table_offset;
+
+	__le32 meta_data_random_factor_0;
+	__le32 meta_data_random_factor_1;
+	__le32 meta_data_random_factor_2;
+	__le32 meta_data_random_factor_3;
+};
+
 struct utp_transfer_req_desc {
 
 	/* DW 0-3 */

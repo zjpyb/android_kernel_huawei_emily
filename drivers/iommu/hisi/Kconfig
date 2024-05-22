@@ -17,20 +17,19 @@ config HISI_IOMMU_LPAE
 	help
 	  Hisilicon IOMMU Support.
 
+config HISI_IOMMU_BYPASS
+	bool "Hisilicon IOMMU Bypass Support"
+	select IOMMU_API
+	depends on HISI_IOMMU
+	help
+	  Hisilicon IOMMU Bypass Support.
+
 config HISI_IOMMU_LEGACY
 	bool "Hisilicon IOMMU SECOND LEVEL PAGE TABLE Support"
 	select IOMMU_API
 	depends on HISI_IOMMU && !HISI_IOMMU_LPAE
 	help
 	  Hisilicon IOMMU Support.
-
-config HISI_IOMMU_COMPACT
-	bool "Hisilicon IOMMU compact linux4.1"
-	help
-	  On linux4.1, IOMMU framework has some change point,
-	  you need compact it.If you build on linux4.1 and need
-	  hisilicon iommu,you should select this 'y'.
-	  Then, you should select this 'n'.
 
 config HISI_IOMMU_TEST
 	bool "Hisilicon IOMMU TEST Support"
@@ -53,3 +52,10 @@ config HISI_SVM
 	  This option enables support for the hisi svm features base on the ARM
 	  smmu v3 hardware. Select this option if you want to use devices by ssid
 	  and asid interface.
+
+config HISI_SMMUV310
+	bool "HISI SMMUV310 Support"
+	depends on HISI_SVM
+	default n
+	help
+	  HISI SMMUV310 Support

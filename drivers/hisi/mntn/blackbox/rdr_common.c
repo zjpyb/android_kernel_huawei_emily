@@ -15,6 +15,8 @@
 #include <linux/version.h>
 #include <linux/export.h>
 #include <linux/hisi/hisi_log.h>
+#include <securec.h>
+
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 #include <linux/hisi/rdr_pub.h>
@@ -24,6 +26,7 @@
 #include "rdr_field.h"
 #include "rdr_print.h"
 #include "rdr_debug.h"
+
 
 #undef __REBOOT_REASON_MAP
 #define __REBOOT_REASON_MAP(x,y) {#x, x, #y, y},
@@ -96,7 +99,7 @@ out:
 #define DATELEN 11
 extern int get_kernel_build_time(char* blddt, int dtlen, char* bldtm, int tmlen);
 
-void rdr_get_builddatetime(u8 *out)
+void rdr_get_builddatetime(u8 *out, u32 outLen)
 {
 	u8 *pout = out;
 	u8 *p = NULL;
@@ -109,7 +112,14 @@ void rdr_get_builddatetime(u8 *out)
 		BB_PRINT_ERR("[%s], out is null!\n", __func__);
 		return;
 	}
-	memset((void *)out, 0, RDR_BUILD_DATE_TIME_LEN);
+
+	if (outLen < RDR_BUILD_DATE_TIME_LEN) {
+		BB_PRINT_ERR("[%s],outlen is too small!\n", __func__);
+	}
+
+	if (EOK != memset_s((void *)out, RDR_BUILD_DATE_TIME_LEN, 0, RDR_BUILD_DATE_TIME_LEN)) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
 
 	ret = get_kernel_build_time(date, DATELEN, time, TIMELEN);
 	if(ret) {
@@ -188,10 +198,18 @@ char *rdr_get_timestamp(void)
 	static char databuf[DATA_MAXLEN + 1];
 	BB_PRINT_START();
 
-	memset(databuf, 0, DATA_MAXLEN + 1);
+	if (EOK != memset_s(databuf, DATA_MAXLEN + 1, 0, DATA_MAXLEN + 1)) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
 
-	memset(&tv, 0, sizeof(struct timeval));
-	memset(&tm, 0, sizeof(struct rtc_time));
+	if (EOK != memset_s(&tv, sizeof(struct timeval), 0, sizeof(struct timeval))) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
+
+	if (EOK != memset_s(&tm, sizeof(struct rtc_time), 0, sizeof(struct rtc_time))) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
+
 	do_gettimeofday(&tv);
 	tv.tv_sec -= (long)sys_tz.tz_minuteswest * 60;
 	rtc_time_to_tm(tv.tv_sec, &tm);
@@ -229,6 +247,7 @@ struct blackbox_modid_list g_modid_list[] = {
 	{(unsigned int)HISI_BB_MOD_LPM_START, (unsigned int)HISI_BB_MOD_LPM_END, "lpm3"},
 	{(unsigned int)HISI_BB_MOD_IOM_START, (unsigned int)HISI_BB_MOD_IOM_END, "iom3"},
 	{(u32)HISI_BB_MOD_HISEE_START, (u32)HISI_BB_MOD_HISEE_END, "hisee"},
+	{(unsigned int)HISI_BB_MOD_IVP_START, (unsigned int)HISI_BB_MOD_IVP_END, "ivp"},
 	{(unsigned int)HISI_BB_MOD_BFM_START, (unsigned int)HISI_BB_MOD_BFM_END, "bfm"},
 	{(unsigned int)HISI_BB_MOD_RESERVED_START, (unsigned int)HISI_BB_MOD_RESERVED_END,
 	 "blackbox reserved"},
@@ -381,6 +400,7 @@ int rdr_set_saving_state(int state)
 	return atomic_set(&bb_in_saving, state);/*lint !e1058 !e446 */
 }
 
+#ifdef CONFIG_PM
 static struct notifier_block bb_suspend_notifier;
 static int bb_suspend_nb(struct notifier_block *this,
 			 unsigned long event, void *ptr)
@@ -410,6 +430,7 @@ static int bb_suspend_nb(struct notifier_block *this,
 	}
 	return NOTIFY_OK;
 }
+#endif
 
 static int bb_reboot_nb(struct notifier_block *nb, unsigned long foo, void *bar)
 {
@@ -488,6 +509,7 @@ RDR_NVE rdr_get_nve(void)
 	return g_nve;
 }
 
+
 u32 rdr_get_lognum(void)
 {
 	return g_rdr_dts_data[MAX_LOGNUM].data;
@@ -541,10 +563,11 @@ int rdr_common_early_init(void)
 	int i, ret, len;
 	struct device_node *np = NULL;
 	struct resource res;
-	const char *prdr_dumpctrl;
+	const char *prdr_dumpctrl = NULL;
 	u32 value = 0, j;
 	u32 data[RDR_CORE_MAX];
-	struct device_node *bbox_addr;
+	struct device_node *bbox_addr = NULL;
+
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,rdr");
 	if (!np) {
@@ -585,7 +608,7 @@ int rdr_common_early_init(void)
 	len = strlen(prdr_dumpctrl);
 	for (i = --len; i >= 0; i--) {
 		if (prdr_dumpctrl[i] == '1')
-			g_nve |= (u64)1 <<(unsigned int)(len - i);
+			g_nve |= (u64)1 << (unsigned int)(len - i);
 	}
 	BB_PRINT_DBG("[%s], get nve [0x%llx] in dts!\n", __func__, g_nve);
 	ret = of_property_read_u32(np, "rdr-log-max-size", &value);
@@ -635,6 +658,7 @@ static struct notifier_block bb_reboot_notifier;
 int rdr_common_init(void)
 {
 
+#ifdef CONFIG_PM
 	/* Register to get PM events */
 	bb_suspend_notifier.notifier_call = bb_suspend_nb;
 	bb_suspend_notifier.priority = -1;
@@ -643,6 +667,7 @@ int rdr_common_init(void)
 			     __func__);
 		return -1;
 	}
+#endif
 
 	bb_reboot_notifier.notifier_call = bb_reboot_nb;
 	bb_reboot_notifier.priority = -1;
@@ -671,8 +696,13 @@ static int __init early_parse_reboot_reason_cmdline(char *reboot_reason_cmdline)
 {
 	int i;
 
-	memset(g_reboot_reason, 0x0, RDR_REBOOT_REASON_LEN);
-	memcpy(g_reboot_reason, reboot_reason_cmdline, RDR_REBOOT_REASON_LEN - 1);
+	if (EOK != memset_s(g_reboot_reason, RDR_REBOOT_REASON_LEN, 0x0, RDR_REBOOT_REASON_LEN)) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
+
+	if (EOK != memcpy_s(g_reboot_reason, RDR_REBOOT_REASON_LEN - 1, reboot_reason_cmdline, RDR_REBOOT_REASON_LEN - 1)) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
 
 	for (i = 0; (u32)i < get_reboot_reason_map_size(); i++) {
 		if (!strncmp((char *)reboot_reason_map[i].name, g_reboot_reason, RDR_REBOOT_REASON_LEN)) {
@@ -693,7 +723,7 @@ void *bbox_vmap(phys_addr_t paddr, size_t size)
 	pgprot_t pgprot;
 	unsigned long offset;
 	int pages_count;
-	struct page **pages;
+	struct page **pages = NULL;
 
 	offset = paddr & ~PAGE_MASK;
 	paddr &= PAGE_MASK;
@@ -706,7 +736,7 @@ void *bbox_vmap(phys_addr_t paddr, size_t size)
 	pgprot = pgprot_writecombine(PAGE_KERNEL);
 
 	for (i = 0; i < pages_count; i++) {
-		*(pages + i) = phys_to_page(paddr + PAGE_SIZE * i);
+		*(pages + i) = phys_to_page((uintptr_t)(paddr + PAGE_SIZE * i));
 	}
 
 	vaddr = vmap(pages, pages_count, VM_MAP, pgprot);
@@ -757,10 +787,12 @@ Output:		    NA
 Return:		    NA
 Other:          used by rdr_core.c、rdr_hisi_ap_adapter.c
 ********************************************************************************/
-void bbox_save_done(char *logpath, u32 step)
+void bbox_save_done(const char *logpath, u32 step)
 {
-	int fd = 0, ret = 0;
+	int fd = 0;
+	int ret = 0;
 	char path[PATH_MAXLEN];
+	u32 len;
 
 	BB_PRINT_START();
 	if (!logpath
@@ -774,8 +806,15 @@ void bbox_save_done(char *logpath, u32 step)
 	if (BBOX_SAVE_STEP_DONE == step) {
 
 		/*组合done文件的绝对路径，作为sys_mkdir的参数 */
-		memset(path, 0, PATH_MAXLEN);
-		memcpy(path, logpath, strlen(logpath));
+		if (EOK != memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+			BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+		}
+		len = strlen(logpath);
+		ret = memcpy_s(path, PATH_MAXLEN - 1, logpath, len);
+		if (ret < 0) {
+			BB_PRINT_ERR("[%s:%d]: memcpy_s err \n]", __func__, __LINE__);
+			return;
+		}
 		strncat(path, BBOX_SAVE_DONE_FILENAME,
 			((PATH_MAXLEN - 1) - strlen(path)));
 
@@ -813,7 +852,7 @@ Other:		NA
 ********************************************************************************/
 void rdr_record_reboot_times2mem(void)
 {
-	struct rdr_struct_s *pbb;
+	struct rdr_struct_s *pbb = NULL;
 	BB_PRINT_START();
 	pbb = rdr_get_pbb();
 	pbb->top_head.reserve = RDR_UNEXPECTED_REBOOT_MARK_ADDR;
@@ -830,7 +869,7 @@ Other:		NA
 ********************************************************************************/
 void rdr_reset_reboot_times(void)
 {
-	struct file *fp;
+	struct file *fp = NULL;
 	ssize_t length;
 	char buf;
 
@@ -862,7 +901,7 @@ Other:		NA
 ********************************************************************************/
 void rdr_record_erecovery_reason(void)
 {
-	struct file *fp;
+	struct file *fp = NULL;
 	ssize_t length;
 	char *e_reason  = "erecovery_enter_reason:=2015\n";
 	BB_PRINT_START();
@@ -897,7 +936,7 @@ Other:		NA
 ********************************************************************************/
 int rdr_record_reboot_times2file(void)
 {
-	struct file *fp;
+	struct file *fp = NULL;
 	ssize_t length;
 	char buf  = 0;
 

@@ -24,11 +24,12 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/delay.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
 #include <linux/hisi/hisi_log.h>
+#include <linux/hisi/hisi_bbox_diaginfo.h>
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
 #include "rdr_inner.h"
 #include "rdr_field.h"
@@ -38,7 +39,11 @@
 #define DATA_READY 1
 #define DATA_NOT_READY 0
 
+#define RDR_TMP_PATH_MAX_LEN 64
+
 static unsigned int g_dataready_flag = DATA_NOT_READY;
+static char *g_history_log_buf;
+static u32 g_history_log_size;
 
 struct linux_dirent {
 	unsigned long d_ino;
@@ -47,13 +52,12 @@ struct linux_dirent {
 	char d_name[1];
 };
 
-static int rdr_rm_dir(char *path);
+static int rdr_rm_dir(const char *path);
 
-static int __rdr_create_dir(char *path)
+static int __rdr_create_dir(const char *path)
 {
 	int fd;
 
-	/* BB_PRINT_START(); */
 	if (path == NULL) {
 		BB_PRINT_ERR("invalid  parameter. path:%pK.\n", path);
 		BB_PRINT_END();
@@ -74,7 +78,6 @@ static int __rdr_create_dir(char *path)
 			     fd);
 	}
 
-	/* BB_PRINT_END(); */
 	return 0;
 }
 
@@ -89,7 +92,7 @@ static int __rdr_create_dir(char *path)
  */
 int rdr_create_dir(const char *path)
 {
-	char cur_path[64];
+	char cur_path[RDR_TMP_PATH_MAX_LEN];
 	int index = 0;
 
 	BB_PRINT_START();
@@ -98,7 +101,9 @@ int rdr_create_dir(const char *path)
 		BB_PRINT_END();
 		return -1;
 	}
-	memset(cur_path, 0, 64);
+	if (EOK != memset_s(cur_path, RDR_TMP_PATH_MAX_LEN, 0, RDR_TMP_PATH_MAX_LEN)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	if (*path != '/')
 		return -1;
 	cur_path[index++] = *path++;
@@ -176,7 +181,7 @@ int rdr_wait_partition(char *path, int timeouts)
 	return 0;
 }
 
-int rdr_create_epath_bc(char *path)
+int rdr_create_epath_bc(char *path, u32 pathLen)
 {
 	char date[DATATIME_MAXLEN];
 	int ret;
@@ -190,9 +195,17 @@ int rdr_create_epath_bc(char *path)
 		return -1;
 	}
 
-	memset(date, 0, DATATIME_MAXLEN);
-	snprintf(date, DATATIME_MAXLEN, "%s-%08lld",
+	if (EOK != memset_s(date,DATATIME_MAXLEN, 0, DATATIME_MAXLEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+	snprintf(date, DATATIME_MAXLEN,"%s-%08lld",
 		 rdr_get_timestamp(), rdr_get_tick());
+
+	if (pathLen < PATH_MAXLEN) {
+		BB_PRINT_ERR("invalid len.\n");
+	}
+
 	snprintf(path, PATH_MAXLEN, "%s%s/", PATH_ROOT, date);
 	BB_PRINT_PN("date buf error, cur log path:[%s].\n", path);
 
@@ -203,7 +216,7 @@ int rdr_create_epath_bc(char *path)
 }
 
 int rdr_create_exception_path(struct rdr_exception_info_s *e,
-			      char *path, char *date)
+			      char *path, char *date, u32 datelen)
 {
 	int ret = 0;
 
@@ -216,7 +229,15 @@ int rdr_create_exception_path(struct rdr_exception_info_s *e,
 		BB_PRINT_END();
 		return ret = -1;
 	}
-	memset(date, 0, DATATIME_MAXLEN);
+
+	if ( datelen < DATATIME_MAXLEN ) {
+		BB_PRINT_ERR("invalid  parameter datelen\n");
+	}
+
+	if (EOK != memset_s(date,DATATIME_MAXLEN ,0, DATATIME_MAXLEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	ret = snprintf_s(date, DATATIME_MAXLEN, DATATIME_MAXLEN - 1, "%s-%08lld",
 		 rdr_get_timestamp(), rdr_get_tick());
 	if(unlikely(ret < 0)){
@@ -241,7 +262,7 @@ Input:          NA
 Output:         path;date
 Return:         NA
 ********************************************************************************/
-int bbox_create_dfxlog_path(char *path, char *date)
+int bbox_create_dfxlog_path(char *path, char *date, u32 dataLen)
 {
 	int ret = 0;
 	static int number = 1;
@@ -255,7 +276,15 @@ int bbox_create_dfxlog_path(char *path, char *date)
 		BB_PRINT_END();
 		return -1;
 	}
-	memset(date, 0, DATATIME_MAXLEN);
+
+	if (dataLen < DATATIME_MAXLEN) {
+		 BB_PRINT_ERR("invalid  len.\n");
+	}
+
+	if (EOK != memset_s(date,DATATIME_MAXLEN, 0, DATATIME_MAXLEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	snprintf(date, DATATIME_MAXLEN, "%s-%08lld",
 		 rdr_get_timestamp(), rdr_get_tick()+number);
 
@@ -273,7 +302,7 @@ static DEFINE_MUTEX(__rdr_logpath_info_list_mutex);
 struct logpath_info_s {
 	struct list_head s_list;
 	struct timespec ctime;
-	u64 logpath_tm;
+	u32 logpath_idx;
 	char path[32];
 };
 
@@ -298,7 +327,7 @@ int rdr_is_logdir_nm_tm(const char *buf, int len)
 	int i;
 	char tempstr[10];
 	int val;
-	const struct RDR_LOG_TM_RANGE *pt_rg;
+	const struct RDR_LOG_TM_RANGE *pt_rg = NULL;
 
 	pt_rg = (const struct RDR_LOG_TM_RANGE *)&tbl_rdr_logdir_tm_rg;
 
@@ -310,7 +339,10 @@ int rdr_is_logdir_nm_tm(const char *buf, int len)
 	}
 	/* Judge all field range */
 	for (i = 0; (unsigned int)i < ARRAY_SIZE(tbl_rdr_logdir_tm_rg); i++, pt_rg++) {
-		memcpy(tempstr, buf + pt_rg->idx[0], pt_rg->idx[1]);
+		if (EOK != memcpy_s(tempstr,pt_rg->idx[1], buf + pt_rg->idx[0], pt_rg->idx[1]))
+		{
+			BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		}
 		tempstr[pt_rg->idx[1]] = 0;
 		/* cppcheck-suppress * */
 		if (1 != sscanf(tempstr, "%d", &val)) {
@@ -342,6 +374,115 @@ u64 rdr_cal_tm_from_logdir_name(const char *path)
 	}
 	BB_PRINT_DBG("[%s], date_sec = %lld\n", __func__, date_sec);
 	return date_sec;
+}
+
+static int rdr_get_history_log_buffer(char **buffer, u32 *size)
+{
+	if (!g_history_log_buf || !g_history_log_size) {
+		BB_PRINT_ERR("[%s]g_history_log_buf not update\n", __func__);
+		return -1;
+	}
+
+	*buffer = g_history_log_buf;
+	*size = g_history_log_size;
+	return 0;
+}
+
+static void rdr_update_history_log_buffer(void)
+{
+	char path[RDR_TMP_PATH_MAX_LEN];
+	struct kstat stat;
+	long cnt;
+	int fd = -1;
+	int ret;
+
+	if (g_history_log_buf) {
+		kfree(g_history_log_buf);
+		g_history_log_buf = NULL;
+		g_history_log_size = 0;
+	}
+
+	(void)memset_s(path, RDR_TMP_PATH_MAX_LEN, 0x0, RDR_TMP_PATH_MAX_LEN);
+	ret = snprintf_s(path, RDR_TMP_PATH_MAX_LEN, RDR_TMP_PATH_MAX_LEN - 1,
+		"%s/%s", PATH_ROOT, "history.log");
+	if (ret < 0) {
+		BB_PRINT_ERR("[%s]snprintf_s history.log error\n", __func__);
+		return;
+	}
+
+	fd = sys_open(path, O_RDONLY, FILE_LIMIT);
+	if (fd < 0) {
+		BB_PRINT_ERR("[%s]history.log open failed, fd = %d\n", __func__, fd);
+		return;
+	}
+
+	(void)memset_s(&stat, sizeof(stat), 0x0, sizeof(stat));
+	ret = vfs_stat(path, &stat);
+	if (ret) {
+		BB_PRINT_ERR("[%s]get stat error, ret = %d\n", __func__, ret);
+		goto err_close;
+	}
+
+	if (stat.size > HISTORY_LOG_MAX)
+		stat.size = HISTORY_LOG_MAX;
+
+	g_history_log_buf = kzalloc(stat.size + 1, GFP_KERNEL);
+	if (!g_history_log_buf) {
+		BB_PRINT_ERR("[%s]kzalloc g_history_log_buf error\n", __func__);
+		goto err_close;
+	}
+
+	cnt = sys_read(fd, g_history_log_buf, stat.size);
+	if (cnt <= 0) {
+		BB_PRINT_ERR("[%s]sys_read error, cnt = %ld\n", __func__, cnt);
+		goto err_free;
+	}
+	g_history_log_size = stat.size;
+
+	sys_close(fd);
+
+	return;
+
+err_free:
+	kfree(g_history_log_buf);
+	g_history_log_buf = NULL;
+err_close:
+	sys_close(fd);
+
+	return;
+}
+
+static u32 rdr_count_logpath_idx(const char *path)
+{
+	char date_str[DATA_MAXLEN + 1];
+	char *buf = NULL;
+	u32 size;
+	u32 idx = 1;
+	int ret;
+
+	ret = rdr_get_history_log_buffer(&buf, &size);
+	if (ret < 0) {
+		BB_PRINT_ERR("[%s]rdr_get_history_log_buffer error\n", __func__);
+		return 0;
+	}
+
+	ret = strncpy_s(date_str, DATA_MAXLEN + 1, path, DATA_MAXLEN);
+	if (ret < 0) {
+		BB_PRINT_ERR("[%s]strncpy error\n", __func__);
+		return 0;
+	}
+
+	while (1) {
+		buf = strnstr(buf, "time [", HISTORY_LOG_SIZE);
+		if (!buf)
+			break;
+		buf = buf + sizeof("time [") - 1;
+		if (!strncmp(buf, date_str, DATA_MAXLEN))
+			return idx;
+		idx++;
+	}
+
+	return 0;
 }
 
 /*******************************************************************************
@@ -380,7 +521,7 @@ void rdr_check_logpath_repeat(struct logpath_info_s *info)
 	struct logpath_info_s *p_info = NULL;
 	struct list_head *cur = NULL;
 	struct list_head *next = NULL;
-	/*BB_PRINT_START();*/
+
 	list_for_each_safe(cur, next, &__rdr_logpath_info_list) {
 		p_info = list_entry(cur, struct logpath_info_s, s_list);
 		if (p_info == NULL) {
@@ -389,25 +530,20 @@ void rdr_check_logpath_repeat(struct logpath_info_s *info)
 			     __func__, __LINE__);
 			continue;
 		}
-		/*BB_PRINT_DBG("i am here. [%s][%s]\n", info->path, p_info->path);*/
 		if (0 == memcmp(info->path, p_info->path, strlen(info->path))) {
-			/*BB_PRINT_DBG("delete it. [%s][%s]\n", info->path, p_info->path);*/
 			list_del(cur);
 			kfree(p_info);
 		}
 	}
 
-	/*BB_PRINT_END();*/
 	return;
 }
 
-/*kernel/drivers/input/ate.c*/
 u32 __rdr_add_logpath_list(struct logpath_info_s *info)
 {
 	struct logpath_info_s *p_info = NULL;
 	struct list_head *cur = NULL;
 	struct list_head *next = NULL;
-	/*BB_PRINT_START();*/
 
 	if (list_empty(&__rdr_logpath_info_list)) {
 		list_add_tail(&info->s_list, &__rdr_logpath_info_list);
@@ -416,9 +552,8 @@ u32 __rdr_add_logpath_list(struct logpath_info_s *info)
 	}
 	p_info = list_entry(__rdr_logpath_info_list.next,
 			    struct logpath_info_s, s_list);
-	if (info->logpath_tm >= p_info->logpath_tm) {
+	if (info->logpath_idx >= p_info->logpath_idx) {
 		list_add(&info->s_list, &__rdr_logpath_info_list);
-		/*BB_PRINT_END();*/
 		goto out;
 	}
 	list_for_each_safe(cur, next, &__rdr_logpath_info_list) {
@@ -431,17 +566,13 @@ u32 __rdr_add_logpath_list(struct logpath_info_s *info)
 		if (0 == memcmp(info->path, p_info->path, strlen(info->path))) {
 			p_info->ctime.tv_sec = info->ctime.tv_sec;
 			p_info->ctime.tv_nsec = info->ctime.tv_nsec;
-			/*BB_PRINT_ERR("It might be better to look around here. %s:%d\n",
-			      __func__, __LINE__);*/
 		}
-		if (info->logpath_tm >= p_info->logpath_tm) {
+		if (info->logpath_idx >= p_info->logpath_idx) {
 			list_add_tail(&info->s_list, cur);
-			/*BB_PRINT_END();*/
 			goto out;
 		}
 	}
 	list_add_tail(&info->s_list, &__rdr_logpath_info_list);
-	/*BB_PRINT_END();*/
 out:
 	return 0;
 }
@@ -449,7 +580,8 @@ out:
 void rdr_add_logpath_list(const char *path, struct timespec *time)
 {
 	struct logpath_info_s *lp_info = NULL;
-	/*BB_PRINT_START();*/
+	u32 len;
+	int ret;
 	lp_info = kmalloc(sizeof(struct logpath_info_s), GFP_ATOMIC);
 
 	if (lp_info == NULL) {
@@ -457,15 +589,22 @@ void rdr_add_logpath_list(const char *path, struct timespec *time)
 		return;
 	}
 
-	memset(lp_info, 0, sizeof(struct logpath_info_s));
-	memcpy(lp_info->path, path, strnlen(path, sizeof(lp_info->path)));
+	if (EOK != memset_s(lp_info, sizeof(struct logpath_info_s), 0, sizeof(struct logpath_info_s)))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+	len = strlen(path);
+	ret = memcpy_s(lp_info->path, sizeof(lp_info->path) - 1, path, len);
+	if (ret < 0) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
 	lp_info->ctime.tv_sec = time->tv_sec;
 	lp_info->ctime.tv_nsec = time->tv_nsec;
-	lp_info->logpath_tm = rdr_cal_tm_from_logdir_name(lp_info->path);
+	lp_info->logpath_idx = rdr_count_logpath_idx(lp_info->path);
 
 	rdr_check_logpath_repeat(lp_info);
 	__rdr_add_logpath_list(lp_info);
-	/*BB_PRINT_END();*/
 }
 
 int bbox_chown(const char *path, uid_t user, gid_t group, bool recursion)
@@ -473,7 +612,7 @@ int bbox_chown(const char *path, uid_t user, gid_t group, bool recursion)
 	int fd = -1, bpos, count, ret = 0;
 	char buf[1024];
 	int bufsize;
-	struct linux_dirent *d;
+	struct linux_dirent *d = NULL;
 	char d_type;
 	char fullname[PATH_MAXLEN];
 
@@ -614,7 +753,7 @@ int rdr_dump_init(void *arg)
 		BB_PRINT_ERR("[%s], chown %s uid [%d] gid [%d] failed err [%d]!\n",
 		     __func__, PATH_ROOT, ROOT_UID, SYSTEM_GID, ret);
 	}
-
+	create_hisi_diaginfo_log_file();
 	return 0;
 }
 
@@ -628,12 +767,9 @@ int rdr_check_logpath_legality(char *path)
 	int size;
 	int index;
 
-	/*BB_PRINT_START();*/
 	size = sizeof(ignore) / sizeof(char *);
 	for (index = 0; index < size; index++) {
 		if (0 == strncmp(path, ignore[index], strlen(path))) {
-			/*BB_PRINT_DBG("ignore list hit [%s]\n", path);*/
-			/*BB_PRINT_END();*/
 			ret = -1;
 			goto out;
 		}
@@ -650,20 +786,21 @@ int rdr_check_logpath_legality(char *path)
 			goto out;
 		}
 	}
-	/*BB_PRINT_DBG("legality path [%s] pass...\n", path);*/
-	/*BB_PRINT_END();*/
 out:
 	return ret;
 }
 
-static inline int rdr_dir_size_for_directory(struct linux_dirent *d, 
-	bool recursion, u32 *size, struct kstat *stat, char *fullname)
+static inline int rdr_dir_size_for_directory(struct linux_dirent *d,
+	bool recursion, u32 *size, struct kstat *stat, char *fullname, u32 fullnameLen)
 {
 	int ret;
 
+	if (fullnameLen < PATH_MAXLEN) {
+		BB_PRINT_ERR("rdr:fullnameLen is not correct\n");
+	}
+
 	ret = rdr_check_logpath_legality(d->d_name);
 	if (ret == -1) {
-		/*BB_PRINT_DBG("check legality: ignore.\n");*/
 		return -1;
 	}
 	if (!recursion && ret == 0) {
@@ -677,29 +814,35 @@ static inline int rdr_dir_size_for_directory(struct linux_dirent *d,
 
 	if (recursion) {
 		/* cppcheck-suppress * */
-		(*size) += rdr_dir_size(fullname, recursion);
+		(*size) += rdr_dir_size(fullname, PATH_MAXLEN, recursion);
 	} else {
-		/*size += stat.size; */
 		rdr_add_logpath_list(d->d_name,
 				     &(stat->ctime));
 	}
-	/*BB_PRINT_DBG("DIR\n");*/
+
 	return 0;
 }
 
-int rdr_dir_size(char *path, bool recursion)
+int rdr_dir_size(char *path, u32 pathLen, bool recursion)
 {
 	/*DT_DIR, DT_REG */
 	int fd = -1, bpos;
 	char buf[1024];
 	int bufsize;
-	struct linux_dirent *d;
+	struct linux_dirent *d = NULL;
 	char d_type;
 	char fullname[PATH_MAXLEN];
 	struct kstat stat;
 	u32 size = 0;
 
-	/*BB_PRINT_START();*/
+	if (!path) {
+		BB_PRINT_ERR("rdr:path is null\n");
+		return size;
+	}
+
+	if (pathLen < PATH_MAXLEN) {
+		BB_PRINT_ERR("rdr:len is not correct\n");
+	}
 
 	fd = sys_open(path, O_RDONLY, DIR_LIMIT);
 	if (fd < 0) {
@@ -709,7 +852,10 @@ int rdr_dir_size(char *path, bool recursion)
 		goto out;
 	}
 
-	memset(&stat, 0, sizeof(struct kstat));
+	if (EOK != memset_s(&stat,sizeof(struct kstat), 0, sizeof(struct kstat)))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	if (0 != vfs_stat(path, &stat)) {
 		BB_PRINT_ERR("stat failed :\n");
 	}
@@ -725,7 +871,6 @@ int rdr_dir_size(char *path, bool recursion)
 		}
 
 		if (bufsize == 0) {
-			/*BB_PRINT_DBG("rdr:%s():sys_getdents [%s] end.\n", __func__, path);*/
 			break;
 		}
 
@@ -738,23 +883,18 @@ int rdr_dir_size(char *path, bool recursion)
 			if (0 != vfs_stat(fullname, &stat)) {
 				BB_PRINT_ERR("stat failed :[%s]\n", fullname);
 			}
-			/*BB_PRINT_DBG("fullname:%s\n", fullname);*/
 			if (d_type == DT_DIR) {
-				if (rdr_dir_size_for_directory(d, recursion, &size, &stat, fullname))
+				if (rdr_dir_size_for_directory(d, recursion, &size, &stat, fullname, PATH_MAXLEN))
 					continue;
 			} else if (d_type == DT_REG) {
-				/*BB_PRINT_DBG("stat.size:   [%lld]\n", stat.size);*/
-				/*BB_PRINT_DBG("stat.atime:  [0x%x]\n", stat.atime.tv_sec);*/
 				size += stat.size;
-				/*BB_PRINT_DBG("REG\n");*/
 			}
 		}
 	}
-	/*BB_PRINT_END();*/
 out:
 	if (fd >= 0)
 		sys_close(fd);
-	/*BB_PRINT_DBG("path:[%s] size:[0x%x].\n", path, size);*/
+
 	return size;
 }
 
@@ -772,7 +912,8 @@ static bool rdr_check_log_mark(u32 rdr_max_size, u32 rdr_max_logs)
 
 	mutex_lock(&__rdr_logpath_info_list_mutex);
 	rdr_empty_logpath_list();
-	size += rdr_dir_size(PATH_ROOT, false);
+	rdr_update_history_log_buffer();
+	size += rdr_dir_size(PATH_ROOT, PATH_MAXLEN, false);
 	list_for_each_safe(cur, next, &__rdr_logpath_info_list) {
 		p_info = list_entry(cur, struct logpath_info_s, s_list);
 		if (p_info == NULL) {
@@ -782,10 +923,10 @@ static bool rdr_check_log_mark(u32 rdr_max_size, u32 rdr_max_logs)
 			continue;
 		}
 
-		if (EOK != memset_s(fullname, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+		if (EOK != memset_s(fullname, PATH_MAXLEN, 0, PATH_MAXLEN))
+		{
 			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
 		}
-
 		ret_s = snprintf_s(fullname, PATH_MAXLEN, PATH_MAXLEN-1, "%s%s", PATH_ROOT,
 			 p_info->path);
 		if (unlikely(ret_s < 0)) {
@@ -793,7 +934,7 @@ static bool rdr_check_log_mark(u32 rdr_max_size, u32 rdr_max_logs)
 			break;
 		}
 
-		tmpsize = rdr_dir_size(fullname, true);
+		tmpsize = rdr_dir_size(fullname, PATH_MAXLEN, true);
 		if ((tmpsize + size > rdr_max_size) || (++rdr_log_nums > rdr_max_logs)) {
 			BB_PRINT_PN("over size: cur[0x%x], next[0x%x],max[0x%x], or over nums:cur[%u], max[%u]\n",
 			     size, tmpsize, rdr_max_size, rdr_log_nums, rdr_max_logs);
@@ -850,7 +991,8 @@ void rdr_count_size(void)
 
 	mutex_lock(&__rdr_logpath_info_list_mutex);
 	rdr_empty_logpath_list();
-	size += rdr_dir_size(PATH_ROOT, false);
+	rdr_update_history_log_buffer();
+	size += rdr_dir_size(PATH_ROOT, PATH_MAXLEN, false);
 	list_for_each_safe(cur, next, &__rdr_logpath_info_list) {
 		p_info = list_entry(cur, struct logpath_info_s, s_list);
 		if (p_info == NULL) {
@@ -860,8 +1002,11 @@ void rdr_count_size(void)
 			continue;
 		}
 
-		memset(fullname, 0, PATH_MAXLEN);
-		snprintf(fullname, PATH_MAXLEN, "%s%s", PATH_ROOT,
+		if (EOK != memset_s(fullname,PATH_MAXLEN ,0, PATH_MAXLEN))
+		{
+			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		}
+		snprintf(fullname, PATH_MAXLEN,"%s%s", PATH_ROOT,
 			 p_info->path);
 
 		if (oversize) {
@@ -877,7 +1022,7 @@ void rdr_count_size(void)
 		}
 
 		/* 递归检查目录大小，超过指定大小则删除之后的日志目录，同上if (oversize)。 */
-		tmpsize = rdr_dir_size(fullname, true);
+		tmpsize = rdr_dir_size(fullname, PATH_MAXLEN, true);
 		if ((tmpsize + size > rdr_get_logsize()) || (++rdr_log_nums > rdr_max_logs)) {
 			oversize = true;
 			BB_PRINT_PN("over size: cur[0x%x], next[0x%x],max[0x%llx], or over nums:cur[%u], max[%u]\n",
@@ -915,9 +1060,9 @@ static int rdr_rm_file(const char *fullname)
 	return sys_unlink(fullname);
 }
 
-static int __rdr_rm_dir(char *path)
+static int __rdr_rm_dir(const char *path)
 {
-	char *pdst = path;
+	char *pdst = (char *)path;
 	int ret = 0;
 	BB_PRINT_PN("rdr:%s():delete path [%s]\n", __func__, path);
 
@@ -933,15 +1078,20 @@ static int __rdr_rm_dir(char *path)
 	return ret;
 }
 
-static int rdr_rm_dir(char *path)
+static int rdr_rm_dir(const char *path)
 {
 	int fd = -1, bpos;
 	char buf[1024];
 	int bufsize;
-	struct linux_dirent *d;
+	struct linux_dirent *d = NULL;
 	char d_type;
 	char fullname[PATH_MAXLEN];
 	int ret = 0;
+
+	if (!path) {
+		BB_PRINT_ERR("rdr:path is null\n");
+		return -1;
+	}
 
 	fd = sys_open(path, O_RDONLY, DIR_LIMIT);
 	if (fd < 0) {
@@ -971,7 +1121,6 @@ static int rdr_rm_dir(char *path)
 				 d->d_name);
 			if (d_type == DT_DIR) {
 				if (rdr_check_logpath_legality(d->d_name) == -1) {
-					/*BB_PRINT_DBG("check legality: ignore.\n");*/
 					continue;
 				}
 				/* cppcheck-suppress * */
@@ -1023,6 +1172,9 @@ ssize_t dataready_write_proc(struct file *file, const char __user *buffer, size_
 	if (count > 2)
 		return ret;
 
+	if (!buffer)
+		return ret;
+
 	/*should ignore character '\n' */
 	if (copy_from_user(&tmp, buffer, sizeof(tmp))) {
 		return -EFAULT;
@@ -1047,6 +1199,9 @@ Return:         0:success;other:fail
 ********************************************************************************/
 static int dataready_open(struct inode *inode, struct file *file)
 {
+	if (!file)
+		return -EFAULT;
+
 	return single_open(file, dataready_info_show, NULL);
 }
 

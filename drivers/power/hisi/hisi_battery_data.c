@@ -27,7 +27,7 @@
 
 
 /* #define HISI_BATTERY_DATA_DEBUG */
-#include "securec.h"
+#include <securec.h>
 
 #define BATTERY_DATA_INFO
 #ifndef BATTERY_DATA_INFO
@@ -85,7 +85,7 @@ static int get_battery_data_by_id_sn(unsigned int id_index)
 	if (id_index >= hisi_bat_data_size)
 		return -EINVAL;
 
-	ret = get_battery_type(id_sn);
+	ret = get_battery_type(id_sn, ID_SN_SIZE);
 	if (ret) {
 		bat_data_err("get id_sn from ic fail!\n");
 		return -EINVAL;
@@ -126,7 +126,7 @@ struct hisi_coul_battery_data *get_battery_data(unsigned int id_voltage)
 	}
 	if (i == hisi_bat_data_size) {
 		if ((default_batt_id_index >= 0) &&
-			(default_batt_id_index < hisi_bat_data_size)) {
+			((unsigned int)default_batt_id_index < hisi_bat_data_size)) {
 			i = default_batt_id_index;
 			bat_data_info("use default battery of index %d\n", default_batt_id_index);
 		} else {
@@ -750,8 +750,8 @@ static int hisi_battery_data_probe(struct platform_device *pdev)
 {
 	int retval;
 	unsigned int i;
-	struct device_node *np;
-	struct device_node *bat_node;
+	struct device_node *np = NULL;
+	struct device_node *bat_node = NULL;
 	/* get device node for battery module */
 
 	bat_param_status = 0;
@@ -814,7 +814,6 @@ fatal_err:
 		kfree(p_data);
 	}
 	p_data = NULL;
-	BUG();
 	return -EINVAL;
 }
 

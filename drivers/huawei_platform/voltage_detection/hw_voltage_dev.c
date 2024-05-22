@@ -12,14 +12,6 @@
 #define HWLOG_TAG hw_voltage
 HWLOG_REGIST();
 
-/*
-struct hw_voltage_channels {
-	int result[16];
-	int voltage[16];
-	struct hw_voltage_info vol_info[16];
-};
-*/
-
 static struct hw_voltage_device *voltage_dev;
 extern int fsa7830_no_exist_flag;
 
@@ -52,15 +44,6 @@ int hw_voltage_swith_enable(struct hw_voltage_device *vol_dev,
 	hwlog_info("status:%d\n", vol_dev->voltage_states);
 	return 0;
 }
-
-/*
-* the kernel interface to get the input channel voltages by inputcfg
-*/
-/*
-static int hw_voltage_get_value(struct hw_voltage_device *vol_dev,
-				struct hw_voltage_channels *vol_info,
-				int inputcfg)
-*/
 
 /*
 * kernel get channelvoltage whitch the channel is configed

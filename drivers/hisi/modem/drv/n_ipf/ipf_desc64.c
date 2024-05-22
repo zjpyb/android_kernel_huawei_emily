@@ -136,7 +136,11 @@ void ipf64_rd_h2s(IPF_RD_DESC_S* param, void* rd_base, unsigned int index)
 	param->u16PktLen	= tmp.pkt_len;
 	param->u16Result	= tmp.result;
 	param->InPtr		= (modem_phy_addr)(unsigned long)tmp.input_ptr.addr;
+#ifdef CONFIG_PSAM
 	param->OutPtr	= (modem_phy_addr)(unsigned long)tmp.virt.ptr;
+#else
+	param->OutPtr	= (modem_phy_addr)(unsigned long)tmp.output_ptr;
+#endif
 	param->u16UsrField1	= tmp.user_field1;
 	param->u32UsrField2	= tmp.user_field2;
 	param->u32UsrField3	= tmp.user_field3;
@@ -147,6 +151,57 @@ void ipf64_rd_h2s(IPF_RD_DESC_S* param, void* rd_base, unsigned int index)
 	tmp.attribute.bits.dl_direct_set?g_ipf_ctx.stax.direct_bd++:g_ipf_ctx.stax.indirect_bd++;
 }
 
+#ifndef CONFIG_PSAM
+int ipf64_ad_s2h(IPF_AD_TYPE_E type, unsigned int n, IPF_AD_DESC_S * param)
+{
+	unsigned int i;
+	unsigned int wptr;
+	unsigned int offset;
+	unsigned int size;
+	ipf64_ad_s* ad;
+
+	ad = 	(IPF_AD_0==type)?
+			(ipf64_ad_s*)g_ipf_ctx.dl_info.pstIpfADQ0:
+			(ipf64_ad_s*)g_ipf_ctx.dl_info.pstIpfADQ1;
+
+	offset = (IPF_AD_0==type)?
+			 HI_IPF64_CH1_ADQ0_WPTR_OFFSET:
+			 HI_IPF64_CH1_ADQ1_WPTR_OFFSET;
+
+	size = (IPF_AD_0==type)?
+			 IPF_DLAD0_DESC_SIZE:
+			 IPF_DLAD1_DESC_SIZE;
+
+	/*读出写指针*/
+	wptr = ipf_readl(offset);
+	for(i=0; i < n; i++)
+	{
+		if(0 == param->OutPtr1)
+		{
+			pr_err("%s the %d short ad outptr is null\n", __func__, i);
+			g_ipf_ctx.status->ad_out_ptr_null[type]++;
+			return BSP_ERR_IPF_INVALID_PARA;
+		}
+		ad[wptr].output_ptr0.addr	= (unsigned long)(param[i].OutPtr0);
+		ad[wptr].output_ptr1.addr	= (unsigned long)(param[i].OutPtr1);
+		wptr = ((wptr + 1) < size)? (wptr + 1) : 0;
+	}
+	g_ipf_ctx.status->cfg_ad_cnt[type] += n;
+	/* 更新AD0写指针*/
+	ipf_writel(wptr, offset);
+
+	if(IPF_AD_0==type)
+	{
+	    g_ipf_ctx.last_ad0 = &ad[wptr];
+	}
+	else
+	{
+	    g_ipf_ctx.last_ad1 = &ad[wptr];
+	}
+	
+	return 0;
+}
+#endif
 
 void ipf64_ad_h2s(IPF_AD_DESC_S* param, void* ad_base, unsigned int index)
 {
@@ -173,6 +228,16 @@ void ipf64_config(void)
                     (unsigned char*)g_ipf_ctx.regs + HI_IPF64_CH1_RDQ_BADDR_H_OFFSET,
 	                (unsigned char*)g_ipf_ctx.regs + HI_IPF64_CH1_RDQ_BADDR_L_OFFSET);
                 
+#ifndef CONFIG_PSAM
+    phy_addr_write(g_ipf_ctx.dl_info.pstIpfPhyADQ0,
+                    (unsigned char*)g_ipf_ctx.regs + HI_IPF64_CH1_ADQ0_BASE_H_OFFSET,
+	                (unsigned char*)g_ipf_ctx.regs + HI_IPF64_CH1_ADQ0_BASE_L_OFFSET);
+
+    phy_addr_write(g_ipf_ctx.dl_info.pstIpfPhyADQ1,
+                    (unsigned char*)g_ipf_ctx.regs + HI_IPF64_CH1_ADQ1_BASE_H_OFFSET,
+	                (unsigned char*)g_ipf_ctx.regs + HI_IPF64_CH1_ADQ1_BASE_L_OFFSET);
+
+#endif            
     sm->ipf_acore_reg_size = sizeof(ipf64_save_table)/sizeof(ipf64_save_table[0]);
 	return;
 }
@@ -392,6 +457,9 @@ struct ipf_desc_handler_s ipf_desc64_handler = {
     .bd_s2h = ipf64_bd_s2h,
     .bd_h2s = ipf64_bd_h2s,
     .rd_h2s = ipf64_rd_h2s,
+#ifndef CONFIG_PSAM
+    .ad_s2h = ipf64_ad_s2h,
+#endif
     .ad_h2s = ipf64_ad_h2s,
     .cd_last_get = ipf64_last_get,
     .get_bd_num = ipf64_get_ulbd_num,

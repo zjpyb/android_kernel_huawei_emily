@@ -46,6 +46,7 @@
 #include <soc_pmctrl_interface.h>
 #include "clk-kirin-common.h"
 #include <linux/mfd/hisi_pmic.h>
+#include <securec.h>
 #ifdef CONFIG_HISI_CLK_DEBUG
 #include "../hisi-clk-debug.h"
 #endif
@@ -379,22 +380,14 @@ static struct clk_ops hi3xxx_abb_clkgate_ops = {
 };
 static void __init hi3xxx_pmu_clkgate_setup(struct device_node *np)
 {
-	struct hi3xxx_periclk *pclk;
-	struct clk_init_data *init;
-	struct clk *clk;
-	const char *clk_name, *name, *clk_friend, *parent_names;
-	void __iomem *reg_base;
-	u32 rdata[2] = {0};
+	struct hi3xxx_periclk *pclk = NULL;
+	struct clk_init_data *init = NULL;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, *name = NULL, *clk_friend = NULL, *parent_names = NULL;
 	u32 gdata[2] = {0};
 	u32 lock_id = 0;
 	u32 clock_id = 0;
-	struct device_node *sctrl_np;
-
-	reg_base = hs_clk_get_base(np);
-	if (!reg_base) {
-		pr_err("[%s] fail to get reg_base!\n", __func__);
-		return;
-	}
+	struct device_node *sctrl_np = NULL;
 
 	if (of_property_read_string(np, "clock-output-names", &clk_name)) {
 		pr_err("[%s] %s node doesn't have clock-output-name property!\n",
@@ -441,12 +434,9 @@ static void __init hi3xxx_pmu_clkgate_setup(struct device_node *np)
 		return;
 	}
 
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 
 	if (!strcmp(clk_name, "clk_abb_192")) {/*lint !e421 */
 		init->ops = &hi3xxx_abb_clkgate_ops;
@@ -456,15 +446,6 @@ static void __init hi3xxx_pmu_clkgate_setup(struct device_node *np)
 	init->flags = CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED;
 	init->parent_names = &parent_names;
 	init->num_parents = 1;
-
-	if (of_property_read_u32_array(np, "hisilicon,hi3xxx-clkreset",
-				       &rdata[0], 2)) {
-		pclk->reset = NULL;
-		pclk->rbits = 0;
-	} else {
-		pclk->reset = reg_base + rdata[0];
-		pclk->rbits = rdata[1];
-	}
 
 	if (of_property_read_bool(np, "always_on"))
 		pclk->always_on = 1;
@@ -514,11 +495,11 @@ err_clk:
 no_iomap:
 	of_node_put(sctrl_np);
 err_sctr:
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(pclk);
-	pclk = NULL;
 	return;
 }
 
@@ -549,8 +530,8 @@ static int __init hi3xxx_parse_mux(struct device_node *np,
 
 static void __init hi3xxx_clkmux_setup(struct device_node *np)
 {
-	struct clk *clk;
-	const char *clk_name, **parent_names = NULL;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, **parent_names = NULL;
 	u32 rdata[2] = {0};
 	u32 width = 0;
 	u8 num_parents, shift, flag = 0;
@@ -605,18 +586,16 @@ static void __init hi3xxx_clkmux_setup(struct device_node *np)
 	clk_register_clkdev(clk, clk_name, NULL);
 	of_clk_add_provider(np, of_clk_src_simple_get, clk);
 	kfree(parent_names);
-	parent_names = NULL;
 	return;
 err_clk:
 	kfree(parent_names);
-	parent_names = NULL;
 	return;
 }
 
 static void __init hs_clkgate_setup(struct device_node *np)
 {
-	struct clk *clk;
-	const char *clk_name, *parent_names;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, *parent_names = NULL;
 	unsigned long flags = 0;
 	void __iomem *reg_base;
 	u32 data[2] = {0};
@@ -679,7 +658,7 @@ err:
 static unsigned int hi3xxx_get_table_maxdiv(const struct clk_div_table *table)
 {
 	unsigned int maxdiv = 0;
-	const struct clk_div_table *clkt;
+	const struct clk_div_table *clkt = NULL;
 
 	for (clkt = table; clkt->div; clkt++)
 		if (clkt->div > maxdiv)
@@ -690,7 +669,7 @@ static unsigned int hi3xxx_get_table_maxdiv(const struct clk_div_table *table)
 static unsigned int hi3xxx_get_table_div(const struct clk_div_table *table,
 							unsigned int val)
 {
-	const struct clk_div_table *clkt;
+	const struct clk_div_table *clkt = NULL;
 
 	for (clkt = table; clkt->div; clkt++)
 		if (clkt->val == val)
@@ -701,7 +680,7 @@ static unsigned int hi3xxx_get_table_div(const struct clk_div_table *table,
 static unsigned int hi3xxx_get_table_val(const struct clk_div_table *table,
 					 unsigned int div)
 {
-	const struct clk_div_table *clkt;
+	const struct clk_div_table *clkt = NULL;
 
 	for (clkt = table; clkt->div; clkt++)
 		if (clkt->div == div)
@@ -715,7 +694,7 @@ static unsigned long hi3xxx_clkdiv_recalc_rate(struct clk_hw *hw,
 	struct hi3xxx_divclk *dclk = container_of(hw, struct hi3xxx_divclk, hw);
 	unsigned int div, val;
 
-	val = readl(dclk->reg) >> dclk->shift;
+	val = (unsigned int)readl(dclk->reg) >> dclk->shift;
 	val &= WIDTH_TO_MASK(dclk->width);
 
 	div = hi3xxx_get_table_div(dclk->table, val);
@@ -731,7 +710,7 @@ static unsigned long hi3xxx_clkdiv_recalc_rate(struct clk_hw *hw,
 static bool hi3xxx_is_valid_table_div(const struct clk_div_table *table,
 				      unsigned int div)
 {
-	const struct clk_div_table *clkt;
+	const struct clk_div_table *clkt = NULL;
 
 	for (clkt = table; clkt->div; clkt++)
 		if (clkt->div == div)
@@ -792,7 +771,10 @@ static long hi3xxx_clkdiv_round_rate(struct clk_hw *hw, unsigned long rate,
 	if (!rate)
 		rate = 1;
 	div = hi3xxx_clkdiv_bestdiv(hw, rate, prate);
-
+	if (!div) {
+		pr_err("[%s] :div=0 is illegal!\n", __func__);
+		return 0;
+	}
 	return *prate / div;/*lint !e573 */
 }
 
@@ -803,6 +785,11 @@ static int hi3xxx_clkdiv_set_rate(struct clk_hw *hw, unsigned long rate,
 	unsigned int div, value;
 	unsigned long flags = 0;
 	u32 data;
+
+	if(rate == 0) {
+		pr_err("[%s] :rate=0 is illegal!\n", __func__);
+		return 0;
+	}
 
 	div = parent_rate / rate;
 	value = hi3xxx_get_table_val(dclk->table, div);
@@ -841,7 +828,7 @@ static int hi3xxx_divreg_check(struct clk_hw *hw)
 
 static void __iomem *hi3xxx_clkdiv_get_reg(struct clk_hw *hw)
 {
-	struct hi3xxx_divclk *dclk;
+	struct hi3xxx_divclk *dclk = NULL;
 	void __iomem	*ret = NULL;
 	u32 val = 0;
 
@@ -860,18 +847,21 @@ static void __iomem *hi3xxx_clkdiv_get_reg(struct clk_hw *hw)
 
 static int hi3xxx_dumpdiv(struct clk_hw *hw, char* buf, struct seq_file *s)
 {
-	struct hi3xxx_divclk *dclk;
+	struct hi3xxx_divclk *dclk = NULL;
 	void __iomem *ret = NULL;
 	long unsigned int clk_bask_addr = 0;
 	unsigned int clk_bit = 0;
 	u32 val = 0;
+	int s_ret = 0;
 	dclk = container_of(hw, struct hi3xxx_divclk, hw);
 
 	if (dclk->reg && buf && !s) {
 		ret = dclk->reg;
 		val = readl(ret);
-		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : regAddress = 0x%pK, regval = 0x%x\n",  \
-			__clk_get_name(hw->clk), dclk->reg, val);
+		s_ret = snprintf_s(buf, DUMP_CLKBUFF_MAX_SIZE, DUMP_CLKBUFF_MAX_SIZE - 1, \
+			"[%s] : regAddress = 0x%pK, regval = 0x%x\n", __clk_get_name(hw->clk), dclk->reg, val);
+		if(s_ret == -1)
+			pr_err("%s snprintf_s failed!\n", __func__);
 	}
 	if(dclk->reg && !buf && s) {
 		clk_bask_addr = (uintptr_t)dclk->reg & CLK_ADDR_HIGH_MASK;
@@ -896,12 +886,13 @@ static struct clk_ops hi3xxx_clkdiv_ops = {
 
 void __init hi3xxx_clkdiv_setup(struct device_node *np)
 {
-	struct clk *clk;
-	const char *clk_name, *parent_names;
-	struct clk_init_data *init;
-	struct clk_div_table *table;
-	struct hi3xxx_divclk *dclk;
-	void __iomem *reg_base;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL;
+	const char *parent_names = NULL;
+	struct clk_init_data *init = NULL;
+	struct clk_div_table *table = NULL;
+	struct hi3xxx_divclk *dclk = NULL;
+	void __iomem *reg_base = NULL;
 	unsigned int table_num;
 	unsigned int i;
 	u32 data[2] = {0};
@@ -974,12 +965,9 @@ void __init hi3xxx_clkdiv_setup(struct device_node *np)
 		pr_err("[%s] fail to alloc dclk!\n", __func__);
 		goto err_dclk;
 	}
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 	init->ops = &hi3xxx_clkdiv_ops;
 	init->flags = CLK_SET_RATE_PARENT;
 	init->parent_names = &parent_names;
@@ -1002,21 +990,21 @@ void __init hi3xxx_clkdiv_setup(struct device_node *np)
 	clk_register_clkdev(clk, clk_name, NULL);
 	return;/*lint !e429 */
 err_clk:
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(dclk);
-	dclk = NULL;
 err_dclk:
 	kfree(table);
-	table = NULL;
 	return;
 }
 
 static struct device_node *of_get_clk_cpu_node(int cluster)
 {
-	struct device_node *np = NULL, *parent;
-	const u32 *mpidr;
+	struct device_node *np = NULL;
+	struct device_node *parent = NULL;
+	const u32 *mpidr = NULL;
 
 	parent = of_find_node_by_path("/cpus");
 	if (!parent) {
@@ -1060,7 +1048,7 @@ static struct device_node *of_get_clk_cpu_node(int cluster)
 
 static struct device_node *of_get_xfreq_node(const char *xfreq)
 {
-	struct device_node *np;
+	struct device_node *np = NULL;
 
 	if (!strcmp(xfreq, "ddrfreq")) {/*lint !e421 */
 		np = of_find_compatible_node(NULL, NULL, "hisilicon,ddr_devfreq");
@@ -1080,9 +1068,10 @@ int xfreq_clk_table_init(struct device_node *np, struct hi3xxx_xfreq_clk *xfreqc
 	int count = 0, ret = 0, k = 0;
 	unsigned long long rate;
 	unsigned int volt, freq;
-	struct device_node *opp_np, *opp_np_chd;
-	const struct property *prop;
-	const __be32 *val;
+	struct device_node *opp_np = NULL;
+	struct device_node *opp_np_chd = NULL;
+	const struct property *prop = NULL;
+	const __be32 *val = NULL;
 	int nr;
 
 	opp_np = of_parse_phandle(np, "operating-points-v2", 0);
@@ -1259,7 +1248,7 @@ static int hi3xxx_xfreq_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 	}else{
 		xfreq_clk->set_rate_cmd[1] = new_rate;
 #ifdef CONFIG_HISI_CLK_MAILBOX_SUPPORT
-		ret = hisi_clkmbox_send_msg(xfreq_clk->set_rate_cmd);
+		ret = hisi_clkmbox_send_msg(xfreq_clk->set_rate_cmd, LPM3_CMD_LEN);
 		if (ret < 0) {
 			pr_err("[%s]core id:%d fail to send msg to LPM3!\n",
 						__func__, xfreq_clk->id);
@@ -1297,16 +1286,16 @@ static struct clk_ops hi3xxx_xfreq_clk_ops = {
  */
 void __init hi3xxx_xfreq_clk_setup(struct device_node *np)
 {
-	struct clk *clk;
-	const char *clk_name, *parent_names;
-	struct clk_init_data *init;
-	struct hi3xxx_xfreq_clk *xfreqclk;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, *parent_names = NULL;
+	struct clk_init_data *init = NULL;
+	struct hi3xxx_xfreq_clk *xfreqclk = NULL;
 	u32 get_rate_cmd[LPM3_CMD_LEN], set_rate_cmd[LPM3_CMD_LEN] = {0};
 	u32 device_id = 0, i = 0, vote_method = 0;
 	u32 scbacdata = 0;
 	u32 ddr_mask = DDR_FREQ_MASK;
-	void __iomem *reg_base;
-	struct device_node *xfreq_np;
+	void __iomem *reg_base = NULL;
+	struct device_node *xfreq_np = NULL;
 	int k, temp = 0;
 	unsigned int freq_index;
 
@@ -1359,12 +1348,9 @@ void __init hi3xxx_xfreq_clk_setup(struct device_node *np)
 		pr_err("[%s] fail to alloc xfreqclk!\n", __func__);
 		goto err_prop;
 	}
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 	init->ops = &hi3xxx_xfreq_clk_ops;
 	init->parent_names = (parent_names ? &parent_names : NULL);
 	init->num_parents = (parent_names ? 1 : 0);
@@ -1460,11 +1446,11 @@ void __init hi3xxx_xfreq_clk_setup(struct device_node *np)
 	return;
 
 err_clk:
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(xfreqclk);
-	xfreqclk = NULL;
 err_prop:
 	return;
 }
@@ -1556,10 +1542,10 @@ static struct clk_ops hi3xxx_mclk_ops = {
 
 static void __init hi3xxx_mclk_setup(struct device_node *np)
 {
-	struct hi3xxx_mclk *mclk;
-	struct clk_init_data *init;
-	struct clk *clk;
-	const char *clk_name, *parent_names;
+	struct hi3xxx_mclk *mclk = NULL;
+	struct clk_init_data *init = NULL;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, *parent_names = NULL;
 	u32 en_cmd[LPM3_CMD_LEN] = {0};
 	u32 dis_cmd[LPM3_CMD_LEN] = {0};
 	u32 clock_id = 0;
@@ -1597,12 +1583,9 @@ static void __init hi3xxx_mclk_setup(struct device_node *np)
 		goto err_mclk;
 	}
 
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 	init->ops = &hi3xxx_mclk_ops;
 	init->flags = CLK_SET_RATE_PARENT;
 	init->parent_names = &parent_names;
@@ -1639,11 +1622,11 @@ static void __init hi3xxx_mclk_setup(struct device_node *np)
 	return;/*lint !e429*/
 
 err_clk:
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(mclk);
-	mclk = NULL;
 err_mclk:
 	return;
 }
@@ -1668,12 +1651,13 @@ static const struct of_device_id hs_of_match[] = {
 	{ .compatible = "hisilicon,mmc1-crg",	.data = (void *)HS_MMC1CRG, },
 	{ .compatible = "hisilicon,hsdt-crg",	.data = (void *)HS_HSDTCRG, },
 	{ .compatible = "hisilicon,mmc0-crg",	.data = (void *)HS_MMC0CRG, },
+	{ .compatible = "hisilicon,hsdt1-crg",	.data = (void *)HS_HSDT1CRG, },
 	{},/*lint !e785 */
 };
 
 void __iomem __init *hs_clk_base(u32 ctrl)
 {
-	struct device_node *np;
+	struct device_node *np = NULL;
 	void __iomem *ret = NULL;
 
 	switch (ctrl) {
@@ -1703,6 +1687,9 @@ void __iomem __init *hs_clk_base(u32 ctrl)
 		break;
 	case HS_MMC0CRG:
 		np = of_find_compatible_node(NULL, NULL, "hisilicon,mmc0crg");
+		break;
+	case HS_HSDT1CRG:
+		np = of_find_compatible_node(NULL, NULL, "hisilicon,hsdt1_crg");
 		break;
 	default:
 		pr_err("[%s] ctrl err!\n", __func__);
@@ -1744,6 +1731,8 @@ char *hs_base_addr_transfer(long unsigned int base_addr)
 		return "MMC0CRG";
 	else if(base_addr == (uintptr_t)hs_clk.hsdtcrg)
 		return "HSDCRG";
+	else if (base_addr == (uintptr_t)hs_clk.hsdt1crg)
+		return "HSD1CRG";
 	else if(base_addr == (uintptr_t)hs_clk.iomcucrg)
 		return "IOMCUCRG";
 	else
@@ -1754,8 +1743,8 @@ char *hs_base_addr_transfer(long unsigned int base_addr)
 
 void __iomem __init *hs_clk_get_base(struct device_node *np)
 {
-	struct device_node *parent;
-	const struct of_device_id *match;
+	struct device_node *parent = NULL;
+	const struct of_device_id *match = NULL;
 	void __iomem *ret = NULL;
 
 	parent = of_get_parent(np);
@@ -1795,15 +1784,6 @@ void __iomem __init *hs_clk_get_base(struct device_node *np)
 			hs_clk.crgctrl = ret;
 		} else {
 			ret = hs_clk.crgctrl;
-		}
-		break;
-	case HS_PMUCTRL:
-		if (!hs_clk.pmuctrl) {
-			ret = of_iomap(parent, 0);
-			WARN_ON(!ret);
-			hs_clk.pmuctrl = ret;
-		} else {
-			ret = hs_clk.pmuctrl;
 		}
 		break;
 	case HS_PCTRL:
@@ -1878,7 +1858,15 @@ void __iomem __init *hs_clk_get_base(struct device_node *np)
 			ret = hs_clk.mmc0crg;
 		}
 		break;
-
+	case HS_HSDT1CRG:
+		if (!hs_clk.hsdt1crg) {
+			ret = of_iomap(parent, 0);
+			WARN_ON(!ret);/*lint !e730 */
+			hs_clk.hsdt1crg = ret;
+		} else {
+			ret = hs_clk.hsdt1crg;
+		}
+		break;
 	default:
 		pr_err("[%s] cannot find the match node!\n", __func__);
 		ret = NULL;

@@ -20,7 +20,7 @@
 	unsigned short  reserved;
 
 
-#define INT_TO_ADDR(low,high) (void*) (unsigned long)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
+#define INT_TO_ADDR(low,high) (void*) (uintptr_t)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
 #define GET_LOW32(x) (unsigned int)(((unsigned long long)(unsigned long)(x))&0xffffffffULL)
 #define GET_HIG32(x) (unsigned int)((((unsigned long long)(unsigned long)(x))>>32)&0xffffffffULL)
 
@@ -134,12 +134,11 @@ typedef enum IRQ_RT irq_rt_t;
 
 typedef irq_rt_t (*irq_hdl_t)(void *, unsigned int);
 
-struct hisi_pcm_ion_buf {
-	struct ion_client *client;
-	struct ion_handle *handle;
+struct hisi_pcm_mmap_buf {
 	void *buf_addr;
 	uint32_t buf_size;
 	dma_addr_t phy_addr;
+	struct dma_buf *dmabuf;
 };
 
 struct pcm_ap_hifi_buf {
@@ -150,7 +149,7 @@ struct pcm_ap_hifi_buf {
 
 struct hisi_pcm_mmap_fd {
   int32_t shared_fd;
-  int32_t stream_dir;	/* 0-play; 1-capture */
+  int32_t stream_direction;	/* 0-play; 1-capture */
   uint32_t buf_size;
 };
 
@@ -173,7 +172,7 @@ struct hisi_pcm_runtime_data
 	struct snd_pcm_substream * substream;
 	long snd_pre_time;
 	bool using_thread_flag; /* indicate stream using thread */
-	struct hisi_pcm_ion_buf *ion_buf;	/* ion share memory info, only used in mmap */
+	struct hisi_pcm_mmap_buf *mmap_buf;	/* share memory info, only used in mmap */
 	struct pcm_ap_hifi_buf hifi_buf; /* record ap-hifi share buffer info, only used in mmap */
 	unsigned long frame_counter; /* record frames processed count, only used in mmap */
 };

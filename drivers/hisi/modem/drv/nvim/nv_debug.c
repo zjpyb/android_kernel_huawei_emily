@@ -56,7 +56,11 @@
 #include <bsp_dump.h>
 #include <bsp_slice.h>
 #include <bsp_nvim.h>
+#ifdef BSP_CONFIG_PHONE_TYPE
 #include "../../adrv/adrv.h"
+#else
+#include <linux/hisi/rdr_pub.h>
+#endif
 #include <bsp_rfile.h>
 #include <nv_partition_img.h>
 #include "nv_comm.h"
@@ -850,6 +854,7 @@ void nv_record(char* fmt,...)
 
 void nv_get_current_sys_time(struct rtc_time *tm)
 {
+#if (defined(CONFIG_RTC_LIB) && defined(CONFIG_RTC_CLASS)&&defined(CONFIG_RTC_HCTOSYS_DEVICE))
     u32 ret;
     struct rtc_device *rtc = rtc_class_open(CONFIG_RTC_HCTOSYS_DEVICE);
 
@@ -872,6 +877,9 @@ void nv_get_current_sys_time(struct rtc_time *tm)
     }
     /*获取到的时间为格林威治时间，转换为北京时间*/
     tm->tm_hour+=8;
+#else
+    (void)memset_s((void *)tm, sizeof(*tm), 0, sizeof(struct rtc_time));
+#endif
     return;
 }
 /*****************************************************************************

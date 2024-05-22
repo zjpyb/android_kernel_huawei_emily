@@ -1,19 +1,8 @@
 /*
- * Copyright (c) 2013-2014 NVIDIA Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ * Description: HHEE log driver in kernel
+ * Creator: security-ap
+ * Date: 2017/2/1
  */
 
 #include <linux/slab.h>
@@ -103,8 +92,8 @@ ssize_t hhee_copy_logs(char __user *buf, size_t count,
 		       loff_t *offp, int logtype)
 {
 	ssize_t len;
-	char *buffer;
-	struct circular_buffer *incb;
+	char *buffer = NULL;
+	struct circular_buffer *incb = NULL;
 
 	if (!hhee_logging_enabled)
 		return 0;
@@ -154,7 +143,7 @@ int cb_init(uint64_t inlog_addr, uint64_t inlog_size,
 			struct circular_buffer **incb, unsigned int logtype)
 {
 	uint64_t log_addr;
-	struct circular_buffer *tmp_cb;
+	struct circular_buffer *tmp_cb = NULL;
 
 	log_addr = (uint64_t)(uintptr_t)ioremap_cache(inlog_addr, inlog_size);
 	if (!log_addr) {

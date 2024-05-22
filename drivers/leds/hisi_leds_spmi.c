@@ -244,7 +244,7 @@ static int hisi_led_set_blink(struct led_classdev *led_ldev,
 	u8 set_time_on = 0;
 	u8 set_time_off = 0;
 
-	if (!led_dat) {
+	if (led_dat == NULL) {
 		pr_err("led set blink error\n");
 		return -EINVAL;
 	}
@@ -278,7 +278,7 @@ static void hisi_led_set_brightness(struct led_classdev *led_ldev,
 {
 	struct hisi_led_data *led =
 		container_of(led_ldev, struct hisi_led_data, ldev);
-	if (!led) {
+	if (led == NULL) {
 		pr_err("led set btrightnss error!\n");
 	}
 	led->status.brightness = brightness;
@@ -336,9 +336,9 @@ MODULE_DEVICE_TABLE(of, hisi_led_match);
 #endif
 static int hisi_led_probe(struct spmi_device *pdev)
 {
-	struct hisi_led_platform_data *pdata;
-	struct hisi_led_drv_data *data;
-	const struct of_device_id *match;
+	struct hisi_led_platform_data *pdata = NULL;
+	struct hisi_led_drv_data *data = NULL;
+	const struct of_device_id *match = NULL;
 	struct device_node *root = NULL;
 	char compatible_string[LED_DTS_ATTR_LEN] = {0};
 	int index;
@@ -356,7 +356,7 @@ static int hisi_led_probe(struct spmi_device *pdev)
 	}
 
 	data = devm_kzalloc(&pdev->dev, sizeof(struct hisi_led_drv_data), GFP_KERNEL);
-	if (!data) {
+	if (data == NULL) {
 		dev_err(&pdev->dev, "failed to allocate led_device\n");
 		return -ENOMEM;
 	}
@@ -388,7 +388,7 @@ static int hisi_led_probe(struct spmi_device *pdev)
     for (index = 0; index < HISI_LEDS_MAX; index++) {
         snprintf(compatible_string, LED_DTS_ATTR_LEN, "hisilicon,hisi-led%d", index);
         root = of_find_compatible_node(pdev->dev.of_node, NULL, compatible_string);
-        if (!root) {
+        if (root == NULL) {
             dev_err(&pdev->dev, "hisilicon,hisi-led%d root error!\n", index);
             goto err;
         }
@@ -447,7 +447,7 @@ err:
 static int hisi_led_remove(struct spmi_device *pdev)
 {
 	int i;
-	struct hisi_led_platform_data *pdata;
+	struct hisi_led_platform_data *pdata = NULL;
 	const struct of_device_id *match = NULL;
 	struct hisi_led_drv_data *data = dev_get_drvdata(&pdev->dev);
 

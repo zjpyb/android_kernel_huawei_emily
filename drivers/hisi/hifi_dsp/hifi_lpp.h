@@ -35,11 +35,7 @@ extern "C" {
 #define COPYFAIL	(-0xFFF)
 
 /* IOCTL入参和出参的SIZE限制 */
-#ifndef CLT_VOICE
 #define SIZE_LIMIT_PARAM		(256)
-#else
-#define SIZE_LIMIT_PARAM		(512)
-#endif
 
 /* AP侧NV项大小参数 */
 #define NVPARAM_COUNT        600         //HIFI NV size is 600
@@ -96,7 +92,14 @@ extern "C" {
 #ifdef HISI_EXTERNAL_MODEM
 #define HISI_AP_B5000_NV_SIZE (0x32c00)
 #define HISI_AP_OM_BUFFER_SIZE (0x50000)
+#define HISI_AP_B5000_MSG_SIZE (0x200)
+#else
+#define HISI_AP_B5000_NV_SIZE 0x0
+#define HISI_AP_OM_BUFFER_SIZE 0x0
 #endif
+#define HISI_AP_VIRTUAL_CALL_DOWNLINK_SIZE 0x1000
+#define HISI_AP_VIRTUAL_CALL_UPLINK_SIZE 0x1000
+
 #define HIFI_MUSIC_DATA_LOCATION        (HIFI_UNSEC_BASE_ADDR)
 #define PCM_PLAY_BUFF_LOCATION          (HIFI_MUSIC_DATA_LOCATION + HIFI_MUSIC_DATA_SIZE)
 #define DRV_DSP_UART_TO_MEM             (PCM_PLAY_BUFF_LOCATION + PCM_PLAY_BUFF_SIZE)
@@ -117,13 +120,12 @@ extern "C" {
 #define HISI_AP_AUDIO_WAKEUP_RINGBUFFER_ADDR           (HISI_AP_AUDIO_PA_ADDR + HISI_AP_AUDIO_PA_BUFF_SIZE)
 #define HISI_AP_AUDIO_WAKEUP_CAPTURE_ADDR (HISI_AP_AUDIO_WAKEUP_RINGBUFFER_ADDR + HISI_AP_AUDIO_WAKEUP_RINGBUFEER_SIZE)
 #define HISI_AP_AUDIO_WAKEUP_MODEL_ADDR           (HISI_AP_AUDIO_WAKEUP_CAPTURE_ADDR + HISI_AP_AUDIO_WAKEUP_CAPTURE_SIZE)
-#ifdef HISI_EXTERNAL_MODEM
 #define HISI_AP_B5000_NV_ADDR (HISI_AP_AUDIO_WAKEUP_MODEL_ADDR + HISI_AP_AUDIO_WAKEUP_MODEL_SIZE)
 #define HISI_AP_OM_BUFFER_ADDR (HISI_AP_B5000_NV_ADDR + HISI_AP_B5000_NV_SIZE)
-#define HIFI_UNSEC_RESERVE_ADDR (HISI_AP_OM_BUFFER_ADDR + HISI_AP_OM_BUFFER_SIZE)
-#else
-#define HIFI_UNSEC_RESERVE_ADDR (HISI_AP_AUDIO_WAKEUP_MODEL_ADDR + HISI_AP_AUDIO_WAKEUP_MODEL_SIZE)
-#endif
+#define HISI_AP_VIRTUAL_CALL_DOWNLINK_ADDR (HISI_AP_OM_BUFFER_ADDR + HISI_AP_OM_BUFFER_SIZE)
+#define HISI_AP_VIRTUAL_CALL_UPLINK_ADDR (HISI_AP_VIRTUAL_CALL_DOWNLINK_ADDR + HISI_AP_VIRTUAL_CALL_DOWNLINK_SIZE)
+#define HIFI_UNSEC_RESERVE_ADDR (HISI_AP_VIRTUAL_CALL_UPLINK_ADDR + HISI_AP_VIRTUAL_CALL_UPLINK_SIZE)
+
 #define HIFI_OM_LOG_SIZE                (0xA000)
 #define HIFI_OM_LOG_ADDR                (DRV_DSP_UART_TO_MEM - HIFI_OM_LOG_SIZE)
 #define HIFI_DUMP_BIN_SIZE              (HIFI_AP_MAILBOX_BASE_ADDR + HIFI_AP_MAILBOX_TOTAL_SIZE - HIFI_OM_LOG_ADDR)
@@ -216,8 +218,6 @@ extern "C" {
 #define BUFFER_NUM	8
 #define MAX_NODE_COUNT 10
 
-#define SYSCACHE_QUOTA_REQUEST 1
-#define SYSCACHE_QUOTA_RELEASE 0
 #define SYSCACHE_QUOTA_SIZE_MAX 0x100000
 #define SYSCACHE_QUOTA_SIZE_ALIGN 0x40000
 
@@ -307,10 +307,13 @@ typedef enum HIFI_MSG_ID_ {
 	ID_HIFI_AP_BIGDATA_CMD              = 0xDF10,   /*bigdata*/
 	ID_HIFI_AP_SMARTPA_DFT_REPORT_CMD   = 0xDF11,
 	ID_AP_AUDIO_CMD_SET_COMBINE_RECORD_FUNC_CMD  = 0xDF22,/* hal notify HIFI combine record cmd */
-#ifdef HISI_EXTERNAL_MODEM
-	ID_HIFI_AP_OM_DATA_IND = 0xDF05,
-#endif
 	ID_HIFI_AP_SYSCACHE_QUOTA_CMD = 0xDF32, /* syscache quota MSG */
+#ifdef HISI_EXTERNAL_MODEM
+	ID_AP_HIFI_NV_REFRESH_IND = 0xDF33,
+	ID_HIFI_AP_OM_DATA_IND = 0xDF34,
+	ID_HIFI_AP_PCIE_REOPEN_IND = 0xDF35,
+	ID_HIFI_AP_PCIE_CLOSE_IND = 0xDF37,
+#endif
 } HIFI_MSG_ID;
 
 typedef enum HI6402_DP_CLK_STATE_ {
@@ -395,9 +398,20 @@ struct hifi_ap_om_data_notify {
 };
 #endif
 
+enum syscache_quota_type {
+	SYSCACHE_QUOTA_RELEASE = 0,
+	SYSCACHE_QUOTA_REQUEST,
+};
+
+enum syscache_session {
+	SYSCACHE_SESSION_AUDIO = 0,
+	SYSCACHE_SESSION_VOICE,
+	SYSCACHE_SESSION_CNT,
+};
+
 struct syscache_quota_msg {
 	unsigned int msg_type;
-	unsigned int quota_size;
+	unsigned int session;
 };
 
 int hifi_send_msg(unsigned int mailcode, const void *data, unsigned int length);
@@ -410,6 +424,7 @@ unsigned long try_copy_to_user(void __user *to, const void *from, unsigned long 
 unsigned char *get_hifi_viradr(void);
 #endif
 enum hifi_dsp_platform_type hifi_misc_get_platform_type(void);
+void hifi_reset_release_syscache(void);
 
 #ifdef __cplusplus
 #if __cplusplus

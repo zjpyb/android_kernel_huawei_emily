@@ -13,17 +13,21 @@
 #include <linux/slab.h>
 #include <asm/io.h>
 #include <global_ddr_map.h>
-#include "perf_ctrl.h"
 #include <linux/hisi/hisi_drg.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/hisi_rtg.h>
+#include <linux/hisi/perf_ctrl.h>
+#include <linux/hisi/render_rt.h>
+#include <linux/sched/cputime.h>
 
 
 extern int get_ipa_status(struct ipa_stat *status);
 
+#ifdef CONFIG_HISI_DDR_PERF_CTRL
 
-#define PERF_CTRL_DDR_MAX_CH (4)
+
 #define PERF_CTRL_DDR_FLUX_MAX_CNT (0xFFFFFFFFUL)
+#define PERF_CTRL_DDR_MAX_CH 	(4)
 
 /* attention: there is same structure definition in atf hisi_ddr.c */
 struct ddr_perfdata {
@@ -32,10 +36,9 @@ struct ddr_perfdata {
 	unsigned int rd_flux[PERF_CTRL_DDR_MAX_CH];
 	unsigned int wr_flux[PERF_CTRL_DDR_MAX_CH];
 };
-
 static phys_addr_t ddr_perfdata_phy_addr = 0;
 static struct ddr_perfdata __iomem *freqdump_virt_addr = NULL;
-static struct ddr_perfdata last_data = {0};
+struct ddr_perfdata last_data[DDR_PERFDATA_CLIENT_MAX] = {{0}, {0}};
 
 unsigned long long get_ddrflux_data(unsigned int curr, unsigned int *last)
 {
@@ -51,7 +54,9 @@ unsigned long long get_ddrflux_data(unsigned int curr, unsigned int *last)
 	return delta;
 }
 
+#endif
 
+#ifdef CONFIG_SCHED_INFO
 int get_schedstat(struct sched_stat *sched_stat_val)
 {
 	struct task_struct *task;
@@ -65,13 +70,20 @@ int get_schedstat(struct sched_stat *sched_stat_val)
 	}
 	get_task_struct(task);
 	rcu_read_unlock();
-	sched_stat_val->sum_exec_runtime = task->se.sum_exec_runtime;
+	sched_stat_val->sum_exec_runtime = task_sched_runtime(task);
 	sched_stat_val->run_delay = task->sched_info.run_delay;
 	sched_stat_val->pcount = task->sched_info.pcount;
 	put_task_struct(task);
 
 	return 0;
 }
+#else
+int get_schedstat(struct sched_stat *sched_stat_val)
+{
+	pr_err("CONFIG_SCHED_INFO not set.\n");
+	return 0;
+}
+#endif
 
 struct task_struct *get_pid_leader_task(pid_t pid)
 {
@@ -94,6 +106,7 @@ struct task_struct *get_pid_leader_task(pid_t pid)
 	return leader;
 }
 
+#ifdef CONFIG_HISI_IPA_THERMAL
 int get_max_soc_temp(int *temp)
 {
 	int id = 0, ret = 0, val = 0, val_max = 0;
@@ -188,7 +201,7 @@ static long perf_ctrl_ioctl_get_power(void __user *uarg) {
 		if(thp.thermal_zone_type >= sizeof(thermal_zone_name)/sizeof(thermal_zone_name[0]) || thp.thermal_zone_type < 0) /*lint !e574 */
 			break;
 		result = thermal_zone_cdev_get_power(thermal_zone_name[thp.thermal_zone_type], thermal_cdev_type_name[i], &power); /*lint !e661 !e662*/
-		if (!IS_ERR_VALUE((uintptr_t)result))
+		if (result >= 0)
 			thp.cdev_power[i] = power;
 	}
 
@@ -199,17 +212,94 @@ static long perf_ctrl_ioctl_get_power(void __user *uarg) {
 
 	return 0;
 }
+#else
+static long perf_ctrl_ioctl_get_power(void __user *uarg) { return 0; }
+int get_system_temp(struct ipa_stat *status) { return 0; }
+#endif
+
+static long perf_ctrl_ioctl_get_gpu_fence(void __user *uarg)
+{
+	struct kbase_fence_info gpu_fence;
+	int ret;
+
+	if (copy_from_user(&gpu_fence, uarg, sizeof(struct kbase_fence_info))) {
+		pr_err("get_gpu_fence copy_from_user fail.\n");
+		return -EFAULT;
+	}
+
+	ret = mali_kbase_report_fence_info(&gpu_fence);
+	if (ret) {
+		pr_err("get_gpu_fence mali fail:%d\n", ret);
+		return -EFAULT;
+	}
+
+	if (copy_to_user(uarg, &gpu_fence, sizeof(struct kbase_fence_info))) {
+		pr_err("get_gpu_fence copy_to_user fail.\n");
+		return -EFAULT;
+	}
+
+	return 0;
+}
+int get_ddrc_flux_all_ch(struct ddr_flux* ddr_flux_str, DDR_PERFDATA_CLIENT client)
+{
+#ifdef CONFIG_HISI_DDR_PERF_CTRL
+		int ddr_max_ch = 0, ch = 0;
+		if(ddr_flux_str == NULL){
+			pr_err("get_ddrc_flux_all_ch:invalid ddr_flux_str is NULL\n");
+			return -EFAULT;
+		}
+
+		if (client >= DDR_PERFDATA_CLIENT_MAX) {
+			pr_err("get_ddrc_flux_all_ch:invalid client %d!\n", client);
+			return -EFAULT;
+		}
+
+		(void)atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID, ddr_perfdata_phy_addr,
+			sizeof(struct ddr_perfdata), ACCESS_REGISTER_FN_SUB_ID_DDR_PERF_CTRL);
+
+		ddr_max_ch = freqdump_virt_addr->channel_nr;
+
+		if ((ddr_max_ch < 1) || (ddr_max_ch > PERF_CTRL_DDR_MAX_CH)) {
+			pr_err("get_ddrc_flux:invalid ddr_max_ch %d!\n", ddr_max_ch);
+			return -EFAULT;
+		}
+
+		for (ch = 0; ch < ddr_max_ch; ch++) {
+				ddr_flux_str->rd_flux +=
+					get_ddrflux_data(freqdump_virt_addr->rd_flux[ch], &last_data[client].rd_flux[ch]);
+				ddr_flux_str->wr_flux +=
+					get_ddrflux_data(freqdump_virt_addr->wr_flux[ch], &last_data[client].wr_flux[ch]);
+
+		}
+		return 0;
+#else
+		UNUSED_PARAMETER(ddr_flux_str);
+		UNUSED_PARAMETER(client);
+		return -EFAULT;
+#endif
+}
+
+unsigned long perf_ctrl_get_cap(void)
+{
+	unsigned long cap = 0;
+
+	cap |= BIT(CAP_AI_SCHED_COMM_CMD);
+
+	return cap;
+}
 
 static long perf_ctrl_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
-	int ddr_max_ch = 0, ch = 0;
+#ifdef CONFIG_HISI_DDR_PERF_CTRL
 	struct ddr_flux ddr_flux_val = {0};
+#endif
 	struct sched_stat sched_stat_val;
 	struct ipa_stat ipa_stat_val;
 	void __user *uarg = (void __user *)(uintptr_t)arg;
 	struct task_struct *leader, *pos;
 	struct related_tid_info *r_t_info = NULL;
+	unsigned long cap;
 
 	if (!uarg) {
 		pr_err("perf_ctrl: invalid user uarg!\n");
@@ -221,7 +311,7 @@ static long perf_ctrl_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		return -EINVAL;
 	}
 
-	if (_IOC_NR(cmd) > PERF_CTRL_MAX_NR) {
+	if (_IOC_NR(cmd) >= PERF_CTRL_MAX_NR) {
 		pr_err("PERF_CTRL_MAX_NR fail. _IOC_NR(cmd) = %d, MAX_NR = %d.\n", _IOC_NR(cmd), PERF_CTRL_MAX_NR);
 		return -EINVAL;
 	}
@@ -246,6 +336,7 @@ static long perf_ctrl_ioctl(struct file *file, unsigned int cmd, unsigned long a
 		}
 		break;
 
+#ifdef CONFIG_HISI_IPA_THERMAL
 	case PERF_CTRL_GET_IPA_STAT: /* get ipa status */
 		if (copy_from_user(&ipa_stat_val, uarg, sizeof(struct ipa_stat))) {
 			pr_err("copy_from_user fail.\n");
@@ -265,33 +356,21 @@ static long perf_ctrl_ioctl(struct file *file, unsigned int cmd, unsigned long a
 			}
 		}
 		break;
+#endif
 
+#ifdef CONFIG_HISI_DDR_PERF_CTRL
 	case PERF_CTRL_GET_DDR_FLUX:
-		ddr_max_ch = 0;
-
-		(void)atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID, ddr_perfdata_phy_addr,
-			sizeof(struct ddr_perfdata), ACCESS_REGISTER_FN_SUB_ID_DDR_PERF_CTRL);
-
-		ddr_max_ch = freqdump_virt_addr->channel_nr;
-
-		if ((ddr_max_ch < 1) || (ddr_max_ch > PERF_CTRL_DDR_MAX_CH)) {
-			pr_err("perf_ctrl:invalid ddr_max_ch!\n");
-			return -EFAULT;
-		}
-
-		for (ch = 0; ch < ddr_max_ch; ch++) {
-			ddr_flux_val.rd_flux +=
-				get_ddrflux_data(freqdump_virt_addr->rd_flux[ch], &last_data.rd_flux[ch]);
-			ddr_flux_val.wr_flux +=
-				get_ddrflux_data(freqdump_virt_addr->wr_flux[ch], &last_data.wr_flux[ch]);
+		if(get_ddrc_flux_all_ch(&ddr_flux_val, DDR_PERFDATA_PERFCTRL) == -EFAULT){
+			ret = -EFAULT;
+			break;
 		}
 
 		if (copy_to_user(uarg, &ddr_flux_val, sizeof(ddr_flux_val))) {
 			pr_err("ddr_fluxdata copy_to_user fail!\n");
 			ret = -EFAULT;
 		}
-
 		break;
+#endif
 
 	case PERF_CTRL_GET_RELATED_TID:
 		r_t_info = kzalloc(sizeof(struct related_tid_info), GFP_KERNEL);
@@ -342,11 +421,28 @@ err:
 	case PERF_CTRL_GET_THERMAL_CDEV_POWER:
 		ret = perf_ctrl_ioctl_get_power(uarg);
 
-		if (IS_ERR_VALUE((uintptr_t)ret)) {
+		if (ret < 0) {
 			pr_err("get_thermal_cdev_power thermal_zone_cdev_get_power failed ret %ld.\n", ret);
 			return ret;
 		}
 		break;
+	case PERF_CTRL_GET_GPU_FENCE:
+		ret = perf_ctrl_ioctl_get_gpu_fence(uarg);
+		if (ret < 0) {
+			pr_err("get_gpu_fence failed ret %ld.\n", ret);
+			return ret;
+		}
+		break;
+
+	case PERF_CTRL_GET_DEV_CAP:
+		cap = perf_ctrl_get_cap();
+
+		if (copy_to_user(uarg, &cap, sizeof(unsigned long))) {
+			pr_err("perf_ctrl_get_cap copy_from_user fail.\n");
+			return -EFAULT;
+		}
+		break;
+
 
 	default:
 		pr_err("cmd error, here is default, cmd = %d\n", cmd);
@@ -379,6 +475,7 @@ static struct miscdevice perf_ctrl_device = {
 	.fops = &perf_ctrl_fops,
 };
 
+#ifdef CONFIG_HISI_DDR_PERF_CTRL
 
 static int perf_ctrl_ddr_init(void)
 {
@@ -405,10 +502,7 @@ static int perf_ctrl_ddr_init(void)
 		pr_err("%s: allocate memory for ddr-perfdata failed!\n", __func__);
 		return -ENOMEM;
 	}
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat="
-	pr_info("perf_ctrl: perfdata phys:%llx virt:%llx data:%x %x\n", ddr_perfdata_phy_addr, freqdump_virt_addr, data[0], data[1]);/*lint !e626*/
-#pragma GCC diagnostic pop
+	pr_info("perf_ctrl: perfdata phys:%llx virt:%llx data:%x %x\n", ddr_perfdata_phy_addr, (unsigned long long)(uintptr_t)freqdump_virt_addr, data[0], data[1]); /*lint !e626*/
 
 	return ret;
 }
@@ -421,6 +515,10 @@ static void perf_ctrl_ddr_exit(void)
 	}
 }
 
+#else
+static int perf_ctrl_ddr_init(void) { return 0; }
+static void perf_ctrl_ddr_exit(void) { }
+#endif
 
 static int __init perf_ctrl_dev_init(void)
 {

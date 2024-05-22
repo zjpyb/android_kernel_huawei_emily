@@ -40,7 +40,7 @@
 #include <linux/ioport.h>
 #include <linux/hisi-iommu.h>
 #include <linux/platform_data/remoteproc-hisi.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/version.h>
 
 #include "hicam_buf.h"
@@ -84,7 +84,7 @@ typedef struct _tag_hjpeg_base
     atomic_t                                    jpeg_on;
     struct iommu_domain *                       domain;
     phy_pgd_t                                   phy_pgd;
-    struct wake_lock                            power_wakelock;
+    struct wakeup_source                        power_wakelock;
     struct mutex                                wake_lock_mutex;
 } hjpeg_base_t;
 
@@ -222,13 +222,13 @@ static int __check_buffer_vaild(int share_fd, unsigned int req_addr, unsigned in
 static int check_buffer_vaild(jpgenc_config_t* config)
 {
     unsigned int vaild_input_size;
+    unsigned int bufFormat = (unsigned int)(config->buffer.format);
 
     if (__check_buffer_vaild(config->buffer.ion_fd, config->buffer.output_buffer, config->buffer.output_size)) {
         cam_err("%s:check output buffer fail", __func__);
         return -1;
     }
-
-    if (JPGENC_FORMAT_YUV422 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
+    if (JPGENC_FORMAT_YUV422 == (bufFormat & JPGENC_FORMAT_BIT)) {
         vaild_input_size = config->buffer.width * config->buffer.height * 2;
     }
     else {
@@ -250,12 +250,13 @@ static int check_buffer_vaild(jpgenc_config_t* config)
 */
 static int check_config(jpgenc_config_t* config)
 {
+    unsigned int bufFormat;
     cam_info("%s enter ",__func__);
     if (config == NULL){
         cam_err("%s: config is null! (%d)",__func__, __LINE__);
         return -EINVAL;
     }
-
+    bufFormat = (unsigned int)(config->buffer.format);
     if (!CHECK_ALIGN(config->buffer.width, 2) || (config->buffer.width > 8192)){
         cam_err(" width[%d] is invalid! ",config->buffer.width);
         return -1;
@@ -268,8 +269,7 @@ static int check_config(jpgenc_config_t* config)
 
     if ((0 == config->buffer.stride)
             || !CHECK_ALIGN(config->buffer.stride,16)
-            || (config->buffer.stride / 16 > ((JPGENC_FORMAT_YUV422 == ((unsigned int)(config->buffer.format) &
-            JPGENC_FORMAT_BIT)) ? 1024 : 512)))
+            || (config->buffer.stride/16 > ((JPGENC_FORMAT_YUV422 == (bufFormat & JPGENC_FORMAT_BIT)) ? 1024 : 512)))
     {
         cam_err(" stride[%d] is invalid! ",config->buffer.stride);
         return -1;
@@ -279,8 +279,9 @@ static int check_config(jpgenc_config_t* config)
         cam_err(" input buffer y[0x%x] is invalid! ",config->buffer.input_buffer_y);
         return -1;
     }
-    if ((JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT))
-            && ((0== config->buffer.input_buffer_uv ) || !CHECK_ALIGN(config->buffer.input_buffer_uv, 16))) {
+
+    if ((JPGENC_FORMAT_YUV420 == (bufFormat & JPGENC_FORMAT_BIT))
+            && ((0== config->buffer.input_buffer_uv )|| !CHECK_ALIGN(config->buffer.input_buffer_uv, 16))){
         cam_err(" input buffer uv[0x%x] is invalid! ",config->buffer.input_buffer_uv);
         return -1;
     }
@@ -309,7 +310,7 @@ static int check_config(jpgenc_config_t* config)
 static void set_picture_format(void __iomem* base_addr, int fmt)
 {
     unsigned int tmp = 0;
-    if (JPGENC_FORMAT_YUV422 == (fmt & JPGENC_FORMAT_BIT)) {
+    if (JPGENC_FORMAT_YUV422 == ((unsigned int)fmt & JPGENC_FORMAT_BIT)) {
         SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_JPE_PIC_FORMAT_REG),JPGENC_ENC_PIC_FORMAT, 0);/*lint !e845*/
     } else {
         SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_JPE_PIC_FORMAT_REG),JPGENC_ENC_PIC_FORMAT, 1);
@@ -436,6 +437,96 @@ int dump_jpeg_reg(void __iomem * viraddr)
     return 0;
 }
 
+void dump_reg(void)
+{
+	int i;
+	void __iomem *viraddr = s_hjpeg.hw_ctl.jpegenc_viraddr;
+
+	if (viraddr == NULL) {
+		cam_err("%s: jpegenc viraddr is NULL", __func__);
+		return;
+	}
+
+	for (i = 0 ; i <= JPGENC_FORCE_CLK_ON_CFG_REG;) {
+		cam_info("%s: jpeg reg 0x%x = 0x%x", __func__, i,
+				get_reg_val((void __iomem*)((char*)viraddr + i)));
+		i += 4;
+	}
+	for (i = JPGENC_DBG_0_REG ; i <= JPGENC_DBG_13_REG;) {
+		cam_info("%s: jpeg reg 0x%x = 0x%x", __func__, i,
+				get_reg_val((void __iomem*)((char*)viraddr + i)));
+		i += 4;
+	}
+
+	// ipp top
+	if (is_irq_merge) {
+		viraddr = s_hjpeg.hw_ctl.subctrl_viraddr;
+		if (viraddr == NULL) {
+			cam_err("%s: jpegenc viraddr is NULL", __func__);
+			return;
+		}
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, JPGENC_IRQ_REG0,
+				get_reg_val((void __iomem*)((char*)viraddr + JPGENC_IRQ_REG0)));
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, JPGENC_IRQ_REG1,
+				get_reg_val((void __iomem*)((char*)viraddr + JPGENC_IRQ_REG1)));
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, JPGENC_IRQ_REG2,
+				get_reg_val((void __iomem*)((char*)viraddr + JPGENC_IRQ_REG2)));
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, 0xFC,
+				get_reg_val((void __iomem*)((char*)viraddr + 0xFC)));
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, 0x100,
+				get_reg_val((void __iomem*)((char*)viraddr + 0x100)));
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, 0x104,
+				get_reg_val((void __iomem*)((char*)viraddr + 0x104)));
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, 0x108,
+				get_reg_val((void __iomem*)((char*)viraddr + 0x108)));
+		cam_info("%s: top reg: 0x%08x=0x%08x", __func__, 0x10C,
+				get_reg_val((void __iomem*)((char*)viraddr + 0x10C)));
+	}
+
+	viraddr = s_hjpeg.hw_ctl.cvdr_viraddr;
+	if (viraddr == NULL) {
+		cam_err("%s:cvdr viraddr is NULL", __func__);
+		return;
+	}
+
+	if (s_hjpeg.hw_ctl.cvdr_prop.wr_port == WR_PORT_25) {
+		if (get_hjpeg_wr_port_addr_update()) {
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x1c0,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x1c0)));
+
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x1c4,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x1c4)));
+
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x1c8,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x1c8)));
+
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x1cc,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x1cc)));
+
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x894,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x894)));
+
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x1570,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x1570)));
+
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x1574,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x1574)));
+
+			cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x1578,
+					get_reg_val((void __iomem*)((char*)viraddr + 0x1578)));
+		}
+	}
+
+	cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0xc,
+			get_reg_val((void __iomem*)((char*)viraddr + 0xc)));
+
+	cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x10,
+			get_reg_val((void __iomem*)((char*)viraddr + 0x10)));
+
+	cam_info("%s: CVDR reg: 0x%08x=0x%08x", __func__, 0x0,
+			get_reg_val((void __iomem*)((char*)viraddr + 0x0)));
+
+}
 #ifdef SOFT_RESET
 static int hjpeg_soft_reset(hjpeg_base_t *phjpeg)
 {
@@ -512,6 +603,7 @@ static int hjpeg_soft_reset(hjpeg_base_t *phjpeg)
 */
 static void hjpeg_config_jpeg(jpgenc_config_t* config)
 {
+    unsigned int bufFormat;
     void __iomem*  base_addr = s_hjpeg.hw_ctl.jpegenc_viraddr;
 
     cam_info("%s enter ",__func__);
@@ -519,6 +611,7 @@ static void hjpeg_config_jpeg(jpgenc_config_t* config)
         cam_err("%s: config is null! (%d)",__func__, __LINE__);
         return;
     }
+    bufFormat = (unsigned int)(config->buffer.format);
 
     set_picture_format(base_addr, config->buffer.format);
 
@@ -532,7 +625,7 @@ static void hjpeg_config_jpeg(jpgenc_config_t* config)
         addr_y.bits.address = config->buffer.input_buffer_y >> 4;
         addr_y.bits.reserved = 0;
         set_reg_val((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_Y_REG), addr_y.reg32);
-        if (JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
+        if (JPGENC_FORMAT_YUV420 == (bufFormat & JPGENC_FORMAT_BIT)) {
             U_JPEGENC_ADDRESS addr_uv;
             addr_uv.bits.address = config->buffer.input_buffer_uv >> 4;
             addr_uv.bits.reserved = 0;
@@ -540,13 +633,13 @@ static void hjpeg_config_jpeg(jpgenc_config_t* config)
         }
     } else {
         SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_Y_REG),JPGENC_ADDRESS_Y,config->buffer.input_buffer_y >> 4);
-        if (JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
+        if (JPGENC_FORMAT_YUV420 == (bufFormat & JPGENC_FORMAT_BIT)) {
             SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_ADDRESS_UV_REG),JPGENC_ADDRESS_UV,config->buffer.input_buffer_uv >> 4);
         }
     }
 
     //set preread
-    if (JPGENC_FORMAT_YUV420 == ((unsigned int)(config->buffer.format) & JPGENC_FORMAT_BIT)) {
+    if (JPGENC_FORMAT_YUV420 == (bufFormat & JPGENC_FORMAT_BIT)) {
         SET_FIELD_TO_REG((void __iomem*)((char*)base_addr + JPGENC_PREREAD_REG),JPGENC_PREREAD,4);
     }
     else {
@@ -670,16 +763,17 @@ static int hjpeg_encode_process(hjpeg_intf_t *i, void *cfg)
     if (down_timeout(&s_hjpeg.buff_done, jiff)) {
         cam_err("time out wait for jpeg encode");
         ret = -1;
+		dump_reg();
         hjpeg_irq_clr(s_hjpeg.hw_ctl.subctrl_viraddr);
         #if defined( HISP120_CAMERA )
             hjpeg_120_dump_reg();
         #endif
-
     }
 
     do_gettimeofday(&s_timeval_end);
 
     calculate_encoding_time();
+
     // for debug
     dump_jpeg_reg(s_hjpeg.hw_ctl.jpegenc_viraddr);
 
@@ -844,8 +938,8 @@ static int hjpeg_poweron(hjpeg_base_t* pJpegDev)
     }
 
     mutex_lock(&pJpegDev->wake_lock_mutex);
-    if (!wake_lock_active(&pJpegDev->power_wakelock)) {
-        wake_lock(&pJpegDev->power_wakelock);
+    if (!pJpegDev->power_wakelock.active) {
+        __pm_stay_awake(&pJpegDev->power_wakelock);
         cam_info("%s jpeg power on enter, wake lock\n", __func__);
     }
     mutex_unlock(&pJpegDev->wake_lock_mutex); /*lint !e456 */
@@ -891,8 +985,8 @@ static int hjpeg_poweron(hjpeg_base_t* pJpegDev)
     return ret;
 FAILED_JPG_POWERON:
     mutex_lock(&pJpegDev->wake_lock_mutex);
-    if (wake_lock_active(&pJpegDev->power_wakelock)) {
-        wake_unlock(&pJpegDev->power_wakelock);
+    if (pJpegDev->power_wakelock.active) {
+        __pm_relax(&pJpegDev->power_wakelock);
         cam_err("%s jpeg power on failed, wake unlock\n", __func__);
     }
     mutex_unlock(&pJpegDev->wake_lock_mutex); /*lint !e456 */
@@ -942,8 +1036,8 @@ static int hjpeg_poweroff(hjpeg_base_t* pJpegDev)
     cam_info("%s: jpeg power down, ref=%d\n", __func__, atomic_read(&pJpegDev->jpeg_on));
 
     mutex_lock(&pJpegDev->wake_lock_mutex);
-    if (wake_lock_active(&pJpegDev->power_wakelock)) {
-        wake_unlock(&pJpegDev->power_wakelock);
+    if (pJpegDev->power_wakelock.active) {
+        __pm_relax(&pJpegDev->power_wakelock);
         cam_info("%s jpeg power off exit, wake unlock\n", __func__);
     }
     mutex_unlock(&pJpegDev->wake_lock_mutex); /*lint !e456 */
@@ -958,7 +1052,7 @@ static int hjpeg_set_reg(hjpeg_intf_t* i, void* cfg)
 
 #ifdef MST_DEBUG
     void __iomem* base_addr = 0;
-    jpgenc_config_t* pcfg;
+    jpgenc_config_t* pcfg = NULL;
     uint32_t addr;
     uint32_t value;
 
@@ -997,7 +1091,7 @@ static int hjpeg_get_reg(hjpeg_intf_t *i, void* cfg)
 
 #ifdef MST_DEBUG
     void __iomem* base_addr = 0;
-    jpgenc_config_t* pcfg;
+    jpgenc_config_t* pcfg = NULL;
     uint32_t addr;
 
     cam_info("%s enter\n",__func__);
@@ -1068,7 +1162,7 @@ static void hjpeg_unmap_baseaddr(void)
 // init resource for remap base addr and requst irq
 static int hjpeg_map_baseaddr(void)
 {
-    struct device_node *np;
+    struct device_node *np = NULL;
     uint32_t base_array[2] = {0};
     size_t count ;
     int ret;
@@ -1189,7 +1283,7 @@ fail:
 static int get_dts_power_prop(struct device *pdev)
 {
     int i;
-    struct device_node *np;
+    struct device_node *np = NULL;
     const char* clk_name[JPEG_CLK_MAX] = {""};
     u32 tmp = 0;
     int ret;
@@ -1271,7 +1365,7 @@ error:
 
 static int get_dts_smmu_prop(struct device *pdev)
 {
-    struct device_node *np;
+    struct device_node *np = NULL;
     u32 tmp;
     int ret;
 
@@ -1313,7 +1407,7 @@ error:
 
 static int get_dts_cvdr_prop(struct device *pdev)
 {
-    struct device_node *np;
+    struct device_node *np = NULL;
     int ret;
     uint32_t base_array[3] = {0};
     size_t count = 3;
@@ -1400,8 +1494,8 @@ static int get_dts_cvdr_prop(struct device *pdev)
 static int hjpeg_get_dts(struct platform_device* pDev)
 {
     int ret;
-    struct device *pdev;
-    struct device_node *np;
+    struct device *pdev = NULL;
+    struct device_node *np = NULL;
     u32 chip_type;
 
     if (NULL == pDev) {
@@ -1583,10 +1677,6 @@ static void hjpeg_irq_clr(void __iomem* subctrl1)
 
     set_val = 0x00000002;
 
-/* #ifdef IRQ_TEST */
-/*     set_val = 0x6; */
-/* #endif */
-
     set_reg_val(subctrl1_irq_clr, set_val);   /* [false alarm]:it is a dead code */
 }
 
@@ -1600,11 +1690,6 @@ static void hjpeg_irq_mask(void __iomem* subctrl1, bool enable)
 
     set_val = enable ? 0x0000001D : 0x0000001F;
 
-/* #ifdef IRQ_TEST */
-/*      if (enable) { */
-/*          set_val = 0x19; */
-/*      } */
-/* #endif */
     set_reg_val(subctrl1_irq_mask,  set_val);
     cur_val = get_reg_val(subctrl1_irq_mask);
     if (set_val != cur_val) {
@@ -1626,11 +1711,14 @@ static void hjpeg_encode_finish(void __iomem* jpegenc, void __iomem* subctl)
         result = value & ENCODE_FINISH;
     }
 
+	cam_info("encode finish:0x%x", value);
+
     if (result) {
         tasklet_schedule(&hjpeg_isr_tasklet);
     } else {
         cam_err("err irq JPGENC_IRQ_REG2 status 0x%x", value);
 
+		dump_reg();
         #if defined( HISP120_CAMERA )
             hjpeg_120_dump_reg();
         #endif
@@ -1661,7 +1749,7 @@ static int32_t hjpeg_platform_probe(
     int32_t ret;
     cam_info("%s enter [%s]\n", __func__, s_hjpeg.name);
 
-    wake_lock_init(&s_hjpeg.power_wakelock, WAKE_LOCK_SUSPEND, "jpeg_power_wakelock");
+    wakeup_source_init(&s_hjpeg.power_wakelock, "jpeg_power_wakelock");
     mutex_init(&s_hjpeg.wake_lock_mutex);
 
     hjpeg_register(pdev, &(s_hjpeg.intf));
@@ -1752,7 +1840,7 @@ hjpeg_exit_module(void)
     hjpeg_unregister(s_hjpeg.pdev);
     platform_driver_unregister(&s_hjpeg_driver);
 
-    wake_lock_destroy(&s_hjpeg.power_wakelock);
+    wakeup_source_trash(&s_hjpeg.power_wakelock);
     mutex_destroy(&s_hjpeg.wake_lock_mutex);
 }
 /*lint -restore*/

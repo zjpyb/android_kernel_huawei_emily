@@ -21,7 +21,7 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/hwspinlock.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/interrupt.h>
 #include <linux/hisi/hi64xx/asp_dma.h>
 #include <linux/delay.h>
@@ -42,7 +42,7 @@ struct asp_dma_priv {
 	spinlock_t lock;
 	struct resource *res;
 	struct hwspinlock *hwlock;
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 	void __iomem *asp_dma_reg_base_addr;
 	struct dma_callback callback[ASP_DMA_MAX_CHANNEL_NUM];
 };
@@ -55,7 +55,10 @@ unsigned int _dmac_reg_read(unsigned int reg)
 	unsigned long flag = 0;
 	unsigned int ret = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s: priv is null\n", __FUNCTION__);
+		return EINVAL;
+	}
 
 	if (hwspin_lock_timeout_irqsave(priv->hwlock, HWLOCK_WAIT_TIME, &flag)) {
 		dev_err(priv->dev, "hwspinlock timeout\n");
@@ -74,8 +77,6 @@ static void _dmac_reg_write(unsigned int reg, unsigned int value)
 	struct asp_dma_priv *priv = asp_dma_priv;
 	unsigned long flag = 0;
 
-	WARN_ON(NULL == priv);
-
 	if (hwspin_lock_timeout_irqsave(priv->hwlock, HWLOCK_WAIT_TIME, &flag)) {
 		dev_err(priv->dev, "hwspinlock timeout\n");
 		return;
@@ -92,8 +93,6 @@ static void _dmac_reg_set_bit(unsigned int reg, unsigned int offset)
 	unsigned int value = 0;
 	unsigned long flag_hw = 0;
 	unsigned long flag_sft = 0;
-
-	WARN_ON(NULL == priv);
 
 	if (hwspin_lock_timeout_irqsave(priv->hwlock, HWLOCK_WAIT_TIME, &flag_hw)) {
 		dev_err(priv->dev, "hwspinlock timeout\n");
@@ -118,8 +117,6 @@ static void _dmac_reg_clr_bit(unsigned int reg, unsigned int offset)
 	unsigned long flag_hw = 0;
 	unsigned long flag_sft = 0;
 
-	WARN_ON(NULL == priv);
-
 	if (hwspin_lock_timeout_irqsave(priv->hwlock, HWLOCK_WAIT_TIME, &flag_hw)) {
 		dev_err(priv->dev, "hwspinlock timeout!\n");
 		return;
@@ -139,8 +136,6 @@ static void _dmac_reg_clr_bit(unsigned int reg, unsigned int offset)
 static void _dmac_dump(unsigned int dma_channel)
 {
 	struct asp_dma_priv *priv = asp_dma_priv;
-
-	WARN_ON(NULL == priv);
 
 	if (dma_channel >= ASP_DMA_MAX_CHANNEL_NUM) {
 		dev_err(priv->dev, "dma channel err:%d\n", dma_channel);
@@ -170,8 +165,6 @@ static irqreturn_t _asp_dmac_irq_handler(int irq, void *data)
 	unsigned short int_state = 0;
 	unsigned int int_type = 0;
 	unsigned int i = 0;
-
-	WARN_ON(NULL == priv);
 
 	/* if have interupts */
 	int_state = (unsigned short)_dmac_reg_read(ASP_DMA_INT_STAT_AP);
@@ -458,7 +451,7 @@ static int asp_dma_probe (struct platform_device *pdev)
 		goto err_exit;
 	}
 
-	wake_lock_init(&priv->wake_lock, WAKE_LOCK_SUSPEND, "asp_dma");
+	wakeup_source_init(&priv->wake_lock, "asp_dma");
 
 	spin_lock_init(&priv->lock);
 
@@ -498,7 +491,7 @@ static int asp_dma_remove (struct platform_device *pdev)
 		dev_err(priv->dev,"hwspinlock free failed.\n");
 	}
 
-	wake_lock_destroy(&priv->wake_lock);
+	wakeup_source_trash(&priv->wake_lock);
 
 	free_irq(priv->irq, priv);
 

@@ -1,85 +1,82 @@
+/*
+ * Copyright (c) 2018-2022 Huawei Technologies Co., Ltd.
+ * Description: flow table of fi module
+ * Author: liyouyong liyouyong@huawei.com
+ * Create: 2018-09-10
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+#include "fi_flow.h"
 
-
-#include <linux/types.h>
-#include <linux/string.h>
-#include <linux/list.h>
-#include <linux/ip.h>
-#include "../../emcom_netlink.h"
-#include "../../emcom_utils.h"
-#include <huawei_platform/emcom/smartcare/fi/fi_utils.h>
-
-fi_flow g_fi_flow;
-
-
-uint32_t fi_flow_node_num(void)
-{
-	return atomic_read(&g_fi_flow.nodenum);
-}
-
+struct fi_flow g_fi_flow;
 
 void fi_flow_lock(void)
 {
 	spin_lock_bh(&(g_fi_flow.flow_lock));
 }
 
-
 void fi_flow_unlock(void)
 {
 	spin_unlock_bh(&(g_fi_flow.flow_lock));
 }
 
-
-inline uint32_t fi_flow_hash(uint32_t sip, uint32_t dip, uint32_t sport, uint32_t dport)
+uint32_t fi_flow_hash(uint32_t sip, uint32_t dip, uint32_t sport,
+	uint32_t dport, uint32_t proto)
 {
-	uint32_t v1, v2, h1;
+	uint32_t v1;
+	uint32_t v2;
+	uint32_t h1;
 
-	v1 = sip^dip;
-	v2 = sport^dport;
+	v1 = sip ^ dip;
+	v2 = sport ^ dport;
 
-	h1 = v1<<8;
-	h1 ^= v1>>4;
-	h1 ^= v1>>12;
-	h1 ^= v1>>16;
-	h1 ^= v2<<6;
-	h1 ^= v2<<10;
-	h1 ^= v2<<14;
-	h1 ^= v2<<7;
+	h1 = v1 << FI_SHIFT_8;
+	h1 ^= v1 >> FI_SHIFT_4;
+	h1 ^= v1 >> FI_SHIFT_12;
+	h1 ^= v1 >> FI_SHIFT_16;
+	h1 ^= v2 << FI_SHIFT_6;
+	h1 ^= v2 << FI_SHIFT_10;
+	h1 ^= v2 << FI_SHIFT_14;
+	h1 ^= v2 << FI_SHIFT_7;
+	h1 += proto;
 
 	return h1 & FI_FLOW_TABLE_MASK;
 }
 
-
-fi_flow_node *fi_flow_find(fi_pkt *pktinfo, fi_flow_head *head)
+struct fi_flow_node *fi_flow_find(struct fi_pkt *pktinfo,
+	struct fi_flow_head *head)
 {
-	fi_flow_node *node;
+	struct fi_flow_node *node = NULL;
 
-	list_for_each_entry(node, &(head->list), list)
-	{
+	list_for_each_entry(node, &(head->list), list) {
 		if (FI_FLOW_SAME(node, pktinfo))
-		{
 			return node;
-		}
 	}
 
 	return NULL;
 }
 
-
-fi_flow_node *fi_flow_add(fi_pkt *pktinfo, fi_flow_head *head)
+struct fi_flow_node *fi_flow_add(struct fi_pkt *pktinfo,
+	struct fi_flow_head *head)
 {
-	fi_flow_node *newnode;
+	struct fi_flow_node *newnode = NULL;
 
-	/* 流规模超出上限 */
-	if (atomic_read(&g_fi_flow.nodenum) > FI_FLOW_NODE_LIMIT)
-	{
-		FI_LOGD(" : FI flow node out of limit");
+	/* flow size is out of limit */
+	if (atomic_read(&g_fi_flow.nodenum) > FI_FLOW_NODE_LIMIT) {
+		fi_logd(" : FI flow node out of limit");
 		return NULL;
 	}
 
-	newnode = (fi_flow_node *)fi_malloc(sizeof(fi_flow_node));
-	if (newnode == NULL)
-	{
-		FI_LOGD(" : FI failed to malloc for new fi flow node");
+	newnode = fi_malloc(sizeof(*newnode));
+	if (newnode == NULL) {
+		fi_logd(" : FI failed to malloc for new fi flow node");
 		return NULL;
 	}
 
@@ -92,119 +89,91 @@ fi_flow_node *fi_flow_add(fi_pkt *pktinfo, fi_flow_head *head)
 	list_add(&(newnode->list), &(head->list));
 	atomic_inc(&g_fi_flow.nodenum);
 
-	FI_LOGD(" : FI new flow node, port %u,%u.", pktinfo->sport, pktinfo->dport);
+	fi_logd(" : FI new flow node, port %u:%u",
+		pktinfo->sport, pktinfo->dport);
 
 	return newnode;
 }
 
-
-fi_flow_node *fi_flow_get(fi_pkt *pktinfo, fi_flow_head *head, uint32_t addflow)
+struct fi_flow_node *fi_flow_get(struct fi_pkt *pktinfo,
+	struct fi_flow_head *head, uint32_t addflow)
 {
-	fi_flow_node *node;
+	struct fi_flow_node *node = NULL;
 
 	node = fi_flow_find(pktinfo, head);
-	if (node != NULL)
-	{
+	if (node != NULL) {
 		node->updatetime = jiffies_to_msecs(jiffies);
 		return node;
 	}
 
 	if (addflow)
-	{
 		return fi_flow_add(pktinfo, head);
-	}
 	else
-	{
 		return NULL;
-	}
 }
 
-
-inline fi_flow_head *fi_flow_header(uint32_t index)
+struct fi_flow_head *fi_flow_header(uint32_t index)
 {
 	index = index & FI_FLOW_TABLE_MASK;
-
 	return &(g_fi_flow.flow_table[index]);
 }
-
 
 void fi_flow_init(void)
 {
 	int i;
 
 	memset(&g_fi_flow, 0, sizeof(g_fi_flow));
-
 	for (i = 0; i < FI_FLOW_TABLE_SIZE; i++)
-	{
 		INIT_LIST_HEAD(&(g_fi_flow.flow_table[i].list));
-	}
-
 	spin_lock_init(&g_fi_flow.flow_lock);
-
-	return;
 }
-
 
 void fi_flow_age(void)
 {
 	int i;
-	fi_flow_head *head;
-	fi_flow_node *node;
-	fi_flow_node *tmp;
+	struct fi_flow_head *head = NULL;
+	struct fi_flow_node *node = NULL;
+	struct fi_flow_node *tmp = NULL;
 	uint32_t curtime = jiffies_to_msecs(jiffies);
 
-	for (i = 0; i < FI_FLOW_TABLE_SIZE; i++)
-	{
+	for (i = 0; i < FI_FLOW_TABLE_SIZE; i++) {
 		head = g_fi_flow.flow_table + i;
 		if (list_empty(&(head->list)))
-		{
 			continue;
-		}
 
 		fi_flow_lock();
-		list_for_each_entry_safe(node, tmp, &(head->list), list)
-		{
-			if (curtime - node->updatetime > FI_FLOW_AGING_TIME)
-			{
+		list_for_each_entry_safe(node, tmp, &(head->list), list) {
+			if (curtime - node->updatetime > FI_FLOW_AGING_TIME) {
 				list_del(&(node->list));
-				fi_free(node, sizeof(fi_flow_node));
+				fi_free(node, sizeof(*node));
 				atomic_dec(&g_fi_flow.nodenum);
 			}
 		}
 		fi_flow_unlock();
 	}
-	return;
 }
-
 
 void fi_flow_clear(void)
 {
 	int i;
-	fi_flow_head *head;
-	fi_flow_node *node;
-	fi_flow_node *tmp;
+	struct fi_flow_head *head = NULL;
+	struct fi_flow_node *node = NULL;
+	struct fi_flow_node *tmp = NULL;
 
-	/* 遍历hash桶 */
-	for (i = 0; i < FI_FLOW_TABLE_SIZE; i++)
-	{
+	/* Traversing hash bucket */
+	for (i = 0; i < FI_FLOW_TABLE_SIZE; i++) {
 		head = g_fi_flow.flow_table + i;
 
-		/* 遍历链表, 释放流结点 */
+		/* Traversing flow node */
 		if (list_empty(&(head->list)))
-		{
 			continue;
-		}
 
 		fi_flow_lock();
-		list_for_each_entry_safe(node, tmp, &(head->list), list)
-		{
+		list_for_each_entry_safe(node, tmp, &(head->list), list) {
 			list_del(&(node->list));
-			fi_free(node, sizeof(fi_flow_node));
+			fi_free(node, sizeof(*node));
 			atomic_dec(&g_fi_flow.nodenum);
 		}
 		fi_flow_unlock();
 	}
-
-	return;
 }
-

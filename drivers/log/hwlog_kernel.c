@@ -1,49 +1,61 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2012-2018. All rights reserved.
+ * hwlog_kernel.c
  *
- * Description: drivers to write messages to logger nodes
- *      Author: wangtanyun <wangtanyun@huawei.com>
+ * drivers to write messages to logger nodes
+ *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
+#include <log/hwlog_kernel.h>
 
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
-#include <linux/version.h>
 #include <linux/uio.h>
+#include <linux/version.h>
 
 #include <log/hw_log.h>
-#include <log/hwlog_kernel.h>
 
-#define MAX_WORK_COUNT       20
-#define MAX_TAG_SIZE         64
-#define MAX_MSG_SIZE         256
-#define HWLOG_TAG            hwlog_kernel
-#define HWLOG_EXCEPTION_FS   "hwlog_exception"
-#define HWLOG_JANK_FS        "hwlog_jank"
-#define HWLOG_DUBAI_FS       "hwlog_dubai"
+#define MAX_WORK_COUNT		20
+#define MAX_TAG_SIZE		64
+#define MAX_MSG_SIZE		256
+#define HWLOG_TAG		hwlog_kernel
+#define HWLOG_EXCEPTION_FS	"hwlog_exception"
+#define HWLOG_JANK_FS		"hwlog_jank"
+#define HWLOG_DUBAI_FS		"hwlog_dubai"
 
 HWLOG_REGIST();
 static struct file *filp[HW_LOG_ID_MAX] = { NULL, NULL, NULL };
 
 static const char *log_name[HW_LOG_ID_MAX] = {
-	[HW_LOG_ID_EXCEPTION] = "/dev/" HWLOG_EXCEPTION_FS,
-	[HW_LOG_ID_JANK]      = "/dev/" HWLOG_JANK_FS,
-	[HW_LOG_ID_DUBAI]     = "/dev/" HWLOG_DUBAI_FS,
+	[HW_LOG_ID_EXCEPTION]	= "/dev/" HWLOG_EXCEPTION_FS,
+	[HW_LOG_ID_JANK]	= "/dev/" HWLOG_JANK_FS,
+	[HW_LOG_ID_DUBAI]	= "/dev/" HWLOG_DUBAI_FS,
 };
 
 static int CHECK_CODE = 0x7BCDABCD;
 
 struct hwlog_work {
-	int	waiting;
-	u16	bufid;
-	u16	prio;
-	int	taglen;
-	u16	janktagid;
-	u64	uptime;
-	u64	realtime;
-	char	tagid[MAX_MSG_SIZE];
-	int	msglen;
-	char	msg[MAX_MSG_SIZE];
+	int waiting;
+	u16 bufid;
+	u16 prio;
+	int taglen;
+	u16 janktagid;
+	u64 uptime;
+	u64 realtime;
+	char tagid[MAX_MSG_SIZE];
+	int msglen;
+	char msg[MAX_MSG_SIZE];
 	struct work_struct writelog;
 };
 
@@ -61,22 +73,22 @@ static DEFINE_RAW_SPINLOCK(hwlog_spinlock);
 
 void hwlog_write(struct work_struct *p_work)
 {
-	struct hwlog_work *work =
-			container_of(p_work, struct hwlog_work, writelog);
+	struct hwlog_work *work = container_of(p_work, struct hwlog_work, writelog);
+
 	write_hwlog_to_kernel(work);
 	work->waiting = 0;
 }
 
 static int __init hwlog_wq_init(void)
 {
-	int i;
+	unsigned int i;
 
 	if (hwlog_wq_inited) {
 		hwlog_err("create hwlog_wq again\n");
 		return 1;
 	}
 	hwlog_wq = create_singlethread_workqueue("hwlog_wq");
-	if (hwlog_wq == NULL) {
+	if (!hwlog_wq) {
 		hwlog_err("failed to create hwlog_wq\n");
 		return 1;
 	}
@@ -94,7 +106,7 @@ static int __init hwlog_wq_init(void)
 
 static void __exit hwlog_wq_destroy(void)
 {
-	unsigned int i = 0;
+	unsigned int i;
 
 	if (hwlog_wq) {
 		destroy_workqueue(hwlog_wq);
@@ -111,7 +123,7 @@ static void __exit hwlog_wq_destroy(void)
 
 static int __write_hwlog_to_kernel_init(struct hwlog_work *phwlog)
 {
-	int i = 0;
+	unsigned int i;
 	int err_count = 0;
 	mm_segment_t oldfs;
 
@@ -153,7 +165,7 @@ static int __write_to_kernel_kernel(struct hwlog_work *phwlog)
 	if (phwlog->bufid >= HW_LOG_ID_MAX)
 		return 0;
 
-	if (unlikely(phwlog == NULL)) {
+	if (unlikely(!phwlog)) {
 		hwlog_err("invalid arguments\n");
 		return -1;
 	}
@@ -164,7 +176,6 @@ static int __write_to_kernel_kernel(struct hwlog_work *phwlog)
 		return -1;
 	}
 
-	vcount = 0;
 	vec[vcount].iov_base = &CHECK_CODE;
 	vec[vcount++].iov_len = sizeof(CHECK_CODE);
 
@@ -244,7 +255,7 @@ int hwlog_to_write(int prio, int bufid, const char *tag, const char *fmt, ...)
 	if (strlen(tag) >= MAX_MSG_SIZE)
 		return 0;
 
-	if (work == NULL) {
+	if (!work) {
 		hwlog_err("hwlog_wq is full, failed.\n");
 		return -1;
 	}
@@ -270,7 +281,7 @@ int hwlog_to_jank(int tag, int prio, const char *fmt, ...)
 	va_list args;
 	int len;
 
-	if (work == NULL) {
+	if (!work) {
 		hwlog_err("hwlog_wq is full, logd_to_jank failed.\n");
 		return -1;
 	}
@@ -297,3 +308,7 @@ EXPORT_SYMBOL(hwlog_to_jank);
 
 module_init(hwlog_wq_init);
 module_exit(hwlog_wq_destroy);
+
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("drivers to write messages to logger nodes");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

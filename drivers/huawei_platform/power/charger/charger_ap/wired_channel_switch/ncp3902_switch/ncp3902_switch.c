@@ -27,6 +27,8 @@
 
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/wired_channel_switch.h>
+#include <huawei_platform/power/power_devices_info.h>
+#include <huawei_platform/power/power_dts.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -35,7 +37,7 @@
 #define HWLOG_TAG ncp3902_chsw
 HWLOG_REGIST();
 
-static int wired_channel_by_ncp3902;
+static u32 wired_channel_by_ncp3902;
 static int gpio_ncp3902_chsw_en;
 static int gpio_ncp3902_chsw_flag_n;
 static int wired_channel_ncp3902_status = WIRED_CHANNEL_RESTORE;
@@ -58,7 +60,7 @@ static int ncp3902_chsw_set_wired_channel(int flag)
 	gpio_val = (flag == WIRED_CHANNEL_CUTOFF) ? 1 : 0;
 	gpio_set_value(gpio_ncp3902_chsw_en, gpio_val);
 
-	hwlog_info("ncp3902 channel switch set en(%d)\n", gpio_val);
+	hwlog_info("ncp3902 channel switch set en=%d\n", gpio_val);
 
 	wired_channel_ncp3902_status = flag;
 
@@ -82,7 +84,7 @@ static int ncp3902_chsw_set_wired_reverse_channel(int flag)
 	ncp3902_chsw_set_wired_channel(wired_channel_flag);
 	gpio_set_value(gpio_ncp3902_chsw_flag_n, gpio_val);
 
-	hwlog_info("ncp3902 channel switch set flag_n(%d:%s)\n",
+	hwlog_info("ncp3902 channel switch set flag_n=%d:%s\n",
 		gpio_val, (gpio_val == 0) ? "high" : "low");
 
 	return 0;
@@ -96,16 +98,9 @@ static struct wired_chsw_device_ops ncp3902_chsw_ops = {
 
 static void ncp3902_chsw_parse_dts(struct device_node *np)
 {
-	int ret;
-
-	ret = of_property_read_u32(of_find_compatible_node(NULL, NULL,
-			"huawei,wired_channel_switch"),
-			"use_wireless_switch_cutoff_wired_channel",
-			&wired_channel_by_ncp3902);
-	if (ret)
-		wired_channel_by_ncp3902 = 0;
-
-	hwlog_info("wired_channel_by_ncp3902=%d\n", wired_channel_by_ncp3902);
+	(void)power_dts_read_u32_compatible("huawei,wired_channel_switch",
+		"use_wireless_switch_cutoff_wired_channel",
+		&wired_channel_by_ncp3902, 0);
 }
 
 static int ncp3902_chsw_gpio_init(struct device_node *np)
@@ -114,12 +109,12 @@ static int ncp3902_chsw_gpio_init(struct device_node *np)
 	hwlog_info("gpio_ncp3902_chsw_en=%d\n", gpio_ncp3902_chsw_en);
 
 	if (!gpio_is_valid(gpio_ncp3902_chsw_en)) {
-		hwlog_err("gpio(gpio_chgsw_en) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		return -EINVAL;
 	}
 
 	if (gpio_request(gpio_ncp3902_chsw_en, "gpio_chgsw_en")) {
-		hwlog_err("gpio(gpio_chgsw_en) request fail\n");
+		hwlog_err("gpio request fail\n");
 		return -ENOMEM;
 	}
 
@@ -131,13 +126,13 @@ static int ncp3902_chsw_gpio_init(struct device_node *np)
 	hwlog_info("gpio_ncp3902_chsw_flag_n=%d\n", gpio_ncp3902_chsw_flag_n);
 
 	if (!gpio_is_valid(gpio_ncp3902_chsw_flag_n)) {
-		hwlog_err("gpio(gpio_chgsw_flag_n) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		gpio_ncp3902_chsw_flag_n = 0;
 		return 0;
 	}
 
 	if (gpio_request(gpio_ncp3902_chsw_flag_n, "gpio_chgsw_flag_n")) {
-		hwlog_err("gpio(gpio_chgsw_flag_n) request fail\n");
+		hwlog_err("gpio request fail\n");
 		return -ENOMEM;
 	}
 
@@ -150,9 +145,15 @@ static int ncp3902_chsw_gpio_init(struct device_node *np)
 static int ncp3902_chsw_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct device_node *np = (&pdev->dev)->of_node;
+	struct device_node *np = NULL;
+	struct power_devices_info_data *power_dev_info = NULL;
 
 	hwlog_info("probe begin\n");
+
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
+	np = pdev->dev.of_node;
 
 	ncp3902_chsw_parse_dts(np);
 
@@ -166,6 +167,13 @@ static int ncp3902_chsw_probe(struct platform_device *pdev)
 			gpio_free(gpio_ncp3902_chsw_en);
 			return -1;
 		}
+	}
+
+	power_dev_info = power_devices_info_register();
+	if (power_dev_info) {
+		power_dev_info->dev_name = pdev->dev.driver->name;
+		power_dev_info->dev_id = 0;
+		power_dev_info->ver_id = 0;
 	}
 
 	hwlog_info("probe end\n");

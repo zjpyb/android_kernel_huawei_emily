@@ -1,15 +1,9 @@
-menuconfig SWITCH
-	tristate "Switch class support"
-	help
-	  Say Y here to enable switch class support. This allows
-	  monitoring switches by userspace via sysfs and uevent.
-
-if SWITCH
+#
+# huawei gpio switch for otgid drivers
+#
 
 config SWITCH_OTGID_GPIO
-	tristate "SWITCH_OTGID_GPIO"
-	depends on GPIOLIB
+	bool "SWITCH_OTGID_GPIO support"
+	default n
 	help
-	  Say Y here to enable GPIO based switch support.
-
-endif # SWITCH
+	  Say Y here to enable gpio switch for otgid driver.

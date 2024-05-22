@@ -25,21 +25,23 @@
 
 #ifdef CONFIG_HISI_BB_DIAGINFO
 int bbox_diaginfo_exception_save2fs(void);
-void mntn_ipc_msg_nb(unsigned int * msg);
+void mntn_ipc_msg_nb(unsigned int * msg, u32 msgLen);
 void bbox_ap_ipc_init(void);
 int bbox_diaginfo_init(void);
 int bbox_lpmcu_diaginfo_init(void);
-int bbox_diaginfo_register(unsigned int err_id,const char* pdata,unsigned int data_len, u64 ts);
-int bbox_diaginfo_record(unsigned int err_id,const char *fmt, ...);
+int bbox_diaginfo_register(unsigned int err_id, const char *date, const char* pdata, unsigned int data_len, u64 ts);
+int bbox_diaginfo_record(unsigned int err_id, const char *date, const char *fmt, ...);
 void cpu_up_diaginfo_record(unsigned int cpu, int status);
 void bbox_diaginfo_dump_lastmsg(void);
+void create_hisi_diaginfo_log_file(void);
 #else
 static inline int bbox_diaginfo_exception_save2fs(void) {return 0;};
 static inline int bbox_diaginfo_init(void) {return 0;};
-static inline int bbox_diaginfo_record(unsigned int err_id,const char *fmt, ...) {return 0;};
-static inline void mntn_ipc_msg_nb(unsigned int * msg) {return;};
+static inline int bbox_diaginfo_record(unsigned int err_id, const char *date, const char *fmt, ...) {return 0;};
+static inline void mntn_ipc_msg_nb(unsigned int * msg, u32 msgLen) {return;};
 static inline void cpu_up_diaginfo_record(unsigned int cpu, int status) {return;};
 static inline void bbox_diaginfo_dump_lastmsg(void) {return;};
+static inline void create_hisi_diaginfo_log_file(void) {return; };
 #endif
 
 #endif /* __HISI_BBOX_DIAGINFO_H__ */

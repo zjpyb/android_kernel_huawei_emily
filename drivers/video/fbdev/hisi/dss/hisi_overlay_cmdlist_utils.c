@@ -13,6 +13,8 @@
 
 #include "hisi_fb.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
 /*lint -e679 -e701 -e712 -e734 -e737 -e826 -e838 -e574 -e648 -e570 -e587*/
 #define MAX_ITEM_OFFSET	(0x3F)
 #define CMDLIST_ADDR_OFFSET	(0x3FFFF)
@@ -44,7 +46,7 @@ int hisi_cmdlist_get_cmdlist_idxs(dss_overlay_t *pov_req,
 		return -EINVAL;
 	}
 
-	pov_h_block_infos = (dss_overlay_block_t *)pov_req->ov_block_infos_ptr;
+	pov_h_block_infos = (dss_overlay_block_t *)(uintptr_t)pov_req->ov_block_infos_ptr;
 	for (m = 0; m < pov_req->ov_block_nums; m++) {
 		pov_h_block = &(pov_h_block_infos[m]);
 		for (i = 0; i < pov_h_block->layer_nums; i++) {
@@ -56,7 +58,7 @@ int hisi_cmdlist_get_cmdlist_idxs(dss_overlay_t *pov_req,
 			if (layer->chn_idx == DSS_RCHN_V2) {
 				cmdlist_idxs_temp |= (1 << DSS_CMDLIST_V2);
 			} else {
-				cmdlist_idxs_temp |= (1 << layer->chn_idx);
+				cmdlist_idxs_temp |= (1 << (uint32_t)layer->chn_idx);
 			}
 		}
 	}
@@ -69,13 +71,13 @@ int hisi_cmdlist_get_cmdlist_idxs(dss_overlay_t *pov_req,
 				no_ovl_idx = true;
 				cmdlist_idxs_temp |= (1 << DSS_CMDLIST_W2);
 			} else {
-				cmdlist_idxs_temp |= (1 << wb_layer->chn_idx);
+				cmdlist_idxs_temp |= (1 << (uint32_t)wb_layer->chn_idx);
 			}
 		}
 	}
 
 	if (no_ovl_idx == false) {
-		cmdlist_idxs_temp |= (1 << (DSS_CMDLIST_OV0 + pov_req->ovl_idx));
+		cmdlist_idxs_temp |= (1 << (uint32_t)(DSS_CMDLIST_OV0 + pov_req->ovl_idx));
 	}
 
 	if (cmdlist_idxs_temp & (~HISI_DSS_CMDLIST_IDXS_MAX)) {
@@ -83,12 +85,12 @@ int hisi_cmdlist_get_cmdlist_idxs(dss_overlay_t *pov_req,
 		return -EINVAL;
 	}
 
-	if (cmdlist_idxs && cmdlist_pre_idxs) {
+	if (cmdlist_idxs != NULL && cmdlist_pre_idxs != NULL) {
 		*cmdlist_idxs = cmdlist_idxs_temp;
 		*cmdlist_pre_idxs &= (~ (*cmdlist_idxs));
-	} else if (cmdlist_idxs) {
+	} else if (cmdlist_idxs != NULL) {
 		*cmdlist_idxs = cmdlist_idxs_temp;
-	} else if (cmdlist_pre_idxs) {
+	} else if (cmdlist_pre_idxs != NULL) {
 		*cmdlist_pre_idxs = cmdlist_idxs_temp;
 	} else {
 		HISI_FB_ERR("cmdlist_idxs && cmdlist_pre_idxs is NULL!\n");
@@ -193,7 +195,7 @@ void hisi_cmdlist_set_reg(struct hisi_fb_data_type *hisifd, char __iomem *addr,
 
 	index = node->item_index;
 	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
-		temp_addr = (uint64_t)(addr);
+		temp_addr = (uint64_t)(uintptr_t)(addr);
 		new_addr = (uint32_t)(temp_addr & 0xFFFFFFFF);
 	} else {
 		new_addr = (uint32_t)(addr - hisifd->dss_base + hisifd->dss_base_phy);
@@ -259,7 +261,7 @@ void hisi_cmdlist_flush_cache(struct hisi_fb_data_type *hisifd, uint32_t cmdlist
 	dss_cmdlist_node_t *_node_ = NULL;
 	struct list_head *cmdlist_heads = NULL;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL!\n");
 		return ;
 	}
@@ -269,13 +271,13 @@ void hisi_cmdlist_flush_cache(struct hisi_fb_data_type *hisifd, uint32_t cmdlist
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
 			cmdlist_heads = &(hisifd->cmdlist_data->cmdlist_head_temp[i]);
-			if (!cmdlist_heads) {
+			if (cmdlist_heads == NULL) {
 				HISI_FB_ERR("cmdlist_data is NULL!\n");
 				continue;
 			}
 
 			list_for_each_entry_safe_reverse(node, _node_, cmdlist_heads, list_node) {
-				if (node) {
+				if (node != NULL) {
 					dma_sync_single_for_device(NULL, node->header_phys,
 						node->header_len, DMA_TO_DEVICE);
 					dma_sync_single_for_device(NULL, node->item_phys,
@@ -292,18 +294,18 @@ dss_cmdlist_node_t* hisi_cmdlist_node_alloc(struct hisi_fb_data_type *hisifd)
 {
 	dss_cmdlist_node_t *node = NULL;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL!\n");
 		return NULL;
 	}
 
-	if (!(hisifd->cmdlist_pool)) {
+	if ((hisifd->cmdlist_pool)== NULL) {
 		HISI_FB_ERR("fb%d, cmdlist_pool is NULL!\n", hisifd->index);
 		return NULL;
 	}
 
 	node = (dss_cmdlist_node_t *)kzalloc(sizeof(dss_cmdlist_node_t), GFP_KERNEL);
-	if (IS_ERR(node)) {
+	if (node == NULL) {
 		HISI_FB_ERR("failed to alloc dss_cmdlist_node_t!");
 		return NULL;
 	}
@@ -314,22 +316,22 @@ dss_cmdlist_node_t* hisi_cmdlist_node_alloc(struct hisi_fb_data_type *hisifd)
 	node->item_len = roundup(CMDLIST_ITEM_LEN, PAGE_SIZE);
 
 	/* alloc buffer for header */
-	node->list_header = (cmd_header_t *)gen_pool_alloc(hisifd->cmdlist_pool, node->header_len);
-	if (!node->list_header) {
+	node->list_header = (cmd_header_t *)(uintptr_t)gen_pool_alloc(hisifd->cmdlist_pool, node->header_len);
+	if (node->list_header == NULL) {
 		HISI_FB_ERR("fb%d, header gen_pool_alloc failed!\n", hisifd->index);
 		goto err_header_alloc;
 	}
 
-	node->header_phys = gen_pool_virt_to_phys(hisifd->cmdlist_pool, (unsigned long)node->list_header);
+	node->header_phys = gen_pool_virt_to_phys(hisifd->cmdlist_pool, (unsigned long)(uintptr_t)node->list_header);
 
 	/* alloc buffer for items */
-	node->list_item = (cmd_item_t *)gen_pool_alloc(hisifd->cmdlist_pool, node->item_len);
-	if (!node->list_item) {
+	node->list_item = (cmd_item_t *)(uintptr_t)gen_pool_alloc(hisifd->cmdlist_pool, node->item_len);
+	if (node->list_item == NULL) {
 		HISI_FB_ERR("fb%d, item gen_pool_alloc failed!\n", hisifd->index);
 		goto err_item_alloc;
 	}
 
-	node->item_phys = gen_pool_virt_to_phys(hisifd->cmdlist_pool, (unsigned long)node->list_item);
+	node->item_phys = gen_pool_virt_to_phys(hisifd->cmdlist_pool, (unsigned long)(uintptr_t)node->list_item);
 
 	memset(node->list_header, 0, node->header_len);
 	memset(node->list_item, 0, node->item_len);
@@ -343,11 +345,11 @@ dss_cmdlist_node_t* hisi_cmdlist_node_alloc(struct hisi_fb_data_type *hisifd)
 	return node;
 
 err_item_alloc:
-	if (node->list_header) {
-		gen_pool_free(hisifd->cmdlist_pool, (unsigned long)node->list_header, node->header_len);
+	if (node->list_header != NULL) {
+		gen_pool_free(hisifd->cmdlist_pool, (unsigned long)(uintptr_t)node->list_header, node->header_len);
 	}
 err_header_alloc:
-	if (node) {
+	if (node != NULL) {
 		kfree(node);
 		node = NULL;
 	}
@@ -357,30 +359,30 @@ err_header_alloc:
 
 void hisi_cmdlist_node_free(struct hisi_fb_data_type *hisifd, dss_cmdlist_node_t *node)
 {
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL!\n");
 		return ;
 	}
 
-	if (!node) {
+	if (node == NULL) {
 		HISI_FB_ERR("node is NULL!\n");
 		return ;
 	}
-
+	/*lint -e413*/
 	if (hisifd->cmdlist_pool && node->list_header) {
-		gen_pool_free(hisifd->cmdlist_pool, (unsigned long)node->list_header, node->header_len);
+		gen_pool_free(hisifd->cmdlist_pool, (unsigned long)(uintptr_t)node->list_header, node->header_len);
 		node->list_header = NULL;
 	}
 
 	if (hisifd->cmdlist_pool && node->list_item) {
-		gen_pool_free(hisifd->cmdlist_pool, (unsigned long)node->list_item, node->item_len);
+		gen_pool_free(hisifd->cmdlist_pool, (unsigned long)(uintptr_t)node->list_item, node->item_len);
 		node->list_item = NULL;
 	}
 
 	kfree(node);
 	node = NULL;
 }
-
+/*lint -e413*/
 static dss_cmdlist_node_t* hisi_cmdlist_get_free_node(dss_cmdlist_node_t *node[], int *id)
 {
 	int i = 0;
@@ -431,7 +433,7 @@ int hisi_cmdlist_add_nop_node(struct hisi_fb_data_type *hisifd, uint32_t cmdlist
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
 			node = hisi_cmdlist_get_free_node(hisifd->cmdlist_data->cmdlist_nodes_temp[i], &id);
-			if (!node) {
+			if (node == NULL) {
 				HISI_FB_ERR("failed to hisi_get_free_cmdlist_node!\n");
 				return -EINVAL;
 			}
@@ -495,7 +497,7 @@ int hisi_cmdlist_add_new_node(struct hisi_fb_data_type *hisifd,
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
 			node = hisi_cmdlist_get_free_node(hisifd->cmdlist_data->cmdlist_nodes_temp[i], &id);
-			if (!node) {
+			if (node == NULL) {
 				HISI_FB_ERR("failed to hisi_get_free_cmdnode!\n");
 				return -EINVAL;
 			}
@@ -508,10 +510,12 @@ int hisi_cmdlist_add_new_node(struct hisi_fb_data_type *hisifd,
 				node->list_header->flag.bits.event_list = remove ? 0x8 : (0xE + i);
 			} else if (i < DSS_CMDLIST_OV0) {
 				node->list_header->flag.bits.event_list = remove ? 0x8 : (0x16 + i);
+		#if defined(CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V510)
 			} else if (i == DSS_CMDLIST_V2) {
 				node->list_header->flag.bits.event_list = remove ? 0x8 : 0x16;
 			} else if (i == DSS_CMDLIST_W2) {
 				node->list_header->flag.bits.event_list = remove ? 0x8 : 0x20;
+		#endif
 			} else {
 				node->list_header->flag.bits.event_list = remove ? 0x8 : (0xE + i);
 			}
@@ -620,7 +624,11 @@ int hisi_cmdlist_check_cmdlist_state(struct hisi_fb_data_type *hisifd, uint32_t 
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
 			while (1) {
 				tmp = inp32(cmdlist_base + CMDLIST_CH0_STATUS + i * offset);
+			#ifdef CONFIG_HISI_DSS_CMDLIST_LAST_USED
 				if (((tmp & 0xF) == 0x0) || delay_count > 5000) {
+			#else
+				if (((tmp & 0xF) == 0x7) || delay_count > 5000) {
+			#endif
 					is_timeout = (delay_count > 5000) ? true : false;
 					delay_count = 0;
 					break;
@@ -631,7 +639,11 @@ int hisi_cmdlist_check_cmdlist_state(struct hisi_fb_data_type *hisifd, uint32_t 
 			}
 
 			if (is_timeout) {
+			#ifdef CONFIG_HISI_DSS_CMDLIST_LAST_USED
 				HISI_FB_ERR("cmdlist_ch%d not in idle state,ints=0x%x !\n", i, tmp);
+			#else
+				HISI_FB_ERR("cmdlist_ch%d not in pending state,ints=0x%x !\n", i, tmp);
+			#endif
 				ret = -1;
 			}
 		}
@@ -646,6 +658,9 @@ int hisi_cmdlist_check_cmdlist_state(struct hisi_fb_data_type *hisifd, uint32_t 
 ** stop the pending state for one new frame
 ** if the current cmdlist status is e_status_wait.
 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winteger-overflow"
+
 int hisi_cmdlist_exec(struct hisi_fb_data_type *hisifd, uint32_t cmdlist_idxs)
 {
 	char __iomem *cmdlist_base = NULL;
@@ -673,7 +688,11 @@ int hisi_cmdlist_exec(struct hisi_fb_data_type *hisifd, uint32_t cmdlist_idxs)
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
 			while (1) {
 				tmp = inp32(cmdlist_base + CMDLIST_CH0_STATUS + i * offset);
+		#ifdef CONFIG_HISI_DSS_CMDLIST_LAST_USED
 				if (((tmp & 0xF) == 0x0) || delay_count > 500) {
+		#else
+				if (((tmp & 0xF) == 0x7) || delay_count > 500) {
+		#endif
 					is_timeout = (delay_count > 500) ? true : false;
 					delay_count = 0;
 					break;
@@ -684,7 +703,11 @@ int hisi_cmdlist_exec(struct hisi_fb_data_type *hisifd, uint32_t cmdlist_idxs)
 			}
 
 			if (is_timeout) {
+			#ifndef CONFIG_HISI_DSS_CMDLIST_LAST_USED
+				HISI_FB_ERR("cmdlist_ch%d not in pending state,ints=0x%x !\n", i, tmp);
+			#else
 				HISI_FB_ERR("cmdlist_ch%d not in idle state,ints=0x%x !\n", i, tmp);
+			#endif
 
 				if (g_debug_ovl_cmdlist) {
 					hisi_cmdlist_dump_all_node(hisifd, NULL, cmdlist_idxs);
@@ -699,10 +722,19 @@ int hisi_cmdlist_exec(struct hisi_fb_data_type *hisifd, uint32_t cmdlist_idxs)
 		cmdlist_idxs_temp = (cmdlist_idxs_temp >> 1);
 	}
 
+#ifndef CONFIG_HISI_DSS_CMDLIST_LAST_USED
+	/* task continue */
+	outp32(cmdlist_base + CMDLIST_TASK_CONTINUE, cmdlist_idxs);
+	if (g_debug_set_reg_val) {
+		HISI_FB_INFO("writel: [0x%x] = 0x%x\n",
+			(uint32_t)(cmdlist_base + CMDLIST_TASK_CONTINUE), cmdlist_idxs);
+	}
+#endif
 
 	return 0;
 }
 
+#pragma GCC diagnostic pop
 /*
 **start cmdlist.
 **it will set cmdlist into pending state.
@@ -782,7 +814,7 @@ int hisi_cmdlist_config_start(struct hisi_fb_data_type *hisifd, int mctl_idx, ui
 			}
 
 			if (mctl_idx >= DSS_MCTL2) {
-				if (((status_temp & 0xF) == 0x0) || ((ints_temp & 0x2) == 0x2)) {
+				if ((((uint32_t)status_temp & 0xF) == 0x0) || ((ints_temp & 0x2) == 0x2)) {
 					set_reg(cmdlist_base + CMDLIST_SWRST, 0x1, 1, i);
 				} else {
 					HISI_FB_INFO("i=%d, status_temp=0x%x, ints_temp=0x%x\n", i, status_temp, ints_temp);
@@ -816,6 +848,7 @@ int hisi_cmdlist_config_start(struct hisi_fb_data_type *hisifd, int mctl_idx, ui
 	return 0;
 }
 
+#if defined (CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V510)
 
 void hisi_mediacommon_cmdlist_config_start(struct hisi_fb_data_type *hisifd,
 	uint32_t cmdlist_idxs)
@@ -885,6 +918,7 @@ void hisi_mediacommon_cmdlist_config_start(struct hisi_fb_data_type *hisifd,
 
 	return;
 }
+#endif
 
 void hisi_cmdlist_config_mif_reset(struct hisi_fb_data_type *hisifd,
 	dss_overlay_t *pov_req, uint32_t cmdlist_idxs, int mctl_idx)
@@ -928,7 +962,7 @@ void hisi_cmdlist_config_mif_reset(struct hisi_fb_data_type *hisifd,
 
 				while (1) {
 					for (j = 1; j <= mif_sub_ch_nums; j++) {
-						tmp |= inp32(dss_base + DSS_MIF_OFFSET + MIF_STAT1 + 0x10 * (i * mif_sub_ch_nums+ j));
+						tmp |= (uint32_t)inp32(dss_base + DSS_MIF_OFFSET + MIF_STAT1 + 0x10 * (i * mif_sub_ch_nums+ j));
 					}
 
 					if (((tmp & 0x1f) == 0x0) || delay_count > 500) {
@@ -1001,7 +1035,6 @@ static bool hisifb_mctl_clear_ack_timeout(const char __iomem *mctl_base)
 		mctl_status = inp32(mctl_base + MCTL_CTL_STATUS);
 		if (((mctl_status & 0x10) == 0) || (delay_count > 500)) {
 			is_timeout = (delay_count > 500) ? true : false;
-			delay_count = 0;
 			break;
 		} else {
 			udelay(1);
@@ -1012,6 +1045,7 @@ static bool hisifb_mctl_clear_ack_timeout(const char __iomem *mctl_base)
 	return is_timeout;
 }
 
+#if   defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501)
 static void hisifb_mctl_sw_clr(struct hisi_fb_data_type *hisifd,
 	dss_overlay_t *pov_req, uint32_t cmdlist_idxs)
 {
@@ -1079,6 +1113,7 @@ static void hisifb_mctl_sw_clr(struct hisi_fb_data_type *hisifd,
 		outp32(ldi_base + LDI_CPU_ITF_INT_MSK, tmp);
 	}
 }
+#endif
 void hisi_mctl_ctl_clear(struct hisi_fb_data_type *hisifd, int mctl_idx)
 {
 	char __iomem *tmp_base;
@@ -1113,12 +1148,12 @@ void hisi_cmdlist_config_reset(struct hisi_fb_data_type *hisifd,
 	uint32_t cmdlist_idxs_temp = 0;
 	int delay_count = 0;
 	bool is_timeout = true;
-	int i = 0;
+	uint32_t i = 0;
 	int ovl_idx = 0;
 	int mctl_idx = 0;
 	int tmp = 0;
-	int ints_temp;
-	int start_sel;
+	uint32_t ints_temp;
+	uint32_t start_sel;
 	uint32_t start_sel_temp;
 
 	if (hisifd == NULL) {
@@ -1133,8 +1168,10 @@ void hisi_cmdlist_config_reset(struct hisi_fb_data_type *hisifd,
 		return;
 	}
 
+#if defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V350)
 	hisifb_mctl_sw_clr(hisifd, pov_req, cmdlist_idxs);
 	return;
+#endif
 
 	dss_base = hisifd->dss_base;
 	cmdlist_base = dss_base + DSS_CMDLIST_OFFSET;
@@ -1153,7 +1190,6 @@ void hisi_cmdlist_config_reset(struct hisi_fb_data_type *hisifd,
 		HISI_FB_ERR("mctl_idx=%d is invalid.", mctl_idx);
 		return;
 	}
-
 
 	// set  cmdlist chn pause enter
 	offset = 0x40;
@@ -1211,7 +1247,7 @@ void hisi_cmdlist_config_reset(struct hisi_fb_data_type *hisifd,
 		}
 
 
- 		hisi_cmdlist_config_mif_reset(hisifd, pov_req, cmdlist_idxs, mctl_idx);
+		hisi_cmdlist_config_mif_reset(hisifd, pov_req, cmdlist_idxs, mctl_idx);
 
 		if (ovl_idx == DSS_OVL0) {
 			if (is_mipi_video_panel(hisifd) || (g_ldi_data_gate_en == 0)) {
@@ -1222,7 +1258,7 @@ void hisi_cmdlist_config_reset(struct hisi_fb_data_type *hisifd,
 				mctl_sys_base = hisifd->dss_module.mctl_sys_base;
 				set_reg(mctl_sys_base + MCTL_OV0_FLUSH_EN, 0xf, 32, 0);
 				tmp = inp32(mctl_sys_base + MCTL_MOD17_DBG);
-				if ((tmp | 0x2) == 0x0) {
+				if ((tmp & 0x2) == 0x0) {
 					HISI_FB_INFO("itf0 flush_en status invaild, MCTL_MOD17_DBG=0x%x\n", tmp);
 				}
 
@@ -1270,7 +1306,7 @@ int hisi_cmdlist_config_stop(struct hisi_fb_data_type *hisifd, uint32_t cmdlist_
 {
 	dss_overlay_t *pov_req = NULL;
 	char __iomem *cmdlist_base = NULL;
-	int i = 0;
+	uint32_t i = 0;
 	uint32_t tmp = 0;
 	uint32_t offset = 0;
 
@@ -1437,7 +1473,7 @@ int hisi_cmdlist_dump_all_node (struct hisi_fb_data_type *hisifd, dss_overlay_t 
 		return -EINVAL;
 	}
 
-	if (pov_req) {
+	if (pov_req != NULL) {
 		if (pov_req->wb_enable)
 			wb_compose_type = pov_req->wb_compose_type;
 	}
@@ -1445,7 +1481,7 @@ int hisi_cmdlist_dump_all_node (struct hisi_fb_data_type *hisifd, dss_overlay_t 
 	cmdlist_idxs_temp = cmdlist_idxs;
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if (0x1 == (cmdlist_idxs_temp & 0x1)) {
-			if (pov_req && pov_req->wb_enable) {
+			if (pov_req != NULL && pov_req->wb_enable) {
 				if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
 					hisi_dump_cmdlist_one_node(&(hisifd->media_common_cmdlist_data->cmdlist_head_temp[i]), i);//lint !e732
 				} else {
@@ -1474,7 +1510,7 @@ int hisi_cmdlist_del_node (struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_
 		return -EINVAL;
 	}
 
-	if (pov_req) {
+	if (pov_req != NULL) {
 		if (pov_req->wb_enable)
 			wb_compose_type = pov_req->wb_compose_type;
 	}
@@ -1482,14 +1518,14 @@ int hisi_cmdlist_del_node (struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_
 	cmdlist_idxs_temp = cmdlist_idxs;
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
-			if (pov_req && pov_req->wb_enable) {
+			if (pov_req != NULL && pov_req->wb_enable) {
 				if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
 					hisi_cmdlist_del_all_node(&(hisifd->media_common_cmdlist_data->cmdlist_head_temp[i]));
 				} else {
 					hisi_cmdlist_del_all_node(&(hisifd->cmdlist_data_tmp[wb_compose_type]->cmdlist_head_temp[i]));
 				}
 			} else {
-				if (hisifd->cmdlist_data) {
+				if (hisifd->cmdlist_data != NULL) {
 					hisi_cmdlist_del_all_node(&(hisifd->cmdlist_data->cmdlist_head_temp[i]));
 				}
 			}
@@ -1538,7 +1574,7 @@ static dss_cmdlist_data_t* hisi_cmdlist_data_alloc(struct hisi_fb_data_type *his
 	}
 
 	cmdlist_data = (dss_cmdlist_data_t *)kmalloc(sizeof(dss_cmdlist_data_t), GFP_ATOMIC);
-	if (cmdlist_data) {
+	if (cmdlist_data != NULL) {
 		memset(cmdlist_data, 0, sizeof(dss_cmdlist_data_t));
 	} else {
 		HISI_FB_ERR("failed to kmalloc cmdlist_data!\n");
@@ -1572,7 +1608,7 @@ static dss_cmdlist_info_t* hisi_cmdlist_info_alloc(struct hisi_fb_data_type *his
 	}
 
 	cmdlist_info = (dss_cmdlist_info_t *)kmalloc(sizeof(dss_cmdlist_info_t), GFP_ATOMIC);
-	if (cmdlist_info) {
+	if (cmdlist_info != NULL) {
 		memset(cmdlist_info, 0, sizeof(dss_cmdlist_info_t));
 	} else {
 		HISI_FB_ERR("failed to kmalloc cmdlist_info!\n");
@@ -1601,7 +1637,7 @@ static dss_media_common_info_t* hisi_media_common_info_alloc(struct hisi_fb_data
 	}
 
 	mdc_info = (dss_media_common_info_t *)kmalloc(sizeof(dss_media_common_info_t), GFP_ATOMIC);
-	if (mdc_info) {
+	if (mdc_info != NULL) {
 		memset(mdc_info, 0, sizeof(dss_media_common_info_t));
 	} else {
 		HISI_FB_ERR("failed to kmalloc copybit_info!\n");
@@ -1645,7 +1681,7 @@ void hisi_cmdlist_data_get_offline(struct hisi_fb_data_type *hisifd, dss_overlay
 		hisifd->cmdlist_data = hisifd->cmdlist_data_tmp[0];
 	}
 
-	if (!hisifd->cmdlist_data) {
+	if (hisifd->cmdlist_data == NULL) {
 		HISI_FB_ERR("fb%d, cmdlist_data is NULL!\n", hisifd->index);
 	}
 }
@@ -1658,7 +1694,7 @@ static int hisi_cmdlist_pool_init(struct hisi_fb_data_type *hisifd)
 	size_t one_cmdlist_pool_size = 0;
 	size_t tmp = 0;
 
-	if (!hisifd || !(hisifd->pdev)) {
+	if (hisifd == NULL || hisifd->pdev == NULL) {
 		HISI_FB_ERR("hisifd is NULL!\n");
 		return -EINVAL;
 	}
@@ -1705,7 +1741,7 @@ static int hisi_cmdlist_pool_init(struct hisi_fb_data_type *hisifd)
 		goto err_pool_create;
 	}
 
-	if (gen_pool_add_virt(hisifd->cmdlist_pool, (unsigned long)hisifd->cmdlist_pool_vir_addr,
+	if (gen_pool_add_virt(hisifd->cmdlist_pool, (unsigned long)(uintptr_t)hisifd->cmdlist_pool_vir_addr,
 			hisifd->cmdlist_pool_phy_addr, hisifd->sum_cmdlist_pool_size, -1) != 0) {
 		HISI_FB_ERR("fb%d, cmdlist_pool gen_pool_add failed!", hisifd->index);
 		goto err_pool_add;
@@ -1714,7 +1750,7 @@ static int hisi_cmdlist_pool_init(struct hisi_fb_data_type *hisifd)
 	return 0;
 
 err_pool_add:
-	if (hisifd->cmdlist_pool) {
+	if (hisifd->cmdlist_pool != NULL) {
 		gen_pool_destroy(hisifd->cmdlist_pool);
 		hisifd->cmdlist_pool = NULL;
 	}
@@ -1725,12 +1761,12 @@ err_pool_create:
 
 static void hisi_cmdlist_pool_deinit(struct hisi_fb_data_type *hisifd)
 {
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL!\n");
 		return ;
 	}
 
-	if (hisifd->cmdlist_pool) {
+	if (hisifd->cmdlist_pool != NULL) {
 		gen_pool_destroy(hisifd->cmdlist_pool);
 		hisifd->cmdlist_pool = NULL;
 	}
@@ -1795,22 +1831,22 @@ int hisi_cmdlist_deinit(struct hisi_fb_data_type *hisifd)
 	}
 
 	if (hisifd->index == AUXILIARY_PANEL_IDX) {
-		if (hisifd->cmdlist_info) {
+		if (hisifd->cmdlist_info != NULL) {
 			kfree(hisifd->cmdlist_info);
 			hisifd->cmdlist_info = NULL;
 		}
 
-		if (hisifd->copybit_info) {
+		if (hisifd->copybit_info != NULL) {
 			kfree(hisifd->copybit_info);
 			hisifd->copybit_info = NULL;
 		}
 	} else if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
-		if (hisifd->media_common_cmdlist_data) {
+		if (hisifd->media_common_cmdlist_data != NULL) {
 			kfree(hisifd->media_common_cmdlist_data);
 			hisifd->media_common_cmdlist_data = NULL;
 		}
 
-		if (hisifd->media_common_info) {
+		if (hisifd->media_common_info != NULL) {
 			kfree(hisifd->media_common_info);
 			hisifd->media_common_info = NULL;
 		}
@@ -1837,4 +1873,5 @@ int hisi_cmdlist_deinit(struct hisi_fb_data_type *hisifd)
 
 	return 0;
 }
+#pragma GCC diagnostic pop
 /*lint +e679 +e701 +e712 +e734 +e737 +e826 +e838 +e574 +e648 +e570 +e587*/

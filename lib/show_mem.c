@@ -9,13 +9,13 @@
 #include <linux/quicklist.h>
 #include <linux/cma.h>
 
-void show_mem(unsigned int filter)
+void show_mem(unsigned int filter, nodemask_t *nodemask)
 {
 	pg_data_t *pgdat;
 	unsigned long total = 0, reserved = 0, highmem = 0;
 
 	printk("Mem-Info:\n");
-	show_free_areas(filter);
+	show_free_areas(filter, nodemask);
 
 	for_each_online_pgdat(pgdat) {
 		unsigned long flags;
@@ -48,14 +48,5 @@ void show_mem(unsigned int filter)
 #endif
 #ifdef CONFIG_MEMORY_FAILURE
 	printk("%lu pages hwpoisoned\n", atomic_long_read(&num_poisoned_pages));
-#endif
-#ifdef CONFIG_HUAWEI_SLAB_UNRECLAIMABLE_THRESHOLD
-	bool is_print_slabinfo = is_exceed_slab_unreclaimable_threshold(filter);
-
-	if (is_print_slabinfo) {
-		pr_warn("slab_unreclaimable exceeds the threshold!\n");
-		print_all_slabinfo();
-		WARN_ON(1);
-	}
 #endif
 }

@@ -216,6 +216,11 @@ int get_refs_or_deltas_data_test(struct mxt_data *data, int data_uplimit,
 	int Data_Max, Data_Min, Data_ave;
 	int Data_count = 0;
 
+	if ((!data) || (!data->T37_buf) || (data->T37_buf_size == 0)) {
+		TS_LOG_ERR("%s, param invalid\n", __func__);
+		return 0;
+	}
+
 	Data_Max = data->T37_buf[0];
 	Data_Min = data->T37_buf[0];
 
@@ -999,7 +1004,7 @@ int mxt_t25_selftest(struct mxt_data *data, int cmd)
 	mdelay(100);
 	for (i = 0; i < MXT_T25_PROCESS_RETRY; i++) {
 		process_messages(data, MXT_T25_PROCESS_TIMEOUT);
-		TS_LOG_DEBUG("%x %x %x %x %x %x %x\n",
+		TS_LOG_DEBUG("%x %x %x %x %x %x\n",
 			     data->t25_msg[0], data->t25_msg[1],
 			     data->t25_msg[2], data->t25_msg[3],
 			     data->t25_msg[4], data->t25_msg[5]);
@@ -1058,7 +1063,7 @@ static ssize_t mxt_cmd_store(struct device *dev,
 	if (sscanf(buf, "%x", &cmd) >= 1) {
 		TS_LOG_DEBUG("[mxt] cmd %u (%d): %s\n", cmd,
 			     ARRAY_SIZE(command_list), command_list[cmd]);
-		if (cmd >= 0 && cmd < ARRAY_SIZE(command_list)) {
+		if (cmd < ARRAY_SIZE(command_list)) {
 			if (cmd == 0) {
 				return count;
 			}

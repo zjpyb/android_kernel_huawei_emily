@@ -44,6 +44,7 @@
 #include <linux/notifier.h>
 #include <linux/atomic.h>
 #include <hisi/hisi_lmk/lowmem_killer.h>
+#include <log/log_usertype.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace/lowmemorykiller.h"
@@ -52,10 +53,15 @@
 #include <huawei_platform/power/hw_kcollect.h>
 #endif
 
+#if defined CONFIG_LOG_JANK
+#include <huawei_platform/log/log_jank.h>
+#include <huawei_platform/log/janklogconstants.h>
+#endif
+
 #ifdef CONFIG_HW_ZEROHUNG
 #include <chipset_common/hwzrhung/zrhung.h>
 #endif
-
+#include <chipset_common/hwmemcheck/memcheck.h>
 static u32 lowmem_debug_level = 1;
 static short lowmem_adj[6] = {
 	0,
@@ -74,6 +80,10 @@ static int lowmem_minfree[6] = {
 
 static int lowmem_minfree_size = 4;
 #if defined CONFIG_LOG_JANK
+static int jank_buffer_size = 255;
+static bool is_first_read_total_memory = true;
+static bool is_killed_log_enable;
+static int base_size = 5000000; // ~5G
 static ulong lowmem_kill_count;
 static ulong lowmem_free_mem;
 #endif
@@ -114,6 +124,38 @@ static unsigned long lowmem_count(struct shrinker *s,
 		global_node_page_state(NR_INACTIVE_FILE);
 }
 
+#ifdef CONFIG_LOG_JANK
+static void upload_to_jank(struct task_struct *tsk, short oom_adj)
+{
+	if (is_first_read_total_memory) {
+		is_first_read_total_memory = false;
+		is_killed_log_enable =
+			((totalram_pages << (PAGE_SHIFT - 10)) > base_size) &&
+			(get_logusertype_flag() == BETA_USER);
+	}
+	if (is_killed_log_enable) {
+		if (tsk->mm) {
+			unsigned long anon;
+			unsigned long file;
+			unsigned long shmem;
+			char jbuffer[jank_buffer_size];
+
+			memset(jbuffer, 0, jank_buffer_size);
+			anon = get_mm_counter(tsk->mm, MM_ANONPAGES);
+			file = get_mm_counter(tsk->mm, MM_FILEPAGES);
+			shmem = get_mm_counter(tsk->mm, MM_SHMEMPAGES);
+			snprintf(jbuffer, jank_buffer_size,
+				 "lmk,%d,%s,%hd,%luKb,%luKb,%luKb,lmk",
+				 tsk->pid, tsk->comm, oom_adj,
+				 anon << (PAGE_SHIFT - 10),
+				 file << (PAGE_SHIFT - 10),
+				 shmem << (PAGE_SHIFT - 10));
+			LOG_JANK_D(JLID_PROCESS_KILLED, "%s", jbuffer);
+		}
+	}
+}
+#endif
+
 static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 {
 	struct task_struct *tsk;
@@ -126,7 +168,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	int selected_tasksize = 0;
 	short selected_oom_score_adj;
 	int array_size = ARRAY_SIZE(lowmem_adj);
-	int other_free = global_page_state(NR_FREE_PAGES) - totalreserve_pages;
+	int other_free = global_zone_page_state(NR_FREE_PAGES) - totalreserve_pages;
 	int other_file = global_node_page_state(NR_FILE_PAGES) -
 				global_node_page_state(NR_SHMEM) -
 				global_node_page_state(NR_UNEVICTABLE) -
@@ -234,6 +276,9 @@ kill_selected:
 		hwkillinfo(selected->tgid, 0);
 #endif
 		task_lock(selected);
+#ifdef CONFIG_LOG_JANK
+		upload_to_jank(selected, selected_oom_score_adj);
+#endif
 		send_sig(SIGKILL, selected, 0);
 		if (selected->mm)
 			task_set_lmk_waiting(selected);
@@ -252,7 +297,11 @@ kill_selected:
 			     free, ret_tune, sc->gfp_mask);
 
 		hisi_lowmem_dbg(selected_oom_score_adj);
-
+		memcheck_report_lmk_oom(selected->pid, selected->tgid,
+					selected->comm, KILLTYPE_KERNEL_LMK,
+					selected_oom_score_adj,
+					selected_tasksize *
+					(unsigned long)PAGE_SIZE);
 #ifdef CONFIG_HW_ZEROHUNG
 #ifdef CONFIG_HISI_MULTI_KILL
 		if (count  == 0)

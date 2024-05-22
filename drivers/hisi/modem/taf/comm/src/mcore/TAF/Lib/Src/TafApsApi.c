@@ -54,6 +54,10 @@
 
 #include "PsCommonDef.h"
 #include "TafApsApi.h"
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+#include "Taf_Aps.h"
+#include "TafApsMntn.h"
+#endif
 
 
 
@@ -1331,6 +1335,7 @@ VOS_UINT32 TAF_PS_PppDialOrig(
     return ulResult;
 }
 
+#if(FEATURE_ON == FEATURE_LTE)
 
 VOS_UINT32 TAF_PS_GetLteCsInfo(
     VOS_UINT32                          ulModuleId,
@@ -1423,6 +1428,7 @@ VOS_UINT32 TAF_PS_SetPdpProfInfo(
 
     return ulResult;
 }
+#endif
 
 
 
@@ -1433,6 +1439,9 @@ VOS_UINT32 TAF_PS_GetCidSdfParaInfo(
     TAF_SDF_PARA_QUERY_INFO_STRU       *pstSdfQueryInfo
 )
 {
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    VOS_UINT8                           ucNum;
+#endif
     VOS_UINT32                          ulResult;
     TAF_PS_SDF_INFO_REQ_STRU            stSdfInfoReq;
     VOS_UINT16                          usModemId;
@@ -1460,6 +1469,23 @@ VOS_UINT32 TAF_PS_GetCidSdfParaInfo(
 
     TAF_MEM_SET_S(pstSdfQueryInfo, sizeof(TAF_SDF_PARA_QUERY_INFO_STRU), 0x00, sizeof(TAF_SDF_PARA_QUERY_INFO_STRU));
 /* 同步方式目前仅支持C核 */
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    for (ucNum = 1; ucNum <= TAF_MAX_CID_NV; ucNum++)
+    {
+        if (VOS_OK == TAF_APS_GetSdfParaInfoByModemId(usModemId, ucNum,
+                              &(pstSdfQueryInfo->astSdfPara[pstSdfQueryInfo->ulSdfNum])))
+        {
+            pstSdfQueryInfo->ulSdfNum ++;
+        }
+    }
+    ulResult = VOS_OK;
+
+    /* 同步消息勾包 */
+    TAF_APS_TraceSyncMsgByModemId(usModemId,
+                                  ID_MSG_TAF_PS_GET_CID_SDF_REQ,
+                                  (VOS_UINT8 *)pstSdfQueryInfo,
+                                  sizeof(TAF_SDF_PARA_QUERY_INFO_STRU));
+#endif
 
     return ulResult;
 }
@@ -1492,6 +1518,20 @@ VOS_UINT32 TAF_PS_GetUnusedCid(
     }
 
 /* 同步方式目前仅支持C核 */
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    /* 需找可用于拨号的CID */
+    *puCid = TAF_APS_FindCidForDialByModemId(enModemId, ulModuleId);
+
+    if ( TAF_INVALID_CID == *puCid )
+    {
+        ulResult = VOS_ERR;
+    }
+
+    /* 同步消息勾包 */
+    TAF_APS_TraceSyncMsgByModemId(enModemId, ID_MSG_TAF_PS_GET_UNUSED_CID_REQ,
+                         puCid,
+                         sizeof(VOS_UINT8));
+#endif
 
     return ulResult;
 }
@@ -1525,6 +1565,7 @@ VOS_UINT32 TAF_PS_GetDynamicDnsInfo(
     return ulResult;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 TAF_PS_SetCqosPriInfo(
     VOS_UINT32                                      ulModuleId,
@@ -1553,6 +1594,7 @@ VOS_UINT32 TAF_PS_SetCqosPriInfo(
 
     return ulResult;
 }
+#endif
 
 
 VOS_UINT32 TAF_PS_SetApDsFlowRptCfg(
@@ -1670,6 +1712,7 @@ VOS_UINT32 TAF_PS_GetDsFlowNvWriteCfg(
     return ulResult;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 TAF_PS_SetCtaInfo(
     VOS_UINT32                          ulModuleId,
@@ -1755,6 +1798,7 @@ VOS_UINT32 TAF_PS_SetCdataDialModeInfo(
 
     return ulResult;
 }
+#endif
 
 
 VOS_UINT32 TAF_PS_SetImsPdpCfg(
@@ -1786,6 +1830,7 @@ VOS_UINT32 TAF_PS_SetImsPdpCfg(
     return ulResult;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 TAF_PS_SetCdmaDormantTimer(
     VOS_UINT32                          ulModuleId,
@@ -1853,6 +1898,11 @@ TAF_PS_CDATA_BEAR_STATUS_ENUM_UINT8 TAF_PS_GetCdataBearStatus(
 
     ucCdataBearStatus = TAF_PS_CDATA_BEAR_STATUS_INACTIVE;
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
+    ucCdataBearStatus = TAF_APS_GetCdataBearStatusCommFun(ucPdpId);
+#endif
+#endif
 
     return ucCdataBearStatus;
 }
@@ -1933,6 +1983,7 @@ VOS_UINT32 TAF_PS_GetMipMode(
     return ulResult;
 }
 
+#endif
 
 
 VOS_UINT32 TAF_PS_SetVzwApneInfo(

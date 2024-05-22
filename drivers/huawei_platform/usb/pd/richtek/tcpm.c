@@ -223,11 +223,11 @@ int tcpm_typec_change_role(
 bool tcpm_inquire_cust_src2_cable_vdo(
         struct tcpc_device *tcpc_dev, uint32_t *vdos, int size)
 {
-	pd_port_t *pd_port;
 	if(!tcpc_dev){
 		return false;
 	}
-	pd_port = &tcpc_dev->pd_port;
+	pd_port_t *pd_port = &tcpc_dev->pd_port;
+
 	if (size < VDO_MAX_SIZE){
 		return false;
 	}
@@ -333,7 +333,7 @@ void tcpm_set_dpm_caps(struct tcpc_device *tcpc_dev, uint32_t caps)
 
 int tcpm_power_role_swap(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -358,7 +358,7 @@ EXPORT_SYMBOL(tcpm_power_role_swap);
 
 int tcpm_data_role_swap(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -383,7 +383,7 @@ EXPORT_SYMBOL(tcpm_data_role_swap);
 
 int tcpm_vconn_swap(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -403,7 +403,7 @@ EXPORT_SYMBOL(tcpm_vconn_swap);
 
 int tcpm_goto_min(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -423,7 +423,7 @@ EXPORT_SYMBOL(tcpm_goto_min);
 
 int tcpm_soft_reset(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -443,7 +443,7 @@ EXPORT_SYMBOL(tcpm_soft_reset);
 
 int tcpm_hard_reset(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -464,7 +464,7 @@ EXPORT_SYMBOL(tcpm_hard_reset);
 int tcpm_get_source_cap(
 	struct tcpc_device *tcpc_dev, struct tcpm_power_cap *cap)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -493,7 +493,7 @@ EXPORT_SYMBOL(tcpm_get_source_cap);
 int tcpm_get_sink_cap(
 	struct tcpc_device *tcpc_dev, struct tcpm_power_cap *cap)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -543,7 +543,7 @@ EXPORT_SYMBOL(tcpm_get_local_sink_cap);
 
 int tcpm_bist_cm2(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -563,7 +563,7 @@ EXPORT_SYMBOL(tcpm_bist_cm2);
 
 int tcpm_request(struct tcpc_device *tcpc_dev, int mv, int ma)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -585,7 +585,7 @@ EXPORT_SYMBOL(tcpm_request);
 
 int tcpm_error_recovery(struct tcpc_device *tcpc_dev)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -603,7 +603,7 @@ int tcpm_error_recovery(struct tcpc_device *tcpc_dev)
 
 int tcpm_discover_cable(struct tcpc_device *tcpc_dev, uint32_t *vdos)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -636,7 +636,7 @@ int tcpm_discover_cable(struct tcpc_device *tcpc_dev, uint32_t *vdos)
 int tcpm_vdm_request_id(struct tcpc_device *tcpc_dev,
 				uint8_t *cnt, uint32_t *vdos)
 {
-	bool ret;
+	bool ret = false;
 	pd_port_t *pd_port = &tcpc_dev->pd_port;
 
 	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED)
@@ -819,5 +819,16 @@ int tcpm_typec_disable_function(
 
 	return tcpc_typec_enable(tcpc_dev);
 }
-#endif
+
+int tcpm_typec_vbus_detect(struct tcpc_device *tcpc_dev)
+{
+	if (!tcpc_dev)
+		return 0; /* vbus not valid */
+
+	if (tcpc_dev->vbus_level == TCPC_VBUS_VALID)
+		return 1; /* vbus valid,5V */
+	else
+		return 0;
+}
+#endif /* CONFIG_POGO_PIN */
 #endif /* CONFIG_USB_POWER_DELIVERY */

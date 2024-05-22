@@ -38,7 +38,7 @@ int kernel_stp_scanner_init(void)
 
 int kernel_stp_scanner_register(stp_cb callbackfunc)
 {
-	struct kernel_stp_scanner_node *listnode;
+	struct kernel_stp_scanner_node *listnode = NULL;
 	struct kernel_stp_scanner_node *p = NULL;
 	int repeat_count = 0;
 
@@ -86,9 +86,8 @@ static void kernel_stp_do_callback(struct work_struct *data)
 					struct kernel_stp_scan_work, work);
 
 	ret = work_node->callbackfunc();
-	if (ret != 0) {
+	if (ret != 0)
 		KSTPLogError(TAG, "kernel stp do callbackfunc failed!");
-	}
 	kfree(work_node);
 }
 
@@ -98,7 +97,7 @@ void kernel_stp_scanner(void)
 
 	mutex_lock(&stp_scanner_list_lock);
 	list_for_each_entry(p, &g_stp_scanner_node.stp_scanner_list, stp_scanner_list) {
-		struct kernel_stp_scan_work *work_node;
+		struct kernel_stp_scan_work *work_node = NULL;
 
 		work_node = kzalloc(sizeof(struct kernel_stp_scan_work), GFP_KERNEL);
 		if (work_node == NULL) {
@@ -116,7 +115,8 @@ void kernel_stp_scanner(void)
 
 void kernel_stp_scanner_exit(void)
 {
-	struct kernel_stp_scanner_node *pos, *next;
+	struct kernel_stp_scanner_node *pos = NULL;
+	struct kernel_stp_scanner_node *next = NULL;
 
 	if (g_kernel_stp_scan_wq != NULL) {
 		destroy_workqueue(g_kernel_stp_scan_wq);

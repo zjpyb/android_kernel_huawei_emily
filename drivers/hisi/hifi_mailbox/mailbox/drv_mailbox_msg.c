@@ -27,16 +27,16 @@ int BSP_CPU_StateGet(int CpuID)
 /*lint -e818*/
 void mailbox_msg_receiver(void *mb_buf, void *handle, void *data)
 {
-	struct mb_queue * queue;  /*邮箱buffer临时句柄，用于传给用户回调*/
-	struct mb_buff	* mbuf = ( struct mb_buff  *)mb_buf;
+	struct mb_queue * queue = NULL;  /*邮箱buffer临时句柄，用于传给用户回调*/
+	struct mb_buff * mbuf = (struct mb_buff *)mb_buf;
 	mb_msg_cb  func = (mb_msg_cb)handle;
 
     queue = &mbuf->usr_queue;
-    if (func) {
-        func(data, (void *)queue, queue->size);
-    } else {
-        (void)mailbox_logerro_p1(MAILBOX_ERR_GUT_READ_CALLBACK_NOT_FIND, mbuf->mailcode);
-    }
+	if (func)
+		func(data, queue, queue->size);
+	else
+		(void)mailbox_logerro_p1(MAILBOX_ERR_GUT_READ_CALLBACK_NOT_FIND,
+				mbuf->mailcode);
 }
 /*lint +e611*/
 /*lint +e818*/
@@ -95,11 +95,11 @@ exit_out:
 /*lint +e801*/
 
 MAILBOX_GLOBAL unsigned int mailbox_read_msg_data(
-                void                   *mail_handle,
+                struct mb_queue *mail_handle,
                 char                   *buff,
                 unsigned int          *size)
 {
-    struct mb_queue *pMailQueue = (struct mb_queue *)mail_handle;
+    struct mb_queue *pMailQueue = mail_handle;
 
     if ((MAILBOX_NULL == pMailQueue) || (MAILBOX_NULL == buff) || (MAILBOX_NULL == size)) {
         return (unsigned int)mailbox_logerro_p1(MAILBOX_ERR_GUT_INPUT_PARAMETER, 0);
@@ -122,7 +122,9 @@ MAILBOX_GLOBAL unsigned int mailbox_read_msg_data(
 }
 /*lint -e838*/
 
+#ifdef CONFIG_HIFI_DSP_ONE_TRACK
 extern bool is_hifi_loaded(void);
+#endif
 MAILBOX_EXTERN unsigned int mailbox_send_msg(
                 unsigned int            mailcode,
                 const void              *data,
@@ -131,8 +133,10 @@ MAILBOX_EXTERN unsigned int mailbox_send_msg(
 	int  ret_val = MAILBOX_OK;
 	unsigned int  try_go_on = MAILBOX_TRUE;
 	int  try_times = 0;
+	#ifdef CONFIG_HIFI_DSP_ONE_TRACK
 	if (!is_hifi_loaded())
 		return MAILBOX_HIFI_NOT_LOAD;
+	#endif
 	ret_val= BSP_CPU_StateGet(mailbox_get_dst_id(mailcode));
 	if (!ret_val) {
 		return MAILBOX_TARGET_NOT_READY;
@@ -155,8 +159,6 @@ MAILBOX_EXTERN unsigned int mailbox_send_msg(
 	}
 
 	if (MAILBOX_OK != ret_val) {
-		/*mailbox_show(mailcode,0);*/
-		/*mailbox_assert(ret_val);*/
 		if ((int)MAILBOX_FULL != ret_val) {
 			ret_val = (int)MAILBOX_ERRO;
 		}

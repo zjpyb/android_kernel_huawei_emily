@@ -1,70 +1,32 @@
 #ifndef UAPI_UFS_H_
 #define UAPI_UFS_H_
 
-#define MAX_QUERY_IDN	0x12
+#define TURBO_ZONE_INFO_SIZE (sizeof(struct tz_status))
 
-/* Flag idn for Query Requests*/
-enum flag_idn {
-	QUERY_FLAG_IDN_FDEVICEINIT		= 0x01,
-	QUERY_FLAG_IDN_PERMANENT_WPE		= 0x02,
-	QUERY_FLAG_IDN_PWR_ON_WPE		= 0x03,
-	QUERY_FLAG_IDN_BKOPS_EN			= 0x04,
-	QUERY_FLAG_IDN_RESERVED1		= 0x05,
-	QUERY_FLAG_IDN_PURGE_ENABLE		= 0x06,
-	QUERY_FLAG_IDN_RESERVED2		= 0x07,
-	QUERY_FLAG_IDN_FPHYRESOURCEREMOVAL      = 0x08,
-	QUERY_FLAG_IDN_BUSY_RTC			= 0x09,
+struct tz_status {
+	uint8_t enable;		/* 0: disable; 1: enable; */
+	uint8_t lu_number;      /* LU number */
+	uint16_t max_ec;	/* max EC of Turbo Zone */
+	uint16_t avg_ec;	/* average EC of turbo zone */
+	uint8_t return_en;      /* return to tlc enable */
+	uint8_t return_back_en; /* return back to slc enable */
+	uint32_t max_lba;       /* max LBA(4KB unit) */
+	uint32_t total_vpc;     /* Total VPC, Valid when TurboZone Enable */
+	uint8_t close_qcnt;     /* blocks to return */
+	uint8_t forbidden;      /* already used once, cannot enable again */
+	uint8_t reserved[2];    /* reserved */
 };
 
-/* Attribute idn for Query requests */
-enum attr_idn {
-	QUERY_ATTR_IDN_BOOT_LU_EN		= 0x00,
-	QUERY_ATTR_IDN_RESERVED			= 0x01,
-	QUERY_ATTR_IDN_POWER_MODE		= 0x02,
-	QUERY_ATTR_IDN_ACTIVE_ICC_LVL		= 0x03,
-	QUERY_ATTR_IDN_OOO_DATA_EN		= 0x04,
-	QUERY_ATTR_IDN_BKOPS_STATUS		= 0x05,
-	QUERY_ATTR_IDN_PURGE_STATUS		= 0x06,
-	QUERY_ATTR_IDN_MAX_DATA_IN		= 0x07,
-	QUERY_ATTR_IDN_MAX_DATA_OUT		= 0x08,
-	QUERY_ATTR_IDN_DYN_CAP_NEEDED		= 0x09,
-	QUERY_ATTR_IDN_REF_CLK_FREQ		= 0x0A,
-	QUERY_ATTR_IDN_CONF_DESC_LOCK		= 0x0B,
-	QUERY_ATTR_IDN_MAX_NUM_OF_RTT		= 0x0C,
-	QUERY_ATTR_IDN_EE_CONTROL		= 0x0D,
-	QUERY_ATTR_IDN_EE_STATUS		= 0x0E,
-	QUERY_ATTR_IDN_SECONDS_PASSED		= 0x0F,
-	QUERY_ATTR_IDN_CNTX_CONF		= 0x10,
-	QUERY_ATTR_IDN_CORR_PRG_BLK_NUM		= 0x11,
-#ifdef CONFIG_HISI_UFS_MANUAL_BKOPS
-	/* Hynix GC related idn */
-	QUERY_ATTR_IDN_M_GC_START_STOP = 0x12,
-	QUERY_ATTR_IDN_M_GC_STATUS	= 0x13,
+enum tz_desc_id {
+	TZ_RETURN_FLAG      = 0x01,
+#ifdef CONFIG_HISI_DEBUG_FS
+	TZ_RETURN_BACK_FLAG = 0x04,
 #endif
-	QUERY_ATTR_IDN_REFCLK_GATE_TIME = 0x17,
-};
-
-#define QUERY_ATTR_IDN_BOOT_LU_EN_MAX	0x02
-
-/* Descriptor idn for Query requests */
-enum desc_idn {
-	QUERY_DESC_IDN_DEVICE		= 0x0,
-	QUERY_DESC_IDN_CONFIGURAION	= 0x1,
-	QUERY_DESC_IDN_UNIT		= 0x2,
-	QUERY_DESC_IDN_RFU_0		= 0x3,
-	QUERY_DESC_IDN_INTERCONNECT	= 0x4,
-	QUERY_DESC_IDN_STRING		= 0x5,
-	QUERY_DESC_IDN_RFU_1		= 0x6,
-	QUERY_DESC_IDN_GEOMETRY		= 0x7,
-	QUERY_DESC_IDN_POWER		= 0x8,
-	QUERY_DESC_IDN_HEALTH           = 0x9,
-	QUERY_DESC_IDN_RFU_2		= 0xA,
-#ifdef CONFIG_JOURNAL_DATA_TAG
-	QUERY_DESC_IDN_VENDOR		= 0xFF,
-	QUERY_DESC_IDN_MAX		= 0x100,
-#else
-	QUERY_DESC_IDN_MAX,
+	TZ_FORCE_CLOSE_FLAG = 0x08,
+#ifdef CONFIG_HISI_DEBUG_FS
+	TZ_FORCE_OPEN_FLAG  = 0x10,
 #endif
+	TZ_DESC_MAX,
 };
 
 /* UTP QUERY Transaction Specific Fields OpCode */
@@ -85,6 +47,8 @@ enum query_opcode {
 	UPIU_QUERY_OPCODE_M_GC_CHECK = 0xF2,
 #endif /* CONFIG_HISI_UFS_MANUAL_BKOPS */
 	UPIU_QUERY_OPCODE_READ_HI1861_FSR = 0xF3, /*for hi1861*/
+	UPIU_QUERY_OPCODE_TZ_CTRL = 0xFA,
+	UPIU_QUERY_OPCODE_READ_TZ_DESC = 0xFB,
 	UPIU_QUERY_OPCODE_MAX,
 };
 #endif /* UAPI_UFS_H_ */

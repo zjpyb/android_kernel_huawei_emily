@@ -600,25 +600,22 @@ static void stmvl53l0_setupAPIFunctions(struct stmvl53l0_data *data)
 
 static void stmvl53l0_cancel_handler(struct stmvl53l0_data *data)
 {
-    unsigned long flags;
-    bool ret;
+	unsigned long flags;
+	bool ret = false;
 
-    if(NULL == data)
-    {
-        vl53l0_errmsg("input data is NULL!!");
-        return;
-    }
-    spin_lock_irqsave(&data->update_lock.wait_lock, flags);
-    /*
-     * If work is already scheduled then subsequent schedules will not
-     * change the scheduled time that's why we have to cancel it first.
-     */
-    ret = cancel_delayed_work(&data->dwork);
-    if (ret == 0)
-        vl53l0_errmsg("cancel_delayed_work return FALSE\n");
-
-    spin_unlock_irqrestore(&data->update_lock.wait_lock, flags);
-
+	if (!data) {
+		vl53l0_errmsg("input data is NULL");
+		return;
+	}
+	spin_lock_irqsave(&data->update_lock.wait_lock, flags);
+	/*
+	 * If work is already scheduled then subsequent schedules will not
+	 * change the scheduled time that's why we have to cancel it first.
+	 */
+	ret = cancel_delayed_work(&data->dwork);
+	if (ret == 0)
+		vl53l0_errmsg("cancel_delayed_work return FALSE");
+	spin_unlock_irqrestore(&data->update_lock.wait_lock, flags);
 }
 
 void stmvl53l0_schedule_handler(struct stmvl53l0_data *data)
@@ -745,10 +742,17 @@ static void stmvl53l0_work_handler(struct work_struct *work)
 {
     struct stmvl53l0_data *data = NULL;
     VL53L0_DEV vl53l0_dev;
+	int ret;
 
     VL53L0_Error Status = VL53L0_ERROR_NONE;
     VL53L0_RangingMeasurementData_t tmp_rangeData;
-    memset_s(&tmp_rangeData, sizeof(VL53L0_RangingMeasurementData_t), 0, sizeof(VL53L0_RangingMeasurementData_t));
+	ret = memset_s(&tmp_rangeData,
+		sizeof(VL53L0_RangingMeasurementData_t),
+		0,
+		sizeof(VL53L0_RangingMeasurementData_t));
+	if (ret != 0) {
+		vl53l0_errmsg("memset failed %d",__LINE__);
+	}
 
     if(NULL == work) {
         vl53l0_errmsg("work queue is null\n");
@@ -808,7 +812,12 @@ static int stmvl53l0_status(struct stmvl53l0_data* data, hwlaser_status_t *laser
         return rc;
 
     if(data->init_flag == 1){
-        strncpy_s(laser_status->name, strlen(stmvl53l0_name), stmvl53l0_name, strlen(stmvl53l0_name));
+		rc = strncpy_s(laser_status->name,
+			strlen(stmvl53l0_name),
+			stmvl53l0_name,
+			strlen(stmvl53l0_name));
+		if (rc != 0)
+			vl53l0_errmsg("strncpy failed %d", __LINE__);
         laser_status->status = 0;
     }else {
         laser_status->status = -1;
@@ -879,68 +888,55 @@ static int stmvl53l0_perform_cal(struct stmvl53l0_data* data, hwlaser_ioctl_perf
     return rc;
 }
 
-static int stmvl53l0_laser_get_set_cal_data(struct stmvl53l0_data* data, hwlaser_calibration_data_t *p)
+static int stmvl53l0_laser_get_set_cal_data(struct stmvl53l0_data *data,
+	hwlaser_calibration_data_t *p)
 {
-    VL53L0_Error rc = VL53L0_ERROR_NONE;
-    FixPoint1616_t *xtalk;
-    int32_t *offset;
-    uint32_t *pspadcount;
-    uint8_t *pspadmod;
-    uint8_t *pvhvset;
-    uint8_t *pphascal;
-    hwlaser_calibration_data_t *cal_data = (hwlaser_calibration_data_t*)p;
-    if(!data || !p)
-        return -EINVAL;
-    offset = &(cal_data->u.dataL0.offset);
-    xtalk = &(cal_data->u.dataL0.xtalk);
-    pspadcount = &(cal_data->u.dataL0.spadcount);
-    pspadmod = &(cal_data->u.dataL0.spadmod);
-    pvhvset = &(cal_data->u.dataL0.vhvset);
-    pphascal = &(cal_data->u.dataL0.phascal);
+	VL53L0_Error rc = VL53L0_ERROR_NONE;
+	FixPoint1616_t *xtalk = NULL;
+	int32_t *offset = NULL;
+	uint32_t *pspadcount = NULL;
+	uint8_t *pspadmod = NULL;
+	uint8_t *pvhvset = NULL;
+	uint8_t *pphascal = NULL;
+	hwlaser_calibration_data_t *cal_data = (hwlaser_calibration_data_t *)p;
 
-    if(!cal_data->is_read)
-    {
-        vl53l0_dbgmsg("laser set offset=%d, xtalk=%d\n", *offset, *xtalk);
-        rc = papi_func_tbl->SetReferenceSpads(data, *pspadcount, *pspadmod);
-        if(rc != VL53L0_ERROR_NONE)
-        {
-            vl53l0_errmsg("set ref spad cal fail!!");
-        }
-        rc = papi_func_tbl->SetRefCalibration(data, *pvhvset, *pphascal);
-        if(rc != VL53L0_ERROR_NONE)
-        {
-            vl53l0_errmsg("set ref cal  fail!!");
-        }
+	if (!data || !p)
+		return -EINVAL;
+	offset = &(cal_data->u.dataL0.offset);
+	xtalk = &(cal_data->u.dataL0.xtalk);
+	pspadcount = &(cal_data->u.dataL0.spadcount);
+	pspadmod = &(cal_data->u.dataL0.spadmod);
+	pvhvset = &(cal_data->u.dataL0.vhvset);
+	pphascal = &(cal_data->u.dataL0.phascal);
 
-        rc = papi_func_tbl->SetOffsetCalibrationDataMicroMeter(data, *offset);
-        if(rc != VL53L0_ERROR_NONE)
-        {
-            vl53l0_errmsg("set offset cal fail!!");
-        }
-
-        rc = papi_func_tbl->SetXTalkCompensationEnable(data, 1);
-        if (rc != VL53L0_ERROR_NONE) {
-            vl53l0_errmsg("%d- error setxtalk %d\n", __LINE__, rc);
-        }
-        data->XTalkCompensationRateMegaCps = *xtalk;
-        rc = papi_func_tbl->SetXTalkCompensationRateMegaCps(data,*xtalk);
-        if(rc != VL53L0_ERROR_NONE)
-        {
-            vl53l0_errmsg("set xtalk  fail!!");
-        }
-
-    }
-    else
-    {
-        vl53l0_dbgmsg("laser get offset, xtalk value\n");
-        *xtalk = data->XTalkCompensationRateMegaCps;
-        *offset = data->OffsetMicroMeter;
-        *pspadcount = data->refSpadCount;
-        *pspadmod = data->isApertureSpads;
-        *pvhvset = data->VhvSettings;
-        *pphascal = data->PhaseCal;
-    }
-    return (int)rc;
+	if (!cal_data->is_read) {
+		vl53l0_dbgmsg("laser set offset=%d, xtalk=%d", *offset, *xtalk);
+		rc = papi_func_tbl->SetReferenceSpads(data, *pspadcount, *pspadmod);
+		if(rc != VL53L0_ERROR_NONE)
+			vl53l0_errmsg("set ref spad cal fail");
+		rc = papi_func_tbl->SetRefCalibration(data, *pvhvset, *pphascal);
+		if (rc != VL53L0_ERROR_NONE)
+			vl53l0_errmsg("set ref cal fail");
+		rc = papi_func_tbl->SetOffsetCalibrationDataMicroMeter(data, *offset);
+		if (rc != VL53L0_ERROR_NONE)
+			vl53l0_errmsg("set offset cal fail");
+		rc = papi_func_tbl->SetXTalkCompensationEnable(data, 1);
+		if (rc != VL53L0_ERROR_NONE)
+			vl53l0_errmsg("%d- error setxtalk %d", __LINE__, rc);
+		data->XTalkCompensationRateMegaCps = *xtalk;
+		rc = papi_func_tbl->SetXTalkCompensationRateMegaCps(data, *xtalk);
+		if (rc != VL53L0_ERROR_NONE)
+			vl53l0_errmsg("set xtalk fail");
+	} else {
+		vl53l0_dbgmsg("laser get offset, xtalk value");
+		*xtalk = data->XTalkCompensationRateMegaCps;
+		*offset = data->OffsetMicroMeter;
+		*pspadcount = data->refSpadCount;
+		*pspadmod = data->isApertureSpads;
+		*pvhvset = data->VhvSettings;
+		*pphascal = data->PhaseCal;
+	}
+	return (int)rc;
 }
 
 int stmvl53l0_power_on_off(struct stmvl53l0_data *data, int is_on)
@@ -1383,23 +1379,29 @@ static int stmvl53l0_laser_parameter(struct stmvl53l0_data *data, hwlaser_parame
     return rc;
 }
 
-static int stmvl53l0_laser_get_data(struct stmvl53l0_data *data, void* p)
+static int stmvl53l0_laser_get_data(struct stmvl53l0_data *data, void *p)
 {
-    hwlaser_RangingData_t* udata;
-    VL53L0_RangingMeasurementData_t* rdata;
-    if(NULL == data || NULL == p)
-        return -EINVAL;
-    mutex_lock(&data->data_mutex);
-    rdata = &(data->rangeData);
-    udata = (hwlaser_RangingData_t*) p;
-    memcpy_s(&(udata->u.dataL0),sizeof(VL53L0_RangingMeasurementData_t) ,rdata, sizeof(VL53L0_RangingMeasurementData_t));
-    if(data->print_count%LASER_PRINTCYLE == 0)
-    {
-        vl53l0_dbgmsg("laser distance = %d, status =%d\n", data->rangeData.RangeMilliMeter, data->rangeData.RangeStatus);
-    }
-    data->print_count++;
-    mutex_unlock(&data->data_mutex);
-    return 0;
+	hwlaser_RangingData_t *udata = NULL;
+	VL53L0_RangingMeasurementData_t *rdata = NULL;
+	int ret;
+
+	if (!data || !p)
+		return -EINVAL;
+	mutex_lock(&data->data_mutex);
+	rdata = &(data->rangeData);
+	udata = (hwlaser_RangingData_t *) p;
+	ret = memcpy_s(&(udata->u.dataL0),
+		sizeof(VL53L0_RangingMeasurementData_t),
+		rdata,
+		sizeof(VL53L0_RangingMeasurementData_t));
+	if (ret != 0)
+		vl53l0_errmsg("memcpy failed %d", __LINE__);
+	if (data->print_count % LASER_PRINTCYLE == 0)
+		vl53l0_dbgmsg("laser distance = %d, status =%d\n",
+		data->rangeData.RangeMilliMeter, data->rangeData.RangeStatus);
+	data->print_count++;
+	mutex_unlock(&data->data_mutex);
+	return 0;
 }
 
 static int stmvl53l0_laser_init(struct stmvl53l0_data *data)

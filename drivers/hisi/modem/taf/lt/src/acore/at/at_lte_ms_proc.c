@@ -52,7 +52,9 @@
 /*lint --e{7,64,537,545,322,718,746,958,734,830,587,713,516}*/
 #include "gen_msg.h"
 
+#if(FEATURE_ON == FEATURE_LTE)
 #include "nv_stru_lps.h"
+#endif
 
 /*lint -e767 ‘≠“Ú:Log¥Ú”°*/
 #define    THIS_FILE_ID        MSP_FILE_ID_AT_LTE_MS_PROC_C

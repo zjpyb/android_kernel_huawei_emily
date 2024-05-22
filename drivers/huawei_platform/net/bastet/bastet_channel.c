@@ -80,7 +80,7 @@ static void bastet_get_link_id(struct sock *sk, struct bst_sock_id *guide)
 	guide->fd = match ? i : 0;
 }
 
-static uint8_t bastet_get_prio_level(int32_t flags)
+static uint8_t bastet_get_prio_level(uint32_t flags)
 {
 	uint8_t level;
 
@@ -256,7 +256,7 @@ static int bastet_send_priority_msg_internal(struct sock *sk,
 	struct bst_sock_id guide;
 	struct bst_sock_sync_prop sync_prop;
 	struct bst_sock_comm_prop comm_prop;
-	int32_t flags = msg->msg_flags;
+	uint32_t flags = msg->msg_flags;
 	uint8_t priority = 0;
 	uint8_t sync_state = BST_SOCK_NOT_USED;
 	bool empty = false;

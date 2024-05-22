@@ -47,9 +47,9 @@
 		+ (long long)(count) * sizeof(struct dubai_cputime)
 
 enum {
-    CMDLINE_NEED_TO_GET = 0,
-    CMDLINE_PROCESS,
-    CMDLINE_THREAD,
+	CMDLINE_NEED_TO_GET = 0,
+	CMDLINE_PROCESS,
+	CMDLINE_THREAD,
 };
 
 enum {
@@ -199,13 +199,15 @@ static inline unsigned long long dubai_cputime_to_usecs(cputime_t time)
 #endif
 
 // keep sync with fs/proc/array.c
-static inline int dubai_get_task_state(const struct task_struct *task)
+static inline int dubai_get_task_state(struct task_struct *task)
 {
+	unsigned int state;
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	BUILD_BUG_ON(1 + ilog2(TASK_REPORT_MAX) != ARRAY_SIZE(task_state_array));
-	unsigned int state = __get_task_state(task);
+	state = __get_task_state(task);
 #else
-	unsigned int state = (task->state | task->exit_state) & TASK_REPORT;
+	state = (task->state | task->exit_state) & TASK_REPORT;
 
 	/*
 	 * Parked tasks do not run; they sit in __kthread_parkme().
@@ -222,7 +224,7 @@ static inline int dubai_get_task_state(const struct task_struct *task)
 	return task_state_array[fls(state)];
 }
 
-static bool dubai_task_alive(const struct task_struct *task)
+static bool dubai_task_alive(struct task_struct *task)
 {
 #ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
 	/*
@@ -250,7 +252,7 @@ static bool dubai_task_alive(const struct task_struct *task)
 
 static void dubai_copy_name(char *to, const char *from)
 {
-	char *p;
+	char *p = NULL;
 	int len = NAME_LEN - 1;
 
 	if (strlen(from) <= len) {
@@ -294,7 +296,7 @@ static struct dubai_proc_decompose *dubai_find_decompose_entry(pid_t tgid)
 
 static void dubai_remove_proc_decompose(pid_t tgid)
 {
-	struct dubai_proc_decompose *entry;
+	struct dubai_proc_decompose *entry = NULL;
 
 	entry = dubai_find_decompose_entry(tgid);
 	if (entry != NULL) {
@@ -309,7 +311,7 @@ static pid_t dubai_find_tgid(uid_t t_uid, const char *t_comm)
 {
 	pid_t tgid = -1;
 	uid_t uid;
-	struct task_struct *task;
+	struct task_struct *task = NULL;
 
 	rcu_read_lock();
 	for_each_process(task) {
@@ -331,7 +333,7 @@ static pid_t dubai_find_tgid(uid_t t_uid, const char *t_comm)
 static void dubai_check_proc_decompose(void)
 {
 	pid_t tgid;
-	struct dubai_proc_decompose *entry;
+	struct dubai_proc_decompose *entry = NULL;
 
 	if (dubai_check_proc_compose_count())
 		return;
@@ -369,7 +371,7 @@ static void dubai_decompose_work_fn(struct work_struct *work)
 
 static void dubai_clear_proc_decompose(void)
 {
-	struct dubai_proc_decompose *entry, *tmp;
+	struct dubai_proc_decompose *entry = NULL, *tmp = NULL;
 
 	list_for_each_entry_safe(entry, tmp, &dubai_proc_decompose_list, node) {
 		list_del_init(&entry->node);
@@ -383,7 +385,7 @@ static void dubai_clear_proc_decompose(void)
 static int dubai_set_proc_decompose_list(int count, const struct dubai_decompose_info *data)
 {
 	int ret = 0, i;
-	struct dubai_proc_decompose *entry;
+	struct dubai_proc_decompose *entry = NULL;
 
 	mutex_lock(&dubai_proc_lock);
 	dubai_clear_proc_decompose();
@@ -529,8 +531,8 @@ static void dubai_thread_entry_copy(unsigned char *value, uid_t uid, const struc
 static struct dubai_thread_entry *dubai_find_or_register_thread(pid_t pid,
 		const char *comm, struct dubai_proc_entry *entry)
 {
-	struct dubai_thread_entry *thread;
-	struct dubai_proc_decompose *d_proc;
+	struct dubai_thread_entry *thread = NULL;
+	struct dubai_proc_decompose *d_proc = NULL;
 
 	d_proc = dubai_find_decompose_entry(entry->tgid);
 	if (d_proc == NULL && list_empty(&entry->threads))
@@ -538,7 +540,7 @@ static struct dubai_thread_entry *dubai_find_or_register_thread(pid_t pid,
 
 	list_for_each_entry(thread, &entry->threads, node) {
 		if (thread->pid == pid)
-			return thread;
+			goto update_thread_name;
 	}
 
 	thread = kzalloc(sizeof(struct dubai_thread_entry), GFP_ATOMIC);
@@ -548,13 +550,15 @@ static struct dubai_thread_entry *dubai_find_or_register_thread(pid_t pid,
 	}
 	thread->pid = pid;
 	thread->alive = true;
-	if (d_proc != NULL)
-		snprintf(thread->name, NAME_LEN - 1, "%s_%s", d_proc->decompose.prefix, comm);/* unsafe_function_ignore: snprintf */
-	else
-		snprintf(thread->name, NAME_LEN - 1, "%s_%s", entry->name, comm);/* unsafe_function_ignore: snprintf */
-
 	list_add_tail(&thread->node, &entry->threads);
 	atomic_inc(&active_count);
+
+update_thread_name:
+	if (d_proc != NULL)
+		snprintf(thread->name, NAME_LEN - 1, "%s_%s", d_proc->decompose.prefix, comm); /* unsafe_function_ignore: snprintf */
+	else
+		snprintf(thread->name, NAME_LEN - 1, "%s_%s", entry->name, comm); /* unsafe_function_ignore: snprintf */
+
 
 	return thread;
 }
@@ -562,7 +566,7 @@ static struct dubai_thread_entry *dubai_find_or_register_thread(pid_t pid,
 static struct dubai_proc_entry *dubai_find_proc_entry(pid_t pid, pid_t tgid, const char *comm,
 		struct dubai_thread_entry **thread)
 {
-	struct dubai_proc_entry *entry;
+	struct dubai_proc_entry *entry = NULL;
 
 	hash_for_each_possible(proc_hash_table, entry, hash, tgid) {
 		if (entry->tgid == tgid) {
@@ -595,12 +599,8 @@ static struct dubai_proc_entry *dubai_find_or_register_proc(const struct task_st
 	}
 
 	entry = dubai_find_proc_entry(pid, tgid, task->comm, thread);
-	if (entry != NULL) {
-		if (likely(!entry->cmdline))
-			COPY_PROC_NAME(entry->name, comm);
-
-		return entry;
-	}
+	if (entry != NULL)
+		goto update_uid_name;
 
 	entry = kzalloc(sizeof(struct dubai_proc_entry), GFP_ATOMIC);
 	if (entry == NULL) {
@@ -608,24 +608,27 @@ static struct dubai_proc_entry *dubai_find_or_register_proc(const struct task_st
 		return NULL;
 	}
 	entry->tgid = tgid;
-	entry->uid = from_kuid_munged(current_user_ns(), task_uid(task));
 	entry->alive = true;
 	entry->cmdline = (tgid == KERNEL_TGID);
-	COPY_PROC_NAME(entry->name, comm);
 	INIT_LIST_HEAD(&entry->threads);
 	*thread = dubai_find_or_register_thread(pid, task->comm, entry);
 
 	hash_add(proc_hash_table, &entry->hash, tgid);
 	atomic_inc(&active_count);
 
+update_uid_name:
+	entry->uid = from_kuid_munged(current_user_ns(), task_uid(task));
+	if (likely(!entry->cmdline) || (strlen(entry->name) == 0))
+		COPY_PROC_NAME(entry->name, comm);
+
 	return entry;
 }
 
 int dubai_update_proc_cputime(void)
 {
-	struct dubai_proc_entry *entry;
-	struct dubai_thread_entry *thread;
-	struct task_struct *task, *temp;
+	struct dubai_proc_entry *entry = NULL;
+	struct dubai_thread_entry *thread = NULL;
+	struct task_struct *task = NULL, *temp = NULL;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	u64 utime;
 	u64 stime;
@@ -652,11 +655,13 @@ int dubai_update_proc_cputime(void)
 			return -ENOMEM;
 		}
 		task_cputime_adjusted(task, &utime, &stime);
-		entry->active_utime += utime;
-		entry->active_stime += stime;
+		if (entry->alive) {
+			entry->active_utime += utime;
+			entry->active_stime += stime;
 #ifdef CONFIG_HUAWEI_DUBAI_TASK_CPU_POWER
-		entry->active_power += task->cpu_power;
+			entry->active_power += task->cpu_power;
 #endif
+		}
 		if (thread != NULL && thread->alive) {
 			thread->utime = utime;
 			thread->stime = stime;
@@ -677,12 +682,12 @@ int dubai_update_proc_cputime(void)
 static void dubai_clear_dead_entry(struct dubai_cputime_transmit *transmit)
 {
 	int max;
-	bool decompose;
-	unsigned char *value;
+	bool decompose = false;
+	unsigned char *value = NULL;
 	unsigned long bkt;
-	struct dubai_proc_entry *entry;
-	struct hlist_node *tmp;
-	struct dubai_thread_entry *thread, *temp;
+	struct dubai_proc_entry *entry = NULL;
+	struct hlist_node *tmp = NULL;
+	struct dubai_thread_entry *thread = NULL, *temp = NULL;
 
 	value = transmit->value;
 	max = transmit->count;
@@ -733,8 +738,8 @@ static void dubai_clear_dead_entry(struct dubai_cputime_transmit *transmit)
 static int dubai_clear_and_update(long long timestamp)
 {
 	int ret = 0, count = 0;
-	struct dubai_cputime_transmit *transmit;
-	struct buffered_log_entry *entry;
+	struct dubai_cputime_transmit *transmit = NULL;
+	struct buffered_log_entry *entry = NULL;
 
 	count = atomic_read(&dead_count);
 	entry = dubai_create_log_entry(timestamp, count, PROCESS_STATE_DEAD);
@@ -774,12 +779,12 @@ exit:
 static int dubai_send_active_process(long long timestamp)
 {
 	int ret = 0, max = 0;
-	unsigned char *value;
+	unsigned char *value = NULL;
 	unsigned long bkt;
-	struct dubai_proc_entry *entry;
-	struct dubai_cputime_transmit *transmit;
-	struct buffered_log_entry *log_entry;
-	struct dubai_thread_entry *thread;
+	struct dubai_proc_entry *entry = NULL;
+	struct dubai_cputime_transmit *transmit = NULL;
+	struct buffered_log_entry *log_entry = NULL;
+	struct dubai_thread_entry *thread = NULL;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	u64 active_time;
 #else
@@ -874,7 +879,7 @@ exit:
 
 int dubai_get_process_name(struct process_name *process)
 {
-	struct task_struct *task, *leader;
+	struct task_struct *task = NULL, *leader = NULL;
 	char cmdline[MAX_CMDLINE_LEN] = {0};
 	int ret = 0, compare = 0;
 
@@ -937,7 +942,7 @@ exit:
 	return ret;
 }
 
-static bool is_same_process(const struct dubai_proc_entry *entry, const struct task_struct *task)
+static bool is_same_process(const struct dubai_proc_entry *entry, struct task_struct *task)
 {
 	uid_t uid;
 
@@ -1054,9 +1059,9 @@ static struct notifier_block process_notifier_block = {
 static void dubai_proc_cputime_reset(void)
 {
 	unsigned long bkt;
-	struct dubai_proc_entry *entry;
-	struct hlist_node *tmp;
-	struct dubai_thread_entry *thread, *temp;
+	struct dubai_proc_entry *entry = NULL;
+	struct hlist_node *tmp = NULL;
+	struct dubai_thread_entry *thread = NULL, *temp = NULL;
 
 	mutex_lock(&dubai_proc_lock);
 
@@ -1080,7 +1085,7 @@ static void dubai_proc_cputime_reset(void)
 int dubai_proc_cputime_enable(void __user *argp)
 {
 	int ret;
-	bool enable;
+	bool enable = false;
 
 	ret = get_enable_value(argp, &enable);
 	if (ret == 0) {

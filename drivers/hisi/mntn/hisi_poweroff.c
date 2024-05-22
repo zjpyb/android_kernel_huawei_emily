@@ -18,6 +18,7 @@
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <asm/cacheflush.h>
+#include <asm/system_misc.h>
 #include "blackbox/rdr_print.h"
 #include "pmic_interface.h"
 
@@ -36,13 +37,16 @@ static unsigned int g_powerhold_gpio_offset = 0;
 static int g_powerhold_protect_offset = 0xFFFF;
 static unsigned int g_powerhold_protect_bit = 0xFF;
 
+#ifdef CONFIG_HISI_BB
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <rdr_inner.h>
+#endif
 
 static void __iomem *sysctrl_base;
 extern void (*pm_power_off)(void);
-extern void (*arm_pm_restart)(char str, const char *cmd);
+#ifdef CONFIG_HISI_BB
 extern struct cmdword reboot_reason_map[];
+#endif
 
 
 void hisi_pm_system_off(void)
@@ -50,7 +54,9 @@ void hisi_pm_system_off(void)
 	unsigned int out_dir;
 	uintptr_t protect_val;
 
+#ifdef CONFIG_HISI_BB
 	set_reboot_reason(AP_S_COLDBOOT);
+#endif
 
 
 	while(1) {
@@ -71,9 +77,9 @@ void hisi_pm_system_off(void)
 
 			/*set direction*/
 			out_dir = readl(SOC_GPIO_GPIODIR_ADDR(powerhold_gpio_base));
-			out_dir |= (1 << g_powerhold_gpio_offset);
+			out_dir |= (1u << g_powerhold_gpio_offset);
 			writel(out_dir, SOC_GPIO_GPIODIR_ADDR(powerhold_gpio_base));
-			writel(0, (void *)powerhold_gpio_base + (1 << (g_powerhold_gpio_offset + 2)));
+			writel(0, powerhold_gpio_base + (1u << (g_powerhold_gpio_offset + 2)));
 
 			mdelay(1000);
 			machine_restart("chargereboot");
@@ -89,10 +95,12 @@ Input:		    cmd  ¸´Î»ÀàÐÍ
 Output:		    NA
 Return:		    NA
 ********************************************************************************/
-void hisi_pm_system_reset(char mode, const char *cmd)
+void hisi_pm_system_reset(enum reboot_mode mode, const char *cmd)
 {
+#ifdef CONFIG_HISI_BB
     unsigned int i;
     unsigned int curr_reboot_type = UNKNOWN;
+#endif
 
     if (cmd == NULL || *cmd == '\0') {
         BB_PRINT_PN("hisi_pm_system_reset cmd is null\n");
@@ -100,6 +108,7 @@ void hisi_pm_system_reset(char mode, const char *cmd)
     } else {
         BB_PRINT_PN("hisi_pm_system_reset cmd is %s\n", cmd);
     }
+#ifdef CONFIG_HISI_BB
     for (i=0; i < get_reboot_reason_map_size(); i++) {
         if (!strncmp((char *)reboot_reason_map[i].name, cmd, sizeof(reboot_reason_map[i].name))) {
             curr_reboot_type = reboot_reason_map[i].num;
@@ -113,13 +122,14 @@ void hisi_pm_system_reset(char mode, const char *cmd)
     }
 	set_reboot_reason(curr_reboot_type);
 	hisiap_nmi_notify_lpm3();
+#endif
 	BB_PRINT_PN("ap send nmi to lpm3, then goto dead loop.\n");
 	while(1);
 }
 static int hi3xxx_reset_probe(struct platform_device *pdev)
 {
 	struct device_node *np = NULL;
-	int offset = 0;
+	unsigned int offset = 0;
 	int ret = 0;
 
 	np = of_find_compatible_node(NULL, NULL, "hisi,powerhold");
@@ -138,7 +148,7 @@ static int hi3xxx_reset_probe(struct platform_device *pdev)
 			powerhold_gpio_base = 0;
 		}
 		else {
-			pr_info("offset = 0x%x !\n", (unsigned int)offset);
+			pr_info("offset = 0x%x !\n", offset);
 			g_powerhold_gpio_offset = offset;
 		}
 
@@ -146,7 +156,7 @@ static int hi3xxx_reset_probe(struct platform_device *pdev)
 		if (ret) {
 			BB_PRINT_ERR("no powerhold_protect_offset !\n");
 		} else {
-			pr_info("powerhold_protect_offset = 0x%x !\n", (unsigned int)offset);
+			pr_info("powerhold_protect_offset = 0x%x !\n", offset);
 			g_powerhold_protect_offset = offset;
 		}
 
@@ -155,7 +165,7 @@ static int hi3xxx_reset_probe(struct platform_device *pdev)
 			BB_PRINT_ERR("no powerhold_protect_bit !\n");
 			g_powerhold_protect_offset = 0xFFFF;
 		} else {
-			pr_info("powerhold_protect_bit = 0x%x !\n", (unsigned int)offset);
+			pr_info("powerhold_protect_bit = 0x%x !\n", offset);
 			g_powerhold_protect_bit = offset;
 		}
 	}

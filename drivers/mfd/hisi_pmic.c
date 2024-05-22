@@ -623,7 +623,7 @@ static struct platform_driver hisi_pmic_driver = {
 	.probe	= hisi_pmic_probe,
 	.remove	= hisi_pmic_remove,
 };
-/*module_platform_driver(hisi_pmic_driver);*/
+
 static int __init hisi_pmic_init(void)
 {
 	return platform_driver_register(&hisi_pmic_driver);

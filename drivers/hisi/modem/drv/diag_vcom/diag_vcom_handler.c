@@ -58,7 +58,9 @@
 #include <linux/pm_wakeup.h>
 #include <securec.h>
 #include "product_config.h"
+#ifdef BSP_CONFIG_HI3650
 #include <linux/mtd/hisi_nve_interface.h>
+#endif
 #include "mdrv.h"
 #include "diag_vcom_handler.h"
 #include "diag_vcom_debug.h"
@@ -687,6 +689,7 @@ static void diag_vcom_get_log_config(struct diag_vcom_entity_s *entity,
 	diag_vcom_send_resp_msg(entity, &resp_msg, sizeof(resp_msg));
 }
 
+#ifdef BSP_CONFIG_HI3650
 /*****************************************************************************
  Prototype	  : diag_vcom_set_log_nve_config
  Description  : Set log nve config.
@@ -730,6 +733,31 @@ static void diag_vcom_set_log_nve_config(struct diag_vcom_entity_s *entity,
 	diag_vcom_send_resp_msg(entity, &resp_msg, sizeof(resp_msg));
 }
 
+#else
+
+/*****************************************************************************
+ Prototype	  : diag_vcom_set_log_nve_config
+ Description  : Set log nve config.
+ Input		  : struct diag_vcom_entity_s *entity
+				struct diag_vcom_msg_s *msg
+ Output 	  : None
+ Return Value :
+*****************************************************************************/
+static void diag_vcom_set_log_nve_config(struct diag_vcom_entity_s *entity,
+							struct diag_vcom_msg_s *msg)
+{
+	struct diag_vcom_msg_s resp_msg;
+
+	DIAG_VCOM_LOGI("NVE feature off, enable=%d", msg->log_nve_config.enable);
+
+	memset_s(&resp_msg, sizeof(resp_msg), 0, sizeof(resp_msg));
+	resp_msg.message_type = msg->message_type;
+	resp_msg.op = DIAG_VCOM_MSG_RETURN_CODE;
+	resp_msg.return_code = DIAG_VCOM_E_SUCCESS;
+
+	diag_vcom_send_resp_msg(entity, &resp_msg, sizeof(resp_msg));
+}
+#endif
 
 /*****************************************************************************
  Prototype	  : diag_vcom_get_log_nve_config

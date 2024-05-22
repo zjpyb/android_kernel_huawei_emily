@@ -286,6 +286,7 @@ u32 nv_read_ctrl_from_upfile(void)
 /*紧急将数据从工厂分区恢复*/
 u32 nv_load_err_proc(void)
 {
+#if (FEATURE_NV_PARTRION_MULTIPLEX == FEATURE_OFF)
     nv_global_info_s* ddr_info = (nv_global_info_s*)NV_GLOBAL_INFO_ADDR;
     u32 ret;
 
@@ -359,6 +360,9 @@ u32 nv_load_err_proc(void)
 
     nv_record("load error proc OK ...\n");
     return NV_OK;
+#else
+    return NV_ERROR;
+#endif
 }
 
 /*****************************************************************************

@@ -91,19 +91,41 @@
 VOS_INT                 vos_PidRecordsNumber;
 VOS_PID_RECORD          vos_PidRecords[VOS_PID_BUTT-VOS_PID_DOPRAEND];
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+VOS_QUERY_PID_INFO_STRU    g_stVosQueryPidInfo[VOS_CPU_ID_1_PID_BUTT-VOS_PID_CPU_ID_1_DOPRAEND];
+#endif
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
 VOS_QUERY_PID_INFO_STRU    g_stVosQueryPidInfo[VOS_CPU_ID_0_PID_BUTT-VOS_PID_CPU_ID_0_DOPRAEND];
+#endif
 
 /* recoed FID info VOS_FID_BUTT comes from v_id.inc */
 VOS_INT                 vos_FidCtrlBlkNumber;
 VOS_FID_CONTROL_BLOCK   vos_FidCtrlBlk[VOS_FID_BUTT];
 
+#if ((VOS_VXWORKS == VOS_OS_VER) || (VOS_NUCLEUS == VOS_OS_VER))
+/* the map of PRI between FID and VxWorks or Nucleus */
+VOS_UINT32 vos_FidTaskRealPriority[VOS_PRIORITY_NUM]
+    = { 150, 146, 144, 142, 140, 138, 136, 134, 132, 130, 128, 126, 124, 122};
+#endif
 
+#if (VOS_WIN32 == VOS_OS_VER)
+/* the map of PRI between FID and Win32 */
+VOS_UINT32 vos_FidTaskRealPriority[VOS_PRIORITY_NUM]
+    = { 32, 33, 64, 65, 96 ,97, 128, 129, 160, 161, 192, 193, 224, 225 };
+#endif
 
+#if (VOS_LINUX == VOS_OS_VER)
 /* the map of PRI between FID and Linux */
 VOS_UINT32 vos_FidTaskRealPriority[VOS_PRIORITY_NUM]
     = { 30, 32, 35, 38, 41 ,44, 47, 51, 55, 59, 63, 67, 71, 75 };
+#endif
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+/* the map of PRI between FID and VxWorks or Nucleus */
+VOS_UINT32 vos_FidTaskRealPriority[VOS_PRIORITY_NUM]
+    = { 48, 47, 46, 43, 42, 41, 40, 38, 36, 34, 33, 32, 30, 28};
+#endif
 
 
 
@@ -128,6 +150,12 @@ VOS_UINT16      g_usPidInitId;
 
 extern VOS_VOID V_LogRecord(VOS_UINT32 ulIndex, VOS_UINT32 ulValue);
 
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+
+/* 自旋锁，用来作PID 内存消耗统计临界资源保护 */
+VOS_SPINLOCK             g_stVosPidMemAnaSpinLock;
+
+#endif
 
 /* 自旋锁，用来作querey pid info 的临界资源保护 */
 VOS_SPINLOCK             g_stVosQuereyPidInfoSpinLock;
@@ -265,20 +293,38 @@ VOS_UINT32 VOS_PidCtrlBlkInit(VOS_VOID)
         vos_PidRecords[i-VOS_PID_DOPRAEND].MsgFunction  = MsgProcFuncDefault;
         vos_PidRecords[i-VOS_PID_DOPRAEND].priority     = VOS_PRIORITY_NULL;
         vos_PidRecords[i-VOS_PID_DOPRAEND].usModemId    = MODEM_ID_BUTT;
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+        vos_PidRecords[i-VOS_PID_DOPRAEND].ulMsgSize    = VOS_NULL;
+        vos_PidRecords[i-VOS_PID_DOPRAEND].ulMemSize    = VOS_NULL;
+        vos_PidRecords[i-VOS_PID_DOPRAEND].ulMsgPeakSize   = VOS_NULL;
+        vos_PidRecords[i-VOS_PID_DOPRAEND].ulMemPeakSize   = VOS_NULL;
+#endif
     }
 
     /* which comes from v_id.inc */
     REG_FID_PID_RSP();
 
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+    VOS_SpinLockInit(&g_stVosPidMemAnaSpinLock);
+#endif
 
     VOS_SpinLockInit(&g_stVosQuereyPidInfoSpinLock);
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    for(i=0; i<(VOS_CPU_ID_1_PID_BUTT-VOS_PID_CPU_ID_1_DOPRAEND); i++ )
+    {
+        g_stVosQueryPidInfo[i].usModemId = MODEM_ID_BUTT;
+        g_stVosQueryPidInfo[i].usPidInvaild = VOS_PID_UNSURE;
+    }
+#endif
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     for(i=0; i<(VOS_CPU_ID_0_PID_BUTT-VOS_PID_CPU_ID_0_DOPRAEND); i++ )
     {
         g_stVosQueryPidInfo[i].usModemId = MODEM_ID_BUTT;
         g_stVosQueryPidInfo[i].usPidInvaild = VOS_PID_UNSURE;
     }
+#endif
 
     return(VOS_OK);
 }
@@ -1017,6 +1063,24 @@ VOS_UINT8 VOS_RegisterSelfTaskPrio( VOS_FID             ulFID ,
     return ubyIndex;
 }
 
+#if (VOS_LINUX != VOS_OS_VER)
+/*****************************************************************************
+ Function   : VOS_SuspendFidTask
+ Description: Suspend task of FID
+ Input      : ulFID       -- Function module Identifiers
+            : void
+ Return     : VOS_OK on success or errno on failure
+ *****************************************************************************/
+VOS_UINT32 VOS_SuspendFidTask(VOS_FID ulFid)
+{
+    if ((VOS_FID_DOPRAEND > ulFid) || (VOS_FID_BUTT <= ulFid))
+    {
+        return VOS_ERR;
+    }
+
+    return VOS_SuspendTask( vos_FidCtrlBlk[ulFid].Tid );
+}
+#endif
 
 /*****************************************************************************
  Function   : VOS_ResumeFidTask
@@ -1035,6 +1099,48 @@ VOS_UINT32 VOS_ResumeFidTask(VOS_FID ulFid)
     return VOS_ResumeTask( vos_FidCtrlBlk[ulFid].Tid );
 }
 
+#if (VOS_LINUX != VOS_OS_VER)
+/*****************************************************************************
+ Function   : VOS_SuspendFidsTask
+ Description: Suspend tasks of all FIDs
+ Input      : void
+            : void
+ Return     : VOS_OK on success or errno on failure
+ *****************************************************************************/
+VOS_UINT32 VOS_SuspendFidsTask(VOS_VOID)
+{
+    VOS_UINT32              i;
+    int                     ubyIndex;
+    VOS_UINT32              ulReturnValue;
+
+    for(i=VOS_FID_DOPRAEND; i<VOS_FID_BUTT; i++)
+    {
+        ulReturnValue = VOS_SuspendTask( vos_FidCtrlBlk[i].Tid );
+        if( ulReturnValue != VOS_OK )
+        {
+            Print1("%s", "# SuspendFidsTask Fail 1 in SuspendFidsTask.\r\n");
+            return( ulReturnValue );
+        }
+
+        for( ubyIndex = 0; ubyIndex < VOS_MAX_SELF_TASK_OF_FID; ubyIndex++ )
+        {
+            if( vos_FidCtrlBlk[i].SelfProcTaskFunc[ubyIndex] != VOS_NULL_PTR )
+            {
+                ulReturnValue
+                    = VOS_SuspendTask( vos_FidCtrlBlk[i].SelfProcTaskTid[ubyIndex]);
+                if( ulReturnValue != VOS_OK )
+                {
+                    Print1("%s", "# SuspendFidsTask Fail 2 in SuspendFidsTask.\r\n");
+
+                    return( ulReturnValue );
+                }
+            }
+        }
+    }
+
+    return( VOS_OK );
+}
+#endif
 
 /*****************************************************************************
  Function   : VOS_ResumeFidsTask
@@ -1077,6 +1183,33 @@ VOS_UINT32 VOS_ResumeFidsTask(VOS_VOID)
     return( VOS_OK );
 }
 
+#if (VOS_LINUX != VOS_OS_VER)
+/*****************************************************************************
+ Function   : VOS_SuspendAllTask
+ Description: suspend all FID & selftask
+ Input      : invaild
+ Return     : void
+ Other      : only for designer
+ *****************************************************************************/
+VOS_VOID VOS_SuspendAllTask( VOS_UINT32 Para0, VOS_UINT32 Para1,
+                             VOS_UINT32 Para2, VOS_UINT32 Para3 )
+{
+    if ( VOS_OK != VOS_SuspendFidsTask() )
+    {
+        Print1("%s", "# SUSPED FID error.\r\n");
+    }
+
+    if ( VOS_OK != VOS_SuspendTask( vos_TimerTaskId ) )
+    {
+        Print1("%s", "# SUSPED VOS timer task error.\r\n");
+    }
+
+    if ( VOS_OK != VOS_SuspendTask( RTC_TimerTaskId ) )
+    {
+        Print1("%s", "# SUSPED RTC timer task error.\r\n");
+    }
+}
+#endif
 
 /*****************************************************************************
  Function   : VOS_RegisterMsgTaskEntry
@@ -1166,6 +1299,75 @@ VOS_VOID VOS_ShowFidsQueueInfo(VOS_UINT32 Para0, VOS_UINT32 Para1,
     return;
 }
 
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+/*****************************************************************************
+ Function   : VOS_IncreasePidMemory
+ Description: Increase Pid Memory
+ Input      : pid size
+ Return     : void
+ Other      : only for designer
+ *****************************************************************************/
+VOS_VOID VOS_IncreasePidMemory(VOS_PID ulPid, VOS_UINT32 ulSize, VOS_UINT32 ulType)
+{
+    VOS_ULONG                   ulLockLevel;
+
+    /*intLockLevel = VOS_SplIMP();*/
+    VOS_SpinLockIntLock(&g_stVosPidMemAnaSpinLock, ulLockLevel);
+
+    if ( VOS_LOCATION_MEM == ulType )
+    {
+        vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMemSize += ulSize;
+
+        if ( vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMemSize > vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMemPeakSize )
+        {
+            vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMemPeakSize = vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMemSize;
+        }
+    }
+    else
+    {
+        vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMsgSize += ulSize;
+
+        if ( vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMsgSize > vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMsgPeakSize )
+        {
+            vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMsgPeakSize = vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMsgSize;
+        }
+    }
+
+    /*VOS_Splx(intLockLevel);*/
+    VOS_SpinUnlockIntUnlock(&g_stVosPidMemAnaSpinLock, ulLockLevel);
+
+    return;
+}
+
+/*****************************************************************************
+ Function   : VOS_DecreasePidMemory
+ Description: Decrease Pid Memory
+ Input      : pid size
+ Return     : void
+ Other      : only for designer
+ *****************************************************************************/
+VOS_VOID VOS_DecreasePidMemory(VOS_PID ulPid, VOS_UINT32 ulSize, VOS_UINT32 ulType)
+{
+    VOS_ULONG                   ulLockLevel;
+
+    /*intLockLevel = VOS_SplIMP();*/
+    VOS_SpinLockIntLock(&g_stVosPidMemAnaSpinLock, ulLockLevel);
+
+    if ( VOS_LOCATION_MEM == ulType )
+    {
+        vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMemSize -= ulSize;
+    }
+    else
+    {
+        vos_PidRecords[ulPid-VOS_PID_DOPRAEND].ulMsgSize -= ulSize;
+    }
+
+    /*VOS_Splx(intLockLevel);*/
+    VOS_SpinUnlockIntUnlock(&g_stVosPidMemAnaSpinLock, ulLockLevel);
+
+    return;
+}
+#endif
 
 /*****************************************************************************
  Function   : VOS_AnalyzePidMemory
@@ -1176,7 +1378,42 @@ VOS_VOID VOS_ShowFidsQueueInfo(VOS_UINT32 Para0, VOS_UINT32 Para1,
  *****************************************************************************/
 VOS_UINT32 VOS_AnalyzePidMemory(VOS_VOID *pBUffer, VOS_UINT32 ulSize, VOS_UINT32 *pulNum)
 {
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+    VOS_UINT32             ulTempSize;
+    VOS_PID_PEAK_MEM_STRU  *pstTempPtr ;
+    VOS_INT                i;
+
+    if ( (VOS_NULL_PTR == pBUffer) || (VOS_NULL_PTR == pulNum) )
+    {
+        return VOS_ERR;
+    }
+
+    ulTempSize = (VOS_PID_BUTT - VOS_PID_DOPRAEND);
+
+    *pulNum = ulTempSize;
+
+    ulTempSize *= sizeof(VOS_PID_PEAK_MEM_STRU);/* 4byte msg, 4byte mem */
+
+    if ( ulTempSize > ulSize )
+    {
+        return VOS_ERR;
+    }
+
+    pstTempPtr = (VOS_PID_PEAK_MEM_STRU *)pBUffer;
+
+    for(i=VOS_PID_DOPRAEND; i<VOS_PID_BUTT; i++)
+    {
+        pstTempPtr->ulPid         = vos_PidRecords[i-VOS_PID_DOPRAEND].Pid;
+        pstTempPtr->ulMsgPeakSize = vos_PidRecords[i-VOS_PID_DOPRAEND].ulMsgPeakSize;
+        pstTempPtr->ulMemPeakSize = vos_PidRecords[i-VOS_PID_DOPRAEND].ulMemPeakSize;
+
+        pstTempPtr++;
+    }
+
+    return VOS_OK;
+#else
     return VOS_ERR;
+#endif
 }
 
 /*****************************************************************************
@@ -1224,7 +1461,31 @@ MODEM_ID_ENUM_UINT16 VOS_GetModemIDFromPid(VOS_UINT32 ulPid)
     ulCpuID         = VOS_GetCpuId(ulPid);
 
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    if ( VOS_CPU_ID_CCPU == ulCpuID )
+    {
+        /* blank */
+    }
+    else if ( VOS_CPU_ID_ACPU == ulCpuID )
+    {
+        if((ulPid < VOS_PID_CPU_ID_1_DOPRAEND)||(ulPid >= VOS_CPU_ID_1_PID_BUTT))
+        {
+            Print1("VOS_GetModemIDFromPid: Wrong Pid %d\r\n", ulPid);
 
+            return MODEM_ID_BUTT;
+        }
+
+        return g_stVosQueryPidInfo[ulPid-VOS_PID_CPU_ID_1_DOPRAEND].usModemId;
+    }
+    else
+    {
+        Print1("VOS_GetModemIDFromPid: Wrong CPU %d\r\n", ulPid);
+
+        return MODEM_ID_BUTT;
+    }
+#endif
+
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     if ( VOS_CPU_ID_CCPU == ulCpuID )
     {
         if((ulPid < VOS_PID_CPU_ID_0_DOPRAEND)||(ulPid >= VOS_CPU_ID_0_PID_BUTT))
@@ -1246,6 +1507,7 @@ MODEM_ID_ENUM_UINT16 VOS_GetModemIDFromPid(VOS_UINT32 ulPid)
 
         return MODEM_ID_BUTT;
     }
+#endif
 
 
     if((ulPid < VOS_PID_DOPRAEND)||(ulPid >= VOS_PID_BUTT))
@@ -1336,7 +1598,31 @@ VOS_UINT32 VOS_CheckPidValidity(VOS_UINT32 ulPid)
     ulCpuID         = VOS_GetCpuId(ulPid);
 
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    if ( VOS_CPU_ID_CCPU == ulCpuID )
+    {
+        /* blank */
+    }
+    else if ( VOS_CPU_ID_ACPU == ulCpuID )
+    {
+        if((ulPid < VOS_PID_CPU_ID_1_DOPRAEND)||(ulPid >= VOS_CPU_ID_1_PID_BUTT))
+        {
+            Print1("VOS_CheckPidValidity: Wrong Pid %d\r\n", ulPid);
 
+            return VOS_PID_UNSURE;
+        }
+
+        return g_stVosQueryPidInfo[ulPid-VOS_PID_CPU_ID_1_DOPRAEND].usPidInvaild;
+    }
+    else
+    {
+        Print1("VOS_CheckPidValidity: Wrong CPU %d\r\n", ulPid);
+
+        return VOS_PID_UNSURE;
+    }
+#endif
+
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     if ( VOS_CPU_ID_CCPU == ulCpuID )
     {
         if((ulPid < VOS_PID_CPU_ID_0_DOPRAEND)||(ulPid >= VOS_CPU_ID_0_PID_BUTT))
@@ -1358,6 +1644,7 @@ VOS_UINT32 VOS_CheckPidValidity(VOS_UINT32 ulPid)
 
         return VOS_PID_UNSURE;
     }
+#endif
 
 
     if((ulPid < VOS_PID_DOPRAEND)||(ulPid >= VOS_PID_BUTT))
@@ -1440,8 +1727,13 @@ VOS_VOID VOS_SetPidInfo(VOS_VOID *pBuf, VOS_UINT16 usLen)
     VOS_UINT16                   usLocalCount = 0;
     VOS_QUERY_PID_INFO_STRU     *pstBuf = (VOS_QUERY_PID_INFO_STRU *)pBuf;
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    usLocalCount = VOS_CPU_ID_1_PID_BUTT-VOS_PID_CPU_ID_1_DOPRAEND;
+#endif
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     usLocalCount = VOS_CPU_ID_0_PID_BUTT-VOS_PID_CPU_ID_0_DOPRAEND;
+#endif
 
     if ( (usLen/sizeof(VOS_QUERY_PID_INFO_STRU)) != usLocalCount )
     {

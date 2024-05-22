@@ -12,16 +12,6 @@
 #
 #
 
-
-
-config MALI_T830
-        tristate "Mali t83x configs"
-        default n
-
-config MALI_MIMIR
-        tristate "Mali tMix configs"
-        default n
-
 config MALI_HEIMDALL
         tristate "Mali tHEx configs"
         default n
@@ -34,53 +24,76 @@ config MALI_NORR
         tristate "Mali tNOx configs"
         default n
 
-config MALI_TRYM
-        tristate "Mali TRYM configs"
+config MALI_NORR_PHX
+        tristate "Mali tNOx_PHX configs"
         default n
 
 config MALI_GONDUL
         tristate "Mali tGOx configs"
         default n
+
+config MALI_BORR
+	tristate "Mali tBOx configs"
+	default n
+
+config MALI_TRYM
+        tristate "Mali tTRx configs"
+        default n
+
 menu "ARM GPU Configuration"
-
-if MALI_T830
-endif
-
-if MALI_MIMIR
-#source "drivers/gpu/arm/bifrost-r2p0-02dev0/Kconfig"
-#source "drivers/gpu/arm/bifrost-r5p0-01rel0/Kconfig"
-#source "drivers/gpu/arm/bifrost-r6p0-cet/Kconfig"
-#source "drivers/gpu/arm/bifrost-r7p0-00cet0/Kconfig"
-source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
-endif
 
 if MALI_HEIMDALL
 #source "drivers/gpu/arm/bifrost-r2p0-03rel0/Kconfig"
 #source "drivers/gpu/arm/bifrost-r4p0-01rel0/Kconfig"
 #source "drivers/gpu/arm/bifrost-r6p0-cet/Kconfig"
 #source "drivers/gpu/arm/bifrost-r7p0-00cet0/Kconfig"
-source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r8p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r10p0-00cet3/Kconfig"
+#source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+source "drivers/gpu/arm/bifrost-r18p0-01rel0/Kconfig"
 endif
 
 if MALI_SIGURD
 #source "drivers/gpu/arm/bifrost-r7p0-00cet0/Kconfig"
 #source "drivers/gpu/arm/bifrost-r8p0-01rel0/Kconfig"
-source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r10p0-00cet3/Kconfig"
+#source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r16p0-00cet5/Kconfig"
+source "drivers/gpu/arm/bifrost-r18p0-01rel0/Kconfig"
 endif
 
 if MALI_NORR
 #source "drivers/gpu/arm/bifrost-r6p0-cet/Kconfig"
 #source "drivers/gpu/arm/bifrost-r7p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r8p0-00cet0/Kconfig"
 #source "drivers/gpu/arm/bifrost-r9p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r11p0-01rel0/Kconfig"
 #source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r16p0-00cet5/Kconfig"
+source "drivers/gpu/arm/bifrost-r18p0-01rel0/Kconfig"
 endif
 
-if MALI_TRYM
-source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+if MALI_NORR_PHX
+#source "drivers/gpu/arm/bifrost-r11p0-01rel0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r16p0-00cet5/Kconfig"
+source "drivers/gpu/arm/bifrost-r18p0-01rel0/Kconfig"
 endif
 
 if MALI_GONDUL
-source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r11p0-01rel0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r14p0-00cet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r16p0-00cet5/Kconfig"
+source "drivers/gpu/arm/bifrost-r18p0-01rel0/Kconfig"
+endif
+
+if MALI_BORR
+source "drivers/gpu/arm/valhall-r18p0-01bet0/Kconfig"
+#source "drivers/gpu/arm/bifrost-r16p0-00cet5/Kconfig"
+endif
+
+if MALI_TRYM
+source "drivers/gpu/arm/valhall-r18p0-01bet0/Kconfig"
 endif
 
 endmenu

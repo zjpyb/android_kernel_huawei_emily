@@ -3,7 +3,7 @@
  *
  * battery boltage for power module
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -26,10 +26,10 @@
 #include <linux/power/hisi/hisi_bci_battery.h>
 #endif
 
-#define HW_BATT_VOL_NUM                  (10)
-#define HW_BATT_VOL_STR_MAX_LEM          (20)
-#define HW_BATT_VOL_SINGLE_BATTERY       (1)
-#define MAX_VOL_MV                       (100000)
+#define HW_BATT_VOL_NUM                  10
+#define HW_BATT_VOL_STR_MAX_LEM          20
+#define HW_BATT_VOL_SINGLE_BATTERY       1
+#define MAX_VOL_MV                       100000
 #define HW_BATT_HISI_COUL                "hisi_coul"
 
 enum hw_batt_vol_sysfs_type {
@@ -80,9 +80,7 @@ int hw_battery_voltage(enum hw_batt_id batt_id);
 int hw_battery_get_series_num(void);
 int hw_battery_voltage_ops_register(struct hw_batt_vol_ops *ops,
 	char *ops_name);
-
 #else
-
 static inline int hw_battery_voltage(enum hw_batt_id batt_id)
 {
 	return hisi_battery_voltage();

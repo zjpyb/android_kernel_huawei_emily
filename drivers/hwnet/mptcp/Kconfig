@@ -135,3 +135,10 @@ config MPTCP_HEARTBEAT
 	---help---
 	  This is the heartbeat for mptcp over all available subflows
 	  for instance, LTE and WiFi.
+
+config MPTCP_EPC
+	bool "MPTCP EPC support"
+	default n
+	depends on (MPTCP=y)
+	---help---
+	 This is the EPC feature, depending on MPTCP.

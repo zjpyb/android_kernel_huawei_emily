@@ -5,8 +5,10 @@
 #include <linux/completion.h>
 #include <linux/timer.h>
 #include <linux/fs.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/notifier.h>
+#include <linux/types.h>
 #include <linux/usb/hifi-usb-mailbox.h>
 
 #include "proxy-hcd.h"
@@ -15,6 +17,9 @@
 
 #define HIFI_USB_CONFIRM_UDEV_CONNECT_TIME (2 * HZ)
 #define HIFI_USB_CONFIRM_UDEV_RECONNECT_TIME (5 * HZ)
+
+#define HIFI_USB_HIBERNATE_DELAY 500
+#define HIFI_USB_WAKEUP_TIMEOUT (5 * HZ)
 
 #define MAX_QUIRK_DEVICES_ONE_GROUP 255
 
@@ -46,7 +51,7 @@ struct hifi_usb_proxy {
 	struct urb_buffers 		urb_bufs;
 	struct list_head		complete_urb_list;
 	struct timer_list 		confirm_udev_timer;
-	struct wake_lock 		hifi_usb_wake_lock;
+	struct wakeup_source    hifi_usb_wake_lock;
 
 	spinlock_t			lock; /* for complete_urb_list */
 
@@ -69,9 +74,15 @@ struct hifi_usb_proxy {
 	bool				hifiusb_suspended;
 	bool				hifiusb_hibernating;
 	bool				hid_key_pressed;
+	atomic_t			hifi_reset_flag;
 
 	struct hifi_usb_phy_ldo_cfg	hifi_usb_phy_ldo_33v;
 	struct hifi_usb_phy_ldo_cfg	hifi_usb_phy_ldo_18v;
+
+	/* for check hifi usb status */
+	struct mutex			status_check_lock;
+	struct delayed_work		delayed_work;
+	struct completion		wakeup_completion;
 
 #ifdef CONFIG_HIFI_USB_HAS_H2X
 	/* for onetrack of apr es and cs

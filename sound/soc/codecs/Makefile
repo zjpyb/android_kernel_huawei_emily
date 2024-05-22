@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
 ifeq ($(CONFIG_HI6402_MBHC_ANC),y)
 EXTRA_CFLAGS +=	-DANC_HEADSET
 endif
 EXTRA_CFLAGS += -I$(src)/hisi/hs_auto_calib/
 EXTRA_CFLAGS += -Idrivers/hisi/hi64xx_dsp/
 EXTRA_CFLAGS +=	-Idrivers/hisi/slimbus/
+EXTRA_CFLAGS +=	-Idrivers/hisi/hi6xxx/
 
 ifeq ($(CONFIG_HISI_AUDIO_DEBUG),y)
 EXTRA_CFLAGS += -DHI6XXX_FPGA_TEST
@@ -12,7 +14,6 @@ endif
 ifeq ($(TARGET_VERSION_MODE),factory)
 EXTRA_CFLAGS += -DAUDIO_FACTORY_MODE
 endif
-
 snd-soc-88pm860x-objs := 88pm860x-codec.o
 snd-soc-ab8500-codec-objs := ab8500-codec.o
 snd-soc-ac97-objs := ac97.o
@@ -53,6 +54,9 @@ snd-soc-bt-sco-objs := bt-sco.o
 snd-soc-cq93vc-objs := cq93vc.o
 snd-soc-cs35l32-objs := cs35l32.o
 snd-soc-cs35l33-objs := cs35l33.o
+snd-soc-cs35l34-objs := cs35l34.o
+snd-soc-cs35l35-objs := cs35l35.o
+snd-soc-cs42l42-objs := cs42l42.o
 snd-soc-cs42l51-objs := cs42l51.o
 snd-soc-cs42l51-i2c-objs := cs42l51-i2c.o
 snd-soc-cs42l52-objs := cs42l52.o
@@ -65,6 +69,7 @@ snd-soc-cs4271-i2c-objs := cs4271-i2c.o
 snd-soc-cs4271-spi-objs := cs4271-spi.o
 snd-soc-cs42xx8-objs := cs42xx8.o
 snd-soc-cs42xx8-i2c-objs := cs42xx8-i2c.o
+snd-soc-cs43130-objs := cs43130.o
 snd-soc-cs4349-objs := cs4349.o
 snd-soc-cs47l24-objs := cs47l24.o
 snd-soc-cs53l30-objs := cs53l30.o
@@ -76,6 +81,8 @@ snd-soc-da7219-objs := da7219.o da7219-aad.o
 snd-soc-da732x-objs := da732x.o
 snd-soc-da9055-objs := da9055.o
 snd-soc-dmic-objs := dmic.o
+snd-soc-es7134-objs := es7134.o
+snd-soc-es8316-objs := es8316.o
 snd-soc-es8328-objs := es8328.o
 snd-soc-es8328-i2c-objs := es8328-i2c.o
 snd-soc-es8328-spi-objs := es8328-spi.o
@@ -97,11 +104,16 @@ snd-soc-max98371-objs := max98371.o
 snd-soc-max9867-objs := max9867.o
 snd-soc-max98925-objs := max98925.o
 snd-soc-max98926-objs := max98926.o
+snd-soc-max98927-objs := max98927.o
 snd-soc-max9850-objs := max9850.o
 snd-soc-max9860-objs := max9860.o
 snd-soc-mc13783-objs := mc13783.o
 snd-soc-ml26124-objs := ml26124.o
+snd-soc-msm8916-analog-objs := msm8916-wcd-analog.o
+snd-soc-msm8916-digital-objs := msm8916-wcd-digital.o
+snd-soc-nau8540-objs := nau8540.o
 snd-soc-nau8810-objs := nau8810.o
+snd-soc-nau8824-objs := nau8824.o
 snd-soc-nau8825-objs := nau8825.o
 snd-soc-hdmi-codec-objs := hdmi-codec.o
 snd-soc-pcm1681-objs := pcm1681.o
@@ -118,6 +130,7 @@ snd-soc-pcm512x-i2c-objs := pcm512x-i2c.o
 snd-soc-pcm512x-spi-objs := pcm512x-spi.o
 snd-soc-rl6231-objs := rl6231.o
 snd-soc-rl6347a-objs := rl6347a.o
+snd-soc-rt274-objs := rt274.o
 snd-soc-rt286-objs := rt286.o
 snd-soc-rt298-objs := rt298.o
 snd-soc-rt5514-objs := rt5514.o
@@ -130,6 +143,7 @@ snd-soc-rt5651-objs := rt5651.o
 snd-soc-rt5659-objs := rt5659.o
 snd-soc-rt5660-objs := rt5660.o
 snd-soc-rt5663-objs := rt5663.o
+snd-soc-rt5665-objs := rt5665.o
 snd-soc-rt5670-objs := rt5670.o
 snd-soc-rt5677-objs := rt5677.o
 snd-soc-rt5677-spi-objs := rt5677-spi.o
@@ -186,6 +200,7 @@ snd-soc-wm8350-objs := wm8350.o
 snd-soc-wm8400-objs := wm8400.o
 snd-soc-wm8510-objs := wm8510.o
 snd-soc-wm8523-objs := wm8523.o
+snd-soc-wm8524-objs := wm8524.o
 snd-soc-wm8580-objs := wm8580.o
 snd-soc-wm8711-objs := wm8711.o
 snd-soc-wm8727-objs := wm8727.o
@@ -229,36 +244,41 @@ snd-soc-wm9705-objs := wm9705.o
 snd-soc-wm9712-objs := wm9712.o
 snd-soc-wm9713-objs := wm9713.o
 snd-soc-wm-hubs-objs := wm_hubs.o
+snd-soc-zx-aud96p22-objs := zx_aud96p22.o
 
 snd-soc-hi6402-objs := hisi/hi6402.o
-snd-soc-hi6403-objs := hisi/hi6403.o
 snd-soc-hi6402es-objs := hisi/hi6402es.o
 snd-soc-hdmi-audio-objs := hisi/hdmi-audio.o
 snd-soc-dp-audio-objs := hisi/dp_audio.o
 # hi6555c codec
 obj-y += hisi/hs_auto_calib/
 snd-soc-hi6555c-objs :=hisi/hi6555c.o
+
 # Amp
+snd-soc-dio2125-objs := dio2125.o
 snd-soc-max9877-objs := max9877.o
 snd-soc-max98504-objs := max98504.o
 snd-soc-tpa6130a2-objs := tpa6130a2.o
 snd-soc-tas2552-objs := tas2552.o
+ccflags-y  += -Idrivers/devkit/audiokit/
 ifneq ($(TARGET_BUILD_VARIANT),user)
 	EXTRA_CFLAGS += -Idrivers/devkit/audiokit/headset_debug
 	EXTRA_CFLAGS += -DCONFIG_HUAWEI_HEADSET_DEBUG
 endif
+
+ifneq ($(strip $(CONFIG_SWITCH)),)
+ccflags-y += -DCONFIG_HUAWEI_HEADSET_DEBUG_SWITCH
+endif
+
 #  hi6555v2 codec
 snd-soc-hi6555v2-objs :=hisi/hi6555v2.o
 snd-soc-hi6555v2-utility-objs :=hisi/hi6555v2_utility.o
 snd-soc-hi6555v2-i2s-objs :=hisi/hi6555v2_i2s.o
-snd-soc-hi6405-objs :=hisi/hi6405.o
+
 #  hi6555v3 codec
 snd-soc-hi6555v3-objs :=hisi/hi6555v3.o
 snd-soc-hi6555v3-utility-objs :=hisi/hi6555v3_utility.o
 snd-soc-hi6555v3-i2s-objs :=hisi/hi6555v3_i2s.o
-#  hi3xxx codecless
-snd-soc-hicodecless-objs :=hisi/hicodecless.o
-snd-soc-hicodecless-utils-objs :=hisi/hicodecless_utils.o
 
 obj-$(CONFIG_SND_SOC_88PM860X)	+= snd-soc-88pm860x.o
 obj-$(CONFIG_SND_SOC_AB8500_CODEC)	+= snd-soc-ab8500-codec.o
@@ -302,6 +322,9 @@ obj-$(CONFIG_SND_SOC_BT_SCO)	+= snd-soc-bt-sco.o
 obj-$(CONFIG_SND_SOC_CQ0093VC) += snd-soc-cq93vc.o
 obj-$(CONFIG_SND_SOC_CS35L32)	+= snd-soc-cs35l32.o
 obj-$(CONFIG_SND_SOC_CS35L33)	+= snd-soc-cs35l33.o
+obj-$(CONFIG_SND_SOC_CS35L34)	+= snd-soc-cs35l34.o
+obj-$(CONFIG_SND_SOC_CS35L35)	+= snd-soc-cs35l35.o
+obj-$(CONFIG_SND_SOC_CS42L42)	+= snd-soc-cs42l42.o
 obj-$(CONFIG_SND_SOC_CS42L51)	+= snd-soc-cs42l51.o
 obj-$(CONFIG_SND_SOC_CS42L51_I2C)	+= snd-soc-cs42l51-i2c.o
 obj-$(CONFIG_SND_SOC_CS42L52)	+= snd-soc-cs42l52.o
@@ -314,6 +337,7 @@ obj-$(CONFIG_SND_SOC_CS4271_I2C)	+= snd-soc-cs4271-i2c.o
 obj-$(CONFIG_SND_SOC_CS4271_SPI)	+= snd-soc-cs4271-spi.o
 obj-$(CONFIG_SND_SOC_CS42XX8)	+= snd-soc-cs42xx8.o
 obj-$(CONFIG_SND_SOC_CS42XX8_I2C) += snd-soc-cs42xx8-i2c.o
+obj-$(CONFIG_SND_SOC_CS43130)   += snd-soc-cs43130.o
 obj-$(CONFIG_SND_SOC_CS4349)	+= snd-soc-cs4349.o
 obj-$(CONFIG_SND_SOC_CS47L24)	+= snd-soc-cs47l24.o
 obj-$(CONFIG_SND_SOC_CS53L30)	+= snd-soc-cs53l30.o
@@ -325,6 +349,8 @@ obj-$(CONFIG_SND_SOC_DA7219)	+= snd-soc-da7219.o
 obj-$(CONFIG_SND_SOC_DA732X)	+= snd-soc-da732x.o
 obj-$(CONFIG_SND_SOC_DA9055)	+= snd-soc-da9055.o
 obj-$(CONFIG_SND_SOC_DMIC)	+= snd-soc-dmic.o
+obj-$(CONFIG_SND_SOC_ES7134)	+= snd-soc-es7134.o
+obj-$(CONFIG_SND_SOC_ES8316)    += snd-soc-es8316.o
 obj-$(CONFIG_SND_SOC_ES8328)	+= snd-soc-es8328.o
 obj-$(CONFIG_SND_SOC_ES8328_I2C)+= snd-soc-es8328-i2c.o
 obj-$(CONFIG_SND_SOC_ES8328_SPI)+= snd-soc-es8328-spi.o
@@ -342,14 +368,20 @@ obj-$(CONFIG_SND_SOC_MAX98088)	+= snd-soc-max98088.o
 obj-$(CONFIG_SND_SOC_MAX98090)	+= snd-soc-max98090.o
 obj-$(CONFIG_SND_SOC_MAX98095)	+= snd-soc-max98095.o
 obj-$(CONFIG_SND_SOC_MAX98357A)	+= snd-soc-max98357a.o
+obj-$(CONFIG_SND_SOC_MAX98371)	+= snd-soc-max98371.o
 obj-$(CONFIG_SND_SOC_MAX9867)	+= snd-soc-max9867.o
 obj-$(CONFIG_SND_SOC_MAX98925)	+= snd-soc-max98925.o
 obj-$(CONFIG_SND_SOC_MAX98926)	+= snd-soc-max98926.o
+obj-$(CONFIG_SND_SOC_MAX98927)	+= snd-soc-max98927.o
 obj-$(CONFIG_SND_SOC_MAX9850)	+= snd-soc-max9850.o
 obj-$(CONFIG_SND_SOC_MAX9860)	+= snd-soc-max9860.o
 obj-$(CONFIG_SND_SOC_MC13783)	+= snd-soc-mc13783.o
 obj-$(CONFIG_SND_SOC_ML26124)	+= snd-soc-ml26124.o
+obj-$(CONFIG_SND_SOC_MSM8916_WCD_ANALOG) +=snd-soc-msm8916-analog.o
+obj-$(CONFIG_SND_SOC_MSM8916_WCD_DIGITAL) +=snd-soc-msm8916-digital.o
+obj-$(CONFIG_SND_SOC_NAU8540)   += snd-soc-nau8540.o
 obj-$(CONFIG_SND_SOC_NAU8810)   += snd-soc-nau8810.o
+obj-$(CONFIG_SND_SOC_NAU8824)   += snd-soc-nau8824.o
 obj-$(CONFIG_SND_SOC_NAU8825)   += snd-soc-nau8825.o
 obj-$(CONFIG_SND_SOC_HDMI_CODEC)	+= snd-soc-hdmi-codec.o
 obj-$(CONFIG_SND_SOC_PCM1681)	+= snd-soc-pcm1681.o
@@ -366,6 +398,7 @@ obj-$(CONFIG_SND_SOC_PCM512x_I2C)	+= snd-soc-pcm512x-i2c.o
 obj-$(CONFIG_SND_SOC_PCM512x_SPI)	+= snd-soc-pcm512x-spi.o
 obj-$(CONFIG_SND_SOC_RL6231)	+= snd-soc-rl6231.o
 obj-$(CONFIG_SND_SOC_RL6347A)	+= snd-soc-rl6347a.o
+obj-$(CONFIG_SND_SOC_RT274)	+= snd-soc-rt274.o
 obj-$(CONFIG_SND_SOC_RT286)	+= snd-soc-rt286.o
 obj-$(CONFIG_SND_SOC_RT298)	+= snd-soc-rt298.o
 obj-$(CONFIG_SND_SOC_RT5514)	+= snd-soc-rt5514.o
@@ -378,6 +411,7 @@ obj-$(CONFIG_SND_SOC_RT5651)	+= snd-soc-rt5651.o
 obj-$(CONFIG_SND_SOC_RT5659)	+= snd-soc-rt5659.o
 obj-$(CONFIG_SND_SOC_RT5660)	+= snd-soc-rt5660.o
 obj-$(CONFIG_SND_SOC_RT5663)	+= snd-soc-rt5663.o
+obj-$(CONFIG_SND_SOC_RT5665)	+= snd-soc-rt5665.o
 obj-$(CONFIG_SND_SOC_RT5670)	+= snd-soc-rt5670.o
 obj-$(CONFIG_SND_SOC_RT5677)	+= snd-soc-rt5677.o
 obj-$(CONFIG_SND_SOC_RT5677_SPI)	+= snd-soc-rt5677-spi.o
@@ -388,6 +422,7 @@ obj-$(CONFIG_SND_SOC_SIGMADSP_REGMAP)	+= snd-soc-sigmadsp-regmap.o
 obj-$(CONFIG_SND_SOC_SI476X)	+= snd-soc-si476x.o
 obj-$(CONFIG_SND_SOC_SN95031)	+=snd-soc-sn95031.o
 obj-$(CONFIG_SND_SOC_SPDIF)	+= snd-soc-spdif-rx.o snd-soc-spdif-tx.o
+obj-$(CONFIG_SND_SOC_SIRF_AUDIO_CODEC) += sirf-audio-codec.o
 obj-$(CONFIG_SND_SOC_SSM2518)	+= snd-soc-ssm2518.o
 obj-$(CONFIG_SND_SOC_SSM2602)	+= snd-soc-ssm2602.o
 obj-$(CONFIG_SND_SOC_SSM2602_SPI)	+= snd-soc-ssm2602-spi.o
@@ -430,6 +465,7 @@ obj-$(CONFIG_SND_SOC_WM8350)	+= snd-soc-wm8350.o
 obj-$(CONFIG_SND_SOC_WM8400)	+= snd-soc-wm8400.o
 obj-$(CONFIG_SND_SOC_WM8510)	+= snd-soc-wm8510.o
 obj-$(CONFIG_SND_SOC_WM8523)	+= snd-soc-wm8523.o
+obj-$(CONFIG_SND_SOC_WM8524)	+= snd-soc-wm8524.o
 obj-$(CONFIG_SND_SOC_WM8580)	+= snd-soc-wm8580.o
 obj-$(CONFIG_SND_SOC_WM8711)	+= snd-soc-wm8711.o
 obj-$(CONFIG_SND_SOC_WM8727)	+= snd-soc-wm8727.o
@@ -474,18 +510,21 @@ obj-$(CONFIG_SND_SOC_WM9712)	+= snd-soc-wm9712.o
 obj-$(CONFIG_SND_SOC_WM9713)	+= snd-soc-wm9713.o
 obj-$(CONFIG_SND_SOC_WM_ADSP)	+= snd-soc-wm-adsp.o
 obj-$(CONFIG_SND_SOC_WM_HUBS)	+= snd-soc-wm-hubs.o
+obj-$(CONFIG_SND_SOC_ZX_AUD96P22) += snd-soc-zx-aud96p22.o
 
 # hissc codec
 #obj-$(CONFIG_SND_SOC_CODEC_HISSC)  += snd-soc-hissc.o
 # hi6555c codec
 obj-$(CONFIG_SND_SOC_CODEC_HI6555C) += snd-soc-hi6555c.o
+
 # Amp
+obj-$(CONFIG_SND_SOC_DIO2125)	+= snd-soc-dio2125.o
 obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
 obj-$(CONFIG_SND_SOC_MAX98504)	+= snd-soc-max98504.o
 obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
 obj-$(CONFIG_SND_SOC_HI6402)	+= snd-soc-hi6402.o
-obj-$(CONFIG_SND_SOC_HI6403)    += snd-soc-hi6403.o
-obj-$(CONFIG_SND_SOC_HI6405)    += snd-soc-hi6405.o
+obj-$(CONFIG_SND_SOC_HI6403)    += hisi/hi6403/
+obj-$(CONFIG_SND_SOC_HI6405)	+= hisi/hi6405/
 obj-$(CONFIG_HDMI_K3)           += snd-soc-hdmi-audio.o
 ccflags-y  += -Idrivers/devkit/audiokit/
 obj-$(CONFIG_SND_SOC_DP_AUDIO)    += snd-soc-dp-audio.o
@@ -493,9 +532,6 @@ obj-$(CONFIG_SND_SOC_DP_AUDIO)    += snd-soc-dp-audio.o
 obj-$(CONFIG_SND_SOC_CODEC_HI6555V2) += snd-soc-hi6555v2.o
 obj-$(CONFIG_SND_SOC_CODEC_HI6555V2) += snd-soc-hi6555v2-utility.o
 obj-$(CONFIG_SND_SOC_CODEC_HI6555V2) += snd-soc-hi6555v2-i2s.o
-obj-$(CONFIG_SND_SOC_CODEC_HI6555V3) += snd-soc-hi6555v3.o
-obj-$(CONFIG_SND_SOC_CODEC_HI6555V3) += snd-soc-hi6555v3-utility.o
-obj-$(CONFIG_SND_SOC_CODEC_HI6555V3) += snd-soc-hi6555v3-i2s.o
-obj-$(CONFIG_SND_SOC_CODEC_HICODECLESS) += snd-soc-hicodecless.o
-obj-$(CONFIG_SND_SOC_CODEC_HICODECLESS) += snd-soc-hicodecless-utils.o
+
 obj-$(CONFIG_SND_SOC_HICODEC_DEBUG) += hisi/hicodec_debug.o
+obj-$(CONFIG_SND_SOC) += hisi/hi6555/

@@ -29,8 +29,9 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
+
 #include "dp_aux.h"
 #include "core.h"
 #include "../hisi_fb_def.h"
@@ -53,7 +54,7 @@ static void dptx_aux_clear_data(struct dp_ctrl *dptx)
 static int dptx_aux_read_data(struct dp_ctrl *dptx, uint8_t *bytes, uint32_t len)
 {
 	uint32_t i;
-	uint32_t *data;
+	uint32_t *data = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -289,6 +290,13 @@ int dptx_read_bytes_from_i2c(struct dp_ctrl *dptx,
 
 	return dptx_aux_rw_bytes(dptx, true, true,
 				 device_addr, bytes, len);
+}
+
+int dptx_i2c_address_only(struct dp_ctrl *dptx, uint32_t device_addr)
+{
+	uint8_t bytes[1];
+	return dptx_aux_rw(dptx, 0, true, false, true,
+		device_addr, &bytes[0], 1);
 }
 
 int dptx_write_bytes_to_i2c(struct dp_ctrl *dptx,

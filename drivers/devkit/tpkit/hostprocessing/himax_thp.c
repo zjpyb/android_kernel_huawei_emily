@@ -70,6 +70,7 @@
 #define HIMAX_SET_RAWDATA_ADDR	0x800204B4
 #define HIMAX_SET_IIR_CMD			0x00000009
 #define HIMAX_CHK_KEY_ADDR		0x800070E8
+#define HIMAX_SPI_W_BUF_MAX_LEN 6
 
 static u32 himax_id_match_table[] = {
 	0x83112A00, /* chip HX83112A id */
@@ -85,6 +86,12 @@ struct himax_thp_private_data thp_private_data;
 /******* SPI-start *******/
 static struct spi_device *hx_spi_dev;
 /******* SPI-end *******/
+
+struct himax_spi_buf {
+	uint8_t *w_buf;
+	uint8_t *r_buf_a;
+	uint8_t *r_buf_b;
+} g_himax_spi_buf;
 
 void himax_assign_data(uint32_t cmd,uint8_t *tmp_value)
 {
@@ -172,8 +179,12 @@ static int himax_spi_write(struct thp_device *tdev, uint8_t *buf, unsigned int l
 
 static int himax_bus_read(struct thp_device *tdev,uint8_t command, uint8_t *data, unsigned int length, uint8_t toRetry)
 {
-	uint8_t spi_format_buf[SPI_FORMAT_ARRAY_SIZE];
+	uint8_t *spi_format_buf = g_himax_spi_buf.r_buf_b;
 
+	if (!spi_format_buf) {
+		THP_LOG_INFO("%s:spi_format_buf is NULL\n", __func__);
+		return -EINVAL;
+	}
 	/*0xF3 is head of command*/
 	spi_format_buf[0] = 0xF3;
 	spi_format_buf[1] = command;
@@ -187,9 +198,13 @@ static int himax_bus_read(struct thp_device *tdev,uint8_t command, uint8_t *data
 
 static int himax_bus_write(struct thp_device *tdev,uint8_t command, uint8_t *data, unsigned int length, uint8_t toRetry)
 {
-	uint8_t spi_format_buf[length + 2];
+	uint8_t *spi_format_buf = g_himax_spi_buf.w_buf;
 	int i;
 
+	if (!spi_format_buf) {
+		THP_LOG_INFO("%s:spi_format_buf is NULL\n", __func__);
+		return -EINVAL;
+	}
 	/*0xF2 is head of command*/
 	spi_format_buf[0] = 0xF2;
 	spi_format_buf[1] = command;
@@ -201,15 +216,21 @@ static int himax_bus_write(struct thp_device *tdev,uint8_t command, uint8_t *dat
 	return himax_spi_write(tdev,spi_format_buf,length + 2);
 }
 
+#define MOVE_8BIT 8
+#define MOVE_16BIT 16
+#define MOVE_24BIT 24
 static int himax_register_read(struct thp_device *tdev,uint8_t *read_addr, unsigned int read_length, uint8_t *read_data)
 {
 	uint8_t tmp_data[HIMAX_NORMAL_DATA_LEN];
 	/* Restore the address */
-	int address = (read_addr[3] << 24) + (read_addr[2] << 16) + (read_addr[1] << 8) + read_addr[0];
+	unsigned int address;
+
+	address = (read_addr[3] << MOVE_24BIT) + (read_addr[2] << MOVE_16BIT) +
+		(read_addr[1] << MOVE_8BIT) + read_addr[0];
 	tmp_data[0] = (uint8_t)address;
-	tmp_data[1] = (uint8_t)(address >> 8);
-	tmp_data[2] = (uint8_t)(address >> 16);
-	tmp_data[3] = (uint8_t)(address >> 24);
+	tmp_data[1] = (uint8_t)(address >> MOVE_8BIT);
+	tmp_data[2] = (uint8_t)(address >> MOVE_16BIT);
+	tmp_data[3] = (uint8_t)(address >> MOVE_24BIT);
 
 	if ( himax_bus_write(tdev,HIMAX_BEGING_ADDR,tmp_data,
 						HIMAX_NORMAL_DATA_LEN, HIMAX_BUS_RETRY_TIMES) < 0){
@@ -232,7 +253,12 @@ static int himax_register_read(struct thp_device *tdev,uint8_t *read_addr, unsig
 
 static void himax_interface_on(struct thp_device *tdev)
 {
-	uint8_t tmp_data[HIMAX_NORMAL_DATA_LEN];
+	uint8_t *tmp_data = g_himax_spi_buf.r_buf_a;
+
+	if (!tmp_data) {
+		THP_LOG_INFO("%s:tmp_data is NULL\n", __func__);
+		return;
+	}
 	/*Read a dummy register to wake up I2C.*/
 	if ( himax_bus_read(tdev,HIMAX_WAKEUP_ADDR, tmp_data,HIMAX_NORMAL_DATA_LEN,
 					HIMAX_BUS_RETRY_TIMES) < 0){/* to knock I2C*/
@@ -290,12 +316,16 @@ static int thp_hx83112_communication_check(
 		struct thp_device *tdev)
 {
 	uint8_t tmp_addr[HIMAX_NORMAL_ADDR_LEN] = {0};
-	uint8_t tmp_data[HIMAX_NORMAL_DATA_LEN] = {0};
+	uint8_t *tmp_data = g_himax_spi_buf.r_buf_a;
 	uint8_t ic_name[HIMAX_NORMAL_DATA_LEN] = {0};
 	int ret = 0;
 	int i = 0;
 	int j = 0;
 
+	if (!tmp_data) {
+		THP_LOG_INFO("%s:tmp_data is NULL\n", __func__);
+		return -EINVAL;
+	}
 	for (i = 0; i < COMM_TEST_RW_RETRY_TIME; i++) {
 		himax_assign_data(HIMAX_ICID_ADDR,tmp_addr);
 		ret = himax_register_read(tdev,tmp_addr, COMM_TEST_RW_LENGTH, tmp_data);
@@ -352,25 +382,56 @@ int thp_hx83112_chip_detect(struct thp_device *tdev)
 		THP_LOG_ERR("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
+
+	g_himax_spi_buf.w_buf = kzalloc(HIMAX_SPI_W_BUF_MAX_LEN, GFP_KERNEL);
+	if (!g_himax_spi_buf.w_buf) {
+		THP_LOG_ERR("%s:w_buf request memory fail\n", __func__);
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	g_himax_spi_buf.r_buf_a = kzalloc(COMM_TEST_RW_LENGTH, GFP_KERNEL);
+	if (!g_himax_spi_buf.r_buf_a) {
+		THP_LOG_ERR("%s:r_buf1 request memory fail\n", __func__);
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	g_himax_spi_buf.r_buf_b = kzalloc(SPI_FORMAT_ARRAY_SIZE, GFP_KERNEL);
+	if (!g_himax_spi_buf.r_buf_b) {
+		THP_LOG_ERR("%s:r_buf2 request memory fail\n", __func__);
+		ret = -ENOMEM;
+		goto exit;
+	}
+
 	thp_hx_timing_work(tdev);
 
 	ret = thp_bus_lock();
 	if (ret < 0) {
 		THP_LOG_ERR("%s:get lock failed\n", __func__);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 	ret =  thp_hx83112_communication_check(tdev);
 	thp_bus_unlock();
 
 	return ret;
 
+exit:
+	kfree(g_himax_spi_buf.w_buf);
+	g_himax_spi_buf.w_buf = NULL;
+	kfree(g_himax_spi_buf.r_buf_a);
+	g_himax_spi_buf.r_buf_a = NULL;
+	kfree(g_himax_spi_buf.r_buf_b);
+	g_himax_spi_buf.r_buf_b = NULL;
+	return ret;
 }
 
 static int himax_get_DSRAM_data(struct thp_device *tdev,char *info_data, unsigned int len)
 {
 	unsigned char tmp_addr[HIMAX_NORMAL_ADDR_LEN];
 	unsigned int read_size = len;
-	uint8_t *temp_info_data;
+	uint8_t *temp_info_data = NULL;
 	int ret;
 	struct himax_thp_private_data *himax_p = tdev->private_data;
 
@@ -484,6 +545,13 @@ void thp_hx83112_exit(struct thp_device *tdev)
 {
 	THP_LOG_INFO("%s: called\n", __func__);
 
+	kfree(g_himax_spi_buf.w_buf);
+	g_himax_spi_buf.w_buf = NULL;
+	kfree(g_himax_spi_buf.r_buf_a);
+	g_himax_spi_buf.r_buf_a = NULL;
+	kfree(g_himax_spi_buf.r_buf_b);
+	g_himax_spi_buf.r_buf_b = NULL;
+
 	if (!tdev) {
 		THP_LOG_ERR("%s: tdev null\n", __func__);
 		return;
@@ -510,6 +578,7 @@ static int __init thp_hx83112_module_init(void)
 {
 	int rc;
 	struct thp_device *dev;
+	struct thp_core_data *cd = thp_get_core_data();
 
 	THP_LOG_INFO("%s in\n", __func__ );
 
@@ -531,7 +600,10 @@ static int __init thp_hx83112_module_init(void)
 	dev->dev_node_name = THP_HX83112_DEV_NODE_NAME;
 	dev->ops = &hx83112_dev_ops;
 	dev->private_data = (void *)&thp_private_data;
-
+	if (cd && cd->fast_booting_solution) {
+		THP_LOG_ERR("%s: don't support this solution\n", __func__);
+		goto err;
+	}
 	rc = thp_register_dev(dev);
 	if (rc) {
 		THP_LOG_ERR("%s: register fail\n", __func__);

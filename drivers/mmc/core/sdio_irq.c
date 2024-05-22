@@ -15,6 +15,7 @@
 
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <uapi/linux/sched/types.h>
 #include <linux/kthread.h>
 #include <linux/export.h>
 #include <linux/wait.h>
@@ -27,6 +28,8 @@
 #include <linux/mmc/sdio_func.h>
 
 #include "sdio_ops.h"
+#include "core.h"
+#include "card.h"
 
 static int process_sdio_pending_irqs(struct mmc_host *host)
 {
@@ -61,7 +64,7 @@ static int process_sdio_pending_irqs(struct mmc_host *host)
 		 * register with a Marvell SD8797 card. A dummy CMD52 read to
 		 * function 0 register 0xff can avoid this.
 		 */
-		(void)mmc_io_rw_direct(card, 0, 0, 0xff, 0, &dummy);
+		mmc_io_rw_direct(card, 0, 0, 0xff, 0, &dummy);
 	}
 
 	count = 0;
@@ -92,11 +95,29 @@ static int process_sdio_pending_irqs(struct mmc_host *host)
 void sdio_run_irqs(struct mmc_host *host)
 {
 	mmc_claim_host(host);
-	host->sdio_irq_pending = true;
-	process_sdio_pending_irqs(host);
+	if (host->sdio_irqs) {
+		host->sdio_irq_pending = true;
+		process_sdio_pending_irqs(host);
+		if (host->ops->ack_sdio_irq)
+			host->ops->ack_sdio_irq(host);
+	}
 	mmc_release_host(host);
 }
 EXPORT_SYMBOL_GPL(sdio_run_irqs);
+
+void sdio_irq_work(struct work_struct *work)
+{
+	struct mmc_host *host =
+		container_of(work, struct mmc_host, sdio_irq_work.work);
+
+	sdio_run_irqs(host);
+}
+
+void sdio_signal_irq(struct mmc_host *host)
+{
+	queue_delayed_work(system_wq, &host->sdio_irq_work, 0);
+}
+EXPORT_SYMBOL_GPL(sdio_signal_irq);
 
 static int sdio_irq_thread(void *_host)
 {
@@ -105,7 +126,7 @@ static int sdio_irq_thread(void *_host)
 	unsigned long period, idle_period;
 	int ret;
 
-	(void)sched_setscheduler(current, SCHED_FIFO, &param);
+	sched_setscheduler(current, SCHED_FIFO, &param);
 
 	/*
 	 * We want to allow for SDIO cards to work even on non SDIO
@@ -146,10 +167,10 @@ static int sdio_irq_thread(void *_host)
 		 * errors.
 		 */
 		if (ret < 0) {
-			set_current_state(TASK_INTERRUPTIBLE);/*lint !e446 !e666*/
+			set_current_state(TASK_INTERRUPTIBLE); /*lint !e446 !e666*/
 			if (!kthread_should_stop())
-				(void)schedule_timeout(HZ);
-			set_current_state(TASK_RUNNING);/*lint !e446 !e666*/
+				schedule_timeout(HZ);
+			set_current_state(TASK_RUNNING); /*lint !e446 !e666*/
 		}
 
 		/*
@@ -167,12 +188,12 @@ static int sdio_irq_thread(void *_host)
 			}
 		}
 
-		set_current_state(TASK_INTERRUPTIBLE);/*lint !e446 !e666*/
+		set_current_state(TASK_INTERRUPTIBLE); /*lint !e446 !e666*/
 		if (host->caps & MMC_CAP_SDIO_IRQ)
 			host->ops->enable_sdio_irq(host, 1);
 		if (!kthread_should_stop())
-			(void)schedule_timeout(period);
-		set_current_state(TASK_RUNNING);/*lint !e446 !e666*/
+			schedule_timeout(period);
+		set_current_state(TASK_RUNNING); /*lint !e446 !e666*/
 	} while (!kthread_should_stop());
 
 	if (host->caps & MMC_CAP_SDIO_IRQ)
@@ -214,7 +235,9 @@ static int sdio_card_irq_put(struct mmc_card *card)
 	struct mmc_host *host = card->host;
 
 	WARN_ON(!host->claimed);
-	BUG_ON(host->sdio_irqs < 1);
+
+	if (host->sdio_irqs < 1)
+		return -EINVAL;
 
 	if (!--host->sdio_irqs) {
 		if (!(host->caps2 & MMC_CAP2_SDIO_IRQ_NOTHREAD)) {
@@ -261,8 +284,8 @@ int sdio_claim_irq(struct sdio_func *func, sdio_irq_handler_t *handler)
 	int ret;
 	unsigned char reg;
 
-	BUG_ON(!func);
-	BUG_ON(!func->card);
+	if (!func)
+		return -EINVAL;
 
 	pr_debug("SDIO: Enabling IRQ for %s...\n", sdio_func_id(func));
 
@@ -275,7 +298,7 @@ int sdio_claim_irq(struct sdio_func *func, sdio_irq_handler_t *handler)
 	if (ret)
 		return ret;
 
-	reg |= 1 << func->num;
+	reg |= 1 << func->num; /*lint !e502*/
 
 	reg |= 1; /* Master interrupt enable */
 
@@ -304,8 +327,8 @@ int sdio_release_irq(struct sdio_func *func)
 	int ret;
 	unsigned char reg;
 
-	BUG_ON(!func);
-	BUG_ON(!func->card);
+	if (!func)
+		return -EINVAL;
 
 	pr_debug("SDIO: Disabling IRQ for %s...\n", sdio_func_id(func));
 
@@ -319,7 +342,7 @@ int sdio_release_irq(struct sdio_func *func)
 	if (ret)
 		return ret;
 
-	reg &= ~(1 << func->num);/*lint !e502*/
+	reg &= ~(1 << func->num);
 
 	/* Disable master interrupt with the last function interrupt */
 	if (!(reg & 0xFE))

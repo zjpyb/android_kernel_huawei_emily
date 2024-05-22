@@ -203,7 +203,7 @@ static int wdt_config(struct watchdog_device *wdd, bool ping)
 	if (!ping) {
 		writel_relaxed(INT_MASK, wdt->base + WDTINTCLR);
 		writel_relaxed(INT_ENABLE | RESET_ENABLE, wdt->base + WDTCONTROL);
-		writel_relaxed(WDT_TIMEOUT_KICK, wdt->base + SOC_RTCTIMERWDT_WDLOAD_B_ADDR(0));
+		/*writel_relaxed(WDT_TIMEOUT_KICK, wdt->base + SOC_RTCTIMERWDT_WDLOAD_B_ADDR(0));*/
 
 		wdt->active = true;
 	}
@@ -262,6 +262,36 @@ static const struct watchdog_ops wdt_ops = {
 	.set_timeout	= wdt_setload,
 	.get_timeleft	= wdt_timeleft,
 };
+
+void watchdog_shutdown_oneshot(unsigned int timeout)
+{
+	struct sp805_wdt *wdt = g_wdt;
+	unsigned int timeout_rst;
+	int ret;
+
+	if (!wdt) {
+		pr_err("[%s]wdt device not init\n", __func__);
+		return;
+	}
+	if ((timeout < wdt->kick_time) || (timeout > DEFAULT_TIMEOUT)) {
+		pr_err("[%s]timeout invalid(%d, %d)\n", __func__,
+			timeout, wdt->kick_time);
+		return;
+	}
+	cancel_delayed_work_sync(&wdt->hisi_wdt_delayed_work);
+	wdt_disable(&wdt->wdd);
+
+	timeout_rst = timeout * 2;
+	wdt_setload(&wdt->wdd, timeout_rst);
+	ret = wdt_enable(&wdt->wdd);
+	if (ret < 0) {
+		pr_err("[%s]enable failed\n", __func__);
+		return;
+	}
+	pr_err("[%s]set %d seconds\n", __func__, timeout);
+
+	return;
+}
 
 unsigned long get_wdt_expires_time(void)
 {
@@ -357,7 +387,7 @@ void sp805_wdt_dump(void)
 {
 	rdr_arctimer_t rdr_arctimer;
 	struct sp805_wdt *wdt = g_wdt;
-	struct timer_list *timer;
+	struct timer_list *timer = NULL;
 
 	rdr_arctimer_register_read(&rdr_arctimer);
 
@@ -403,9 +433,9 @@ static void hisi_wdt_mond(struct work_struct *work)
 {
 	struct sp805_wdt *wdt = container_of(work, struct sp805_wdt,
 					     hisi_wdt_delayed_work.work);
-	bool ret;
+	bool ret = false;
 	u64 kickslice = get_32k_abs_timer_value();
-	struct rq *rq;/*lint !e578 */
+	struct rq *rq = NULL;/*lint !e578 */
 
 #ifdef CONFIG_HISI_AGING_WDT
 	if (true == disable_wdt_flag) {
@@ -500,7 +530,7 @@ static int sp805_wdt_get_timeout(struct amba_device *adev, unsigned int *default
 /*lint -save -e429*/
 static int sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 {
-	struct sp805_wdt *wdt;
+	struct sp805_wdt *wdt = NULL;
 	int ret = 0;
 
 	unsigned int default_timeout;
@@ -583,7 +613,8 @@ static int sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 				ret);
 		goto err2;
 	}
-/*    schedule_delayed_work(&wdt->hisi_wdt_delayed_work, 0);*/
+
+	wdt_enable(&wdt->wdd);
 	if (cpu_online(0)) {
 		queue_delayed_work_on(0, wdt->hisi_wdt_wq,
 				      &wdt->hisi_wdt_delayed_work, 0);
@@ -591,7 +622,6 @@ static int sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 		queue_delayed_work(wdt->hisi_wdt_wq,
 				   &wdt->hisi_wdt_delayed_work, 0);
 	}
-	wdt_enable(&wdt->wdd);
 
 	g_wdt = wdt;
 	register_syscore_ops(&sp805_wdt_syscore_ops);
@@ -641,6 +671,7 @@ static int sp805_wdt_suspend(void)
 	pr_info("%s+.\n", __func__);
 
 	if (watchdog_active(&wdt->wdd) || wdt->active) {
+		cancel_delayed_work(&wdt->hisi_wdt_delayed_work);
 #ifdef CONFIG_HISI_SR_AP_WATCHDOG
 		/* delay the disable operation to the lpm3 for the case
 			of system failure in the suspend&resume flow */
@@ -652,7 +683,6 @@ static int sp805_wdt_suspend(void)
 #else
 		ret = wdt_disable(&wdt->wdd);
 #endif
-		cancel_delayed_work(&wdt->hisi_wdt_delayed_work);
 	}
 
 	pr_info("%s-. ret=%d\n", __func__, ret);
@@ -668,6 +698,7 @@ static void sp805_wdt_resume(void)
 	pr_info("%s+.\n", __func__);
 
 	if (watchdog_active(&wdt->wdd) || !wdt->active) {
+		ret = wdt_enable(&wdt->wdd);
 		if (cpu_online(0)) {
 			queue_delayed_work_on(0, wdt->hisi_wdt_wq,
 					      &wdt->hisi_wdt_delayed_work, 0);
@@ -675,7 +706,6 @@ static void sp805_wdt_resume(void)
 			queue_delayed_work(wdt->hisi_wdt_wq,
 					   &wdt->hisi_wdt_delayed_work, 0);
 		}
-		ret = wdt_enable(&wdt->wdd);
 	}
 
 	pr_info("%s-. ret=%d\n", __func__, ret);

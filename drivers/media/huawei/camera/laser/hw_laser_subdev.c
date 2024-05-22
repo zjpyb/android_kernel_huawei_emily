@@ -37,7 +37,6 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-image-sizes.h>
 #include <media/v4l2-mediabus.h>
-#include <media/v4l2-of.h>
 #include <media/v4l2-subdev.h>
 #include <media/huawei/camera.h>
 #include <hwcam_intf.h>
@@ -76,27 +75,25 @@ typedef struct vl53lx_laser {
 
 static long
 hw_laser_subdev_ioctl(
-    struct v4l2_subdev *sd,
-    unsigned int cmd,
-    void *arg)
+	struct v4l2_subdev *sd,
+	unsigned int cmd,
+	void *arg)
 {
-    long rc = -EINVAL;
-    laser_t* s;
-    hw_laser_ctrl_t *ctrl;
+	long rc = -EINVAL;
+	laser_t *s = NULL;
+	hw_laser_ctrl_t *ctrl = NULL;
 
-    if (NULL == sd) {
-        cam_err("%s, sd laser is NULL \n", __func__);
-        return -EINVAL;
-    }
+	if (!sd) {
+		cam_err("%s, sd laser is NULL", __func__);
+		return -EINVAL;
+	}
 
-    s = SD2Laser(sd);
-    ctrl = (hw_laser_ctrl_t*)s->ctrl;
-    if(ctrl->func_tbl && ctrl->func_tbl->laser_ioctl && ctrl->data)
-    {
-        rc = ctrl->func_tbl->laser_ioctl(ctrl->data,cmd, arg);
-    }
+	s = SD2Laser(sd);
+	ctrl = (hw_laser_ctrl_t *)s->ctrl;
+	if (ctrl->func_tbl && ctrl->func_tbl->laser_ioctl && ctrl->data)
+		rc = ctrl->func_tbl->laser_ioctl(ctrl->data, cmd, arg);
 
-    return rc;
+	return rc;
 }
 
 
@@ -118,24 +115,24 @@ static int laser_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 static int laser_close(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
-    long rc = -EINVAL;
-    laser_t* s;
-    hw_laser_ctrl_t *ctrl;
+	long rc = -EINVAL;
+	laser_t *s = NULL;
+	hw_laser_ctrl_t *ctrl = NULL;
 
-    if (NULL == sd) {
-        cam_err("%s, sd laser is NULL \n", __func__);
-        return -EINVAL;
-    }
+	if (!sd) {
+		cam_err("%s, sd laser is NULL", __func__);
+		return -EINVAL;
+	}
 
-    s = SD2Laser(sd);
-    ctrl = (hw_laser_ctrl_t*)s->ctrl;
-    if(ctrl->func_tbl && ctrl->func_tbl->laser_ioctl && ctrl->data)
-    {
-        rc = ctrl->func_tbl->laser_ioctl(ctrl->data,HWLASER_IOCTL_STOP, NULL);
-        rc |= ctrl->func_tbl->laser_ioctl(ctrl->data,HWLASER_IOCTL_POWEROFF, NULL);
-    }
-    cam_err("laser is closed.");
-    return rc;
+	s = SD2Laser(sd);
+	ctrl = (hw_laser_ctrl_t *)s->ctrl;
+	if (ctrl->func_tbl && ctrl->func_tbl->laser_ioctl && ctrl->data) {
+		rc = ctrl->func_tbl->laser_ioctl(ctrl->data, HWLASER_IOCTL_STOP, NULL);
+		rc += ctrl->func_tbl->laser_ioctl(ctrl->data,
+			HWLASER_IOCTL_POWEROFF, NULL);
+	}
+	cam_err("laser is closed");
+	return rc;
 }
 
 static int laser_subdev_subscribe_event(struct v4l2_subdev *sd,
@@ -183,75 +180,75 @@ EXPORT_SYMBOL(laser_notify_data_event);
 //#define DT_TREE_DBG
 
 int laser_probe(struct i2c_client *client,
-    const struct i2c_device_id *id)
+	const struct i2c_device_id *id)
 {
-    int ret = 0;
-    struct v4l2_subdev *sd;
-    laser_t *laser;
-    hw_laser_ctrl_t *ctrl;
-    cam_info("%s",__func__);
-    if(NULL == client || NULL == id)
-    {
-        cam_err("input param is NULL!!");
-        return -EINVAL;
-    }
-    ctrl = (hw_laser_ctrl_t*)id->driver_data;
+	int ret = 0;
+	struct v4l2_subdev *sd = NULL;
+	laser_t *laser = NULL;
+	hw_laser_ctrl_t *ctrl = NULL;
 
-    laser = devm_kzalloc(&client->dev, sizeof(laser_t), GFP_KERNEL);
-    if (!laser)
-        return -ENOMEM;
+	cam_info("%s", __func__);
+	if (!client || !id) {
+		cam_err("input param is NULL");
+		return -EINVAL;
+	}
+	ctrl = (hw_laser_ctrl_t *)id->driver_data;
 
-    laser->client = client;
-    laser->ctrl = ctrl;
-    sd = &laser->sd;
-    v4l2_i2c_subdev_init(sd, client, &laser_subdev_ops);
+	laser = devm_kzalloc(&client->dev, sizeof(laser_t), GFP_KERNEL);
+	if (!laser)
+		return -ENOMEM;
 
-    sd->internal_ops = &laser_subdev_internal_ops;
-    sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
-        V4L2_SUBDEV_FL_HAS_EVENTS;
+	laser->client = client;
+	laser->ctrl = ctrl;
+	sd = &laser->sd;
+	v4l2_i2c_subdev_init(sd, client, &laser_subdev_ops);
 
-    mutex_init(&laser->lock);
+	sd->internal_ops = &laser_subdev_internal_ops;
+	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
+		V4L2_SUBDEV_FL_HAS_EVENTS;
 
-    init_subdev_media_entity(sd,HWCAM_SUBDEV_LASER);
-    ret = hwcam_cfgdev_register_subdev(sd,HWCAM_SUBDEV_LASER);
-    cam_info("ret = %d register video devices %s sucessful, major = %d, minor = %d, entity.name = %s",ret, sd->name, sd->entity.info.dev.major, sd->entity.info.dev.minor, sd->entity.name);
-    if (ret)
-        goto error;
+	mutex_init(&laser->lock);
 
-    dev_info(&client->dev, "%s sensor driver registered !!\n", sd->name);
+	init_subdev_media_entity(sd, HWCAM_SUBDEV_LASER);
+	ret = hwcam_cfgdev_register_subdev(sd, HWCAM_SUBDEV_LASER);
+	cam_info("ret = %d register video devices %s sucessful, major = %d, minor = %d, entity.name = %s",
+		ret, sd->name, sd->entity.info.dev.major,
+		sd->entity.info.dev.minor, sd->entity.name);
+	if (ret)
+		goto error;
 
-    return ret;
+	dev_info(&client->dev, "%s sensor driver registered", sd->name);
+
+	return ret;
 
 error:
-    cam_err("error!!!\n");
-    media_entity_cleanup(&sd->entity);
-    mutex_destroy(&laser->lock);
-    return ret;
+	cam_err("error");
+	media_entity_cleanup(&sd->entity);
+	mutex_destroy(&laser->lock);
+	return ret;
 }
 EXPORT_SYMBOL(laser_probe);
 
 int laser_remove(struct i2c_client *client)
 {
-    struct v4l2_subdev *sd;
-    laser_t *laser;
-    hw_laser_ctrl_t *ctrl;
-    if(NULL == client)
-    {
-        cam_err("input client is NULL");
-        return -EINVAL;
-    }
-    sd = i2c_get_clientdata(client);
-    laser = SD2Laser(sd);
-    ctrl = laser->ctrl;
-    v4l2_async_unregister_subdev(sd);
-    media_entity_cleanup(&sd->entity);
-    mutex_destroy(&laser->lock);
-    if(ctrl != NULL)
-    {
-        kfree(ctrl);
-    }
-    kfree(laser);
-    return 0;
+	struct v4l2_subdev *sd = NULL;
+	laser_t *laser = NULL;
+	hw_laser_ctrl_t *ctrl = NULL;
+
+	if (!client) {
+		cam_err("input client is NULL");
+		return -EINVAL;
+	}
+	sd = i2c_get_clientdata(client);
+	laser = SD2Laser(sd);
+	ctrl = laser->ctrl;
+	v4l2_async_unregister_subdev(sd);
+	media_entity_cleanup(&sd->entity);
+	mutex_destroy(&laser->lock);
+	if (!ctrl)
+		kfree(ctrl);
+	kfree(laser);
+	return 0;
 }
 EXPORT_SYMBOL(laser_remove);
 

@@ -22,11 +22,23 @@
 #include <linux/dma-mapping.h>
 #include <linux/memory.h>
 
+#include "dbv_curve_map/dbv_map_lg_ea9151_6_39__cmd_tft_1440_x_3120.h"
+#include "dbv_curve_map/dbv_map_lg_nt37280_lion_6_53__cmd_tft_1176_x_2400.h"
+
+#ifdef LV_GET_LCDBK_ON
+#include <huawei_platform/inputhub/sensor_feima_ext.h>
+#endif
 
 #define MMAP_DEVICE_NAME "display_sharemem_map"
 #define DTS_COMP_SHAREMEM_NAME "hisilicon,hisisharemem"
 #define DEV_NAME_SHARE_MEM "display_share_mem"
 #define XCC_COEF_LENGTH 12
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wframe-larger-than="
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 
 int g_factory_gamma_enable = 0;
 struct mutex g_rgbw_lock;
@@ -43,17 +55,18 @@ static struct dss_display_effect_xcc last_xcc_param = {
 		0x0, 0x0, 0x0, 0x8000
 	}
 };
-const int blc_xcc_buf_count = 16;
+const int blc_xcc_buf_count = 17;
 const int display_effect_flag_max = 4;
 struct effect_bl_buf {
 	uint32_t blc_enable;
 	int delta;
 	struct dss_display_effect_xcc xcc_param;
 	uint32_t dc_enable;
+	uint32_t dimming_enable;
 };
 
 /*lint -e838 -e778 -e845 -e712 -e527 -e30 -e142 -e715 -e655 -e550 +e559*/
-static void hisi_effect_module_support (struct hisi_fb_data_type *hisifd)
+static void hisi_effect_module_support(struct hisi_fb_data_type *hisifd)
 {
 	struct hisi_panel_info *pinfo = NULL;
 	struct dss_effect *effect_ctrl = NULL;
@@ -84,21 +97,24 @@ static void hisi_effect_module_support (struct hisi_fb_data_type *hisifd)
 		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_LCP_GMP) != 0));
 
 	effect_ctrl->lcp_igm_support = (pinfo->gamma_support
-		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_LCP_IGM) !=0));
+		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_LCP_IGM) != 0));
 
 	effect_ctrl->gamma_support = (pinfo->gamma_support
 		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_GAMA) != 0));
 
 	effect_ctrl->sbl_support = (pinfo->sbl_support
-		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_SBL) !=0 ));
+		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_SBL) != 0));
 
-	effect_ctrl->hiace_support =	(pinfo->hiace_support
+	effect_ctrl->hiace_support = (pinfo->hiace_support
 		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_HIACE) != 0));
 
 	effect_ctrl->arsr1p_sharp_support = (pinfo->arsr1p_sharpness_support
 		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_POST_SCF) != 0));
 
 	effect_ctrl->arsr2p_sharp_support = (pinfo->prefix_sharpness2D_support);
+
+	effect_ctrl->post_xcc_support = (pinfo->post_xcc_support
+		&& (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_POST_XCC) != 0));
 
 	effect_ctrl->dss_ready = true;
 }
@@ -111,12 +127,12 @@ static int hisifb_effect_module_init_handler(void __user *argp)
 	hisifd_primary = hisifd_list[PRIMARY_PANEL_IDX];
 	if (NULL == hisifd_primary) {
 		HISI_FB_ERR("fb0 is not existed, return!\n");
-		//effect_ctrl.dss_ready = false; ????
+		//effect_ctrl.dss_ready = false;
 		ret = -ENODEV;
 		goto err_out;
 	}
 
-	if(argp == NULL){
+	if (argp == NULL) {
 		HISI_FB_ERR("argp is null pointer\n");
 		return -1;
 	}
@@ -136,7 +152,7 @@ static int hisifb_effect_module_deinit_handler(const void __user *argp)
 	int ret;
 	struct dss_effect init_status;
 
-	if(argp == NULL){
+	if (argp == NULL) {
 		HISI_FB_ERR("argp is null pointer\n");
 		return -1;
 	}
@@ -157,7 +173,7 @@ static int hisifb_effect_info_get_handler(void __user *argp)
 	struct dss_effect_info effect_info;
 	struct hisi_fb_data_type *hisifd_primary = NULL;
 
-	if(argp == NULL){
+	if (argp == NULL) {
 		HISI_FB_ERR("argp is null pointer\n");
 		return -1;
 	}
@@ -169,7 +185,7 @@ static int hisifb_effect_info_get_handler(void __user *argp)
 	}
 
 	hisifd_primary = hisifd_list[PRIMARY_PANEL_IDX];
-	if (NULL == hisifd_primary) {
+	if (hisifd_primary == NULL) {
 		HISI_FB_ERR("fb0 is not existed, return!\n");
 		ret = -ENODEV;
 		goto err_out;
@@ -211,7 +227,8 @@ static int hisifb_effect_info_get_handler(void __user *argp)
 		}
 	}
 
-	if (effect_info.modules & (DSS_EFFECT_MODULE_LCP_GMP | DSS_EFFECT_MODULE_LCP_IGM | DSS_EFFECT_MODULE_LCP_XCC)) {
+	if (effect_info.modules & (DSS_EFFECT_MODULE_LCP_GMP | DSS_EFFECT_MODULE_LCP_IGM |
+		DSS_EFFECT_MODULE_LCP_XCC | DSS_EFFECT_MODULE_POST_XCC)) {
 		ret = hisi_effect_lcp_info_get(hisifd_primary, &effect_info.lcp);
 		if (ret) {
 			HISI_FB_ERR("failed to get lcp info\n");
@@ -243,7 +260,7 @@ static int hisifb_effect_info_set_handler(const void __user *argp)
 	struct dss_effect_info effect_info;
 	struct hisi_fb_data_type *hisifd_primary = NULL;
 
-	if(argp == NULL){
+	if (argp == NULL) {
 		HISI_FB_ERR("argp is null pointer\n");
 		return -1;
 	}
@@ -255,7 +272,7 @@ static int hisifb_effect_info_set_handler(const void __user *argp)
 	}
 
 	hisifd_primary = hisifd_list[PRIMARY_PANEL_IDX];
-	if (NULL == hisifd_primary) {
+	if (hisifd_primary == NULL) {
 		HISI_FB_ERR("hisifd_primary is null or unexpected input fb\n");
 		ret = -EBADRQC;
 		goto err_out;
@@ -318,7 +335,6 @@ static int hisifb_effect_info_set_handler(const void __user *argp)
 			goto err_out_spin;
 		}
 	}
-
 	/*the display effect is not allowed to set reg when the partical update*/
 	if (hisifd_primary->display_effect_flag < 5)
 		hisifd_primary->display_effect_flag = 4;
@@ -336,12 +352,12 @@ static int hisi_display_effect_ioctl_handler(struct hisi_fb_data_type *hisifd, u
 {
 	int ret = -EINVAL;
 
-	if (NULL == argp || NULL == hisifd) {
-		HISI_FB_ERR("NULL pointer of argp or hisifd.\n");
+	if (argp == NULL || hisifd == NULL) {
+		HISI_FB_ERR("[effect]NULL pointer of argp or hisifd\n");
 		goto err_out;
 	}
 
-	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
+	HISI_FB_DEBUG("[effect]fb%d, +\n", hisifd->index);
 
 	switch (cmd) {
 	case HISIFB_EFFECT_MODULE_INIT:
@@ -357,12 +373,12 @@ static int hisi_display_effect_ioctl_handler(struct hisi_fb_data_type *hisifd, u
 		ret = hisifb_effect_info_set_handler(argp);
 		break;
 	default:
-		HISI_FB_ERR("unknown cmd id.\n");
+		HISI_FB_ERR("[effect]unknown cmd id\n");
 		ret = -ENOSYS;
 		break;
 	};
 
-	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
+	HISI_FB_DEBUG("[effect]fb%d, -\n", hisifd->index);
 
 err_out:
 	return ret;
@@ -417,7 +433,7 @@ void hisi_dss_effect_set_reg(struct hisi_fb_data_type *hisifd)
 	return;
 }
 
-static inline struct hisi_fb_data_type* display_engine_check_input_and_get_hisifd(struct fb_info *info, void __user *argp)
+static inline struct hisi_fb_data_type *display_engine_check_input_and_get_hisifd(struct fb_info *info, void __user *argp)
 {
 	struct hisi_fb_data_type *hisifd = NULL;
 
@@ -438,6 +454,60 @@ static inline struct hisi_fb_data_type* display_engine_check_input_and_get_hisif
 	}
 
 	return hisifd;
+}
+
+static int display_engine_ud_fp_backlight_param_set(
+        struct hisi_fb_data_type *hisifd,
+        display_engine_sync_ud_fingerprint_backlight_t *param)
+{
+	int ret = 0;
+	struct hisi_fb_panel_data *pdata = NULL;
+
+	if (hisifd == NULL) {
+		HISI_FB_ERR("[effect] hisifd is NULL Pointer\n");
+		return -1;
+	}
+
+	if (hisifd->pdev == NULL) {
+		HISI_FB_ERR("[effect] pdev is NULL Pointer\n");
+		return -1;
+	}
+
+	pdata = dev_get_platdata(&hisifd->pdev->dev);
+	if (pdata == NULL) {
+		HISI_FB_ERR("[effect] pdata is NULL Pointer\n");
+		return -1;
+	}
+
+	if (param == NULL) {
+		HISI_FB_ERR("[effect] param is NULL Pointer\n");
+		return -1;
+	}
+
+	if ((int)param->current_level == ((int)param->hbm_level + 1)) {
+		hisifd->hbm_need_to_open = true;
+		hisifd->ud_fp_hbm_level = (int)param->hbm_level;
+		HISI_FB_INFO("hisifd->hbm_need_to_open = true\n");
+		return ret;
+	}
+
+	if ((param->hbm_level < hisifd->panel_info.bl_min) ||
+		(param->hbm_level > hisifd->panel_info.bl_max) ||
+		(param->current_level < hisifd->panel_info.bl_min) ||
+		(param->current_level > hisifd->panel_info.bl_max)) {
+		HISI_FB_ERR("invalid data, hbm_level(%d) current_level(%d)\n",
+			param->hbm_level, param->current_level);
+		return -EINVAL;
+	}
+
+	hisifd->ud_fp_scene = (int)param->scene_info;
+	hisifd->ud_fp_hbm_level = (int)param->hbm_level;
+	hisifd->ud_fp_current_level = (int)param->current_level;
+
+	HISI_FB_INFO("[effect] scene:%d hbm_level:%d current_level:%d\n",
+		hisifd->ud_fp_scene, hisifd->ud_fp_hbm_level,
+		hisifd->ud_fp_current_level);
+	return ret;
 }
 
 static int display_engine_blc_param_get(struct hisi_fb_data_type *hisifd, display_engine_blc_param_t *param)
@@ -553,7 +623,7 @@ int display_engine_ddic_color_param_set(struct hisi_fb_data_type *hisifd, displa
 		goto err_out;
 	}
 
-	if (pdata->lcd_ce_mode_store) {
+	if (pdata->lcd_ce_mode_store != NULL) {
 		char buf[8];
 		int count = 0;
 		hisifb_activate_vsync(hisifd);
@@ -619,7 +689,7 @@ int display_engine_ddic_cabc_param_set(struct hisi_fb_data_type *hisifd, display
 		goto err_out;
 	}
 
-	if (pdata->lcd_cabc_mode_store) {
+	if (pdata->lcd_cabc_mode_store != NULL) {
 		char buf[8];
 		int count = 0;
 		hisifb_activate_vsync(hisifd);
@@ -796,9 +866,9 @@ int display_engine_amoled_algo_param_set(struct hisi_fb_data_type *hisifd, displ
 	return ret;
 }
 
-int display_engine_panel_info_get(struct hisi_fb_data_type *hisifd, display_engine_panel_info_param_t *param) {
-
-	struct hisi_panel_info * pinfo = NULL;
+int display_engine_panel_info_get(struct hisi_fb_data_type *hisifd, display_engine_panel_info_param_t *param)
+{
+	struct hisi_panel_info *pinfo = NULL;
 
 	if (hisifd == NULL) {
 		HISI_FB_ERR("[effect] hisifd is NULL Pointer\n");
@@ -840,7 +910,8 @@ int display_engine_panel_info_get(struct hisi_fb_data_type *hisifd, display_engi
 	return 0;
 }
 
-int display_engine_color_rectify_param_get(struct hisi_fb_data_type *hisifd, display_engine_color_rectify_param_t *param) {
+int display_engine_color_rectify_param_get(struct hisi_fb_data_type *hisifd, display_engine_color_rectify_param_t *param)
+{
 	int ret = 0;
 	struct hisi_fb_panel_data *pdata = NULL;
 
@@ -875,7 +946,7 @@ int display_engine_color_rectify_param_get(struct hisi_fb_data_type *hisifd, dis
 		goto err_out;
 	}
 
-	if (pdata->lcd_color_param_get_func) {
+	if (pdata->lcd_color_param_get_func != NULL) {
 		hisifb_activate_vsync(hisifd);
 		pdata->lcd_color_param_get_func(hisifd);
 		hisifb_deactivate_vsync(hisifd);
@@ -887,19 +958,48 @@ err_out:
 	return ret;
 }
 
-int display_engine_share_mem_get(struct hisi_fb_data_type *hisifd, display_engine_share_memory_t *param) {
-	if (NULL == param ) {
+int display_engine_share_mem_get(struct hisi_fb_data_type *hisifd, display_engine_share_memory_t *param)
+{
+	if (NULL == param) {
 		HISI_FB_ERR("[shmmap] params is null\n");
 		return -1;
 	}
-	param->addr_virt = (uint64_t)share_mem_virt;
-	param->addr_phy = (uint64_t)share_mem_phy;
+	param->addr_virt = (uint64_t)(uintptr_t)share_mem_virt;
+	param->addr_phy = (uint64_t)(uintptr_t)share_mem_phy;
+	return 0;
+}
+
+static int display_engine_foldable_info_get(struct hisi_fb_data_type *hisifd, display_engine_foldable_info_t *param) {
+	if (hisifd == NULL) {
+		HISI_FB_ERR("[effect] hisifd is NULL Pointer\n");
+		return -1;
+	}
+
+	if (param == NULL) {
+		HISI_FB_ERR("[effect] param is NULL Pointer\n");
+		return -1;
+	}
+
+	hisifb_panel_get_hiace_display_time(hisifd, param->screen_on_duration_with_hiace_enable);
+
+	HISI_FB_INFO("[effect] get dbv primary:%u slave:%u folding:%u\n",
+		param->dbv_acc[DISPLAY_ENGINE_FOLDABLE_PANEL_PRIMARY],
+		param->dbv_acc[DISPLAY_ENGINE_FOLDABLE_PANEL_SLAVE  ],
+		param->dbv_acc[DISPLAY_ENGINE_FOLDABLE_PANEL_FOLDING]);
+	HISI_FB_INFO("[effect] get screen on duration primary:%u slave:%u folding:%u\n",
+		param->screen_on_duration[DISPLAY_ENGINE_FOLDABLE_PANEL_PRIMARY],
+		param->screen_on_duration[DISPLAY_ENGINE_FOLDABLE_PANEL_SLAVE  ],
+		param->screen_on_duration[DISPLAY_ENGINE_FOLDABLE_PANEL_FOLDING]);
+	HISI_FB_INFO("[effect] get screen on duration(hiace on) primary:%u slave:%u folding:%u\n",
+		param->screen_on_duration_with_hiace_enable[DISPLAY_ENGINE_FOLDABLE_PANEL_PRIMARY],
+		param->screen_on_duration_with_hiace_enable[DISPLAY_ENGINE_FOLDABLE_PANEL_SLAVE  ],
+		param->screen_on_duration_with_hiace_enable[DISPLAY_ENGINE_FOLDABLE_PANEL_FOLDING]);
 	return 0;
 }
 
 int hisifb_display_engine_register(struct hisi_fb_data_type *hisifd) {
 	int ret = 0;
-	const char* wq_name = "fb0_display_engine";
+	const char *wq_name = "fb0_display_engine";
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("[effect] hisifd is NULL\n");
@@ -910,7 +1010,7 @@ int hisifb_display_engine_register(struct hisi_fb_data_type *hisifd) {
 	mutex_init(&hisifd->de_info.param_lock);
 
 	hisifd->display_engine_wq = create_singlethread_workqueue(wq_name);
-	if (!hisifd->display_engine_wq) {
+	if (hisifd->display_engine_wq == NULL) {
 		HISI_FB_ERR("[effect] create display engine workqueue failed!\n");
 		ret = -1;
 		goto ERR_OUT;
@@ -921,13 +1021,14 @@ ERR_OUT:
 	return ret;
 }
 
-int hisifb_display_engine_unregister(struct hisi_fb_data_type *hisifd) {
+int hisifb_display_engine_unregister(struct hisi_fb_data_type *hisifd)
+{
 	if (NULL == hisifd) {
 		HISI_FB_ERR("[effect] hisifd is NULL\n");
 		return -EINVAL;
 	}
 
-	if (hisifd->display_engine_wq) {
+	if (hisifd->display_engine_wq != NULL) {
 		destroy_workqueue(hisifd->display_engine_wq);
 		hisifd->display_engine_wq = NULL;
 	}
@@ -937,7 +1038,8 @@ int hisifb_display_engine_unregister(struct hisi_fb_data_type *hisifd) {
 	return 0;  //lint !e454
 }
 
-int hisifb_display_engine_blank(int blank_mode, struct fb_info *info) {
+int hisifb_display_engine_blank(int blank_mode, struct fb_info *info)
+{
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_fb_panel_data *pdata = NULL;
 
@@ -973,30 +1075,55 @@ int hisifb_display_engine_blank(int blank_mode, struct fb_info *info) {
 	return 0;
 }
 
-void hisifb_dbv_curve_mapped_init(struct hisi_fb_data_type *hisifd) {
+void hisifb_dbv_curve_mapped_init(struct hisi_fb_data_type *hisifd)
+{
 	if (NULL == hisifd) {
 		HISI_FB_ERR("[effect] hisifd is NULL\n");
 		return;
 	}
 
-	if (hisifd->panel_info.dbv_curve_mapped_support && hisifd->panel_info.panel_name) {
-		if (!strncmp(hisifd->panel_info.panel_name, "LG_EA9151 6.39' CMD TFT 1440 x 3120", strlen("LG_EA9151 6.39' CMD TFT 1440 x 3120"))) {
-				if(!strncmp(hisifd->panel_info.lcd_panel_version, " VER:V4", strlen(" VER:V4"))) {
-					hisifd->panel_info.dbv_map_index = 0;
-					hisifd->panel_info.is_dbv_need_mapped = 1;
-				} else if(!strncmp(hisifd->panel_info.lcd_panel_version, " VER:VN1", strlen(" VER:VN1"))) {
-					hisifd->panel_info.dbv_map_index = 1;
-					hisifd->panel_info.is_dbv_need_mapped = 1;
-				} else if(!strncmp(hisifd->panel_info.lcd_panel_version, " VER:VN2", strlen(" VER:VN2"))) {
-					hisifd->panel_info.dbv_map_index= 2;
-					hisifd->panel_info.is_dbv_need_mapped = 1;
-				}
-				HISI_FB_INFO("[effect] hisifd index is %d need_map = %d\n",hisifd->panel_info.dbv_map_index,hisifd->panel_info.is_dbv_need_mapped);
-		}
+	if (!hisifd->panel_info.dbv_curve_mapped_support) {
+		HISI_FB_INFO("[effect] no need dbv_curve_mapped");
+		return;
 	}
+
+	if (!hisifd->panel_info.panel_name)
+		return;
+
+	if (!strcmp(hisifd->panel_info.panel_name, "LG_EA9151 6.39' CMD TFT 1440 x 3120")) {
+		if (!strcmp(hisifd->panel_info.lcd_panel_version, " VER:V4")) {
+			hisifd->panel_info.dbv_map_index = 0;
+			hisifd->panel_info.is_dbv_need_mapped = 1;
+		} else if (!strcmp(hisifd->panel_info.lcd_panel_version, " VER:VN1")) {
+			hisifd->panel_info.dbv_map_index = 1;
+			hisifd->panel_info.is_dbv_need_mapped = 1;
+		} else if (!strcmp(hisifd->panel_info.lcd_panel_version, " VER:VN2")) {
+			hisifd->panel_info.dbv_map_index= 2;
+			hisifd->panel_info.is_dbv_need_mapped = 1;
+		}
+		hisifd->panel_info.dbv_map_points_num = DBV_MAP_10BIT;
+		hisifd->panel_info.dbv_map_curve_pointer =
+			&dbv_curve_nolinear_to_linear_map_laya[0][0];
+	}
+	if (!strcmp(hisifd->panel_info.panel_name, "LG_NT37280_LION 6.53' CMD TFT 1176 x 2400")) {
+		if (!strcmp(hisifd->panel_info.lcd_panel_version, " VER:VN1")) {
+			hisifd->panel_info.dbv_map_index = 0;
+			hisifd->panel_info.is_dbv_need_mapped = 1;
+		} else if (!strcmp(hisifd->panel_info.lcd_panel_version, " VER:VN2")) {
+			hisifd->panel_info.dbv_map_index= 1;
+			hisifd->panel_info.is_dbv_need_mapped = 1;
+		}
+		hisifd->panel_info.dbv_map_points_num = DBV_MAP_12BIT;
+		hisifd->panel_info.dbv_map_curve_pointer =
+			&dbv_curve_nolinear_to_linear_map_lion[0][0];
+	}
+	HISI_FB_INFO("[effect] hisifd index is %d need_map = %d\n",
+		hisifd->panel_info.dbv_map_index,
+		hisifd->panel_info.is_dbv_need_mapped);
 }
 
-int hisifb_display_engine_init(struct fb_info *info, void __user *argp) {
+int hisifb_display_engine_init(struct fb_info *info, void __user *argp)
+{
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_fb_panel_data *pdata = NULL;
 	display_engine_t de;
@@ -1061,7 +1188,8 @@ int hisifb_display_engine_deinit(struct fb_info *info, void __user *argp)
 	return 0;
 }
 
-int display_engine_check_param(struct fb_info *info, void __user *argp) {
+int display_engine_check_param(struct fb_info *info, void __user *argp)
+{
 	struct hisi_fb_data_type *hisifd = display_engine_check_input_and_get_hisifd(info, argp);
 	if (NULL == hisifd) {
 		return -EINVAL;
@@ -1080,6 +1208,11 @@ int hisifb_display_engine_param_get(struct fb_info *info, void __user *argp)
 	struct hisi_fb_data_type *hisifd = NULL;
 	display_engine_param_t de_param;
 	int ret = 0;
+
+	if (argp == NULL) {
+		HISI_FB_ERR("[effect] argp is null!\n");
+		return -EINVAL;
+	}
 
 	ret = display_engine_check_param(info, argp);
 	if (ret) {
@@ -1159,6 +1292,15 @@ int hisifb_display_engine_param_get(struct fb_info *info, void __user *argp)
 		}
 	}
 
+	if (de_param.modules & DISPLAY_ENGINE_FOLDABLE_INFO) {
+		HISI_FB_INFO("[effect] DISPLAY_ENGINE_FOLDABLE_INFO\n");
+		ret = display_engine_foldable_info_get(hisifd, &de_param.foldable_info);
+		if (ret) {
+			HISI_FB_ERR("[effect] failed to get foldable info, ret=%d\n", ret);
+			goto ERR_OUT;
+		}
+	}
+
 	ret = (int)copy_to_user(argp, &de_param, sizeof(display_engine_param_t));
 	if (ret) {
 		HISI_FB_ERR("[effect] copy_to_user(param) failed! ret=%d.\n", ret);
@@ -1208,6 +1350,10 @@ int hisifb_display_engine_param_set(struct fb_info *info, void __user *argp)
 	uint32_t hisifd_modules = 0;
 	int ret = 0;
 
+	if(argp == NULL){
+		HISI_FB_ERR("argp is null pointer\n");
+		return -EINVAL;
+	}
 	if (hisifb_param_check(info, argp)) {
 		return -EINVAL;
 	}
@@ -1221,7 +1367,7 @@ int hisifb_display_engine_param_set(struct fb_info *info, void __user *argp)
 	ret = (int)copy_from_user(&de_param, argp, sizeof(display_engine_param_t));
 	if (ret) {
 		HISI_FB_ERR("[effect] copy_from_user(param) failed! ret=%d.\n", ret);
-		goto ERR_OUT;
+		return ret;
 	}
 
 	if (hisifb_runmode_check(&de_param)) {
@@ -1234,11 +1380,21 @@ int hisifb_display_engine_param_set(struct fb_info *info, void __user *argp)
 	hisifd_modules |= de_param.modules;
 	hisifd->de_param.modules = hisifd_modules;
 	mutex_unlock(&hisifd->de_info.param_lock);
-	if (hisifd->display_engine_wq) {
+
+	if (de_param.modules & DISPLAY_ENGINE_UD_FINGERPRINT_BACKLIGHT) {
+		ret = display_engine_ud_fp_backlight_param_set(hisifd,
+                        &de_param.ud_fingerprint_backlight);
+		if (ret < 0) {
+			HISI_FB_ERR("UD_FP_BACKLIGHT failed, ret=%d\n", ret);
+			return ret;
+		}
+                return ret;
+	}
+
+	if (hisifd->display_engine_wq != NULL) {
 		queue_work(hisifd->display_engine_wq, &hisifd->display_engine_work);
 	}
 
-ERR_OUT:
 	return ret;
 }
 
@@ -1299,13 +1455,12 @@ void hisifb_display_engine_workqueue_handler(struct work_struct *work)
 	if (de_param.modules & DISPLAY_ENGINE_HBM) {
 		ret = display_engine_hbm_param_set(hisifd, &de_param.hbm);
 		if (ret) {
-			HISI_FB_ERR("[effect] failed to set HBM, ret=%d\n", ret);
+			HISI_FB_INFO("[effect] failed to set HBM, ret=%d\n", ret);
 			goto ERR_OUT;
 		}
 	}
 
 	if (de_param.modules & DISPLAY_ENGINE_AMOLED_ALGO) {
-		HISI_FB_DEBUG("[effect] failed to set DISPLAY_ENGINE_AMOLED_ALGO, ret=%d\n", ret);
 		ret = display_engine_amoled_algo_param_set(hisifd, &de_param.amoled_param);
 		if (ret) {
 			HISI_FB_ERR("[effect] failed to set Amoled, ret=%d\n", ret);
@@ -1326,7 +1481,7 @@ int hisifb_display_effect_resolve_bl_buf(const char *buf,
 {
 	int ret_count;
 	ret_count = sscanf(buf,
-		"%u:%d:%u:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%u",
+		"%u:%d:%u:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%u:%u",
 		&(resolved_buf->blc_enable),
 		&(resolved_buf->delta),
 		&(resolved_buf->xcc_param.xcc_enable),
@@ -1342,24 +1497,34 @@ int hisifb_display_effect_resolve_bl_buf(const char *buf,
 		&(resolved_buf->xcc_param.xcc_table[9]),
 		&(resolved_buf->xcc_param.xcc_table[10]),
 		&(resolved_buf->xcc_param.xcc_table[11]),
-		&(resolved_buf->dc_enable));
+		&(resolved_buf->dc_enable),
+		&(resolved_buf->dimming_enable));
 	HISI_FB_DEBUG("[effect] ret_count = %d\n", ret_count);
 	return ret_count;
 }
 
 static void hisifb_display_effect_handle_xcc(struct hisi_fb_data_type *hisifd,
-	struct effect_bl_buf *resolved_buf)
+	struct effect_bl_buf *resolved_buf, const bool dc_enable_changed)
 {
 	if ((memcmp(&last_xcc_param, &(resolved_buf->xcc_param),
-		sizeof(last_xcc_param)) == 0))
+		sizeof(last_xcc_param)) == 0) && !dc_enable_changed)
 		return;
+#if defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V510) ||\
+	defined(CONFIG_HISI_FB_V330)
+	if (hisi_effect_xcc_info_set_kernel(hisifd,
+		&(resolved_buf->xcc_param)) != 0) {
+		hisifd->de_info.amoled_param.DC_Brightness_Dimming_Enable = 0;
+		hisifd->de_info.amoled_param.amoled_enable_from_hal = 0;
+		HISI_FB_ERR("[effect] hisi_effect_xcc_info_set error\n");
+	}
+#endif
 	(void)memcpy(&last_xcc_param, &(resolved_buf->xcc_param),
 		sizeof(last_xcc_param));
 }
 
 static void hisifb_display_effect_handle_dc_sync(
 	struct hisi_fb_data_type *hisifd,
-	struct effect_bl_buf *resolved_buf, bool *dc_enable_changed)
+	struct effect_bl_buf *resolved_buf, const bool dc_enable_changed)
 {
 	struct hisi_fb_data_type *hisifd_primary =
 		hisifd_list[PRIMARY_PANEL_IDX];
@@ -1367,22 +1532,23 @@ static void hisifb_display_effect_handle_dc_sync(
 		HISI_FB_ERR("hisifd_primary is NULL pointer, return!\n");
 		return;
 	}
-	*dc_enable_changed = resolved_buf->dc_enable !=
-		hisifd->de_info.amoled_param.DC_Brightness_Dimming_Enable;
-	if (*dc_enable_changed) {
-		/*the display effect is not allowed to set reg when the partical update*/
-		if (hisifd_primary->display_effect_flag < 5)
-			hisifd_primary->display_effect_flag = display_effect_flag_max;
 
+	if (dc_enable_changed) {
+		hisifd_primary->display_effect_flag = display_effect_flag_max;
 		hisifd->de_info.amoled_param.DC_Brightness_Dimming_Enable =
 			resolved_buf->dc_enable;
-		if (hisifd->bl_level > 0 || resolved_buf->dc_enable > 0) {
+		hisifd->de_info.amoled_param.amoled_enable_from_hal =
+			resolved_buf->dimming_enable;
+		if (hisifd->bl_level > 0 || resolved_buf->dc_enable > 0 ||
+			resolved_buf->dimming_enable > 0) {
 			delta_bl_delayed = resolved_buf->delta;
 			blc_enable_delayed = resolved_buf->blc_enable;
 		} else {
 			hisifd->de_info.amoled_param.
 				DC_Brightness_Dimming_Enable_Real =
 				resolved_buf->dc_enable;
+			hisifd->de_info.amoled_param.AmoledDimingEnable =
+				resolved_buf->dimming_enable;
 			hisifd->de_info.blc_enable =
 				(bool)resolved_buf->blc_enable;
 			hisifd->de_info.blc_delta = resolved_buf->delta;
@@ -1432,12 +1598,19 @@ ssize_t hisifb_display_effect_bl_ctrl_store(struct fb_info *info,
 
 	down(&hisifd->blank_sem_effect);
 
-	HISI_FB_DEBUG("[effect] buf is %s\n", buf);
 	ret_count = hisifb_display_effect_resolve_bl_buf(buf, &resolved_buf);
+	HISI_FB_DEBUG("[effect]buf is %s, ret_count is %d\n", buf, (int)ret_count);
 	if (ret_count == blc_xcc_buf_count) {
-		hisifb_display_effect_handle_xcc(hisifd, &resolved_buf);
+		dc_enable_changed = (resolved_buf.dc_enable !=
+			hisifd->de_info.amoled_param.
+			DC_Brightness_Dimming_Enable) ||
+			(resolved_buf.dimming_enable !=
+			hisifd->de_info.amoled_param.
+			amoled_enable_from_hal);
+		hisifb_display_effect_handle_xcc(hisifd,
+			&resolved_buf, dc_enable_changed);
 		hisifb_display_effect_handle_dc_sync(hisifd,
-			&resolved_buf, &dc_enable_changed);
+			&resolved_buf, dc_enable_changed);
 	} else {
 		hisifd->de_info.blc_enable = (bool)resolved_buf.blc_enable;
 		hisifd->de_info.blc_delta = resolved_buf.delta;
@@ -1462,17 +1635,18 @@ ssize_t hisifb_display_effect_bl_ctrl_store(struct fb_info *info,
 	return ret;
 }
 
-static int share_mmap_map(struct file *filp, struct vm_area_struct *vma) {
+static int share_mmap_map(struct file *filp, struct vm_area_struct *vma)
+{
 	unsigned long start = 0;
 	unsigned long end = 0;
 	unsigned long size = 0;
 
-	if (!vma) {
+	if (vma == NULL) {
 		HISI_FB_ERR("[shmmap] vma is null!\n");
 		return -1;
 	}
 
-	if (!share_mem_virt || share_mem_phy == 0) {
+	if (share_mem_virt == NULL || share_mem_phy == 0) {
 		HISI_FB_ERR("[shmmap] share memory is not alloced!\n");
 		return 0;
 	}
@@ -1505,7 +1679,8 @@ static struct miscdevice misc = {
 	.fops = &mmap_dev_fops,
 };
 
-static int __init mmap_dev_init(void) {
+static int __init mmap_dev_init(void)
+{
 	int ret = 0;
 	HISI_FB_INFO("[shmmap] dev_init \n");
 	ret = misc_register(&misc);
@@ -1523,8 +1698,8 @@ static int __init mmap_dev_init(void) {
 
 //module_exit(mmap_dev_exit);
 
-static int hisi_share_mem_probe(struct platform_device *pdev) {
-
+static int hisi_share_mem_probe(struct platform_device *pdev)
+{
 	HISI_FB_DEBUG("[shmmap] hisi_share_mem_probe \n");
 
 	if (NULL == pdev) {
@@ -1542,7 +1717,8 @@ static int hisi_share_mem_probe(struct platform_device *pdev) {
 	return 0;
 }
 
-static int hisi_share_mem_remove(struct platform_device *pdev) {
+static int hisi_share_mem_remove(struct platform_device *pdev)
+{
 	return 0;
 }
 
@@ -1569,7 +1745,8 @@ static struct platform_driver this_driver = {
 	},
 };
 
-static int __init hisi_share_mem_init(void) {
+static int __init hisi_share_mem_init(void)
+{
 	int ret = 0;
 	HISI_FB_INFO("[shmmap] hisi_share_mem_init\n");
 	ret = platform_driver_register(&this_driver);
@@ -1583,5 +1760,6 @@ static int __init hisi_share_mem_init(void) {
 
 module_init(hisi_share_mem_init);
 
-
+#pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 /*lint +e838 +e778 +e845 +e712 +e527 +e30 +e142 +e715 +e655 +e550 +e559*/

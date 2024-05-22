@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the Linux kernel device drivers.
 #
 # 15 Sep 2000, Christoph Hellwig <hch@infradead.org>
 # Rewritten to use lists instead of if-statements.
 #
+
 
 obj-y				+= irqchip/
 obj-y				+= bus/
@@ -14,14 +16,20 @@ obj-$(CONFIG_GENERIC_PHY)	+= phy/
 obj-$(CONFIG_PINCTRL)		+= pinctrl/
 obj-$(CONFIG_GPIOLIB)		+= gpio/
 obj-y				+= pwm/
+
 obj-$(CONFIG_PCI)		+= pci/
+obj-$(CONFIG_PCI_ENDPOINT)	+= pci/endpoint/
+# PCI dwc controller drivers
+obj-y				+= pci/dwc/
+
 obj-$(CONFIG_PARISC)		+= parisc/
 obj-$(CONFIG_RAPIDIO)		+= rapidio/
 obj-y				+= video/
 obj-y				+= devkit/lcdkit/
-obj-$(CONFIG_HUAWEI_LCD_PANEL)  += huawei_platform/lcd/
 obj-y				+= idle/
+
 obj-$(CONFIG_HISI_BOOTDEVICE)   += bootdevice/
+
 # IPMI must come before ACPI in order to provide IPMI opregion support
 obj-y				+= char/ipmi/
 
@@ -70,12 +78,13 @@ obj-$(CONFIG_PARPORT)		+= parport/
 obj-$(CONFIG_NVM)		+= lightnvm/
 obj-y				+= base/ block/ misc/ mfd/ nfc/
 obj-$(CONFIG_LIBNVDIMM)		+= nvdimm/
-obj-$(CONFIG_DEV_DAX)		+= dax/
+obj-$(CONFIG_DAX)		+= dax/
 obj-$(CONFIG_DMA_SHARED_BUFFER) += dma-buf/
 obj-$(CONFIG_NUBUS)		+= nubus/
 obj-y				+= macintosh/
 obj-$(CONFIG_IDE)		+= ide/
 obj-y				+= i2c/
+obj-y				+= i3c/
 obj-$(CONFIG_SCSI)		+= scsi/
 obj-y				+= nvme/
 obj-$(CONFIG_ATA)		+= ata/
@@ -104,6 +113,7 @@ obj-$(CONFIG_TC)		+= tc/
 obj-$(CONFIG_UWB)		+= uwb/
 obj-$(CONFIG_USB_PHY)		+= usb/
 obj-$(CONFIG_USB)		+= usb/
+obj-$(CONFIG_USB_SUPPORT)	+= usb/
 obj-$(CONFIG_PCI)		+= usb/
 obj-$(CONFIG_USB_GADGET)	+= usb/
 obj-$(CONFIG_OF)		+= usb/
@@ -113,7 +123,7 @@ obj-$(CONFIG_INPUT)		+= input/
 obj-$(CONFIG_RTC_LIB)		+= rtc/
 obj-y				+= media/
 obj-$(CONFIG_PPS)		+= pps/
-obj-$(CONFIG_PTP_1588_CLOCK)	+= ptp/
+obj-y				+= ptp/
 obj-$(CONFIG_W1)		+= w1/
 obj-y				+= power/
 obj-$(CONFIG_HWMON)		+= hwmon/
@@ -125,12 +135,11 @@ obj-$(CONFIG_ACCESSIBILITY)	+= accessibility/
 obj-$(CONFIG_ISDN)		+= isdn/
 obj-$(CONFIG_EDAC)		+= edac/
 obj-$(CONFIG_EISA)		+= eisa/
-obj-y				+= lguest/
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
 obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
-obj-$(CONFIG_SWITCH)		+= switch/
+obj-$(CONFIG_SWITCH)        += switch/
 obj-$(CONFIG_NEW_LEDS)		+= leds/
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
 obj-$(CONFIG_SGI_SN)		+= sn/
@@ -174,12 +183,12 @@ obj-$(CONFIG_MCB)		+= mcb/
 obj-$(CONFIG_PERF_EVENTS)	+= perf/
 obj-$(CONFIG_RAS)		+= ras/
 obj-$(CONFIG_THUNDERBOLT)	+= thunderbolt/
-obj-$(CONFIG_TEE_CFC)		+= hwtracing/coresight/
 obj-y				+= hwtracing/intel_th/
 obj-$(CONFIG_STM)		+= hwtracing/stm/
 obj-$(CONFIG_ANDROID)		+= android/
 obj-$(CONFIG_NVMEM)		+= nvmem/
 obj-$(CONFIG_FPGA)		+= fpga/
+obj-$(CONFIG_FSI)		+= fsi/
 obj-$(CONFIG_TEE)		+= tee/
 
 obj-$(CONFIG_HI_VCODEC_VENC_HI3660) += vcodec/hi_vcodec/venc/drv/venc/
@@ -187,32 +196,28 @@ obj-$(CONFIG_HI_VCODEC_VENC_HIVNA) += vcodec/hi_vcodec/venc_hivna/drv/venc/
 
 obj-$(CONFIG_HI_VCODEC_VDEC_HI3660) += vcodec/hi_vcodec/vdec/
 obj-$(CONFIG_HI_VCODEC_VDEC_HIVNA) += vcodec/hi_vcodec/vdec_hivna/
-
-ifeq ($(BOARD_CHARGER_ENABLE_DRM),true)
-obj-$(CONFIG_IMAGINATION_D5500_DRM_VCODEC)  += vcodec/imagination/D5500_DRM/
-else
-obj-$(CONFIG_IMAGINATION_D5500_VCODEC)  += vcodec/imagination/D5500/
-endif
-obj-$(CONFIG_HISILICON_PLATFORM)+= hisi/
-obj-$(CONFIG_HUAWEI_PLATFORM) += huawei_platform/
-obj-$(CONFIG_HUAWEI_DSM)        += dsm/
-obj-$(CONFIG_HUAWEI_WPA_DMD) += wpa_dmd/
-obj-$(CONFIG_CONNECTIVITY_HI110X) += connectivity/
-obj-$(CONFIG_LOGGER_EXTEND) += log/
-obj-$(CONFIG_CONTEXTHUB)        += contexthub/
-obj-$(CONFIG_HW_GADGET) += hwusb/
-obj-$(CONFIG_HUAWEI_BFM) += hwbfm/
-obj-$(CONFIG_HW_ZEROHUNG) += hwzerohung/
-obj-$(CONFIG_HW_FDLEAK) += hwfdleak/
-obj-$(CONFIG_HW_ERECOVERY) += hwerecovery/
+obj-$(CONFIG_MULTIPLEXER)	+= mux/
 obj-$(CONFIG_HW_WIFI)       += hwnet/
 obj-y += devkit/tpkit/
+obj-$(CONFIG_HISILICON_PLATFORM)+= hisi/
+obj-$(CONFIG_HUAWEI_DSM)	+= dsm/
+obj-$(CONFIG_HUAWEI_DSM_IOMT_HOST)	+= iomt_host/
+obj-$(CONFIG_LOGGER_EXTEND)	+= log/
+obj-$(CONFIG_HUAWEI_BFM) += hwbfm/
+obj-$(CONFIG_HW_ZEROHUNG) += hwzerohung/
+obj-$(CONFIG_HW_MEMCHECK) += hwmemcheck/
 obj-$(CONFIG_AUDIOKIT) += devkit/audiokit/
+obj-y += contexthub/
+# the cfi is for CFI test case
+obj-y += cfi/
+obj-$(CONFIG_HUAWEI_DUBAI) += dubai/
+obj-$(CONFIG_HUAWEI_PLATFORM) += huawei_platform/
+obj-$(CONFIG_HW_FDLEAK) += hwfdleak/
+obj-$(CONFIG_HW_GADGET) += hwusb/
+obj-$(CONFIG_CONNECTIVITY_HI110X) += connectivity/
+obj-$(CONFIG_HUAWEI_STORAGE_ROFA) += storage_rofa/
+obj-$(CONFIG_HW_ERECOVERY) += hwerecovery/
 obj-$(CONFIG_HW_CPULOAD_NOTI) += cpuload/
 obj-$(CONFIG_HW_MEMORY_MONITOR) += mmonitor/
 obj-$(CONFIG_HW_MEMORY_MONITOR) += allocpages_delayacct/
-obj-y += cfi/
-obj-$(CONFIG_HUAWEI_DUBAI) += dubai/
-obj-$(CONFIG_HUAWEI_STORAGE_ROFA) += storage_rofa/
-obj-$(CONFIG_OASES) += oases/
-obj-$(CONFIG_OAE_FW_PATCH) += oae_fw_patch/
+obj-$(CONFIG_HW_XCOLLIE) += hwxcollie/

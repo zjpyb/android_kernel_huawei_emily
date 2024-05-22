@@ -1,3 +1,5 @@
+#include "securec.h"
+
 #define GET_HARDWARE_TIMEOUT 10000
 #define SPI_4G_PHYS_ADDR 0xFFFFFFFF
 
@@ -219,12 +221,16 @@ static int hisi_spi_get_pins_data(struct pl022 *pl022, struct device *dev)
 
 static void hisi_spi_txrx_buffer_check(struct pl022 *pl022,struct spi_transfer *transfer)
 {
+	errno_t ret;
+
 	if ((virt_to_phys(pl022->cur_transfer->tx_buf) > SPI_4G_PHYS_ADDR)) {
 		/* wrining! must be use dma buffer, and needs the flag "GFP_DMA" when alloc memery */
 		WARN_ON(1);
 		pl022->tx_buffer = kzalloc(pl022->cur_transfer->len, GFP_KERNEL | GFP_DMA);
 		if (NULL != pl022->tx_buffer) {
-			memcpy(pl022->tx_buffer, transfer->tx_buf, pl022->cur_transfer->len);
+			ret = memcpy_s(pl022->tx_buffer, (pl022->cur_transfer->len), transfer->tx_buf, pl022->cur_transfer->len);
+			if(ret)
+				dev_err(&pl022->adev->dev,"hisi_spi_txrx_buffer_check memcpy_s error\n");
 			pl022->tx = (void*)pl022->tx_buffer;
 			dev_err(&pl022->adev->dev,"tx is not dma-buffer\n");
 		} else {
@@ -256,8 +262,12 @@ static void hisi_spi_txrx_buffer_check(struct pl022 *pl022,struct spi_transfer *
 
 static void hisi_spi_dma_buffer_free(struct pl022 *pl022)
 {
+	errno_t ret;
+
 	if (NULL != pl022->rx_buffer) {
-		memcpy(pl022->cur_transfer->rx_buf, pl022->rx, pl022->cur_transfer->len);
+		ret = memcpy_s(pl022->cur_transfer->rx_buf, (pl022->cur_transfer->len), pl022->rx, pl022->cur_transfer->len);
+		if(ret)
+			dev_err(&pl022->adev->dev,"hisi_spi_dma_buffer_free memcpy_s error\n");
 		kfree(pl022->rx_buffer);
 		pl022->rx_buffer = NULL;
 	}

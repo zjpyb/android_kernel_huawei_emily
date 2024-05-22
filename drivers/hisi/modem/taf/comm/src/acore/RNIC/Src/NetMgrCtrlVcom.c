@@ -63,6 +63,9 @@
 *****************************************************************************/
 NM_CTRL_CTX_STRU    g_stNmCtrlCtx;                          /*设备结构体*/
 
+#if (VOS_OS_VER == VOS_WIN32)
+struct file_operations       g_stNmCtrlCdevFops;
+#else
 static const struct file_operations g_stNmCtrlCdevFops =
 {
     .owner   = THIS_MODULE,
@@ -71,6 +74,7 @@ static const struct file_operations g_stNmCtrlCdevFops =
     .release = NM_CTRL_Release,
     .poll    = NM_CTRL_Poll,
 };
+#endif
 
 /*****************************************************************************
   3 函数实现
@@ -389,6 +393,10 @@ int __init NM_CTRL_Init(VOS_VOID)
 }
 
 
+#if (VOS_LINUX == VOS_OS_VER)
+#if (FEATURE_ON == FEATURE_DELAY_MODEM_INIT)
 module_init(NM_CTRL_Init);
+#endif
+#endif
 
 

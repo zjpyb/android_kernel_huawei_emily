@@ -37,9 +37,6 @@
 #include <linux/kallsyms.h>
 #include <linux/proc_fs.h>
 #include <linux/export.h>
-#ifdef CONFIG_HISI_CPU_ISOLATION
-#include <linux/cpumask.h>
-#endif
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/hardware/cache-uniphier.h>
@@ -170,7 +167,6 @@ static bool migrate_one_irq(struct irq_desc *desc)
 #else
 		affinity = cpu_online_mask;
 #endif
-
 		ret = true;
 	}
 

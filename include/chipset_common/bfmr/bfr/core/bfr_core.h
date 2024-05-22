@@ -30,85 +30,85 @@
 extern "C" {
 #endif
 
+#define RRECORD_HEAD_RESERVED 68
 
 /*----export prototypes---------------------------------------------------------------*/
 
-typedef enum bfr_recovery_method
-{
-    /*
-    * in case that the boot fail has been processed in frmawork layer, the BFMR should
-    * set the suggested recovery method as BFR_DO_NOTHING when invoke function
-    * try_to_recovery
-    */
-    FRM_DO_NOTHING = 0,
+typedef enum bfr_recovery_method {
+	/*
+	 * in case that the boot fail has been processed in frmawork layer, the BFMR should
+	 * set the suggested recovery method as BFR_DO_NOTHING when invoke function
+	 * try_to_recovery
+	 */
+	FRM_DO_NOTHING = 0,
 
-    /*
-    * this is the basic recovery method for the most boot fail
-    */
-    FRM_REBOOT,
+	/*
+	 * this is the basic recovery method for the most boot fail
+	 */
+	FRM_REBOOT,
 
-    /*
-    * if the phone has A/B system and the B system is valid, when A system can not boot successfully
-    * the BFR will use B system to do bootup
-    */
-    FRM_GOTO_B_SYSTEM,
+	/*
+	 * if the phone has A/B system and the B system is valid, when A system can not boot successfully
+	 * the BFR will use B system to do bootup
+	 */
+	FRM_GOTO_B_SYSTEM,
 
-    /*
-    * this recovery method is used for the native and framework normal boot fail when
-    * the reboot action can not recovery the boot fail.
-    */
-    FRM_GOTO_ERECOVERY_DEL_FILES_FOR_BF,
+	/*
+	 * this recovery method is used for the native and framework normal boot fail when
+	 * the reboot action can not recovery the boot fail.
+	 */
+	FRM_DEL_FILES_FOR_BF,
 
-    /*
-    * this recovery method is used when the available space of data partition is 
-    * below the threshold, which will resulting in boot fail
-    */
-    FRM_GOTO_ERECOVERY_DEL_FILES_FOR_NOSPC,
+	/*
+	 * this recovery method is used when the available space of data partition is
+	 * below the threshold, which will resulting in boot fail
+	 */
+	FRM_DEL_FILES_FOR_NOSPC,
 
-    /*
-    * if deleting files in data can not recovery the boot fail, the further recovery
-    * method is suggesting the user to do factory data reset.
-    */
-    FRM_GOTO_ERECOVERY_FACTORY_RESET,
+	/*
+	 * if deleting files in data can not recovery the boot fail, the further recovery
+	 * method is suggesting the user to do factory data reset.
+	 */
+	FRM_FACTORY_RST,
 
-    /*
-    * this recovery method is used for the extreme case that the action of
-    * mounting data partirion will result in panic in kernel
-    */
-    FRM_GOTO_ERECOVERY_FORMAT_DATA_PART,
+	/*
+	 * this recovery method is used for the extreme case that the action of
+	 * mounting data partirion will result in panic in kernel
+	 */
+	FRM_FORMAT_DATA_PART,
 
-    /* download the latest OTA full package to do recovery */
-    FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY,
+	/* download the latest OTA full package to do recovery */
+	FRM_DOWNLOAD,
 
-    /*
-    * download the latest OTA full package to do recovery
-    * and in the end delete the key files in data partition
-    */
-    FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES,
+	/*
+	 * download the latest OTA full package to do recovery
+	 * and in the end delete the key files in data partition
+	 */
+	FRM_DOWNLOAD_AND_DEL_FILES,
 
-    /*
-    * download the latest OTA full package to do recovery
-    * and in the end suggest the user to do factory reset
-    */
-    FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET,
+	/*
+	 * download the latest OTA full package to do recovery
+	 * and in the end suggest the user to do factory reset
+	 */
+	FRM_DOWNLOAD_AND_FACTORY_RST,
 
-    /* if the recovery can not bootup successfully for ever, if we should notify the user in time*/
-    FRM_NOTIFY_USER_RECOVERY_FAILURE,
+	/* if the recovery can not bootup successfully for ever, if we should notify the user in time*/
+	FRM_NOTIFY_USER_FAIL,
 
-    FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA,
+	FRM_LOWLEVEL_FORMAT_DATA,
 
-    FRM_ENTER_SAFE_MODE,
+	FRM_ENTER_SAFE_MODE,
 
-    FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY,
+	FRM_FACTORY_RST_AFTER_DOWNLOAD,
 
-    FRM_BOPD,
-    FRM_STORAGE_RDONLY_BOPD,
-    FRM_HARDWARE_DEGRADE_BOPD,
-    FRM_STORAGE_RDONLY_HARDWARE_DEGRADE_BOPD,
-    FRM_BOPD_AFTER_DOWNLOAD,
-    FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD,
+	FRM_BOPD,
+	FRM_STORAGE_RDONLY_BOPD,
+	FRM_HW_DEGRADE_BOPD,
+	FRM_STORAGE_RDONLY_HW_DEGRADE_BOPD,
+	FRM_BOPD_AFTER_DOWNLOAD,
+	FRM_HW_DEGRADE_BOPD_AFTER_DOWNLOAD,
 
-    FRM_RECOVERY_METHOD_MAX_COUNT
+	FRM_RECOVERY_METHOD_MAX_COUNT
 } bfr_recovery_method_e;
 
 typedef enum SUGGESTED_RECOVERY_METHOD
@@ -212,21 +212,21 @@ typedef enum bfr_recovery_method_run_result
 
 typedef enum bfr_boot_fail_recovery_result
 {
-    BOOT_FAIL_RECOVERY_SUCCESS = ((unsigned int)0xA5A5A5A5),
-    BOOT_FAIL_RECOVERY_FAILURE = ((unsigned int)0x5A5A5A5A),
+    BF_RECOVERY_SUCCESS = ((unsigned int)0xA5A5A5A5),
+    BF_RECOVERY_FAILURE = ((unsigned int)0x5A5A5A5A),
 } bfr_boot_fail_recovery_result_e;
 
 typedef struct bfr_recovery_record_header
 {
-    unsigned int crc32;
+	unsigned char sha256[BFMR_SHA256_HASH_LEN];
     unsigned int magic_number;
     int boot_fail_count;
     int last_record_idx;
     int next_record_idx;
     int record_count; /* record total count can be saved in the rrecord partition*/
-    int record_count_before_boot_success; /* this field shouid be set as 0 when boot success */
+    int rec_cnt_before_boot_succ; /* this field shouid be set as 0 when boot success */
     unsigned int safe_mode_enable_flag; /* if this fiels is 0x656e736d means safe mode has been enabled */
-    char reserved[96];
+	char reserved[RRECORD_HEAD_RESERVED];
 } __attribute__((packed)) bfr_recovery_record_header_t;
 
 typedef struct bfr_recovery_record
@@ -245,14 +245,13 @@ typedef struct bfr_recovery_record
     char reserved[68];
 } __attribute__((packed)) bfr_recovery_record_t;
 
-typedef struct bfr_recovery_record_param
-{
+struct bfr_record_param {
     unsigned char *buf;
     unsigned int buf_size;
     unsigned int part_offset;
     int record_damaged; /* 0 - good, 1 - damaged */
-    int record_count_before_boot_success; /* this field shouid be set as 0 when boot success */
-} bfr_recovery_record_param_t;
+    int rec_cnt_before_boot_succ; /* this field shouid be set as 0 when boot success */
+};
 
 typedef struct
 {
@@ -332,31 +331,31 @@ typedef enum
 #define BFR_ENTER_ERECOVERY_REASON_SIZE (sizeof(bfmr_rrecord_misc_msg_param_t))
 #define BFR_EACH_RECORD_PART_SIZE ((unsigned int)0x100000)
 #define BFR_ENTER_ERECOVERY_REASON_OFFSET (BFR_MISC_PART_OFFSET)
-#define BFR_RRECORD_FIRST_PART_OFFSET (BFR_ENTER_ERECOVERY_REASON_SIZE)
-#define BFR_RRECORD_SECOND_PART_OFFSET (BFR_RRECORD_FIRST_PART_OFFSET + BFR_EACH_RECORD_PART_SIZE)
-#define BFR_RRECORD_THIRD_PART_OFFSET (BFR_RRECORD_SECOND_PART_OFFSET + BFR_EACH_RECORD_PART_SIZE)
+#define BFR_RRECORD_1ST_PART_OFS (BFR_ENTER_ERECOVERY_REASON_SIZE)
+#define BFR_RRECORD_2ND_PART_OFS (BFR_RRECORD_1ST_PART_OFS + BFR_EACH_RECORD_PART_SIZE)
+#define BFR_RRECORD_3RD_PART_OFS (BFR_RRECORD_2ND_PART_OFS + BFR_EACH_RECORD_PART_SIZE)
 #define BFR_SAFE_MODE_ENABLE_FLAG ((unsigned int)0x656e736d) /*ensm*/
 #define BFR_FACTORY_RESET_DONE ((unsigned int)0x6672646e) /*frdn*/
 #define BFR_FSCK_BEFORE_FORMAT_DATA ((unsigned int)0x6673666d) /* fsfm */
 #define BFR_FORMAT_DATA_WITHOUT_FSCK ((unsigned int)0x666d6474) /* fmdt */
 #define bfr_is_download_recovery_method(recovery_method) \
-    (((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY == recovery_method) \
-    || ((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES == recovery_method) \
-    || ((unsigned int)FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET == recovery_method))
+    (((unsigned int)FRM_DOWNLOAD == recovery_method) \
+    || ((unsigned int)FRM_DOWNLOAD_AND_DEL_FILES == recovery_method) \
+    || ((unsigned int)FRM_DOWNLOAD_AND_FACTORY_RST == recovery_method))
 
 #define BOPD_BEFORE_DOWNLOAD ((unsigned long long)0x2)
-#define BOPD_WITH_STORAGE_RDONLY_BEFORE_DOWNLOAD ((unsigned long long)0x3)
-#define BOPD_WITH_HARDWARE_DEGRADE_BEFORE_DOWNLOAD ((unsigned long long)0x6)
-#define BOPD_WITH_STORAGE_RDONLY_HARDWARE_DEGRADE_BEFORE_DOWNLOAD ((unsigned long long)0x7)
+#define BOPD_STORAGE_RDONLY_BEFORE_DOWNLOAD ((unsigned long long)0x3)
+#define BOPD_HW_DEGRADE_BEFORE_DOWNLOAD ((unsigned long long)0x6)
+#define BOPD_STORAGE_RDONLY_HW_DEGRADE_BEFORE_DOWNLOAD ((unsigned long long)0x7)
 #define BOPD_AFTER_DOWNLOAD ((unsigned long long)0xa)
-#define BOPD_WITH_HARDWARE_DEGRADE_AFTER_DOWNLOAD ((unsigned long long)0xe)
+#define BOPD_HW_DEGRADE_AFTER_DOWNLOAD ((unsigned long long)0xe)
 #define bfr_is_bopd_mode(bopd_mode_value) \
     ((BOPD_BEFORE_DOWNLOAD == bopd_mode_value) \
-    || (BOPD_WITH_STORAGE_RDONLY_BEFORE_DOWNLOAD == bopd_mode_value) \
-    || (BOPD_WITH_HARDWARE_DEGRADE_BEFORE_DOWNLOAD == bopd_mode_value) \
-    || (BOPD_WITH_STORAGE_RDONLY_HARDWARE_DEGRADE_BEFORE_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_STORAGE_RDONLY_BEFORE_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_HW_DEGRADE_BEFORE_DOWNLOAD == bopd_mode_value) \
+    || (BOPD_STORAGE_RDONLY_HW_DEGRADE_BEFORE_DOWNLOAD == bopd_mode_value) \
     || (BOPD_AFTER_DOWNLOAD == bopd_mode_value) \
-    || (BOPD_WITH_HARDWARE_DEGRADE_AFTER_DOWNLOAD == bopd_mode_value))
+    || (BOPD_HW_DEGRADE_AFTER_DOWNLOAD == bopd_mode_value))
 
 
 /*----global variables-----------------------------------------------------------------*/
@@ -365,6 +364,7 @@ typedef enum
 /*----export function prototypes--------------------------------------------------------*/
 
 #ifdef CONFIG_USE_BOOTFAIL_RECOVERY_SOLUTION
+void release_rrecord_param(void);
 int bfr_get_hardware_fault_times(bfmr_get_hw_fault_info_param_t *pfault_info_param);
 int bfr_get_real_recovery_info(bfr_real_recovery_info_t *preal_recovery_info);
 char* bfr_get_recovery_method_desc(int recovery_method);

@@ -21,9 +21,9 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/hwspinlock.h>
-#include <linux/wakelock.h>
 #include <linux/interrupt.h>
 #include <linux/delay.h>
+#include <linux/types.h>
 #include "asp_hdmi_dma.h"
 
 /*lint -e774 -e747 -e502 -e429*/
@@ -82,7 +82,6 @@ struct asp_hdmi_dma_priv {
 	struct device *dev;
 	spinlock_t lock;
 	struct resource *res;
-	struct wake_lock wake_lock;
 	void __iomem *asp_dma_reg_base_addr;
 };
 
@@ -93,8 +92,6 @@ static unsigned int dmac_reg_read(unsigned int reg)
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 	unsigned int ret = 0;
 	unsigned long flag_sft = 0;
-
-	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 	ret = readl(priv->asp_dma_reg_base_addr + reg);
@@ -108,8 +105,6 @@ static void dmac_reg_write(unsigned int reg, unsigned int value)
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 	unsigned long flag_sft = 0;
 
-	WARN_ON(NULL == priv);
-
 	spin_lock_irqsave(&priv->lock, flag_sft);
 	writel(value, priv->asp_dma_reg_base_addr + reg);
 	spin_unlock_irqrestore(&priv->lock, flag_sft);
@@ -120,8 +115,6 @@ static void dmac_reg_set_bit(unsigned int reg, unsigned int offset)
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 	unsigned int value = 0;
 	unsigned long flag_sft = 0;
-
-	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -137,8 +130,6 @@ static void dmac_reg_clr_bit(unsigned int reg, unsigned int offset)
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 	unsigned int value = 0;
 	unsigned long flag_sft = 0;
-
-	WARN_ON(NULL == priv);
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -170,8 +161,6 @@ static int transform_to_tx3_reg_value(struct tx3_config_parameters parameters, u
 {
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 	unsigned int value = 0x0;
-
-	WARN_ON(NULL == priv);
 
 	if (BIT_WIDTH_MAX - 1 < parameters.bit_width) {
 		dev_err(priv->dev, "[%s:%d]  not support parame:bit_width %d \n",
@@ -262,8 +251,6 @@ static void spdif_config_sample_rate(unsigned int channel_num, unsigned int samp
 	unsigned int reg_value = 0x0;
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 
-	WARN_ON(NULL == priv);
-
 	if (sample_rate < SAMPLE_RATE_NO_SUPPORT) {
 		reg_value = dmac_reg_read(ASP_HDMI_SPDIF_CH0_STATUS1_L);
 		reg_value &= ~HDMI_SPDIF_SAMPLE_RATE_MASK;/*lint !e648*/
@@ -289,8 +276,6 @@ static void spdif_config_copy_right(unsigned int channel_num, bool is_hdcp)
 	unsigned int channel_index = 0;
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 
-	WARN_ON(NULL == priv);
-
 	if (is_hdcp) {
 		for (channel_index = 0; channel_index < channel_num; channel_index += 2) {
 			spdif_ch = channel_index / 2;
@@ -307,8 +292,6 @@ static void spdif_config_bit_width(unsigned int channel_num, unsigned int bit_wi
 	unsigned int channel_index = 0;
 	unsigned int reg_value = 0x0;
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
-
-	WARN_ON(NULL == priv);
 
 	if (bit_width < BIT_WIDTH_MAX) {
 		reg_value = dmac_reg_read(ASP_HDMI_SPDIF_CH0_STATUS2_L);
@@ -339,8 +322,6 @@ static void spdif_config_dump(unsigned int channel_num)
 	unsigned int channel_index = 0;
 	unsigned int reg_value = 0x0;
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
-
-	WARN_ON(NULL == priv);
 
 	for (channel_index = 0; channel_index < channel_num; channel_index += 2) {
 
@@ -374,7 +355,10 @@ int asp_hdmi_tx3_config(struct tx3_config_parameters parameters)
 	unsigned int reg_value = 0x0;
 	int ret = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("[%s:%d] priv is null\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	ret = transform_to_tx3_reg_value(parameters, &reg_value);
 
@@ -449,11 +433,14 @@ int asp_hdmi_dma_config(
 {
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("[%s:%d] priv is null\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	if ((0 != (addr & HDMI_DMA_ADD_VALID_MASK)) || (0 != (size & HDMI_DMA_ADDLEN_VALID_MASK))) {
 		dev_err(priv->dev, "[%s:%d]   parame invalid:addr= %pK ; size =%ud\n",
-			__func__, __LINE__,  (void *)(unsigned long)addr, size);
+			__func__, __LINE__,  (void *)(uintptr_t)addr, size);
 		return -EINVAL;
 	}
 
@@ -489,7 +476,10 @@ int asp_hdmi_dma_start(void)
 {
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("[%s:%d] priv is null\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	/* dma enable */
 	dmac_reg_write(ASP_HDMI_DMA_EN, HDMI_DMA_EN_MASK);
@@ -513,7 +503,10 @@ void asp_hdmi_dma_stop(void)
 {
 	struct asp_hdmi_dma_priv *priv = asp_hdmi_dma_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("[%s:%d] priv is null\n", __func__, __LINE__);
+		return;
+	}
 
 	/* dma interrupt disable */
 	dmac_reg_clr_bit(ASP_HDMI_INT_EN, 0);
@@ -562,8 +555,6 @@ static int asp_hdmi_dma_probe(struct platform_device *pdev)
 	dev_dbg(dev, "asp_dma_reg_base_addr.%pK \n", (void *)priv->asp_dma_reg_base_addr);
 #endif
 
-	wake_lock_init(&priv->wake_lock, WAKE_LOCK_SUSPEND, "asp_hdmi_dma");
-
 	spin_lock_init(&priv->lock);
 
 	priv->dev = dev;
@@ -584,8 +575,6 @@ static int asp_hdmi_dma_remove(struct platform_device *pdev)
 
 	if (!priv)
 		return 0;
-
-	wake_lock_destroy(&priv->wake_lock);
 
 	asp_hdmi_dma_priv = NULL;
 

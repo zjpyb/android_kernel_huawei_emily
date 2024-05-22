@@ -20,12 +20,16 @@
 #include <linux/timer.h>
 #include <linux/delay.h>
 #include <linux/device.h>
+#if defined(CONFIG_LCDKIT_DRIVER)
 #include "lcdkit_panel.h"
 #include "lcdkit_backlight_ic_common.h"
+#endif
 
 
 
+#ifdef CONFIG_HUAWEI_DUBAI
 #include <chipset_common/dubai/dubai.h>
+#endif
 
 /* default pwm clk */
 #define DEFAULT_PWM_CLK_RATE	(114 * 1000000L)
@@ -145,34 +149,42 @@ struct bl_info{
 	struct semaphore bl_semaphore;
 	int (*set_common_backlight)(int bl_level);
 };
+#ifdef CONFIG_LCDKIT_DRIVER
 extern struct lcdkit_bl_ic_info g_bl_config;
+#endif
 
 static struct bl_info g_bl_info;
 extern struct mutex g_rgbw_lock;
 #define BL_LVL_MAP_SIZE	(2047)
 #define BL_MAX_11BIT (2047)
-#define BL_MAX_10BIT (1023)
 #define BL_MAX_12BIT (4095)
 int bl_lvl_map(int level)
 {
-	int ret = 0;
-	int idx = 0;
+	uint32_t low = 0;
+	uint32_t high = BL_LVL_MAP_SIZE;
+	int mid;
 
 	if (level < 0 || level > 10000) {
 		HISI_FB_ERR("Need Valid Data! level = %d", level);
-		return ret;
+		return 0;
 	}
 
-	for (idx = 0; idx <= BL_LVL_MAP_SIZE; idx++) {
-		if (level_map[idx] >= level) {
-			if (level_map[idx] > level) {
-				idx = idx - 1;
-			}
-			break;
+	while (low < high) {
+		mid = (low + high) >> 1;
+		if (level > level_map[mid]) {
+			low = mid + 1;
+		} else if (level < level_map[mid]) {
+			high = mid - 1;
+		} else {
+			while ((mid > 0) &&
+				(level_map[mid - 1] == level_map[mid]))
+				mid--;
+			return mid;
 		}
 	}
-
-	return idx;
+	while (low > 0 && level_map[low] > level)
+		low--;
+	return low;
 }
 
 void hisi_blpwm_bl_regisiter(int (*set_bl)(int bl_level))
@@ -181,7 +193,7 @@ void hisi_blpwm_bl_regisiter(int (*set_bl)(int bl_level))
 }
 int hisi_blpwm_bl_callback(int bl_level)
 {
-	if(g_bl_info.set_common_backlight)
+	if(g_bl_info.set_common_backlight != NULL)
 	{
 		return g_bl_info.set_common_backlight(bl_level);
 	}
@@ -265,7 +277,7 @@ static void update_backlight(struct hisi_fb_data_type *hisifd, uint32_t backligh
 	uint32_t brightness = 0;
 	uint32_t bl_level = get_backlight_level(backlight);
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		return;
 	}
 	if (hisifd->online_play_count < BACKLIGHT_LOG_PRINTF) {
@@ -281,8 +293,10 @@ static void update_backlight(struct hisi_fb_data_type *hisifd, uint32_t backligh
 		return;
 	}
 
+#ifdef CONFIG_HUAWEI_DUBAI
 	/* notify dubai module to update brightness */
 	dubai_update_brightness(backlight);
+#endif
 
 	if ((g_bl_info.bl_ic_ctrl_mode >= REG_ONLY_MODE ) && (g_bl_info.bl_ic_ctrl_mode <= I2C_ONLY_MODE)) {
 		bl_level = backlight;
@@ -296,13 +310,13 @@ static void update_backlight(struct hisi_fb_data_type *hisifd, uint32_t backligh
 		}
 		return;
 	}
+#ifdef CONFIG_LCDKIT_DRIVER
 	else if(g_bl_info.bl_ic_ctrl_mode == COMMON_IC_MODE) {
 		int return_value = -1;
 		bl_level = backlight;
 		switch(g_bl_config.bl_level) {
 			case BL_MAX_12BIT:
-			case BL_MAX_10BIT:
-				bl_level = bl_level * g_bl_config.bl_level / g_bl_info.bl_max;
+				bl_level = bl_level * g_bl_config.bl_level / g_bl_info.bl_max; //lint !e573
 				break;
 			case BL_MAX_11BIT:
 			default:
@@ -313,6 +327,7 @@ static void update_backlight(struct hisi_fb_data_type *hisifd, uint32_t backligh
 		if (0 == return_value)
 			return;
 	}
+#endif
 	else if(g_bl_info.bl_ic_ctrl_mode == AMOLED_NO_BL_IC_MODE) {
 		HISI_FB_INFO("bl_ic_ctrl_mode = %d\n",g_bl_info.bl_ic_ctrl_mode);
 		return;
@@ -463,6 +478,7 @@ static void reset_pwm_buf(uint32_t value) {
 	}
 }
 
+#if defined(CONFIG_LCDKIT_DRIVER) || defined(CONFIG_LCD_KIT_DRIVER)
 static void set_rgbw_lg(struct hisi_fb_data_type *hisifd) {
 	int backlight_indoor_lgd = 0;
 	int RGBW_LG_FGL = RGBW_LG_RGBW * 4096 / RGBW_LG_RGB;
@@ -637,6 +653,7 @@ static void set_rgbw_lg_hma_replace(struct hisi_fb_data_type *hisifd)
 	}
 }
 
+#endif
 
 static int calc_backlight(struct hisi_fb_data_type *hisifd, int32_t pwm_duty) {
 	int32_t backlight = 0;
@@ -682,6 +699,7 @@ static int calc_backlight(struct hisi_fb_data_type *hisifd, int32_t pwm_duty) {
 			HISI_FB_DEBUG("[RGBW] panel_id = %d\n", hisifd->de_info.ddic_panel_id);
 			switch(hisifd->de_info.ddic_panel_id)
 			{
+			#if defined(CONFIG_LCDKIT_DRIVER) || defined(CONFIG_LCD_KIT_DRIVER)
 				case JDI_NT36860C_PANEL_ID:
 				case SHARP_NT36870_PANEL_ID:
 				case JDI_HX83112C_PANLE_ID:
@@ -740,6 +758,7 @@ static int calc_backlight(struct hisi_fb_data_type *hisifd, int32_t pwm_duty) {
 					}
 					set_rgbw_lg_hma_replace(hisifd);
 					break;
+			#endif
 				default:
 					backlight = g_bl_info.ap_brightness;
 					break;
@@ -754,6 +773,7 @@ static int calc_backlight(struct hisi_fb_data_type *hisifd, int32_t pwm_duty) {
 	return backlight;
 }
 
+#if defined(CONFIG_LCDKIT_DRIVER) || defined(CONFIG_LCD_KIT_DRIVER)
 static int get_smooth_backlight(int32_t backlight, int32_t ddic_panel_id) {
 	int i = 0,  j = 0, sum_backlight = 0;
 
@@ -779,6 +799,7 @@ static int get_smooth_backlight(int32_t backlight, int32_t ddic_panel_id) {
 
 	return backlight;
 }
+#endif
 
 static void rgbw_set(struct hisi_fb_data_type *hisifd, struct hisi_fb_panel_data *pdata)
 {
@@ -865,10 +886,10 @@ static void get_rgbw_pwmduty_to_update_backlight(struct hisi_fb_data_type *hisif
 
 		backlight = calc_backlight(hisifd, temp_current_pwm_duty);
 		HISI_FB_DEBUG("cabc_rgbw backlight = %d", backlight);
-
+#if defined(CONFIG_LCDKIT_DRIVER) || defined(CONFIG_LCD_KIT_DRIVER)
 		//smooth filter for backlight
 		backlight = get_smooth_backlight(backlight, hisifd->de_info.ddic_panel_id);
-
+#endif
 		HISI_FB_DEBUG("cabc_rgbw  panel_id =%d last_ap_brightness =%d ap_brightness =%d current_duty =%d temp_duty =%d backlight =%d \n",
 				hisifd->de_info.ddic_panel_id,g_bl_info.last_ap_brightness,g_bl_info.ap_brightness,g_bl_info.cabc_pwm_in,temp_current_pwm_duty,backlight);
 		if (backlight > 0 && backlight < g_bl_info.bl_min) {
@@ -1005,7 +1026,7 @@ static int hisi_blpwm_input_disable(struct hisi_fb_data_type *hisifd)
 		return -EINVAL;
 	}
 
-	if (cabc_pwm_task) {
+	if (cabc_pwm_task != NULL) {
 		if (rgbw_lcd_support) {
 			down(&g_bl_info.bl_semaphore);
 			g_blpwm_thread_stop = true;
@@ -1130,13 +1151,15 @@ void hisi_blpwm_fill_light(uint32_t backlight)
 
 	down(&g_bl_info.bl_semaphore);
 
+#ifdef CONFIG_HUAWEI_DUBAI
 	/* notify dubai module to update brightness */
 	dubai_update_brightness(backlight);
+#endif
 
 	HISI_FB_DEBUG("hisi_blpwm_fill_light:bl_level=%d, backlight=%d, blpwm_out_precision=%d, bl_max=%d\n",
 			bl_level, backlight, g_bl_info.blpwm_out_precision, g_bl_info.bl_max);
 
-	brightness = (bl_level << 16) | (g_bl_info.blpwm_out_precision - bl_level);
+	brightness = (bl_level << 16) | ((uint32_t)g_bl_info.blpwm_out_precision - bl_level);
 	outp32(blpwm_base + BLPWM_OUT_CFG, brightness);
 
 	up(&g_bl_info.bl_semaphore);
@@ -1217,17 +1240,21 @@ int hisi_blpwm_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bl_level
 				pinfo->blpwm_input_precision, bl_level);
 	}
 
+#ifdef CONFIG_HUAWEI_DUBAI
 	/* notify dubai module to update brightness */
 	dubai_update_brightness(bl_level);
+#endif
 
 	if ((g_bl_info.bl_ic_ctrl_mode >= REG_ONLY_MODE ) && (g_bl_info.bl_ic_ctrl_mode <= I2C_ONLY_MODE)) {
 		bl_level = bl_lvl_map(bl_level);
 		HISI_FB_DEBUG("cabc:bl_level=%d\n",bl_level);
 		/* lm36923_ramp_brightness(bl_level); */
 		if (REG_ONLY_MODE == pinfo->bl_ic_ctrl_mode) {
+			#if defined(CONFIG_LCDKIT_DRIVER)
 				if (lcdkit_info.panel_infos.init_lm36923_after_panel_power_on_support) {
 					lm36923_set_backlight_init(bl_level);
 				}
+			#endif
 			lm36923_set_backlight_reg(bl_level);
 		} else if (I2C_ONLY_MODE == pinfo->bl_ic_ctrl_mode) {
 			lm36274_set_backlight_reg(bl_level);
@@ -1240,12 +1267,12 @@ int hisi_blpwm_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bl_level
 		else
 			lp8556_set_backlight_init(bl_level);
 	}
+#ifdef CONFIG_LCDKIT_DRIVER
 	 else if (COMMON_IC_MODE == g_bl_info.bl_ic_ctrl_mode) {
 		int return_value = -1;
 		switch(g_bl_config.bl_level) {
 			case BL_MAX_12BIT:
-			case BL_MAX_10BIT:
-				bl_level = bl_level * g_bl_config.bl_level / g_bl_info.bl_max;
+				bl_level = bl_level * g_bl_config.bl_level / g_bl_info.bl_max; //lint !e573
 				break;
 			case BL_MAX_11BIT:
 			default:
@@ -1258,9 +1285,10 @@ int hisi_blpwm_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bl_level
 			return 0;
 		}
 	}
+#endif
 	bl_level = get_backlight_level(bl_level);
 
-	brightness = (bl_level << 16) | (g_bl_info.blpwm_out_precision - bl_level);
+	brightness = (bl_level << 16) | ((uint32_t)g_bl_info.blpwm_out_precision - bl_level);
 	outp32(blpwm_base + BLPWM_OUT_CFG, brightness);
 	HISI_FB_DEBUG("cabc:ap_brightness=%d, current_cabc_pwm=%d, blpwm_input_precision=%d, \
 				blpwm_out_precision=%d, bl_level=%d,\
@@ -1300,7 +1328,7 @@ int hisi_blpwm_on(struct platform_device *pdev)
 		return 0;
 
 	clk_tmp = g_dss_blpwm_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("dss_blpwm_clk clk_prepare failed, error=%d!\n", ret);
@@ -1367,7 +1395,7 @@ int hisi_blpwm_off(struct platform_device *pdev)
 		ARRAY_SIZE(blpwm_pinctrl_lowpower_cmds));
 
 	clk_tmp = g_dss_blpwm_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
@@ -1398,7 +1426,7 @@ static int hisi_blpwm_probe(struct platform_device *pdev)
 	dev = &pdev->dev;
 
 	np = of_find_compatible_node(NULL, NULL, DTS_COMP_BLPWM_NAME);
-	if (!np) {
+	if (np == NULL) {
 		dev_err(dev, "NOT FOUND device node %s!\n", DTS_COMP_BLPWM_NAME);
 		ret = -ENXIO;
 		goto err_return;
@@ -1460,7 +1488,7 @@ static int hisi_blpwm_remove(struct platform_device *pdev)
 		ARRAY_SIZE(blpwm_pinctrl_finit_cmds));
 
 	clk_tmp = g_dss_blpwm_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_put(clk_tmp);
 		clk_tmp = NULL;
 	}

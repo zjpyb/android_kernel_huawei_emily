@@ -10,12 +10,14 @@
 * GNU General Public License for more details.
 *
 */
-
 #include "hisi_overlay_utils.h"
 #include "hisi_block_algorithm.h"
 #include "hisi_overlay_cmdlist_utils.h"
 /*lint -e40 -e438 -e529 -e570 -e574 -e578 -e613 -e648 -e665 -e666 -e679 */
 /*lint -e712 -e713 -e730 -e732 -e737 -e747 -e774 -e775 -e778 -e838 -e845*/
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winteger-overflow"
+
 static void hisi_media_common_power_on(struct hisi_fb_data_type *hisifd)
 {
 	struct fb_info *fbi = NULL;
@@ -159,9 +161,9 @@ static void hisi_media_common_clear(struct hisi_fb_data_type *hisifd,
 		return;
 	}
 
-	pov_h_block_infos = (dss_overlay_block_t *)pov_req->ov_block_infos_ptr;
+	pov_h_block_infos = (dss_overlay_block_t *)(uintptr_t)pov_req->ov_block_infos_ptr;
 	if (pov_h_block_infos == NULL) {
-		if (pov_req) {
+		if (pov_req != NULL) {
 			kfree(pov_req);
 			pov_req = NULL;
 		}
@@ -184,8 +186,8 @@ static void hisi_media_common_clear(struct hisi_fb_data_type *hisifd,
 
 	hisi_cmdlist_del_node(hisifd, pov_req, cmdlist_idxs);
 
-	if (pov_req) {
-		if (pov_h_block_infos) {
+	if (pov_req != NULL) {
+		if (pov_h_block_infos != NULL) {
 			kfree(pov_h_block_infos);
 			pov_h_block_infos = NULL;
 		}
@@ -228,13 +230,19 @@ static int hisi_media_common_get_data_from_user(struct hisi_fb_data_type *hisifd
 
 	ov_block_size = pov_req->ov_block_nums * sizeof(dss_overlay_block_t);
 	pov_h_block_infos = (dss_overlay_block_t *)kmalloc(ov_block_size, GFP_ATOMIC);
-	if (!pov_h_block_infos) {
+	if (pov_h_block_infos == NULL) {
 		HISI_FB_ERR("fb%d, pov_h_block_infos alloc failed!\n", hisifd->index);
 		return -EINVAL;
 	}
 	memset(pov_h_block_infos, 0, ov_block_size);
 
-	ret = copy_from_user(pov_h_block_infos, (dss_overlay_block_t *)pov_req->ov_block_infos_ptr,
+	if ((dss_overlay_block_t *)(uintptr_t)pov_req->ov_block_infos_ptr == NULL) {
+		HISI_FB_ERR("pov_req->ov_block_infos_ptr is NULL\n");
+		kfree(pov_h_block_infos);
+		pov_h_block_infos = NULL;
+		return -EINVAL;
+	}
+	ret = copy_from_user(pov_h_block_infos, (dss_overlay_block_t *)(uintptr_t)pov_req->ov_block_infos_ptr,
 		ov_block_size);
 	if (ret) {
 		HISI_FB_ERR("fb%d, dss_overlay_block_t copy_from_user failed!\n",
@@ -252,7 +260,7 @@ static int hisi_media_common_get_data_from_user(struct hisi_fb_data_type *hisifd
 		return -EINVAL;
 	}
 
-	pov_req->ov_block_infos_ptr = (uint64_t)pov_h_block_infos;
+	pov_req->ov_block_infos_ptr = (uint64_t)(uintptr_t)pov_h_block_infos;
 
 	return ret;
 }
@@ -266,7 +274,7 @@ static bool hisi_media_common_check_csc_config_needed(dss_overlay_t *pov_req_h_v
 		return true;
 	}
 
-	pov_h_v_block = (dss_overlay_block_t *)(pov_req_h_v->ov_block_infos_ptr);
+	pov_h_v_block = (dss_overlay_block_t *)(uintptr_t)(pov_req_h_v->ov_block_infos_ptr);
 
 	// check whether csc config needed or not
 	if ((pov_h_v_block->layer_nums == 1) &&
@@ -373,7 +381,7 @@ int hisi_mdc_scl_coef_on(struct hisi_fb_data_type *hisifd, bool enable_cmdlist, 
 	return 0;
 }
 
-int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, void __user *argp)
+int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, const void __user *argp)
 {
 	dss_overlay_t *pov_req = NULL;
 	dss_overlay_t *pov_req_h_v = NULL;
@@ -439,11 +447,12 @@ int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, void __user *arg
 	////////////////////////////////////////////////////////////////////////////
 	// get horizontal block ov
 	pov_req = (dss_overlay_t *)kmalloc(sizeof(dss_overlay_t), GFP_ATOMIC);
-	if (!pov_req) {
+	if (pov_req == NULL) {
 		ret = -1;
 		HISI_FB_ERR("fb%d, dss_overlay_t alloc failed!\n", hisifd->index);
 		goto err_return_sem0;
 	}
+	memset(pov_req, 0, sizeof(dss_overlay_t));
 
 	hisifb_dss_overlay_info_init(pov_req);
 	ret = hisi_media_common_get_data_from_user(hisifd, pov_req, argp);
@@ -462,7 +471,7 @@ int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, void __user *arg
 	////////////////////////////////////////////////////////////////////////////
 	// get vertical block ov
 	pov_req_h_v = &(hisifd->ov_req);
-	pov_req_h_v->ov_block_infos_ptr = (uint64_t)(&(hisifd->ov_block_infos));
+	pov_req_h_v->ov_block_infos_ptr = (uintptr_t)(&(hisifd->ov_block_infos));
 
 	hisifd->set_reg = hisi_cmdlist_set_reg;
 	hisifd->cmdlist_data = hisifd->media_common_cmdlist_data;
@@ -485,7 +494,7 @@ int hisi_ov_media_common_play(struct hisi_fb_data_type *hisifd, void __user *arg
 		goto err_return_sem0;
 	}
 
-	pov_h_block_infos = (dss_overlay_block_t *)(pov_req->ov_block_infos_ptr);
+	pov_h_block_infos = (dss_overlay_block_t *)(uintptr_t)(pov_req->ov_block_infos_ptr);
 
 	for (m = 0; m < pov_req->ov_block_nums; m++) {
 		pov_h_block = &(pov_h_block_infos[m]);
@@ -654,7 +663,7 @@ err_return_sem0:
 
 	reset = true;
 
-	if (pov_req) {
+	if (pov_req != NULL) {
 		hisi_media_common_clear(hisifd, pov_req, cmdlist_idxs, reset, debug);
 	}
 	up(&(hisifd->media_common_composer_sem));
@@ -669,3 +678,4 @@ err_return_sem0:
 /*lint +e40 +e438 +e529 +e570 +e574 +e578 +e613 +e648 +e665 +e666 +e679 */
 /*lint +e712 +e713 +e730 +e732 +e737 +e747 +e774 +e775 +e778 +e838 +e845*/
 
+#pragma GCC diagnostic pop

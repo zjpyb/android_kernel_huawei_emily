@@ -1,41 +1,64 @@
+/*
+ * hkip_atkinfo.h
+ *
+ * Huawei HKIP driver to upload attack process information.
+ *
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
+ *
+ * HKIP is the kernel integrity protection developed by Huawei.
+ * When the kernel encounters integrity damage, it can obtain
+ * the type of destruction from the HKIP EL2 space through this interface,
+ * so that the kernel can debug the printout.
+ *
+ */
 #ifndef _HKIP_ATKINFO_H_
 #define _HKIP_ATKINFO_H_
 
-#define HHEE_EVENT_MAGIC			(0x6851895ba852fb79)
+#include <linux/workqueue.h>
+#include <linux/mutex.h>
+#include <linux/hisi/hisi_hhee.h>
 
+#define HHEE_EVENT_MAGIC    0x6851895ba852fb79
 #define MAX_UPLOAD_INFO_LEN 64
 
 struct hkip_atkinfo {
-    struct hhee_event_header *header;
-    struct hhee_event_footer *footer;
-    struct workqueue_struct *wq_atkinfo;
-    struct delayed_work atkinfo_work;
-    struct mutex atkinfo_mtx;
-    struct timer_list timer;
-	/*make sure hkip don't upload attack logs no more 3 times each 24hours */
-    unsigned int cycle_time;
+	struct hhee_event_header *header;
+	struct hhee_event_footer *footer;
+	struct workqueue_struct *wq_atkinfo;
+	struct delayed_work atkinfo_work;
+	struct mutex atkinfo_mtx;
+	struct timer_list timer;
+	/*
+	 * make sure hkip don't upload attack
+	 * logs no more 3 times each 24hours
+	 */
+	unsigned int cycle_time;
 };
 
 /* Event types */
 enum hhee_event_type {
-        HHEE_EV_UNSET /* Unused event buffer */,
-        HHEE_EV_BOOT /* Hypervisor boot message */,
+	HHEE_EV_UNSET, /* Unused event buffer */
+	HHEE_EV_BOOT, /* Hypervisor boot message */
 
-        /* System register violation */
-        HHEE_EV_SR_START = 0x100-1,
-        /* Attempt to disable stage 1 address translation */
-        HHEE_EV_MMU_DISABLE = 0x100,
-        /* Attempt to replace stage 1 top level address translation page table */
-        HHEE_EV_MMU_REPLACE,
-        /* Reserved for: Attempt to disable WXN */
-        HHEE_EV_WXN_DISABLE,
-        HHEE_EV_SR_END,
-
-        /* Memory write violation */
-        /* Attempt to overwrite kernel code */
-        HHEE_EV_MW_START = 0x201-1,
-        HHEE_EV_OS_TEXT_OVERWRITE = 0x201,
-        HHEE_EV_MW_END
+	/* System register violation */
+	HHEE_EV_SR_START = 0xFF,
+	/* Attempt to disable stage 1 address translation */
+	HHEE_EV_MMU_DISABLE = 0x100,
+	/*
+	 * Attempt to replace stage 1 top level address
+	 * translation page table
+	 */
+	HHEE_EV_MMU_REPLACE,
+	/* Reserved for: Attempt to disable WXN */
+	HHEE_EV_WXN_DISABLE,
+	HHEE_EV_SR_END,
+	/*
+	 * Memory write violation
+	 * Attempt to overwrite kernel code
+	 */
+	HHEE_EV_MW_START = 0x200,
+	HHEE_EV_OS_TEXT_OVERWRITE = 0x201,
+	HHEE_EV_MW_END
 };
 
 /* Event format */
@@ -59,13 +82,19 @@ struct hhee_event {
 };
 
 struct hhee_event_header {
-	uint64_t magic __aligned(PAGE_SIZE); /* HHEE_EVENT_HEAD magic constant */
-	uint64_t write_offset; /* Total number of messages ever written */
-	uint64_t buffer_size; /* Size in bytes of entire buffer area(including header and footer) */
-	uint64_t buffer_capacity; /* Capacity in messages of the circual buffer */
-    uint64_t buffer_offset; /* Offset in bytes from &magic to &events[0] */
-    uint64_t footer_offset; /* Offset in bytes of base address of struct hhee_event_footer */
-	struct hhee_event events[] __aligned(sizeof (struct hhee_event));
+	/* HHEE_EVENT_HEAD magic constant */
+	uint64_t magic __aligned(PAGE_SIZE);
+	/* Total number of messages ever written */
+	uint64_t write_offset;
+	/* Size in bytes of entire buffer area(including header and footer) */
+	uint64_t buffer_size;
+	/* Capacity in messages of the circual buffer */
+	uint64_t buffer_capacity;
+	/* Offset in bytes from &magic to &events[0] */
+	uint64_t buffer_offset;
+	/* Offset in bytes of base address of struct hhee_event_footer */
+	uint64_t footer_offset;
+	struct hhee_event events[] __aligned(sizeof(struct hhee_event));
 };
 
 struct hhee_event_footer {
@@ -80,4 +109,4 @@ static inline int atkinfo_create_debugfs(struct hkip_atkinfo *atkinfo)
 	return 0;
 }
 #endif
-#endif
+#endif /* _HKIP_ATKINFO_H_ */

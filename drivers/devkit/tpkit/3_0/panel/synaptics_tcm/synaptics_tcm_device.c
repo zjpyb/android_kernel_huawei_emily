@@ -50,6 +50,8 @@
 #define DEVICE_IOC_RAW _IOW(DEVICE_IOC_MAGIC, 2, int) /* 0x40047302 */
 #define DEVICE_IOC_CONCURRENT _IOW(DEVICE_IOC_MAGIC, 3, int) /* 0x40047303 */
 
+#define DEVICE_WRITE_MAX_SIZE (200 * 1024) /* 200k */
+
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
 
 static int irq_status = SYNA_TCM_IRQ_STATUS_ENABLE;
@@ -132,20 +134,17 @@ static void device_capture_touch_report(unsigned int count)
 
 	if (size) {
 		size = MIN(size, remaining_size);
-		retval = secure_memcpy(&device_hcd->report.buf[offset],
-				device_hcd->report.buf_size - offset,
-				&data[idx],
-				count - idx,
-				size);
-		if (retval < 0) {
-			TS_LOG_ERR("Failed to copy touch report data\n");
+		if ((size > (device_hcd->report.buf_size - offset)) ||
+			(size > (count - idx))) {
+			TS_LOG_ERR("%s: size is too large\n", __func__);
 			report = false;
 			goto exit;
-		} else {
-			offset += size;
-			remaining_size -= size;
-			device_hcd->report.data_length += size;
 		}
+		memcpy(&device_hcd->report.buf[offset], &data[idx], size);
+
+		offset += size;
+		remaining_size -= size;
+		device_hcd->report.data_length += size;
 	}
 
 	if (remaining_size)
@@ -215,16 +214,12 @@ static int device_capture_touch_report_config(unsigned int count)
 		return retval;
 	}
 
-	retval = secure_memcpy(tcm_hcd->config.buf,
-			tcm_hcd->config.buf_size,
-			data,
-			buf_size,
-			size);
-	if (retval < 0) {
-		TS_LOG_ERR("Failed to copy touch report config data\n");
+	if ((size > tcm_hcd->config.buf_size) || (size > buf_size)) {
+		TS_LOG_ERR("%s: size is too large\n", __func__);
 		UNLOCK_BUFFER(tcm_hcd->config);
-		return retval;
+		return -EINVAL;
 	}
+	memcpy(tcm_hcd->config.buf, data, size);
 
 	tcm_hcd->config.data_length = size;
 
@@ -378,6 +373,11 @@ static ssize_t device_write(struct file *filp, const char __user *buf,
 
 	if (count == 0)
 		return 0;
+
+	if (count > DEVICE_WRITE_MAX_SIZE) {
+		TS_LOG_ERR("%s: device write size too large\n", __func__);
+		return -EINVAL;
+	}
 
 	LOCK_BUFFER(device_hcd->out);
 	retval = syna_tcm_alloc_mem(tcm_hcd,

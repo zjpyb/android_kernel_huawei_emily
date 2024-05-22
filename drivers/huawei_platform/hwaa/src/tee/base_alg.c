@@ -30,7 +30,7 @@ struct tcrypt_result_t {
 
 static void tcrypt_complete(struct crypto_async_request *req, s32 err)
 {
-	struct tcrypt_result_t *res;
+	struct tcrypt_result_t *res = NULL;
 
 	if ((err == -EINPROGRESS) || (req == NULL))
 		return;
@@ -71,9 +71,9 @@ static s32 _aes_cbc_inter(const u8 *key, u32 key_len, const u8 *iv, u32 iv_len,
 	struct tcrypt_result_t result;
 	struct scatterlist src_sg;
 	struct scatterlist dst_sg;
-	struct crypto_skcipher *tfm;
-	struct skcipher_request *req;
-	u8 *tmp_iv;
+	struct crypto_skcipher *tfm = NULL;
+	struct skcipher_request *req = NULL;
+	u8 *tmp_iv = NULL;
 
 	if (!check_aes_cbc_para(key, key_len, iv, iv_len, in, in_len, out,
 		out_len, enc))
@@ -230,11 +230,27 @@ out:
 	return res;
 }
 
+static s32 shash_digest(struct crypto_shash *hmac_alg, const u8 *salt, u32 salt_len,
+	const u8 *ikm, u32 ikm_len, u8 *prk)
+{
+	SHASH_DESC_ON_STACK(desc, hmac_alg);
+	s32 res;
+	desc->tfm = hmac_alg;
+	desc->flags = 0;
+	res = crypto_shash_setkey(hmac_alg, salt, salt_len);
+	if (res)
+		goto free;
+	res = crypto_shash_digest(desc, ikm, ikm_len, prk);
+free:
+	shash_desc_zero(desc);
+	return res;
+}
+
 static s32 hkdf_extract(const u8 *salt, u32 salt_len, const u8 *ikm,
 	u32 ikm_len, u8 *prk, u32 prk_len)
 {
 	s32 res;
-	struct crypto_shash *hmac_alg;
+	struct crypto_shash *hmac_alg = NULL;
 
 	if (!salt || (salt_len != HWAA_HKDF_HASHLEN) || !ikm ||
 		(ikm_len != HWAA_HKDF_HASHLEN) || !prk ||
@@ -254,53 +270,27 @@ static s32 hkdf_extract(const u8 *salt, u32 salt_len, const u8 *ikm,
 		return -EINVAL;
 	}
 
-	SHASH_DESC_ON_STACK(desc, hmac_alg);
-	desc->tfm = hmac_alg;
-	desc->flags = 0;
-	res = crypto_shash_setkey(hmac_alg, salt, salt_len);
-	if (res)
-		goto free;
-
-	res = crypto_shash_digest(desc, ikm, ikm_len, prk);
-
-free:
-	shash_desc_zero(desc);
+	res = shash_digest(hmac_alg, salt, salt_len, ikm, ikm_len, prk);
 	crypto_free_shash(hmac_alg);
 	return res;
 }
 
-static s32 hkdf_expand(const u8 *prk, u32 prk_len, const u8 *info, u32 info_len,
-	u8 *okm, u32 okm_len)
+static s32 hwaa_shash(struct crypto_shash *hmac_tfm, const u8 *prk, u32 prk_len,
+	const u8 *info, u32 info_len, u8 *okm, u32 okm_len)
 {
-	s32 res;
 	const u8 *prev = NULL;
 	u8 tmp[HWAA_HKDF_HASHLEN] = {0};
 	u8 counter = 1; // counter starts from 1
 	u32 i = 0;
-	struct crypto_shash *hmac_tfm;
-
-	if (!prk || (prk_len != HWAA_HKDF_HASHLEN) || !info ||
-		(info_len == 0) || (info_len > HWAA_HKDF_MAX_INPUT_LEN) ||
-		!okm || (okm_len == 0) || (okm_len > HWAA_HKDF_MAX_OUTPUT_LEN))
-		return -EINVAL;
-	hmac_tfm = crypto_alloc_shash(HWAA_HKDF_HMAC_ALG,
-		HWAA_CRYPTO_ALLOC_SHASH,
-		HWAA_CRYPTO_ALLOC_MASK);
-	if (IS_ERR(hmac_tfm)) {
-		res = (s32)PTR_ERR(hmac_tfm);
-		return res;
-	}
-	if (crypto_shash_digestsize(hmac_tfm) != prk_len) {
-		crypto_free_shash(hmac_tfm);
-		return -EINVAL;
-	}
 	SHASH_DESC_ON_STACK(desc, hmac_tfm);
+	s32 res;
+
 	desc->tfm = hmac_tfm;
 	desc->flags = 0;
 	res = crypto_shash_setkey(hmac_tfm, prk, prk_len);
 	if (res)
 		goto free;
-	for (i = 0; i < okm_len; i += HWAA_HKDF_HASHLEN) {
+	for (; i < okm_len; i += HWAA_HKDF_HASHLEN) {
 		res = crypto_shash_init(desc);
 		if (res)
 			goto free;
@@ -335,6 +325,31 @@ static s32 hkdf_expand(const u8 *prk, u32 prk_len, const u8 *info, u32 info_len,
 	}
 free:
 	shash_desc_zero(desc);
+	return res;
+}
+
+static s32 hkdf_expand(const u8 *prk, u32 prk_len, const u8 *info, u32 info_len,
+	u8 *okm, u32 okm_len)
+{
+	s32 res;
+	struct crypto_shash *hmac_tfm = NULL;
+
+	if (!prk || (prk_len != HWAA_HKDF_HASHLEN) || !info ||
+		(info_len == 0) || (info_len > HWAA_HKDF_MAX_INPUT_LEN) ||
+		!okm || (okm_len == 0) || (okm_len > HWAA_HKDF_MAX_OUTPUT_LEN))
+		return -EINVAL;
+	hmac_tfm = crypto_alloc_shash(HWAA_HKDF_HMAC_ALG,
+		HWAA_CRYPTO_ALLOC_SHASH,
+		HWAA_CRYPTO_ALLOC_MASK);
+	if (IS_ERR(hmac_tfm)) {
+		res = (s32)PTR_ERR(hmac_tfm);
+		return res;
+	}
+	if (crypto_shash_digestsize(hmac_tfm) != prk_len) {
+		crypto_free_shash(hmac_tfm);
+		return -EINVAL;
+	}
+	res = hwaa_shash(hmac_tfm, prk, prk_len, info, info_len, okm, okm_len);
 	crypto_free_shash(hmac_tfm);
 	return res;
 }
@@ -374,7 +389,7 @@ s32 hash_generate_mac(const u8 *phase1_key, u32 phase1_key_len, const u8 *msg,
 	u32 msg_len, u8 *tag, u32 tag_len)
 {
 	s32 res;
-	struct crypto_shash *hmac_tfm;
+	struct crypto_shash *hmac_tfm = NULL;
 
 	if (!phase1_key || (phase1_key_len != HWAA_HKDF_HASHLEN) ||
 		!msg || (msg_len == 0) ||
@@ -394,17 +409,7 @@ s32 hash_generate_mac(const u8 *phase1_key, u32 phase1_key_len, const u8 *msg,
 		crypto_free_shash(hmac_tfm);
 		return -EINVAL;
 	}
-	SHASH_DESC_ON_STACK(desc, hmac_tfm);
-	desc->tfm = hmac_tfm;
-	desc->flags = 0;
-	res = crypto_shash_setkey(hmac_tfm, phase1_key, phase1_key_len);
-	if (res)
-		goto free;
-
-	res = crypto_shash_digest(desc, msg, msg_len, tag);
-
-free:
-	shash_desc_zero(desc);
+	res = shash_digest(hmac_tfm, phase1_key, phase1_key_len, msg, msg_len, tag);
 	crypto_free_shash(hmac_tfm);
 	return res;
 }

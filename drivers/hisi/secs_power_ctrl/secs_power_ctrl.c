@@ -76,7 +76,7 @@ static void hisi_secs_timer_init(void)
 	unsigned int flag = SECS_ONLY_CPU0_ONLINE;
 
 	mutex_lock(&secs_timer_lock);
-	for_each_online_cpu(cpu) {/*lint -e713 */
+	for_each_online_cpu(cpu) {/*lint !e713 !e574*/
 		if (!timer_pending(&secs_timer)) {
 			if (SECS_CPU0 == cpu) {
 				flag = SECS_ONLY_CPU0_ONLINE;
@@ -324,9 +324,7 @@ static int hisi_secs_power_ctrl_probe(struct platform_device *pdev)
 
 static int hisi_secs_power_ctrl_remove(struct platform_device *pdev)
 {
-	if(regu_burning.consumer != NULL){
-		devm_regulator_put(regu_burning.consumer);
-	}
+	regulator_bulk_free(1,&regu_burning);
 	SECS_UNUSED(pdev);
 	return 0;
 }
@@ -337,6 +335,7 @@ static const struct of_device_id secs_ctrl_of_match[] = {
 	{},
 };
 
+#ifdef CONFIG_PM
 static int secs_power_ctrl_suspend(struct device *dev)
 {
 	pr_info("%s: suspend +\n", __func__);
@@ -359,6 +358,7 @@ static int secs_power_ctrl_resume(struct device *dev)
 	return 0;
 }
 static SIMPLE_DEV_PM_OPS(secs_power_ctrl_pm_ops, secs_power_ctrl_suspend, secs_power_ctrl_resume);
+#endif
 
 
 static struct platform_driver hisi_secs_ctrl_driver = {
@@ -366,7 +366,9 @@ static struct platform_driver hisi_secs_ctrl_driver = {
 		.owner = THIS_MODULE, /*lint !e64*/
 		.name = "hisi-secs-power-ctrl",
 		.of_match_table = of_match_ptr(secs_ctrl_of_match),
+#ifdef CONFIG_PM
 		.pm     = &secs_power_ctrl_pm_ops,
+#endif
 	},
 	.probe = hisi_secs_power_ctrl_probe,
 	.remove = hisi_secs_power_ctrl_remove,

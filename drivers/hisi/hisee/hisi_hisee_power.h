@@ -88,16 +88,16 @@ ssize_t hisee_check_ready_show(struct device *dev, struct device_attribute *attr
 int wait_hisee_ready(hisee_state ready_state, unsigned int timeout_ms);
 
 /* buf is the process id */
-int hisee_get_cosid_processid(void *buf, unsigned int *cos_id, unsigned int *process_id);
-int hisee_poweron_booting_func(void *buf, int para);
-int hisee_poweron_upgrade_func(void *buf, int para);
-int hisee_poweroff_func(void *buf, int para);
-int hisee_poweron_timeout_func(void *buf, int para);
+int hisee_get_cosid_processid(const void *buf, unsigned int *cos_id, unsigned int *process_id);
+int hisee_poweron_booting_func(const void *buf, int para);
+int hisee_poweron_upgrade_func(const void *buf, int para);
+int hisee_poweroff_func(const void *buf, int para);
+int hisee_poweron_timeout_func(const void *buf, int para);
 hisee_power_status hisee_get_power_status(void);
 #ifdef CONFIG_HISI_SMX_PROCESS
 int smx_process(hisee_power_operation op_type, unsigned int op_cosid, int power_cmd);
 #endif
 #ifdef CONFIG_HISEE_NFC_IRQ_SWITCH
-int hisee_nfc_irq_switch_func(void * buf, int para);
+int hisee_nfc_irq_switch_func(const void *buf, int para);
 #endif
 #endif

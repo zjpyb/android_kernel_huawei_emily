@@ -1,3 +1,5 @@
+
+
 #ifndef __SCD_DRV_H__
 #define __SCD_DRV_H__
 
@@ -6,31 +8,31 @@
 #include "memory.h"
 #include "vfmw.h"
 
-#define SCDDRV_OK                      (0)
+#define SCDDRV_OK                       0
 #define SCDDRV_ERR                     (-1)
 
-#define SCD_TIME_OUT_COUNT             (200)
+#define SCD_TIME_OUT_COUNT              200
 
-#define REG_SCD_START                  (0x800)
-#define REG_LIST_ADDRESS               (0x804)
-#define REG_UP_ADDRESS                 (0x808)
-#define REG_UP_LEN                     (0x80c)
-#define REG_BUFFER_FIRST               (0x810)
-#define REG_BUFFER_LAST                (0x814)
-#define REG_BUFFER_INI                 (0x818)
-#define REG_SCD_PROTOCOL               (0x820)
+#define REG_SCD_START                   0x800
+#define REG_LIST_ADDRESS                0x804
+#define REG_UP_ADDRESS                  0x808
+#define REG_UP_LEN                      0x80c
+#define REG_BUFFER_FIRST                0x810
+#define REG_BUFFER_LAST                 0x814
+#define REG_BUFFER_INI                  0x818
+#define REG_SCD_PROTOCOL                0x820
 
 /* state registers */
-#define REG_SCD_OVER                   (0x840)
-#define REG_SCD_INT                    (0x844)
-#define REG_SCD_NUM                    (0x84c)
-#define REG_ROLL_ADDR                  (0x850)
-#define REG_SRC_EATEN                  (0x854)
+#define REG_SCD_OVER                    0x840
+#define REG_SCD_INT                     0x844
+#define REG_SCD_NUM                     0x84c
+#define REG_ROLL_ADDR                   0x850
+#define REG_SRC_EATEN                   0x854
 
-#define REG_SCD_SAFE_INT_MASK          (0x884)
-#define REG_SCD_SAFE_INI_CLR           (0x888)
-#define REG_SCD_NORM_INT_MASK          (0x81c)
-#define REG_SCD_NORM_INI_CLR           (0x824)
+#define REG_SCD_SAFE_INT_MASK           0x884
+#define REG_SCD_SAFE_INI_CLR            0x888
+#define REG_SCD_NORM_INT_MASK           0x81c
+#define REG_SCD_NORM_INI_CLR            0x824
 
 #ifdef ENV_SOS_KERNEL
 #define REG_SCD_INT_MASK               REG_SCD_SAFE_INT_MASK
@@ -40,15 +42,15 @@
 #define REG_SCD_INI_CLR                REG_SCD_NORM_INI_CLR
 #endif
 
-#define REG_AVS_FLAG                   (0x0000)
-#define REG_EMAR_ID                    (0x0004)
-#define REG_VDH_SELRST                 (0x0008)
+#define REG_AVS_FLAG                    0x0000
+#define REG_EMAR_ID                     0x0004
+#define REG_VDH_SELRST                  0x0008
 
-#define SM_SCD_UP_INFO_NUM             (2)
+#define SM_SCD_UP_INFO_NUM              2
 #ifdef CFG_MAX_RAW_NUM
 #define MAX_STREAM_RAW_NUM             (CFG_MAX_RAW_NUM)
 #else
-#define MAX_STREAM_RAW_NUM             (1024)
+#define MAX_STREAM_RAW_NUM              1024
 #endif
 #ifdef CFG_MAX_SEG_NUM
 #define MAX_STREAM_SEG_NUM             (CFG_MAX_SEG_NUM)
@@ -56,11 +58,21 @@
 #define MAX_STREAM_SEG_NUM             (1024 + 128)
 #endif
 #define SM_MAX_DOWNMSG_SIZE            (3 * MAX_STREAM_RAW_NUM * sizeof(SINT32))
-#define SM_MAX_UPMSG_SIZE              (SM_SCD_UP_INFO_NUM * MAX_STREAM_SEG_NUM * sizeof(SINT32))
+#define SM_MAX_UPMSG_SIZE              (SM_SCD_UP_INFO_NUM * \
+	MAX_STREAM_SEG_NUM * sizeof(SINT32))
 
-#define SCD_OUTPUT_BUF_CNT             (5)
+#define SCD_OUTPUT_BUF_CNT              5
 
-#define INVALID_SHAREFD                (0)
+#define INVALID_SHAREFD                 0
+
+#define SCD_LOWDLY_ENABLE_OFFSET        8
+#define SCD_DRV_REG_OFFSET              7
+#define SCD_PROTOCOL_OFFSET             0x0f
+#define SLICE_CHECK_FLAG_OFFSET         4
+#define SLICE_CHECK_FLAG_OPR            0x10
+#define UP_MSG_MAX_OFFSET               15
+#define RESET_SCD_COUNT                 100
+#define VFMW_OSAL_DELAY_TIME            10
 
 typedef enum {
 	FMW_OK          = 0,
@@ -71,108 +83,104 @@ typedef enum {
 	FMW_ERR_RAWNULL = -5,
 	FMW_ERR_SEGFULL = -6,
 	FMW_ERR_SCD     = -7
-} FMW_RETVAL_E;
+} fmw_retval_e;
 
 typedef enum {
 	SCDDRV_SLEEP_STAGE_NONE = 0,
 	SCDDRV_SLEEP_STAGE_PREPARE,
 	SCDDRV_SLEEP_STAGE_SLEEP
-} SCDDRV_SLEEP_STAGE_E;
+} scd_drv_sleep_stage_e;
 
 typedef enum {
 	SCD_IDLE = 0,
 	SCD_WORKING,
-} SCD_STATE_E;
+} scd_state_e;
 
 /* register operator */
-#define RD_SCDREG(reg)       MEM_ReadPhyWord((gScdRegBaseAddr + reg))
-#define WR_SCDREG(reg, dat)  MEM_WritePhyWord((gScdRegBaseAddr + reg),(dat))
+#define rd_scd_reg(reg)       mem_read_phy_word((g_scd_reg_base_addr + (reg)))
+#define wr_scd_reg(reg, dat)  mem_write_phy_word((g_scd_reg_base_addr + (reg)), (dat))
 
-#define FMW_ASSERT_RET( cond, ret )                     \
-do{                                     \
-	if (!(cond))                             \
-		return (ret);                           \
+#define fmw_assert_ret(cond, ret) \
+do { \
+	if (!(cond)) \
+		return ret; \
 } while (0)
 
-/*######################################################
-       struct defs.
- ######################################################*/
 typedef enum {
 	SCD_SHAREFD_MESSAGE_POOL = 0,
 	SCD_SHAREFD_OUTPUT_BUF   = 1,
 	SCD_SHAREFD_MAX          = (SCD_SHAREFD_OUTPUT_BUF + SCD_OUTPUT_BUF_CNT)
-}SCD_SHAREFD;
+} scd_sharefd;
 
 typedef struct {
-	SINT32 Scdover;
-	SINT32 ScdInt;
-	SINT32 ShortScdNum;
-	SINT32 ScdNum;
-	UADDR ScdRollAddr;
-	SINT32 SrcEaten;
-} SM_STATEREG_S;
+	SINT32 scd_over;
+	SINT32 scd_int;
+	SINT32 short_scd_num;
+	SINT32 scd_num;
+	UADDR scd_roll_addr;
+	SINT32 src_eaten;
+} sm_state_reg_s;
 
-typedef struct
-{
-	SINT8 SliceCheckFlag;
-	SINT8 ScdStart;
-	UADDR DownMsgPhyAddr;
-	UADDR UpMsgPhyAddr;
-	SINT32 UpLen;
-	UADDR BufferFirst;
-	UADDR BufferLast;
-	UADDR BufferIni;
-	SINT32 ScdProtocol;
-	SINT32 ScdLowdlyEnable;
+typedef struct {
+	SINT8 slice_check_flag;
+	SINT8 scd_start;
+	UADDR down_msg_phy_addr;
+	UADDR up_msg_phy_addr;
+	SINT32 up_len;
+	UADDR buffer_first;
+	UADDR buffer_last;
+	UADDR buffer_ini;
+	SINT32 scd_protocol;
+	SINT32 scd_lowdly_enable;
 	SINT32 scd_share_fd[SCD_SHAREFD_MAX];
-	UINT32 ScdOutputBufNum;
-	HI_BOOL IsScdAllBufRemap;
-} SCD_CONFIG_REG_S;
+	UINT32 scd_output_buf_num;
+	hi_bool is_scd_all_buf_remap;
+} scd_config_reg_s;
 
 typedef struct {
-	HI_S32 ScdProtocol;
-	HI_S32 Scdover;
-	HI_S32 ScdInt;
-	HI_S32 ScdNum;
-	HI_U32 ScdRollAddr;
-	HI_S32 SrcEaten;
-	HI_S32 UpLen;
-} SCD_STATE_REG_S;
+	hi_s32 scd_protocol;
+	hi_s32 scd_over;
+	hi_s32 scd_int;
+	hi_s32 scd_num;
+	hi_u32 scd_roll_addr;
+	hi_s32 src_eaten;
+	hi_s32 up_len;
+} scd_state_reg_s;
 
 typedef enum hi_CONFIG_SCD_CMD {
 	CONFIG_SCD_REG_CMD = 100,
-} CONFIG_SCD_CMD;
+} config_scd_cmd;
 
 typedef struct {
-	CONFIG_SCD_CMD cmd;
-	SINT32         eVidStd;
-	UINT32         SResetFlag;
-	UINT32         GlbResetFlag;
-	SCD_CONFIG_REG_S SmCtrlReg;
-} OMXSCD_REG_CFG_S;
+	config_scd_cmd cmd;
+	SINT32         e_vid_std;
+	UINT32         s_reset_flag;
+	UINT32         glb_reset_flag;
+	scd_config_reg_s sm_ctrl_reg;
+} omx_scd_reg_cfg_s;
 
-SINT32 SCDDRV_PrepareSleep(VOID);
+SINT32 scd_drv_prepare_sleep(void);
 
-SCDDRV_SLEEP_STAGE_E SCDDRV_GetSleepStage(VOID);
-VOID SCDDRV_SetSleepStage(SCDDRV_SLEEP_STAGE_E sleepState);
+scd_drv_sleep_stage_e scd_drv_get_sleep_stage(void);
+VOID scd_drv_set_sleep_stage(scd_drv_sleep_stage_e sleep_state);
 
-VOID SCDDRV_ForceSleep(VOID);
+VOID scd_drv_force_sleep(void);
 
-VOID SCDDRV_ExitSleep(VOID);
+VOID scd_drv_exit_sleep(void);
 
-SINT32 SCDDRV_ResetSCD(VOID);
+SINT32 scd_drv_reset_scd(void);
 
-SINT32 SCDDRV_WriteReg(SCD_CONFIG_REG_S *pSmCtrlReg, MEM_BUFFER_S* pScdMemMap);
+SINT32 scd_drv_write_reg(scd_config_reg_s *p_sm_ctrl_reg, mem_buffer_s *p_scd_mem_map);
 
-VOID SCDDRV_GetRegState(SCD_STATE_REG_S *pScdStateReg);
+VOID scd_drv_get_reg_state(scd_state_reg_s *p_scd_state_reg);
 
-VOID SCDDRV_ISR(VOID);
+VOID scd_drv_isr(void);
 
-VOID SCDDRV_init(VOID);
+VOID scd_drv_init(void);
 
-VOID SCDDRV_DeInit(VOID);
+VOID scd_drv_deinit(void);
 
 #ifdef ENV_ARMLINUX_KERNEL
-SINT32 SCDDRV_IsScdIdle(VOID);
+SINT32 scd_drv_is_scd_idle(void);
 #endif
 #endif

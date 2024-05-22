@@ -318,7 +318,11 @@ VOS_VOID DIAG_DebugNoIndLog(VOS_VOID)
     void *pFile;
     VOS_UINT32 ret;
     VOS_CHAR *DirPath = "/modem_log/DIAG";
+#if(VOS_OS_VER == VOS_LINUX)
     VOS_CHAR *FilePath = "/modem_log/DIAG/DIAG_AcoreNoIndLog.bin";
+#else
+    VOS_CHAR *FilePath = "/modem_log/DIAG/DIAG_CcoreNoIndLog.bin";
+#endif
     VOS_UINT32 ulValue;
     VOS_CHAR   aucInfo[DIAG_DEBUG_INFO_LEN];
     VOS_UINT8 *pData;

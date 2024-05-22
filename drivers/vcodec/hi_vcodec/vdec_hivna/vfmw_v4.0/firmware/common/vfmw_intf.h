@@ -1,3 +1,5 @@
+
+
 #ifndef __VFMW_INTF_H__
 #define __VFMW_INTF_H__
 #include "memory.h"
@@ -6,42 +8,49 @@
 #include "platform.h"
 
 #define VCTRL_OK                0
-#define VCTRL_ERR              -1
+#define VCTRL_ERR              (-1)
 #define MSG_POOL_ADDR_CHECK
+#define VFMW_OSAL_SLEEP_TIME    10
+#define VFMW_OSAL_SLEEP_COUNT   30
 
-typedef struct hiDRV_MEM_S {
-	MEM_RECORD_S stVdhReg;
-} DRV_MEM_S;
+
+typedef struct hi_drv_mem_s {
+	mem_record_s st_vdh_reg;
+} drv_mem_s;
 
 typedef struct {
-	MEM_BUFFER_S scd[SCD_SHAREFD_MAX];
-	MEM_BUFFER_S vdh[VDH_SHAREFD_MAX];
-	CLK_RATE_E   clk_rate;
-	struct file  *file ;
-}VDEC_MEM_INFO;
+	mem_buffer_s scd[SCD_SHAREFD_MAX];
+	mem_buffer_s vdh[VDH_SHAREFD_MAX];
+	clk_rate_e   clk_rate;
+	struct file  *file;
+} vdec_mem_info;
 
 #ifdef MSG_POOL_ADDR_CHECK
-SINT32 CheckFrmBufAddr(UADDR  SrcPmvAddr,MEM_BUFFER_S* pVdhMemMap);
-SINT32 CheckPmvBufAddr(UADDR  SrcPmvAddr,MEM_BUFFER_S* pVdhMemMap);
-SINT32 VCTRL_VDHUnmapMessagePool(MEM_BUFFER_S *pMemMap);
+SINT32 check_frm_buf_addr(UADDR  src_pmv_addr, mem_buffer_s *p_vdh_mem_map);
+SINT32 check_pmv_buf_addr(UADDR  src_pmv_addr, mem_buffer_s *p_vdh_mem_map);
+SINT32 vctrl_vdh_unmap_message_pool(mem_buffer_s *p_mem_map);
 #endif
 
-SINT32 VCTRL_OpenDrivers(VOID);
+SINT32 vctrl_open_drivers(void);
 
-SINT32 VCTRL_OpenVfmw(VOID);
+SINT32 vctrl_open_vfmw(void);
 
-SINT32 VCTRL_CloseVfmw(VOID);
+SINT32 vctrl_close_vfmw(void);
 
-SINT32 VCTRL_VDMHal_Process(OMXVDH_REG_CFG_S *pVdmRegCfg, VDMHAL_BACKUP_S *pVdmRegStatei, MEM_BUFFER_S* pVdhMemMap, MEM_BUFFER_S *pComMsgMap);
+SINT32 vctrl_vdm_hal_process(
+	omxvdh_reg_cfg_s *p_vdm_reg_cfg, vdmhal_backup_s *p_vdm_reg_statei,
+	mem_buffer_s *p_vdh_mem_map, mem_buffer_s *p_com_msg_map);
 
-SINT32 VCTRL_SCDHal_Process(OMXSCD_REG_CFG_S *pScdRegCfg, SCD_STATE_REG_S *pScdStateReg, MEM_BUFFER_S* pScdMemMap);
+SINT32 vctrl_scd_hal_process(
+	omx_scd_reg_cfg_s *p_scd_reg_cfg, scd_state_reg_s *p_scd_state_reg,
+	mem_buffer_s *p_scd_mem_map);
 
-SINT32 VCTRL_VDMHAL_IsRun(VOID);
+SINT32 vctrl_vdm_hal_is_run(void);
 
-VOID VCTRL_Suspend(VOID);
+VOID vctrl_suspend(void);
 
-VOID VCTRL_Resume(VOID);
+VOID vctrl_resume(void);
 
-HI_BOOL VCTRL_Scen_Ident(HI_U32 cmd);
+hi_bool vctrl_scen_ident(hi_u32 cmd);
 
 #endif

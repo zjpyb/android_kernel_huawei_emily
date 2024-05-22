@@ -8,7 +8,7 @@
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/hisi/usb/hisi_usb.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #include <uapi/linux/sched/types.h>
@@ -24,7 +24,7 @@
 struct completion probe_msg_complete;
 struct completion disconnect_msg_complete;
 struct completion nv_check;
-struct wake_lock rcv_wake_lock;
+struct wakeup_source rcv_wake_lock;
 static atomic_t nv_check_ref = ATOMIC_INIT(0);
 
 #define HIFI_USBAUDIO_MSG_TIMEOUT (2 * HZ)
@@ -44,7 +44,7 @@ struct usbaudio_msg_proc
 	struct task_struct *kthread;
 	struct interface_set_mesg interface_msg_list;
 	struct semaphore proc_sema;
-	struct wake_lock msg_proc_wake_lock;
+	struct wakeup_source msg_proc_wake_lock;
 	bool kthread_msg_proc_should_stop;
 };
 
@@ -85,23 +85,25 @@ static void usbaudio_mailbox_msg_add(unsigned int dir,
 	}
 }
 
-static irq_rt_t usbaudio_mailbox_recv_isr(void *usr_para, void *mail_handle, unsigned int mail_len)
+static void usbaudio_mailbox_recv_proc(const void *usr_para,
+	struct mb_queue *mail_handle, unsigned int mail_len)
 {
 	struct usbaudio_rcv_msg rcv_msg;
 	unsigned int ret = MAILBOX_OK;
 	unsigned int mail_size = mail_len;
+
 	memset(&rcv_msg, 0, sizeof(struct usbaudio_rcv_msg));/* unsafe_function_ignore: memset */
 
 	ret = DRV_MAILBOX_READMAILDATA(mail_handle, (unsigned char*)&rcv_msg, &mail_size);
 	if ((ret != MAILBOX_OK)
 		|| (mail_size == 0)
-		|| (mail_size > sizeof(struct usbaudio_rcv_msg))) {
-		pr_err("Empty point or data length error! size: %d  ret:%d sizeof(struct usbaudio_mailbox_received_msg):%lu\n",
-						mail_size, ret, sizeof(struct usbaudio_rcv_msg));
-		return IRQ_NH_MB;
+		|| (mail_size > sizeof(rcv_msg))) {
+		pr_err("mailbox read error, read result:%u, read mail size:%u\n",
+			ret, mail_size);
+		return;
 	}
 
-	wake_lock_timeout(&rcv_wake_lock, msecs_to_jiffies(1000));
+	__pm_wakeup_event(&rcv_wake_lock, 1000);
 	switch(rcv_msg.msg_type) {
 		case USBAUDIO_CHN_MSG_PROBE_RCV:
 			pr_info("receive message: probe succ.\n");
@@ -138,23 +140,24 @@ static irq_rt_t usbaudio_mailbox_recv_isr(void *usr_para, void *mail_handle, uns
 			break;
 	}
 
-	return IRQ_HDD;
+	return;
 }
 
-static int usbaudio_mailbox_isr_register(irq_hdl_t pisr)
+static int usbaudio_mailbox_isr_register(mb_msg_cb receive_func)
 {
-	int ret = 0;
-	unsigned int mailbox_ret = MAILBOX_OK;
+	int ret = MAILBOX_OK;
 
-	if (NULL == pisr) {
-		pr_err("pisr==NULL!\n");
-		ret = ERROR;
-	} else {
-		mailbox_ret = DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO, (void *)pisr, NULL);/*lint !e611 */
-		if (MAILBOX_OK != mailbox_ret) {
-			ret = ERROR;
-			pr_err("register isr for usbaudio channel failed, ret : %d,0x%x\n", ret, MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO);
-		}
+	if (receive_func == NULL) {
+		pr_err("receive func is null\n");
+		return ERROR;
+	}
+
+	ret = DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO,
+		receive_func, NULL);
+	if (ret != MAILBOX_OK) {
+		pr_err("register receive func error, ret:%u, mailcode:0x%x\n",
+			ret, MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO);
+		return ERROR;
 	}
 
 	return ret;
@@ -308,7 +311,7 @@ static int interface_msg_proc_thread(void *p)
 		if (ret == -ETIME) {
 			pr_err("proc sema down_int err -ETIME .\n");
 		}
-		wake_lock(&msg_proc.msg_proc_wake_lock);
+		__pm_stay_awake(&msg_proc.msg_proc_wake_lock);
 		if (list_empty(&msg_proc.interface_msg_list.node)) {
 			pr_err("interface_msg_list is empty!\n");
 		} else {
@@ -326,7 +329,7 @@ static int interface_msg_proc_thread(void *p)
 				pr_err("set_mesg is null \n");
 			}
 		}
-		wake_unlock(&msg_proc.msg_proc_wake_lock);
+		__pm_relax(&msg_proc.msg_proc_wake_lock);
 	}
 
 	return 0;
@@ -336,19 +339,20 @@ int usbaudio_mailbox_init(void)
 {
 	struct sched_param param;
 	int ret = 0;
-	pr_info("usbaudio_mailbox_init \n");
+	pr_info("usbaudio mailbox init \n");
 
 	atomic_set(&nv_check_ref, 0); /*lint !e1058 */
-	/* register usbaudio mailbox message isr */
-	ret = usbaudio_mailbox_isr_register((void*)usbaudio_mailbox_recv_isr);/*lint !e611 */
+
+	ret = usbaudio_mailbox_isr_register(usbaudio_mailbox_recv_proc);
 	if (ret) {
-		pr_err("usbaudio_mailbox_isr_register failed : %d\n", ret);
+		pr_err("usbaudio mailbox receive isr registe failed : %d\n", ret);
+		return -EIO;
 	}
 
 	INIT_LIST_HEAD(&msg_proc.interface_msg_list.node);
 	sema_init(&msg_proc.proc_sema, 0);
-	wake_lock_init(&msg_proc.msg_proc_wake_lock, WAKE_LOCK_SUSPEND, "usbaudio_msg_proc");
-	wake_lock_init(&rcv_wake_lock, WAKE_LOCK_SUSPEND, "usbaudio_rcv_msg");
+	wakeup_source_init(&msg_proc.msg_proc_wake_lock, "usbaudio_msg_proc");
+	wakeup_source_init(&rcv_wake_lock, "usbaudio_rcv_msg");
 	msg_proc.kthread_msg_proc_should_stop = false;
 	msg_proc.kthread = kthread_create(interface_msg_proc_thread, 0, "interface_msg_proc_thread");
 
@@ -370,13 +374,15 @@ int usbaudio_mailbox_init(void)
 
 void usbaudio_mailbox_deinit(void)
 {
-	struct interface_set_mesg *set_mesg, *n;
+	struct interface_set_mesg *set_mesg = NULL;
+	struct interface_set_mesg *n = NULL;
 	pr_info("usbaudio_mailbox_deinit \n");
 
 	if (msg_proc.kthread) {
 		msg_proc.kthread_msg_proc_should_stop = true;
 		up(&msg_proc.proc_sema);
 		kthread_stop(msg_proc.kthread);
+		msg_proc.kthread = NULL;
 	}
 
 	list_for_each_entry_safe(set_mesg, n, &msg_proc.interface_msg_list.node, node) {
@@ -384,6 +390,6 @@ void usbaudio_mailbox_deinit(void)
 		kfree(set_mesg);
 	}
 
-	wake_lock_destroy(&msg_proc.msg_proc_wake_lock);
-	wake_lock_destroy(&rcv_wake_lock);
+	wakeup_source_trash(&msg_proc.msg_proc_wake_lock);
+	wakeup_source_trash(&rcv_wake_lock);
 }

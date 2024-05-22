@@ -49,6 +49,35 @@ config HISI_THERMAL_HOTPLUG
 	help
 	  Enable thermal hotplug
 
+config HISI_THERMAL_GPU_HOTPLUG
+	bool "Hisi thermal gpu hotplug support"
+	depends on HISI_IPA_THERMAL
+	depends on HISI_GPU_CORE_HOTPLUG
+	default n
+	help
+	  Enable gpu thermal hotplug
+
+config HISI_GPU_HOTPLUG_EMULATION
+	bool "Hisi thermal gpu hotplug emulation support"
+	depends on HISI_THERMAL_GPU_HOTPLUG
+	default n
+	help
+	  Enable thermal gpu hotplug emulation
+
+config HISI_THERMAL_NPU_HOTPLUG
+	bool "Hisi thermal npu hotplug support"
+	depends on HISI_IPA_THERMAL
+	default n
+	help
+	  Enable npu thermal hotplug
+
+config HISI_NPU_HOTPLUG_EMULATION
+	bool "Hisi thermal npu hotplug emulation support"
+	depends on HISI_THERMAL_NPU_HOTPLUG
+	default n
+	help
+	  Enable thermal npu hotplug emulation
+
 config HISI_HOTPLUG_EMULATION
 	bool "Hisi thermal hotplug emulation support"
 	depends on HISI_THERMAL_HOTPLUG
@@ -87,8 +116,31 @@ config HISI_THERMAL_AMBIENT
 	help
 	  Enable ambient temp calculation
 
+config HISI_THERMAL_NPU
+	bool "Hisi npu thermal contral"
+	depends on THERMAL_GOV_STEP_WISE
+	depends on HISI_THERMAL_TSENSOR
+	default n
+	help
+		Enable hisi npu thermal contral
+
 config HISI_HKADC_MODEM
 	bool "Hisi hkadc modem temp"
 	default n
 	help
 	  Enable hkadc modem temp
+
+config HISI_ITS
+	bool "Hisi ITS driver"
+	default n
+	help
+	  Enable this to enable ITS driver
+
+config HISI_ITS_DEBUG
+	bool "Hisi ITS driver debug message"
+	depends on HISI_ITS
+	default n
+	help
+	  Enable this to print debug power message for ITS driver
+
+source "drivers/thermal/hisi/hw_dpm/Kconfig"

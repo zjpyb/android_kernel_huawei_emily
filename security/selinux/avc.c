@@ -1,7 +1,7 @@
 /*
  * Implementation of the kernel access vector cache (AVC).
  *
- * Authors:  Stephen Smalley, <sds@epoch.ncsc.mil>
+ * Authors:  Stephen Smalley, <sds@tycho.nsa.gov>
  *	     James Morris <jmorris@redhat.com>
  *
  * Update:   KaiGai, Kohei <kaigai@ak.jp.nec.com>
@@ -30,11 +30,13 @@
 #include <linux/audit.h>
 #include <linux/ipv6.h>
 #include <net/ipv6.h>
-#include <chipset_common/hiview_selinux/hiview_selinux.h>
 #include "avc.h"
 #include "avc_ss.h"
 #include "classmap.h"
-#include "objsec.h"
+
+#ifdef CONFIG_SECURITY_SELINUX_TRACE_LOG
+#include "selinux_avc_trace.h"
+#endif
 
 #define AVC_CACHE_SLOTS			512
 #define AVC_DEF_CACHE_THRESHOLD		512
@@ -150,11 +152,18 @@ static void avc_dump_query(struct audit_buffer *ab, u32 ssid, u32 tsid, u16 tcla
 	int rc;
 	char *scontext;
 	u32 scontext_len;
+#ifdef CONFIG_SECURITY_SELINUX_TRACE_LOG
+	int match;
+	match = avc_getcontext();
+#endif
 
 	rc = security_sid_to_context(ssid, &scontext, &scontext_len);
 	if (rc)
 		audit_log_format(ab, "ssid=%d", ssid);
 	else {
+#ifdef CONFIG_SECURITY_SELINUX_TRACE_LOG
+		match = match && !strcmp(scontext, avc_scontext);
+#endif
 		audit_log_format(ab, "scontext=%s", scontext);
 		kfree(scontext);
 	}
@@ -163,12 +172,23 @@ static void avc_dump_query(struct audit_buffer *ab, u32 ssid, u32 tsid, u16 tcla
 	if (rc)
 		audit_log_format(ab, " tsid=%d", tsid);
 	else {
+#ifdef CONFIG_SECURITY_SELINUX_TRACE_LOG
+		match = match && !strcmp(scontext, avc_tcontext);
+#endif
 		audit_log_format(ab, " tcontext=%s", scontext);
 		kfree(scontext);
 	}
 
 	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
 	audit_log_format(ab, " tclass=%s", secclass_map[tclass-1].name);
+
+#ifdef CONFIG_SECURITY_SELINUX_TRACE_LOG
+	match = match && !strcmp(secclass_map[tclass - 1].name, avc_tclass);
+	if (match) {
+		pr_info("========== SELinux avc trace log ==========");
+		force_sig(SIGABRT, current);
+	}
+#endif
 }
 
 /**
@@ -199,8 +219,6 @@ void __init avc_init(void)
 	avc_xperms_data_cachep = kmem_cache_create("avc_xperms_data",
 					sizeof(struct extended_perms_data),
 					0, SLAB_PANIC, NULL);
-
-	audit_log(current->audit_context, GFP_KERNEL, AUDIT_KERNEL, "AVC INITIALIZED\n");
 }
 
 int avc_get_hash_stats(char *page)
@@ -716,10 +734,6 @@ static void avc_audit_pre_callback(struct audit_buffer *ab, void *a)
 	avc_dump_av(ab, ad->selinux_audit_data->tclass,
 			ad->selinux_audit_data->audited);
 	audit_log_format(ab, " for ");
-
-#ifdef CONFIG_HUAWEI_SELINUX_DSM
-	selinux_dsm_process(ab, a, ad->selinux_audit_data->denied);
-#endif
 }
 
 /**
@@ -741,43 +755,6 @@ static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
 	}
 }
 
-static u32 sdcard_sid = 0;
-
-static u32 get_sdcard_sid(struct common_audit_data *cad)
-{
-	if (cad->type == LSM_AUDIT_DATA_DENTRY &&
-	   (cad->selinux_audit_data->requested & FILESYSTEM__MOUNT)) {
-		struct super_block *sb;
-		struct superblock_security_struct *sss;
-		if (cad->u.dentry && cad->u.dentry->d_sb) {
-			sb = cad->u.dentry->d_sb;
-			sss = (struct superblock_security_struct*)sb->s_security;
-			if (sss && strstr(sb->s_type->name, "sdcardfs")) {
-				printk(KERN_WARNING "%s(%d): sss->sid = %u!\n",
-						     __func__, __LINE__, sss->sid);
-				return sss->sid;
-			}
-		}
-	}
-	return 0;
-}
-
-#ifdef CONFIG_HIVIEW_SELINUX
-static int check_class_request(u16 tclass, u32 requested)
-{
-	if (((tclass == SECCLASS_DIR) && /* DIR */
-	    (requested == DIR__SEARCH || requested == DIR__GETATTR ||
-	     requested == DIR__READ || requested == DIR__WRITE)) ||
-	    ((tclass == SECCLASS_FILE) && /* FILE */
-	    (requested == FILE__READ || requested == FILE__GETATTR ||
-	     requested == FILE__WRITE)) ||
-	    (tclass == SECCLASS_FILESYSTEM && requested == FILESYSTEM__GETATTR)) {
-		return 1;
-	}
-	return 0;
-}
-#endif
-
 /* This is the slow part of avc audit with big stack footprint */
 noinline int slow_avc_audit(u32 ssid, u32 tsid, u16 tclass,
 		u32 requested, u32 audited, u32 denied, int result,
@@ -786,7 +763,6 @@ noinline int slow_avc_audit(u32 ssid, u32 tsid, u16 tclass,
 {
 	struct common_audit_data stack_data;
 	struct selinux_audit_data sad;
-	int ret = 0;
 
 	if (!a) {
 		a = &stack_data;
@@ -814,25 +790,7 @@ noinline int slow_avc_audit(u32 ssid, u32 tsid, u16 tclass,
 
 	a->selinux_audit_data = &sad;
 
-	// get sdcard_sid
-	if (!sdcard_sid && a->selinux_audit_data->tclass== SECCLASS_FILESYSTEM)
-		sdcard_sid = get_sdcard_sid(a);
-
-#ifdef CONFIG_HIVIEW_SELINUX
-	if ((sdcard_sid && (tsid == sdcard_sid)) ||
-	     a->selinux_audit_data->tclass== SECCLASS_FILESYSTEM) {
-		//check tclass & requested
-		ret = check_class_request(tclass, requested);
-		if (ret == 0)
-			ret = hw_hiview_selinux_avc_audit(a);
-	}
-#else
-	if (sdcard_sid && (tsid == sdcard_sid))
-		ret = 1;
-#endif
-	if (ret == 0)
-		common_lsm_audit(a, avc_audit_pre_callback, avc_audit_post_callback);
-
+	common_lsm_audit(a, avc_audit_pre_callback, avc_audit_post_callback);
 	return 0;
 }
 
@@ -1247,7 +1205,6 @@ void avc_disable(void)
 	 * in an rcu_lock, but seriously, it's not worth it.  Instead I just flush
 	 * the cache and get that memory back.
 	 */
-
 	if (avc_node_cachep) {
 		avc_flush();
 		/* kmem_cache_destroy(avc_node_cachep); */

@@ -21,7 +21,9 @@
 #include "lm36274.h"
 #include "hisi_fb.h"
 #include <linux/hisi/hw_cmdline_parse.h> //for runmode_is_factory
+#if defined(CONFIG_LCDKIT_DRIVER)
 #include "lcdkit_panel.h"
+#endif
 
 struct class *lm36274_class = NULL;
 struct lm36274_chip_data *lm36274_g_chip = NULL;
@@ -29,6 +31,7 @@ static bool lm36274_init_status = false;
 static unsigned int g_reg_val[LM36274_RW_REG_MAX] = {0};
 static int g_bl_level_enhance_mode = 0;
 static int g_hidden_reg_support = 0;
+static int g_only_bias;
 #define MAX_TRY_NUM 3
 #define BL_MAX 2047
 static int g_force_resume_bl_flag = RESUME_IDLE;
@@ -44,7 +47,6 @@ static int g_resume_bl_duration = 0;  /* default not support auto resume*/
 static enum hrtimer_restart lm36274_bl_resume_hrtimer_fnc(struct hrtimer *timer);
 static void lm36274_bl_resume_workqueue_handler(struct work_struct *work);
 extern int bl_lvl_map(int level);
-
 static int lm36274_fault_check_support;
 
 struct backlight_information {
@@ -91,47 +93,49 @@ static unsigned int lm36274_reg_addr[LM36274_RW_REG_MAX] = {
 	REG_BL_ENABLE,
 };
 
+#if defined(CONFIG_LCDKIT_DRIVER)
 static struct lm36274_vsp_vsn_voltage lm36274_voltage_table[] = {
-	{4000000,LM36274_VOL_400},
-	{4050000,LM36274_VOL_405},
-	{4100000,LM36274_VOL_410},
-	{4150000,LM36274_VOL_415},
-	{4200000,LM36274_VOL_420},
-	{4250000,LM36274_VOL_425},
-	{4300000,LM36274_VOL_430},
-	{4350000,LM36274_VOL_435},
-	{4400000,LM36274_VOL_440},
-	{4450000,LM36274_VOL_445},
-	{4500000,LM36274_VOL_450},
-	{4550000,LM36274_VOL_455},
-	{4600000,LM36274_VOL_460},
-	{4650000,LM36274_VOL_465},
-	{4700000,LM36274_VOL_470},
-	{4750000,LM36274_VOL_475},
-	{4800000,LM36274_VOL_480},
-	{4850000,LM36274_VOL_485},
-	{4900000,LM36274_VOL_490},
-	{4950000,LM36274_VOL_495},
-	{5000000,LM36274_VOL_500},
-	{5050000,LM36274_VOL_505},
-	{5100000,LM36274_VOL_510},
-	{5150000,LM36274_VOL_515},
-	{5200000,LM36274_VOL_520},
-	{5250000,LM36274_VOL_525},
-	{5600000,LM36274_VOL_560},
-	{5650000,LM36274_VOL_565},
-	{5700000,LM36274_VOL_570},
-	{5750000,LM36274_VOL_575},
-	{5800000,LM36274_VOL_580},
-	{5850000,LM36274_VOL_585},
-	{5900000,LM36274_VOL_590},
-	{5950000,LM36274_VOL_595},
-	{6000000,LM36274_VOL_600},
-	{6050000,LM36274_VOL_605},
-	{6400000,LM36274_VOL_640},
-	{6450000,LM36274_VOL_645},
-	{6500000,LM36274_VOL_650},
+	{ 4000000, LM36274_VOL_400 },
+	{ 4050000, LM36274_VOL_405 },
+	{ 4100000, LM36274_VOL_410 },
+	{ 4150000, LM36274_VOL_415 },
+	{ 4200000, LM36274_VOL_420 },
+	{ 4250000, LM36274_VOL_425 },
+	{ 4300000, LM36274_VOL_430 },
+	{ 4350000, LM36274_VOL_435 },
+	{ 4400000, LM36274_VOL_440 },
+	{ 4450000, LM36274_VOL_445 },
+	{ 4500000, LM36274_VOL_450 },
+	{ 4550000, LM36274_VOL_455 },
+	{ 4600000, LM36274_VOL_460 },
+	{ 4650000, LM36274_VOL_465 },
+	{ 4700000, LM36274_VOL_470 },
+	{ 4750000, LM36274_VOL_475 },
+	{ 4800000, LM36274_VOL_480 },
+	{ 4850000, LM36274_VOL_485 },
+	{ 4900000, LM36274_VOL_490 },
+	{ 4950000, LM36274_VOL_495 },
+	{ 5000000, LM36274_VOL_500 },
+	{ 5050000, LM36274_VOL_505 },
+	{ 5100000, LM36274_VOL_510 },
+	{ 5150000, LM36274_VOL_515 },
+	{ 5200000, LM36274_VOL_520 },
+	{ 5250000, LM36274_VOL_525 },
+	{ 5600000, LM36274_VOL_560 },
+	{ 5650000, LM36274_VOL_565 },
+	{ 5700000, LM36274_VOL_570 },
+	{ 5750000, LM36274_VOL_575 },
+	{ 5800000, LM36274_VOL_580 },
+	{ 5850000, LM36274_VOL_585 },
+	{ 5900000, LM36274_VOL_590 },
+	{ 5950000, LM36274_VOL_595 },
+	{ 6000000, LM36274_VOL_600 },
+	{ 6050000, LM36274_VOL_605 },
+	{ 6400000, LM36274_VOL_640 },
+	{ 6450000, LM36274_VOL_645 },
+	{ 6500000, LM36274_VOL_650 },
 };
+#endif
 
 static struct backlight_work_mode_reg_info g_bl_work_mode_reg_indo;
 
@@ -143,6 +147,7 @@ unsigned lm36274_msg_level = 7;
 module_param_named(debug_lm36274_msg_level, lm36274_msg_level, int, 0644);
 MODULE_PARM_DESC(debug_lm36274_msg_level, "backlight lm36274 msg level");
 
+#if defined(CONFIG_LCDKIT_DRIVER)
 static void lm36274_get_target_voltage(int *vpos_target,int *vneg_target)
 {
 	int i = 0;
@@ -184,13 +189,16 @@ static void lm36274_get_target_voltage(int *vpos_target,int *vneg_target)
 	return;
 
 }
+#endif
 
 static int lm36274_parse_dts(struct device_node *np)
 {
 	int ret = 0;
 	int i = 0;
+#if defined(CONFIG_LCDKIT_DRIVER)
 	int vpos_target = 0;
 	int vneg_target = 0;
+#endif
 
 	if(np == NULL){
 		LM36274_ERR("np is NULL pointer \n");
@@ -210,6 +218,7 @@ static int lm36274_parse_dts(struct device_node *np)
 		&lm36274_fault_check_support) < 0)
 		LM36274_INFO("No need to detect fault flags!\n");
 
+#if defined(CONFIG_LCDKIT_DRIVER)
 	if (lcdkit_info.panel_infos.bias_change_lm36274_from_panel_support) {
 		lm36274_get_target_voltage(&vpos_target, &vneg_target);
 		/* bl_info.lm36274_reg[8] :8 is the position of vsp in bl_info.lm36274_reg during kernel*/
@@ -221,6 +230,7 @@ static int lm36274_parse_dts(struct device_node *np)
 			bl_info.lm36274_reg[9] = vneg_target;
 		}
 	}
+#endif
 
 	return ret;
 }
@@ -468,6 +478,11 @@ static int lm36274_chip_init(struct lm36274_chip_data *pchip)
 	}
 	LM36274_INFO("g_hidden_reg_support = %d\n", g_hidden_reg_support);
 
+	ret = of_property_read_u32(np, LM36274_ONLY_BIAS, &g_only_bias);
+	if (ret)
+		g_only_bias = 0;
+	LM36274_INFO("g_only_bias = %d\n", g_only_bias);
+
     if (runmode_is_factory()) {
 		ret = of_property_read_u32(np, LM36274_RUNNING_RESUME_BL_TIMMER, &g_resume_bl_duration);
 		if (ret) {
@@ -543,7 +558,9 @@ out:
 static int lm36274_check_ovp_error(void)
 {
     int ret = -1;
+#if defined (CONFIG_HUAWEI_DSM)
     unsigned int val = 0;
+#endif
     struct i2c_client *client;
 
     if (!lm36274_init_status)
@@ -554,6 +571,7 @@ static int lm36274_check_ovp_error(void)
 
     client = lm36274_g_chip->client;
 
+#if defined (CONFIG_HUAWEI_DSM)
     if (!g_fake_lcd_flag) {
         ret = regmap_read(lm36274_g_chip->regmap, REG_FLAGS, &val);
         LM36274_INFO("lm36274_check_ovp_error:regmap_read val %u \n", val);
@@ -573,6 +591,7 @@ static int lm36274_check_ovp_error(void)
             }
         }
     }
+#endif
 
 err_out:
     return ret;
@@ -598,6 +617,7 @@ static void lm36274_check_fault(struct lm36274_chip_data *pchip,
 			continue;
 		LM36274_ERR("last_bkl:%d, cur_bkl:%d\n FAULT_FLAG:0x%x!\n",
 			last_level, level, err_table[i].flag);
+#if defined CONFIG_HUAWEI_DSM
 		ret = dsm_client_ocuppy(lcd_dclient);
 		if (ret) {
 			LM36274_ERR("dsm_client_ocuppy fail: ret=%d!\n", ret);
@@ -607,6 +627,7 @@ static void lm36274_check_fault(struct lm36274_chip_data *pchip,
 			"lm36274 last_bkl:%d, cur_bkl:%d\n FAULT_FLAG:0x%x!\n",
 			last_level, level, err_table[i].flag);
 		dsm_client_notify(lcd_dclient, err_table[i].err_no);
+#endif
 	}
 }
 
@@ -640,8 +661,6 @@ int lm36274_set_backlight_reg(unsigned int bl_level)
 
 
 	LM36274_INFO("lm36274_set_backlight_reg bl_level = %u \n", bl_level);
-
-	//blkit_force_resume_reg_proc();
 
 	level = bl_level;
 
@@ -708,7 +727,6 @@ i2c_error:
 	LM36274_INFO("lm36274_set_backlight_reg exit fail \n");
 	return ret;
 }
-/* EXPORT_SYMBOL(lm36274_set_backlight_reg); */
 
 /**
  * lm36274_set_reg(): Set lm36274 reg
@@ -787,18 +805,22 @@ static ssize_t lm36274_reg_bl_store(struct device *dev,
 					struct device_attribute *devAttr,
 					const char *buf, size_t size)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 	struct lm36274_chip_data *pchip = NULL;
 	unsigned int bl_level = 0;
 	unsigned int bl_msb = 0;
 	unsigned int bl_lsb = 0;
 
-	if (!dev)
-		return snprintf((char *)buf, PAGE_SIZE, "dev is null\n");
+	if (!dev) {
+		LM36274_ERR("dev is null\n");
+		return -1;
+	}
 
 	pchip = dev_get_drvdata(dev);
-	if (!pchip)
-		return snprintf((char *)buf, PAGE_SIZE, "data is null\n");
+	if (!pchip) {
+		LM36274_ERR("data is null\n");
+		return -1;
+	}
 
 	ret = kstrtouint(buf, 10, &bl_level);
 	if (ret) {
@@ -828,11 +850,11 @@ static ssize_t lm36274_reg_bl_store(struct device *dev,
 
 i2c_error:
 	dev_err(pchip->dev, "%s:i2c access fail to register\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: i2c access fail to register\n", __func__);
+	return -1;
 
 out_input:
 	dev_err(pchip->dev, "%s:input conversion fail\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: input conversion fail\n", __func__);
+	return -1;
 }
 
 static DEVICE_ATTR(reg_bl, (S_IRUGO|S_IWUSR), lm36274_reg_bl_show, lm36274_reg_bl_store);
@@ -882,18 +904,22 @@ static ssize_t lm36274_reg_store(struct device *dev,
 					struct device_attribute *devAttr,
 					const char *buf, size_t size)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 	struct lm36274_chip_data *pchip = NULL;
 	unsigned int reg = 0;
 	unsigned int mask = 0;
 	unsigned int val = 0;
 
-	if (!dev)
-		return snprintf((char *)buf, PAGE_SIZE, "dev is null\n");
+	if (!dev) {
+		LM36274_ERR("dev is null\n");
+		return -1;
+	}
 
 	pchip = dev_get_drvdata(dev);
-	if (!pchip)
-		return snprintf((char *)buf, PAGE_SIZE, "data is null\n");
+	if (!pchip) {
+		LM36274_ERR("data is null\n");
+		return -1;
+	}
 
 	ret = sscanf(buf, "reg=0x%x, mask=0x%x, val=0x%x",&reg,&mask,&val);
 	if (ret < 0) {
@@ -916,11 +942,11 @@ static ssize_t lm36274_reg_store(struct device *dev,
 
 i2c_error:
 	dev_err(pchip->dev, "%s:i2c access fail to register\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: i2c access fail to register\n", __func__);
+	return -1;
 
 out_input:
 	dev_err(pchip->dev, "%s:input conversion fail\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: input conversion fail\n", __func__);
+	return -1;
 }
 
 static DEVICE_ATTR(reg, (S_IRUGO|S_IWUSR), lm36274_reg_show, lm36274_reg_store);
@@ -1201,7 +1227,9 @@ static int lm36274_probe(struct i2c_client *client,
 	struct i2c_adapter *adapter = NULL;
 	struct lm36274_chip_data *pchip = NULL;
 	int ret = -1;
+#if defined (CONFIG_HUAWEI_DSM)
 	unsigned int val = 0;
+#endif
 
 	LM36274_INFO("in!\n");
 
@@ -1226,12 +1254,14 @@ static int lm36274_probe(struct i2c_client *client,
 	if (!pchip)
 		return -ENOMEM;
 
+#ifdef CONFIG_REGMAP_I2C
 	pchip->regmap = devm_regmap_init_i2c(client, &lm36274_regmap);
 	if (IS_ERR(pchip->regmap)) {
 		ret = PTR_ERR(pchip->regmap);
 		dev_err(&client->dev, "fail : allocate register map: %d\n", ret);
 		goto err_out;
 	}
+#endif
 
 	pchip->client = client;
 	i2c_set_clientdata(client, pchip);
@@ -1245,6 +1275,7 @@ static int lm36274_probe(struct i2c_client *client,
 		goto err_out;
 	}
 
+#if defined (CONFIG_HUAWEI_DSM)
 	/* HARDWARE check why ovp occur */
 	/* OVP(0x2) occur if disable bl ic then read reg_flags register,so comment it */
 	if (g_fake_lcd_flag) {
@@ -1265,6 +1296,7 @@ static int lm36274_probe(struct i2c_client *client,
 			}
 		}
 	}
+#endif
 
 	pchip->dev = device_create(lm36274_class, NULL, 0, "%s", client->name);
 	if (IS_ERR(pchip->dev)) {

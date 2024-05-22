@@ -344,8 +344,6 @@ static void io_monitor_update_timer(struct io_monitor_ctl *ctl)
 		}
 	}
 
-	/*BUG_ON(wait_index == 0);*/
-
 	if (wait_index > 0) {
 		struct io_module_template *mngt = NULL;
 
@@ -580,7 +578,6 @@ failed:
 		filp_close(ctl->io_file, NULL);
 	truncate_log_file(name);
 
-	/*BUG_ON(1);*/
 	return -1;
 }
 

@@ -26,15 +26,15 @@ extern uint64_t soc_dma_vir;
 
 #define ASP_DMAC_SIZE                       0x1000
 
-#define ASP_DMAC_CX_CNT0(ch)                (void __iomem *)((soc_dma_vir) + 0x810 + 0x40 * (ch))
-#define ASP_DMAC_CX_SRC_ADDR(ch)            (void __iomem *)((soc_dma_vir) + 0x814 + 0x40 * (ch))
-#define ASP_DMAC_CX_DES_ADDR(ch)            (void __iomem *)((soc_dma_vir) + 0x818 + 0x40 * (ch))
-#define ASP_DMAC_CX_CONFIG(ch)              (void __iomem *)((soc_dma_vir) + 0x81C + 0x40 * (ch))
+#define ASP_DMAC_CX_CNT0(ch)                (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x810 + 0x40 * (ch))
+#define ASP_DMAC_CX_SRC_ADDR(ch)            (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x814 + 0x40 * (ch))
+#define ASP_DMAC_CX_DES_ADDR(ch)            (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x818 + 0x40 * (ch))
+#define ASP_DMAC_CX_CONFIG(ch)              (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x81C + 0x40 * (ch))
 
-#define ASP_DMAC_STAT                       (void __iomem *)((soc_dma_vir) + 0x690)
-#define ASP_DMAC_CX_CURR_CNT0(ch)           (void __iomem *)((soc_dma_vir) + 0x704 + 0x10 * (ch))
-#define ASP_DMAC_CX_CURR_SRC_ADDR(ch)       (void __iomem *)((soc_dma_vir) + 0x708 + 0x10 * (ch))
-#define ASP_DMAC_CX_CURR_DES_ADDR(ch)       (void __iomem *)((soc_dma_vir) + 0x70C + 0x10 * (ch))
+#define ASP_DMAC_STAT                       (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x690)
+#define ASP_DMAC_CX_CURR_CNT0(ch)           (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x704 + 0x10 * (ch))
+#define ASP_DMAC_CX_CURR_SRC_ADDR(ch)       (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x708 + 0x10 * (ch))
+#define ASP_DMAC_CX_CURR_DES_ADDR(ch)       (void __iomem *)(uintptr_t)((soc_dma_vir) + 0x70C + 0x10 * (ch))
 
 #define HI64xx_DSP_IF6_ADDR                 0x20016000
 #define HI64xx_DMA_CONFIG_OFFSET            0x40

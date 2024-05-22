@@ -31,8 +31,8 @@
 #include <linux/hisi/hisi_rproc.h>
 #include <linux/hisi/ipc_msg.h>
 #include <linux/hisi/hisi_adc.h>
+#include <securec.h>
 #include "hisi_peripheral_tm.h"
-
 
 #define PM_TM_DEV_NAME	"hisi_peripheral_tm"
 #define HISI_PERIP_RPROC_SEND_ID	HISI_RPROC_LPM3_MBX28
@@ -209,7 +209,7 @@ int hisi_peripheral_tm_target(union ipc_data *tm_ipc, int *value)
 
 	switch (ipc_phr->cmd_mix.cmd) {
 	case CMD_NOTIFY:
-		if (value)
+		if (value != NULL)
 			*value = tm_ipc_para->getting.value;
 	case CMD_SETTING: /*lint !e616*/
 	case CMD_ON:
@@ -233,10 +233,10 @@ static int hisi_peripheral_tm_get_trip_temp(struct thermal_zone_device *thermal,
 	int ret = 0;
 	U_THERMAL_IPC_PARA *tm_ipc_para = (U_THERMAL_IPC_PARA *)tm_ipc.cmd_mix.cmd_para;
 
-	if (!tm_sensor || trip < 0 || !temp)
+	if (tm_sensor == NULL || trip < 0 || temp == NULL)
 		return -EINVAL;
 
-	memset((void *)&tm_ipc, 0, sizeof(tm_ipc));
+	(void)memset_s((void *)&tm_ipc, sizeof(tm_ipc), 0, sizeof(tm_ipc));
 
 	switch (trip) {
 	case TM_TRIP_HOT:
@@ -293,12 +293,12 @@ static int hisi_peripheral_tm_set_trip_temp(struct thermal_zone_device *thermal,
 	union ipc_data tm_ipc;
 	U_THERMAL_IPC_PARA *tm_ipc_para = (U_THERMAL_IPC_PARA *)tm_ipc.cmd_mix.cmd_para;
 
-	if (!tm_sensor || trip < 0 || temp < NTC_TEMP_MIN_VALUE || temp > NTC_TEMP_MAX_VALUE) {
+	if (tm_sensor == NULL || trip < 0 || temp < NTC_TEMP_MIN_VALUE || temp > NTC_TEMP_MAX_VALUE) {
 		pr_err("[%s] parm err temp[%d]\n", __func__, temp);
 		return -EINVAL;
 	}
 
-	memset((void *)&tm_ipc, 0, sizeof(tm_ipc));
+	(void)memset_s((void *)&tm_ipc, sizeof(tm_ipc), 0, sizeof(tm_ipc));
 
 	ret = hisi_peripheral_temp_2_ntc(tm_sensor, temp, &volt);
 	if (ret < 0) {
@@ -341,7 +341,7 @@ static int hisi_peripheral_tm_trip_type(struct thermal_zone_device *thermal,
 			int trip, enum thermal_trip_type *type)
 {
 	struct periph_tsens_tm_device_sensor *tm_sensor = thermal->devdata;
-	if (!tm_sensor || trip < 0 || !type)
+	if (tm_sensor == NULL || trip < 0 || type == NULL)
 		return -EINVAL;
 	switch (trip) {
 	case TM_TRIP_HOT:
@@ -379,10 +379,10 @@ static int hisi_peripheral_tm_activate_trip_type(struct thermal_zone_device *the
 	union ipc_data tm_ipc;
 	U_THERMAL_IPC_PARA *tm_ipc_para = (U_THERMAL_IPC_PARA *)tm_ipc.cmd_mix.cmd_para;
 
-	if (!tm_sensor || trip < 0)
+	if (tm_sensor == NULL || trip < 0)
 		return -EINVAL;
 
-	memset((void *)&tm_ipc, 0, sizeof(tm_ipc));
+	(void)memset_s((void *)&tm_ipc, sizeof(tm_ipc), 0, sizeof(tm_ipc));
 
 	if (trip == TM_TRIP_HOT || trip == TM_TRIP_COOL)
 		tm_ipc_para->onoff.which_thershold = !trip;
@@ -429,15 +429,22 @@ static int get_equipment_tree_data(struct platform_device *pdev, int sensor_num)
 	struct device_node *of_node = pdev->dev.of_node; /*lint !e578*/
 	struct device *dev = &pdev->dev;
 	int equipment_chanel_value = 0;
-	const char *equipment_chanel_ntc_name, *equipment_chanel_ntc_state;
+	const char *equipment_chanel_ntc_name = NULL;
+	const char *equipment_chanel_ntc_state = NULL;
 	int i, rc, j;
 	char temp_buffer[BOARD_BUFFER_LENGTH];
 
-	memset(temp_buffer, 0, sizeof(temp_buffer));
+	(void)memset_s(temp_buffer, sizeof(temp_buffer), 0, sizeof(temp_buffer));
 	/*get detect equipment thermal HKADC chanel, name and state*/
 	for (i = DETECT_SYSTEM_H_CHANEL, j = DETECT_SYSTEM_H_CHANEL; i < sensor_num; i++, j++) {
-		memset((void *)temp_buffer, 0, sizeof(temp_buffer));
-		snprintf(temp_buffer, sizeof(temp_buffer), "hisi,detect_%s_tm_chanel", hisi_peripheral_chanel[i]);
+		(void)memset_s((void *)temp_buffer, sizeof(temp_buffer), 0, sizeof(temp_buffer));
+		rc = snprintf_s(temp_buffer, sizeof(temp_buffer), sizeof(temp_buffer) - 1, "hisi,detect_%s_tm_chanel", hisi_peripheral_chanel[i]);
+		if (rc < 0) {
+			dev_err(dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+			rc = -EINVAL;
+			goto read_chanel_fail;
+		}
+
 		rc = of_property_read_s32(of_node, temp_buffer, &equipment_chanel_value);
 		if (rc) {
 			dev_err(&pdev->dev, "canot get %d tm chanel\n", i);
@@ -446,8 +453,13 @@ static int get_equipment_tree_data(struct platform_device *pdev, int sensor_num)
 		}
 		gtm_dev->sensor[i].chanel = equipment_chanel_value;
 
-		memset((void *)temp_buffer, 0, sizeof(temp_buffer));
-		snprintf(temp_buffer, sizeof(temp_buffer), "hisi,detect_%s_tm_state", hisi_peripheral_chanel[i]);
+		(void)memset_s((void *)temp_buffer, sizeof(temp_buffer), 0, sizeof(temp_buffer));
+		rc = snprintf_s(temp_buffer, sizeof(temp_buffer), sizeof(temp_buffer) - 1, "hisi,detect_%s_tm_state", hisi_peripheral_chanel[i]);
+		if (rc < 0)  {
+			dev_err(dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+			rc = -EINVAL;
+			goto read_state_fail;
+		}
 		rc = of_property_read_string(of_node, temp_buffer, &equipment_chanel_ntc_state);
 		if (rc) {
 			dev_err(dev, "detect %d tm ntc state failed\n", i);
@@ -464,8 +476,13 @@ static int get_equipment_tree_data(struct platform_device *pdev, int sensor_num)
 			goto read_state_fail;
 		}
 
-		memset(temp_buffer, 0, sizeof(temp_buffer));
-		snprintf(temp_buffer, sizeof(temp_buffer), "hisi,detect_%s_tm_ntc", hisi_peripheral_chanel[i]);
+		(void)memset_s(temp_buffer, sizeof(temp_buffer), 0, sizeof(temp_buffer));
+		rc = snprintf_s(temp_buffer, sizeof(temp_buffer), sizeof(temp_buffer) - 1, "hisi,detect_%s_tm_ntc", hisi_peripheral_chanel[i]);
+		if (rc < 0)  {
+			dev_err(dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+			rc = -EINVAL;
+			goto read_name_fail;
+		}
 		rc = of_property_read_string(of_node, temp_buffer, &equipment_chanel_ntc_name);
 		if (rc) {
 			dev_err(dev, "detect %d tm ntc name failed\n", i);
@@ -534,7 +551,7 @@ static int hisi_tm_m3_notifier(struct notifier_block *nb, unsigned long len, voi
 	if (m3_notfier_flag != ptm_ipc->data[0])
 		return 0;
 
-	if (!gtm_dev)
+	if (gtm_dev == NULL)
 		return 0;
 
 	hw_channel = (tm_ipc_para->notify).channel;
@@ -562,8 +579,8 @@ void thermal_contexthub_init(void)
 {
 #ifdef CONFIG_HISI_THERMAL_CONTEXTHUB
 	int i, chan_table_size;
-	struct hw_chan_table* p_ddr_header;
-	char* p_chub_ddr;
+	struct hw_chan_table* p_ddr_header = NULL;
+	char* p_chub_ddr = NULL;
 
 	if (NULL == gtm_dev) {
 		pr_err("[%s]gtm_dev is NULL\n", __func__);
@@ -578,7 +595,7 @@ void thermal_contexthub_init(void)
 		return;
 	}
 
-	memset((void*)gtm_dev->chub->adc_table, 0xFF, chan_table_size);
+	(void)memset_s((void*)gtm_dev->chub->adc_table, chan_table_size, 0xFF, chan_table_size);
 
 	gtm_dev->chub->share_addr = ioremap_wc(CONTEXTHUB_THERMAL_DDR_HEADER_ADDR,
 		CONTEXTHUB_THERMAL_DDR_TOTAL_SIZE);
@@ -632,8 +649,8 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 {
 	int rc = 0;
 	char name[BOARD_BUFFER_LENGTH] = {0};
-	int i, k, flag;
-	int trips_num;
+	int i, flag;
+	unsigned int trips_num, k;
 #ifdef CONFIG_HISI_THERMAL_TRIP
 	char node_name[50] = {0};
 	s32 temp_throttling = 0, temp_shutdown = 0, temp_below_vr_min = 0, temp_over_skin = 0;
@@ -645,7 +662,7 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	memset(name, 0, sizeof(name));
+	(void)memset_s(name, sizeof(name), 0, sizeof(name));
 	rc = get_periph_tm_device_tree_data(pdev);
 	if (rc) {
 		dev_err(&pdev->dev, "Error reading peripheral tm \n");
@@ -657,19 +674,27 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 	thermal_contexthub_init();
 
 	for (i = DETECT_SYSTEM_H_CHANEL, flag = DETECT_SYSTEM_H_CHANEL; i < (gtm_dev->tsens_num_sensor + DETECT_SYSTEM_H_CHANEL); i++) {
-		int mask = 0;
+		unsigned int mask = 0;
 		if (gtm_dev->sensor[i].state == 0)
 			continue;
 
-		memset((void *)name, 0, sizeof(name));
-		snprintf(name, sizeof(name), "%s", hisi_peripheral_chanel[i]);
+		(void)memset_s((void *)name, sizeof(name), 0, sizeof(name));
+		rc = snprintf_s(name, sizeof(name), sizeof(name) - 1, "%s", hisi_peripheral_chanel[i]);
+		if (rc < 0) {
+			dev_err(&pdev->dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+			goto fail;
+		}
 
 		gtm_dev->sensor[i].mode = THERMAL_DEVICE_ENABLED;
 
 #ifdef CONFIG_HISI_THERMAL_TRIP
 		if (DETECT_SYSTEM_H_CHANEL == (enum hisi_peripheral_temp_chanel)i) {
-			memset((void *)node_name, 0, sizeof(node_name));
-			snprintf(node_name, sizeof(node_name), "hisi,detect_%s_throttling",  hisi_peripheral_chanel[i]);
+			(void)memset_s((void *)node_name, sizeof(node_name), 0, sizeof(node_name));
+			rc = snprintf_s(node_name, sizeof(node_name), sizeof(node_name) - 1, "hisi,detect_%s_throttling",  hisi_peripheral_chanel[i]);
+			if (rc < 0) {
+				dev_err(&pdev->dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+				temp_throttling = 0;
+			}
 			rc = of_property_read_s32(node, node_name, &temp_throttling);
 			if (rc) {
 				dev_err(&pdev->dev, "temp_throttling node not found!\n");
@@ -677,8 +702,12 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 			}
 			gtm_dev->sensor[i].temp_throttling = temp_throttling;
 
-			memset((void *)node_name, 0, sizeof(node_name));
-			snprintf(node_name, sizeof(node_name), "hisi,detect_%s_shutdown",  hisi_peripheral_chanel[i]);
+			(void)memset_s((void *)node_name, sizeof(node_name), 0, sizeof(node_name));
+			rc = snprintf_s(node_name, sizeof(node_name), sizeof(node_name) - 1, "hisi,detect_%s_shutdown",  hisi_peripheral_chanel[i]);
+			if (rc < 0) {
+				dev_err(&pdev->dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+				temp_shutdown = 0;
+			}
 			rc = of_property_read_s32(node, node_name, &temp_shutdown);
 			if (rc) {
 				dev_err(&pdev->dev, "temp_shutdown node not found!\n");
@@ -686,8 +715,12 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 			}
 			gtm_dev->sensor[i].temp_shutdown = temp_shutdown;
 
-			memset((void *)node_name, 0, sizeof(node_name));
-			snprintf(node_name, sizeof(node_name), "hisi,detect_%s_below_vr_min",  hisi_peripheral_chanel[i]);
+			(void)memset_s((void *)node_name, sizeof(node_name), 0, sizeof(node_name));
+			rc = snprintf_s(node_name, sizeof(node_name), sizeof(node_name) - 1, "hisi,detect_%s_below_vr_min",  hisi_peripheral_chanel[i]);
+			if (rc < 0) {
+				dev_err(&pdev->dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+				temp_below_vr_min = 0;
+			}
 			rc = of_property_read_s32(node, node_name, &temp_below_vr_min);
 			if (rc) {
 				dev_err(&pdev->dev, "temp_below_vr_min node not found!\n");
@@ -695,8 +728,12 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 			}
 			gtm_dev->sensor[i].temp_below_vr_min = temp_below_vr_min;
 
-			memset((void *)node_name, 0, sizeof(node_name));
-			snprintf(node_name, sizeof(node_name), "hisi,detect_%s_over_skin",  hisi_peripheral_chanel[i]);
+			(void)memset_s((void *)node_name, sizeof(node_name), 0, sizeof(node_name));
+			rc = snprintf_s(node_name, sizeof(node_name), sizeof(node_name) - 1, "hisi,detect_%s_over_skin",  hisi_peripheral_chanel[i]);
+			if (rc < 0) {
+				dev_err(&pdev->dev, "snprintf_s error in %s :%d line\n", __func__, __LINE__);
+				temp_over_skin = 0;
+			}
 			rc = of_property_read_s32(node, node_name, &temp_over_skin);
 			if (rc) {
 				dev_err(&pdev->dev, "temp_over_skin node not found!\n");
@@ -713,10 +750,10 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 #endif
 
 		for (k = 0; k < trips_num; k++)
-			mask |= 1 << k;
+			mask |= (unsigned int)(1U << k);
 
 		gtm_dev->sensor[i].tz_dev = thermal_zone_device_register(name,
-				trips_num, mask, &gtm_dev->sensor[i],
+				trips_num, (int)mask, &gtm_dev->sensor[i],
 				&hisi_peripheral_thermal_zone_ops, NULL, 0, 0);
 		flag++;
 		if (IS_ERR(gtm_dev->sensor[i].tz_dev)) {
@@ -728,7 +765,7 @@ static int hisi_peripheral_tm_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, gtm_dev);
 
-	for (k = 0; k < gtm_dev->tsens_num_sensor; k++)
+	for (k = 0; k < (unsigned int)gtm_dev->tsens_num_sensor; k++)
 		INIT_WORK(&gtm_dev->sensor[k].work, notify_thermal_app);
 
 	gtm_dev->nb.next = NULL;
@@ -752,7 +789,7 @@ static int hisi_peripheral_tm_remove(struct platform_device *pdev)
 	struct hisi_peripheral_tm_chip *chip = platform_get_drvdata(pdev);
 	int i;
 
-	if (chip) {
+	if (chip != NULL) {
 		platform_set_drvdata(pdev, NULL);
 		for (i = DETECT_SYSTEM_H_CHANEL; i < (gtm_dev->tsens_num_sensor + DETECT_SYSTEM_H_CHANEL); i++) {
 			kfree(gtm_dev->sensor[i].ntc_name);
@@ -792,14 +829,14 @@ static void __exit hisi_peripheral_tm_exit(void)
 int periph_get_temp(u32 sensor, int *temp)
 {
 	int i;
-	struct thermal_zone_device *thermal;
+	struct thermal_zone_device *thermal = NULL;
 	int ret = -EINVAL;
 	int tmp = 0;
 
 	for (i = 0; i < gtm_dev->tsens_num_sensor; i++) {
 		if ((sensor + TSENSOR_USED_NUM) == gtm_dev->sensor[i].sensor_num) {
 			thermal = gtm_dev->sensor[i].tz_dev;
-			if (thermal)
+			if (thermal != NULL)
 				ret = hisi_peripheral_get_highres_temp(thermal, &tmp);
 			*temp = tmp;
 		}
@@ -836,7 +873,7 @@ int ipa_get_periph_value(u32 sensor, int *val)
 	u32 id = 0;
 	u32 periph_num = sizeof(hisi_peripheral_chanel)/sizeof(char *);
 
-	if (!val) {
+	if (val == NULL) {
 		pr_err("[%s]parm null\n", __func__);
 		return ret;
 	}

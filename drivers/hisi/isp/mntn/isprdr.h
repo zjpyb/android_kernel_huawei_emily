@@ -33,10 +33,10 @@
 #define SHOW_SIZE       0x1000
 
 struct level_switch_s {
-    unsigned int level;
-    char enable_cmd[8];
-    char disable_cmd[8];
-    char info[32];
+	unsigned int level;
+	char enable_cmd[8];
+	char disable_cmd[8];
+	char info[32];
 };
 
 extern u64 get_isprdr_addr(void);

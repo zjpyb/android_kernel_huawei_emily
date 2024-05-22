@@ -20,8 +20,10 @@
 #include <linux/semaphore.h>
 #include "lm36923.h"
 #include "hisi_fb.h"
+#if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 extern struct dsm_client *lcd_dclient;
+#endif
 
 #define TEST_ERROR_CHIP_INIT BIT(10)
 
@@ -576,19 +578,19 @@ static ssize_t lm36923_bled_mode_store(struct device *dev,
 					struct device_attribute *devAttr,
 					const char *buf, size_t size)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 	struct lm36923_chip_data *pchip = NULL;
 	uint32_t mode = 0;
 
 	if(dev == NULL || g_pchip == NULL){
 		LM36923_ERR("dev or g_chip is null pointer\n");
-		return ret;
+		return -1;
 	}
 
 	pchip = dev_get_drvdata(dev);
 	if(pchip == NULL){
 		LM36923_ERR("pchip is null pointer\n");
-		return ret;
+		return -1;
 	}
 
 	ret = kstrtouint(buf, 16, &mode);
@@ -603,11 +605,11 @@ static ssize_t lm36923_bled_mode_store(struct device *dev,
 
 i2c_error:
 	dev_err(pchip->dev, "%s:i2c access fail to register\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: i2c access fail to register\n", __func__);
+	return -1;
 
 out_input:
 	dev_err(pchip->dev, "%s:input conversion fail\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: input conversion fail\n", __func__);
+	return -1;
 }
 
 static DEVICE_ATTR(bled_mode, S_IRUGO|S_IWUSR, lm36923_bled_mode_show, lm36923_bled_mode_store);
@@ -650,7 +652,7 @@ static ssize_t lm36923_reg_bl_store(struct device *dev,
 					struct device_attribute *devAttr,
 					const char *buf, size_t size)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 	struct lm36923_chip_data *pchip = NULL;
 	unsigned int bl_level = 0;
 	unsigned int bl_msb = 0;
@@ -658,13 +660,13 @@ static ssize_t lm36923_reg_bl_store(struct device *dev,
 
 	if(dev == NULL){
 		LM36923_ERR("dev is null pointer\n");
-		return ret;
+		return -1;
 	}
 
 	pchip = dev_get_drvdata(dev);
 	if(pchip == NULL){
 		LM36923_ERR("pchip is null pointer\n");
-		return ret;
+		return -1;
 	}
 
 	ret = kstrtouint(buf, 10, &bl_level);
@@ -672,9 +674,6 @@ static ssize_t lm36923_reg_bl_store(struct device *dev,
 		goto out_input;
 
 	LM36923_INFO("%s:buf=%s,state=%d\n", __func__, buf, bl_level);
-
-	if (bl_level < BL_MIN)
-		bl_level = BL_MIN;
 
 	if (bl_level > BL_MAX)
 		bl_level = BL_MAX;
@@ -697,11 +696,11 @@ static ssize_t lm36923_reg_bl_store(struct device *dev,
 
 i2c_error:
 	dev_err(pchip->dev, "%s:i2c access fail to register\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: i2c access fail to register\n", __func__);
+	return -1;
 
 out_input:
 	dev_err(pchip->dev, "%s:input conversion fail\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: input conversion fail\n", __func__);
+	return -1;
 }
 
 static DEVICE_ATTR(reg_bl, S_IRUGO|S_IWUSR, lm36923_reg_bl_show, lm36923_reg_bl_store);
@@ -755,7 +754,7 @@ static ssize_t lm36923_reg_store(struct device *dev,
 					struct device_attribute *devAttr,
 					const char *buf, size_t size)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 	struct lm36923_chip_data *pchip = NULL;
 	unsigned int reg = 0;
 	unsigned int mask = 0;
@@ -763,13 +762,13 @@ static ssize_t lm36923_reg_store(struct device *dev,
 
 	if(dev == NULL){
 		LM36923_ERR("dev is null pointer\n");
-		return ret;
+		return -1;
 	}
 
 	pchip = dev_get_drvdata(dev);
 	if(pchip == NULL){
 		LM36923_ERR("pchip is null pointer\n");
-		return ret;
+		return -1;
 	}
 
 	ret = sscanf(buf, "reg=0x%x, mask=0x%x, val=0x%x",&reg,&mask,&val);
@@ -793,11 +792,11 @@ static ssize_t lm36923_reg_store(struct device *dev,
 
 i2c_error:
 	dev_err(pchip->dev, "%s:i2c access fail to register\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: i2c access fail to register\n", __func__);
+	return -1;
 
 out_input:
 	dev_err(pchip->dev, "%s:input conversion fail\n", __func__);
-	return snprintf((char *)buf, PAGE_SIZE, "%s: input conversion fail\n", __func__);
+	return -1;
 }
 static DEVICE_ATTR(reg, S_IRUGO|S_IWUSR, lm36923_reg_show, lm36923_reg_store);
 
@@ -1164,7 +1163,9 @@ static int lm36923_probe(struct i2c_client *client,
 	struct i2c_adapter *adapter = NULL;
 	struct lm36923_chip_data *pchip;
 	int ret = -1;
+#if defined (CONFIG_HUAWEI_DSM)
 	unsigned int val = 0;
+#endif
 
 	LM36923_INFO("in!\n");
 
@@ -1189,12 +1190,14 @@ static int lm36923_probe(struct i2c_client *client,
 	if (!pchip)
 		return -ENOMEM;
 
+#ifdef CONFIG_REGMAP_I2C
 	pchip->regmap = devm_regmap_init_i2c(client, &lm36923_regmap);
 	if (IS_ERR(pchip->regmap)) {
 		ret = PTR_ERR(pchip->regmap);
 		dev_err(&client->dev, "fail : allocate register map: %d\n", ret);
 		goto err_out;
 	}
+#endif
 	pchip->client = client;
 	i2c_set_clientdata(client, pchip);
 
@@ -1207,6 +1210,7 @@ static int lm36923_probe(struct i2c_client *client,
 		goto err_out;
 	}
 
+#if defined (CONFIG_HUAWEI_DSM)
 	ret = regmap_read(pchip->regmap, REG_FAULT_FLAG, &val);
 	if (ret < 0) {
 		dev_err(&client->dev, "fail : read chip reg REG_FAULT_FLAG error!\n");
@@ -1223,6 +1227,7 @@ static int lm36923_probe(struct i2c_client *client,
 			dev_err(&client->dev, "dsm_client_ocuppy fail:  ret=%d!\n", ret);
 		}
 	}
+#endif
 
 	pchip->dev = device_create(lm36923_class, NULL, 0, "%s", client->name);
 	if (IS_ERR(pchip->dev)) {
@@ -1265,7 +1270,8 @@ static int lm36923_remove(struct i2c_client *client)
 		return -1;
 	}
 
-	regmap_write(pchip->regmap, REG_ENABLE, 0x00);
+	if (regmap_write(pchip->regmap, REG_ENABLE, 0x00) < 0)
+		LM36923_ERR("regmap_write REG_ENABLE err\n");
 
 	sysfs_remove_group(&client->dev.kobj, &lm36923_group);
 

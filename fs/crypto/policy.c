@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Encryption policy functions for per-file encryption support.
  *
@@ -114,7 +115,6 @@ got_key:
 		up_read(&keyring_key->sem);
 		goto out;
 	}
-
 	tfm = (struct crypto_aead *)crypto_alloc_aead("gcm(aes)", 0, 0);
 	if (IS_ERR(tfm)) {
 		up_read(&keyring_key->sem);
@@ -123,8 +123,8 @@ got_key:
 		pr_err("fscrypt %s : tfm allocation failed!\n", __func__);
 		goto out;
 	}
-
 	res = fscrypt_set_gcm_key(tfm, master_key->raw);
+
 	up_read(&keyring_key->sem);
 	if (res)
 		goto out;
@@ -134,10 +134,6 @@ got_key:
 		goto out;
 
 	res = inode->i_sb->s_cop->set_context(inode, &ctx, sizeof(ctx), NULL);
-	if (res)
-		goto out;
-	fscrypt_set_verify_context(inode, &ctx, sizeof(ctx), NULL, 1);
-
 out:
 	if (tfm)
 		crypto_free_aead(tfm);
@@ -167,7 +163,7 @@ int fscrypt_ioctl_set_policy(struct file *filp, const void __user *arg)
 
 	inode_lock(inode);
 
-	ret = inode->i_sb->s_cop->get_context(inode, &ctx, sizeof(ctx), NULL);
+	ret = inode->i_sb->s_cop->get_context(inode, &ctx, sizeof(ctx));
 	if (ret == -ENODATA) {
 		if (!S_ISDIR(inode->i_mode))
 			ret = -ENOTDIR;
@@ -200,10 +196,10 @@ int fscrypt_ioctl_get_policy(struct file *filp, void __user *arg)
 	struct fscrypt_policy policy;
 	int res;
 
-	if (!inode->i_sb->s_cop->is_encrypted(inode))
+	if (!IS_ENCRYPTED(inode))
 		return -ENODATA;
 
-	res = inode->i_sb->s_cop->get_context(inode, &ctx, sizeof(ctx), NULL);
+	res = inode->i_sb->s_cop->get_context(inode, &ctx, sizeof(ctx));
 	if (res < 0 && res != -ERANGE)
 		return res;
 	if (res != sizeof(ctx))
@@ -257,17 +253,24 @@ int fscrypt_has_permitted_context(struct inode *parent, struct inode *child)
 		return 1;
 
 	/* No restrictions if the parent directory is unencrypted */
-	if (!cops->is_encrypted(parent))
+	if (!IS_ENCRYPTED(parent))
 		return 1;
 
 	/* Encrypted directories must not contain unencrypted files */
-	if (!cops->is_encrypted(child))
+	if (!IS_ENCRYPTED(child))
 		return 0;
 
-	if (cops->is_permitted_context) {
-		if (cops->is_permitted_context(parent, child) == 1)
-			return 1;
+	/* TicketNo:AR0009DF3P -- For SDP file we should use original CE context
+	 *     since the ci_master_key in struct i_crypt_info is changed. This
+	 *     should be done before fscrypt_get_encryption_info since it can be
+	 *     called only once for sece file when lock.
+	 */
+	if (child->i_sb->s_cop && child->i_sb->s_cop->is_file_sdp_encrypted) {
+		if (child->i_sb->s_cop->is_file_sdp_encrypted(child))
+			goto sdp_perm;
 	}
+	/* TicketNo:AR0009DF3P -- End */
+
 	/*
 	 * Both parent and child are encrypted, so verify they use the same
 	 * encryption policy.  Compare the fscrypt_info structs if the keys are
@@ -292,12 +295,7 @@ int fscrypt_has_permitted_context(struct inode *parent, struct inode *child)
 	parent_ci = parent->i_crypt_info;
 	child_ci = child->i_crypt_info;
 
-	/* TicketNo:AR000B5MBD -- For HWAA file we just use the i_crypt_info
-	 *     since the ci_master_key in struct i_crypt_info is not changed. */
-	/* TicketNo:AR0009DF3P -- For SDP file we use original CE context since
-	 *     the ci_master_key in struct i_crypt_info is changed.
-	 * The file is protected by SDP if (ci_hw_enc_flag & 0x0F) is not 0 */
-	if (parent_ci && child_ci && !(child_ci->ci_hw_enc_flag & 0x0F)) {
+	if (parent_ci && child_ci) {
 		return memcmp(parent_ci->ci_master_key, child_ci->ci_master_key,
 			      FS_KEY_DESCRIPTOR_SIZE) == 0 &&
 			(parent_ci->ci_data_mode == child_ci->ci_data_mode) &&
@@ -305,14 +303,15 @@ int fscrypt_has_permitted_context(struct inode *parent, struct inode *child)
 			 child_ci->ci_filename_mode) &&
 			(parent_ci->ci_flags == child_ci->ci_flags);
 	}
-	/* TicketNo:AR0009DF3P END */
-	/* TicketNo:AR000B5MBD END */
 
-	res = cops->get_context(parent, &parent_ctx, sizeof(parent_ctx), NULL);
+	/* TicketNo:AR0009DF3P -- Bgin */
+sdp_perm:
+	/* TicketNo:AR0009DF3P -- End */
+	res = cops->get_context(parent, &parent_ctx, sizeof(parent_ctx));
 	if (res != sizeof(parent_ctx))
 		return 0;
 
-	res = cops->get_context(child, &child_ctx, sizeof(child_ctx), NULL);
+	res = cops->get_context(child, &child_ctx, sizeof(child_ctx));
 	if (res != sizeof(child_ctx))
 		return 0;
 
@@ -365,17 +364,14 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 	get_random_bytes(ctx.iv, FS_KEY_DERIVATION_IV_SIZE);
 	memcpy(plain_text, nonce, FS_KEY_DERIVATION_NONCE_SIZE);
 
-
 	res = fscrypt_derive_gcm_key(ci->ci_gtfm, plain_text, ctx.nonce, ctx.iv, 1);
 	if (res)
 		return res;
-
+	BUILD_BUG_ON(sizeof(ctx) != FSCRYPT_SET_CONTEXT_MAX_SIZE);
 	res = parent->i_sb->s_cop->set_context(child, &ctx,
 						sizeof(ctx), fs_data);
 	if (res)
 		return res;
-	fscrypt_set_verify_context(child, &ctx, sizeof(ctx), fs_data, 1);
-
 	return preload ? fscrypt_get_encryption_info(child): 0;
 }
 EXPORT_SYMBOL(fscrypt_inherit_context);
@@ -383,8 +379,8 @@ EXPORT_SYMBOL(fscrypt_inherit_context);
 #ifdef CONFIG_HWAA
 static int f2fs_set_hwaa_enable_flags(struct inode *inode, void *fs_data)
 {
-	u32 flags;
-	int res = 0;
+	u32 flags = 0;
+	int res;
 
 	res = inode->i_sb->s_cop->get_hwaa_flags(inode, fs_data, &flags);
 	if (res) {
@@ -417,7 +413,8 @@ int hwaa_inherit_context(struct inode *parent, struct inode *inode,
 {
 	uint8_t *encoded_wfek = NULL;
 	uint8_t *fek = NULL;
-	uint32_t encoded_len, fek_len;
+	uint32_t encoded_len = 0;
+	uint32_t fek_len = 0;
 	int err;
 	/*
 	 * called by __recover_do_dentries or
@@ -427,7 +424,7 @@ int hwaa_inherit_context(struct inode *parent, struct inode *inode,
 		return -EAGAIN;
 	if (!S_ISREG(inode->i_mode))
 		return 0;
-	/* create fek from hwaa, may delete fek later */
+	/* create fek from hwaa */
 	err = hwaa_create_fek(inode, dentry, &encoded_wfek, &encoded_len,
 		&fek, &fek_len, GFP_NOFS);
 	if (err == -HWAA_ERR_NOT_SUPPORTED) {
@@ -462,7 +459,7 @@ int hwaa_inherit_context(struct inode *parent, struct inode *inode,
 free_hwaa:
 	kfree(encoded_wfek);
 free_buf:
-	kzfree(fek); //may delete fek later
+	kzfree(fek);
 	return err;
 }
 EXPORT_SYMBOL(hwaa_inherit_context);

@@ -929,7 +929,7 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, uint32 actionid, const ch
 
 	case IOV_GVAL(IOV_AP_ISOLATE): {
 		uint32	bssidx;
-		char *val;
+		char *val = NULL;
 
 		if (dhd_iovar_parse_bssidx(dhd_pub, (char *)name, &bssidx, &val) != BCME_OK) {
 			DHD_ERROR(("%s: ap isoalate: bad parameter\n", __FUNCTION__));
@@ -943,7 +943,7 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, uint32 actionid, const ch
 	}
 	case IOV_SVAL(IOV_AP_ISOLATE): {
 		uint32	bssidx;
-		char *val;
+		char *val = NULL;
 
 		if (dhd_iovar_parse_bssidx(dhd_pub, (char *)name, &bssidx, &val) != BCME_OK) {
 			DHD_ERROR(("%s: ap isolate: bad parameter\n", __FUNCTION__));
@@ -1938,11 +1938,11 @@ int wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 		{
 			uint8* ea = pvt_data->eth.ether_dhost;
 			WLFC_DBGMESG(("WLC_E_IF: idx:%d, action:%s, iftype:%s, "
-			              "[%02x:%02x:%02x:%02x:%02x:%02x]\n",
+			              "[%02x:**:**:**:%02x:%02x]\n",
 			              ifevent->ifidx,
 			              ((ifevent->opcode == WLC_E_IF_ADD) ? "ADD":"DEL"),
 			              ((ifevent->role == 0) ? "STA":"AP "),
-			              ea[0], ea[1], ea[2], ea[3], ea[4], ea[5]));
+			              ea[0],  ea[4], ea[5]));
 			(void)ea;
 
 			if (ifevent->opcode == WLC_E_IF_CHANGE)
@@ -2235,7 +2235,7 @@ dhd_pktfilter_offload_set(dhd_pub_t * dhd, char *arg)
 	int 				rc;
 	uint32				mask_size;
 	uint32				pattern_size;
-	char				*argv[8], * buf = 0;
+	char				*argv[MAXPKT_ARG], * buf = 0;
 	int					i = 0;
 	char				*arg_save = 0, *arg_org = 0;
 #define BUF_SIZE		2048
@@ -2263,8 +2263,13 @@ dhd_pktfilter_offload_set(dhd_pub_t * dhd, char *arg)
 	}
 
 	argv[i] = bcmstrtok(&arg_save, " ", 0);
-	while (argv[i++])
+	while (argv[i++]) {
+		if (i >= MAXPKT_ARG) {
+			DHD_ERROR(("Invalid args provided\n"));
+			goto fail;
+		}
 		argv[i] = bcmstrtok(&arg_save, " ", 0);
+	}
 
 	i = 0;
 	if (argv[i] == NULL) {

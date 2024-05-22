@@ -1748,7 +1748,7 @@ static int sec_ts_init_chip(void)
 	pdata->max_x = ts->chip_data->x_max - 1;
 	pdata->max_y = ts->chip_data->y_max - 1;
 
-	wake_lock_init(&ts->wakelock, WAKE_LOCK_SUSPEND, "tsp_wakelock");
+	wakeup_source_init(&ts->wakelock, "tsp_wakelock");
 	init_completion(&ts->resume_done);
 
 #if defined (CONFIG_TEE_TUI)
@@ -2055,7 +2055,12 @@ static int sec_ts_get_calibration_data(struct ts_calibration_data_info *info, st
 	enable_irq(ts->client->irq);
 
 	used_datasize = ts->tx_count*ts->rx_count;
-	memcpy(info->data, ts->pFrame, used_datasize);
+	if (used_datasize > CALIBRATION_DATA_SIZE) {
+		TS_LOG_ERR("%s: len is too large, used_datasize = %d\n",
+			__func__, used_datasize);
+		used_datasize = CALIBRATION_DATA_SIZE;
+	}
+	memcpy(info->data, ts->pFrame, (size_t)used_datasize);
 
 	info->used_size = used_datasize;
 	TS_LOG_INFO("info->used_size = %d\n", info->used_size);

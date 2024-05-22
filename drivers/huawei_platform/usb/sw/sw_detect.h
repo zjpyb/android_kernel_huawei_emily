@@ -23,8 +23,8 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/debugfs.h>
-#include <linux/wakelock.h>
 #include <linux/platform_device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/completion.h>
 
 #define SW_NOTIFY_EVENT_DISCONNECT    (1)
@@ -35,6 +35,8 @@
 #define DEVSTAT_NONEDEV               (0)
 #define DEVSTAT_KBDEV_ONLINE          (1)
 #define DEVSTAT_CHGDEV_ONLINE         (2)
+
+#define RECHECK_ADC_DELAY_MS          1
 
 struct sw_dev_detector;
 struct sw_gpio_detector;

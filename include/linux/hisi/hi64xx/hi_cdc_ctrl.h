@@ -29,6 +29,7 @@ enum bustype_select {
 	BUSTYPE_SELECT_NULL = 0,
 	BUSTYPE_SELECT_SLIMBUS = 1,
 	BUSTYPE_SELECT_SSI = 2,
+	BUSTYPE_SELECT_BUTT,
 };
 
 enum {
@@ -45,7 +46,6 @@ struct hi_cdc_ctrl {
 	struct device *dev;
 	enum bustype_select bus_sel;
 	bool pm_runtime_support;
-	bool reg_read_twice;
 	uint32_t slimbusclk_cdc_drv;
 	uint32_t slimbusdata_cdc_drv;
 };

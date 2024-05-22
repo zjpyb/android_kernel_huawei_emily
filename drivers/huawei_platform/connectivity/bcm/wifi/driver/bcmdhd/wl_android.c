@@ -420,7 +420,11 @@ wls_parse_batching_cmd(struct net_device *dev, char *command, int total_len)
 {
 	int err = BCME_OK;
 	uint i, tokens;
-	char *pos, *pos2, *token, *token2, *delim;
+	char *pos = NULL;
+	char *pos2 = NULL;
+	char *token = NULL;
+	char *token2 = NULL;
+	char *delim = NULL;
 	char param[PNO_PARAM_SIZE], value[VALUE_SIZE];
 	struct dhd_pno_batch_params batch_params;
 	DHD_PNO(("%s: command=%s, len=%d\n", __FUNCTION__, command, total_len));
@@ -538,8 +542,8 @@ static int wl_android_set_pno_setup(struct net_device *dev, char *command, int t
 	wlc_ssid_ext_t ssids_local[MAX_PFN_LIST_COUNT];
 	int res = -1;
 	int nssid = 0;
-	cmd_tlv_t *cmd_tlv_temp;
-	char *str_ptr;
+	cmd_tlv_t *cmd_tlv_temp = NULL;
+	char *str_ptr = NULL;
 	int tlv_size_left;
 	int pno_time = 0;
 	int pno_repeat = 0;
@@ -1370,7 +1374,7 @@ int wl_keep_alive_set(struct net_device *dev, char* extra, int total_len)
 	wl_mkeep_alive_pkt_t	mkeep_alive_pkt;
 	int ret;
 	uint period_msec = 0;
-	char *buf;
+	char *buf = NULL;
 
 	if (extra == NULL)
 	{
@@ -2024,10 +2028,8 @@ set_ap_mac_list(struct net_device *dev, void *buf)
 		WL_SOFTAP(("%s: applied MAC List, mode:%d, length %d:\n",
 			__FUNCTION__, mac_mode, length));
 		for (i = 0; i < maclist->count; i++)
-			WL_SOFTAP(("mac %d: %02X:%02X:%02X:%02X:%02X:%02X\n",
-				i, maclist->ea[i].octet[0], maclist->ea[i].octet[1],
-				maclist->ea[i].octet[2],
-				maclist->ea[i].octet[3], maclist->ea[i].octet[4],
+			WL_SOFTAP(("mac %d: %02X:**:**:**:%02X:%02X\n",
+				i, maclist->ea[i].octet[0], maclist->ea[i].octet[4],
 				maclist->ea[i].octet[5]));
 #ifdef HW_SOFTAP_REASON_CODE
 		/* set ACL deny reason */

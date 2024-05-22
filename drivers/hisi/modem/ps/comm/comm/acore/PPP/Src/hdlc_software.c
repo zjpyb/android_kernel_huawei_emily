@@ -50,6 +50,7 @@
 #include "PPP/Inc/hdlc_software.h"
 
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 /*****************************************************************************
    1 协议栈打印打点方式下的.C文件宏定义
@@ -196,6 +197,7 @@ void link_PullMemPacket(struct link *l, PPP_ZC_STRU *pstMem)
     PPP_MemFree(pstMem);
 }
 
+#if (PPP_FEATURE == PPP_FEATURE_PPP)
 /*****************************************************************************
  Prototype      : Ppp_FrameEncap
  Description    : 对于PPP类型的激活，对于从网侧发送来的简单的PPP报文，对其
@@ -317,6 +319,131 @@ VOS_UINT32 Ppp_FrameDecap(PPP_ID PppId, PPP_ZC_STRU *pstMem)
     return VOS_OK;
 }
 
+#else
+void
+link_PullPacket(struct link *l, VOS_CHAR *buf, VOS_UINT32 len)
+{
+  struct ppp_mbuf *bp, *lbp[LAYER_MAX];
+  VOS_UINT16 lproto[LAYER_MAX], proto;
+  VOS_INT32 layer;
+  PPP_ZC_STRU   *pstMem;
+
+
+  if (!l)
+  {
+    PPP_MNTN_LOG(PS_PID_APP_PPP, 0, PS_PRINT_WARNING, "link_PullPacket:Can't Pull an async packet from a logical link\r\n");
+    return;
+  }
+
+  PSACORE_MEM_SET(lbp, sizeof (lbp), '\0', sizeof (lbp));
+
+    lbp[0] = ppp_m_get((VOS_INT32)len);
+
+  if(lbp[0] == VOS_NULL)
+  {
+    return;
+  }
+
+  PSACORE_MEM_CPY(PPP_MBUF_CTOP(lbp[0]), len, buf, len);
+
+
+  lproto[0] = 0;
+  layer = 0;
+
+  while (layer || lbp[layer]) {
+    if (lbp[layer] == VOS_NULL_PTR) {
+      layer--;
+      continue;
+    }
+    bp = lbp[layer];
+    lbp[layer] = bp->m_nextpkt;
+    bp->m_nextpkt = VOS_NULL_PTR;
+    proto = lproto[layer];
+
+    if (l->layer[layer]->pull != VOS_NULL_PTR)
+      bp = (*l->layer[layer]->pull)(/*b, */l, bp, &proto);
+
+    if (layer == (l->nlayers - 1)) {
+      /* We've just done the top layer, despatch the packet(s) */
+      if (bp) {
+        pstMem  = ppp_m_alloc_ttfmem_from_mbuf(bp);
+        ppp_m_freem(bp);
+
+        if (VOS_NULL_PTR != pstMem)
+        {
+          PPP_HDLC_ProcIpModeUlData(/*b, */l, pstMem, proto);
+        }
+      }
+    } else {
+      lbp[++layer] = bp;
+      lproto[layer] = proto;
+    }
+  }
+}
+
+
+/*****************************************************************************
+ Prototype      : PPP_RcvPPPoEDataIndIPType
+ Description    : 对于IP类型的激活，对于从GGSN发送来的IP报文，对
+                  其进行封装后发送到PPPoE继续封装。
+
+ Input          : ---
+ Output         : ---
+ Return Value   : ---
+ Calls          : ---
+ Called By      : ---
+
+ History        : ---
+  1.Date        : 2006-5-25
+    Author      : ---
+    Modification: Created function
+*****************************************************************************/
+VOS_UINT32 PPP_RcvPPPoEDataIndIPType(PPP_ID PppId, VOS_UINT8 * pucData, VOS_UINT16 usLen)
+{
+    struct ppp_mbuf *bp;
+
+    bp = ppp_m_get(usLen + PPP_RECIEVE_RESERVE_FOR_HEAD + PPP_RECIEVE_RESERVE_FOR_TAIL);
+
+    if(bp == VOS_NULL)
+    {
+        PPP_MNTN_LOG(PS_PID_APP_PPP, 0, PS_PRINT_WARNING, "no mbuf\r\n");
+        return VOS_ERR;
+    }
+    /*预留头部*/
+    bp->m_offset = PPP_RECIEVE_RESERVE_FOR_HEAD;
+
+    /*头部与尾部都留出来了*/
+    bp->m_len = usLen;
+
+    /*拷贝数据*/
+    PSACORE_MEM_CPY(PPP_MBUF_CTOP(bp), usLen, pucData, usLen);
+    link_PushPacket(PPP_LINK(PppId),bp,0,PROTO_IP);
+    return VOS_OK;
+}
+
+/*****************************************************************************
+ Prototype      : PPP_RcvPPPoEDataReqIPType
+ Description    : 对于IP类型的激活，对于从PPPoE发来的从TE来的简单的PPP帧，进行
+                  处理 。
+
+ Input          : ---
+ Output         : ---
+ Return Value   : ---
+ Calls          : ---
+ Called By      : ---
+
+ History        : ---
+  1.Date        : 2006-5-25
+    Author      : ---
+    Modification: Created function
+*****************************************************************************/
+VOS_UINT32 PPP_RcvPPPoEDataReqIPType(PPP_ID PppId, VOS_UINT8 * pucData, VOS_UINT16 usLen)
+{
+    link_PullPacket(PPP_LINK(PppId),(VOS_CHAR *)pucData,usLen);
+    return VOS_OK;
+
+}
+#endif
 
 PPP_HDLC_RESULT_TYPE_ENUM_UINT32 PPP_HDLC_SOFT_ProcData
 (
@@ -423,6 +550,7 @@ VOS_VOID PPP_HDLC_SOFT_ProcProtocolPacket
 
     return;
 }
+#endif
 
 
 

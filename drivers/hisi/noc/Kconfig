@@ -13,6 +13,7 @@ config HISI_NOC_DBG
 	help
 	  Support HiSilicon NOC Dbg node
 config HISI_NOC_MODID_REGISTER
+	depends on HISI_NOC
 	bool "Support HiSilicon NOC modid register"
         default n
         help

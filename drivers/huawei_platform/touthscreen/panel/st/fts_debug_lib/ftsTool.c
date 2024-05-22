@@ -318,7 +318,8 @@ int u8ToU16n(u8* src, int src_length, u16* dst)
 			j++;
 		}
 	}
-
+	kfree(dst);
+	dst = NULL;
 	return (src_length / 2);
 }
 
@@ -484,7 +485,7 @@ int cleanUp(int enableTouch)
 
 short** array1dTo2d_short(short* data, int size, int columns) {
 
-	int i;
+	int i, m;
 	short** matrix = (short**)kmalloc(((int)(size / columns))*sizeof(short *), GFP_KERNEL);
 	if (NULL == matrix) {
 		TS_LOG_ERR("matrix alloc failed\n");
@@ -495,6 +496,12 @@ short** array1dTo2d_short(short* data, int size, int columns) {
 		matrix[i] = (short*)kmalloc(columns*sizeof(short), GFP_KERNEL);
 		if (matrix[i]) {
 			TS_LOG_ERR("matrix[%d] alloc failed\n", i);
+			for (m = 0; m < i; m++) {
+				kfree(matrix[m]);
+				matrix[m] = NULL;
+			}
+			kfree(matrix);
+			matrix = NULL;
 			return NULL;
 		}
 	}
@@ -508,7 +515,7 @@ short** array1dTo2d_short(short* data, int size, int columns) {
 
 u8** array1dTo2d_u8(u8* data, int size, int columns) {
 
-	int i;
+	int i, m;
 	u8** matrix = (u8**)kmalloc(((int)(size / columns))*sizeof(u8 *), GFP_KERNEL);
 	if (NULL == matrix) {
 		TS_LOG_ERR("matrix alloc failed\n");
@@ -518,6 +525,12 @@ u8** array1dTo2d_u8(u8* data, int size, int columns) {
 		matrix[i] = (u8*)kmalloc(columns*sizeof(u8), GFP_KERNEL);
 		if (NULL == matrix[i]) {
 			TS_LOG_ERR("matrix[%d] alloc failed\n", i);
+			for (m = 0; m < i; m++) {
+				kfree(matrix[m]);
+				matrix[m] = NULL;
+			}
+			kfree(matrix);
+			matrix = NULL;
 			return NULL;
 		}
 	}

@@ -1,12 +1,12 @@
 /*
-* NoC. (NoC Mntn Module.)
-*
-* Copyright (c) 2016 Huawei Technologies CO., Ltd.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*/
+ * NoC. (NoC Mntn Module.)
+ *
+ * Copyright (c) 2016 Huawei Technologies CO., Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/module.h>
 #include <linux/bitops.h>
@@ -44,24 +44,16 @@
 #define PLATFORM_ID_BIT_ORLA         (8U)
 #define PLATFORM_ID_BIT_PHOE_ES      (9U)
 #define PLATFORM_ID_BIT_PHOE         (10U)
+#define PLATFORM_ID_BIT_PHOE_cs2    (11U)
+#define PLATFORM_ID_BIT_BALT_ES      (12U)
+#define PLATFORM_ID_BIT_DEN         (13U)
 
-/*hisi platform noc bus info struct.*/
-struct noc_platform_info {
-	const char *name;
-	unsigned int platform_id;
-	const struct noc_bus_info *p_noc_info_bus;
-	unsigned int noc_info_bus_len;
-	struct noc_dump_reg *p_noc_info_dump;
-	unsigned int noc_info_dump_len;
-	const struct noc_busid_initflow *p_noc_info_filter_initflow;
-	void (*pfun_get_size) (unsigned int *, unsigned int *);
-	unsigned int (*pfun_clock_enable) (struct hisi_noc_device *,
-					   struct noc_node *);
-};
-
-/*hisi platform noc bus info gloabl variable.*/
-static struct noc_platform_info g_noc_platform_info[] = {
-	/*hisi platform: hi3650 */
+struct noc_dump_reg g_dump_reg_offset[MAX_DUMP_REG];
+struct noc_busid_initflow g_busid_initflow[MAX_FILTER_INITFLOW];
+struct noc_bus_info g_noc_bus_info[MAX_BUSID_VALE];
+/* hisi platform noc bus info gloabl variable. */
+struct noc_platform_info g_noc_platform_info[] = {
+	/* hisi platform: hi3650 */
 	[0] = {
 	       .name = "hi3650",
 	       .platform_id = 1 << PLATFORM_ID_BIT_HI3650,	/* must be same as the value defined in DTS. */
@@ -72,7 +64,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_hi3650,
 	       },
 
-	/*hisi platform: hi6250 */
+	/* hisi platform: hi6250 */
 	[1] = {
 	       .name = "hi6250",
 	       .platform_id = 1 << PLATFORM_ID_BIT_HI6250,	/* must be same as the value defined in DTS. */
@@ -83,7 +75,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_hi6250,
 	       },
 
-	/*hisi platform: hi3660 */
+	/* hisi platform: hi3660 */
 	[2] = {
 	       .name = "hi3660",
 	       .platform_id = 1 << PLATFORM_ID_BIT_HI3660,	/* must be same as the value defined in DTS. */
@@ -94,7 +86,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_hi3660,
 	       },
 
-	/*hisi platform: kirin970_es */
+	/* hisi platform: kirin970_es */
 	[3] = {
 	       .name = "kirin970_es",
 	       .platform_id = 1 << PLATFORM_ID_BIT_KIRIN970_ES,	/* must be same as the value defined in DTS. */
@@ -105,7 +97,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_kirin970_es,
 	       },
 
-	/*hisi platform: kirin970 */
+	/* hisi platform: kirin970 */
 	[4] = {
 	       .name = "kirin970",
 	       .platform_id = 1 << PLATFORM_ID_BIT_KIRIN970,	/* must be same as the value defined in DTS. */
@@ -116,7 +108,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_kirin970,
 	       },
 
-	/*hisi platform: MIA */
+	/* hisi platform: MIA */
 	[5] = {
 	       .name = "MIA",
 	       .platform_id = 1 << PLATFORM_ID_BIT_MIA,	/* must be same as the value defined in DTS. */
@@ -127,7 +119,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_MIA,
 	       },
 
-	/*hisi platform: ATLA_es */
+	/* hisi platform: ATLA_es */
 	[6] = {
 	       .name = "ATLA_es",
 	       .platform_id = 1 << PLATFORM_ID_BIT_ATLA_ES,	/* must be same as the value defined in DTS. */
@@ -138,7 +130,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_ATLA_es,
 	       },
 
-	/*hisi platform: ATLA */
+	/* hisi platform: ATLA */
 	[7] = {
 	       .name = "ATLA",
 	       .platform_id = 1 << PLATFORM_ID_BIT_ATLA,	/* must be same as the value defined in DTS. */
@@ -149,7 +141,7 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .pfun_clock_enable = hisi_noc_clock_enable_ATLA,
 	       },
 
-	/*hisi platform: ORLA */
+	/* hisi platform: ORLA */
 	[8] = {
 	       .name = "ORLA",
 	       .platform_id = 1 << PLATFORM_ID_BIT_ORLA,	/* must be same as the value defined in DTS. */
@@ -158,47 +150,79 @@ static struct noc_platform_info g_noc_platform_info[] = {
 	       .p_noc_info_filter_initflow = hisi_filter_initflow_ORLA,
 	       .pfun_get_size = hisi_noc_get_array_size_ORLA,
 	       .pfun_clock_enable = hisi_noc_clock_enable_ORLA,
-	      },
+	       },
 
-	/*hisi platform: PHOE_es */
+	/* hisi platform: PHOE_es */
 	[9] = {
 	       .name = "PHOE_es",
 	       .platform_id = 1 << PLATFORM_ID_BIT_PHOE_ES,	/* must be same as the value defined in DTS. */
-	       .p_noc_info_bus = noc_buses_info_PHOE_es,
-	       .p_noc_info_dump = noc_dump_reg_list_PHOE_es,
-	       .p_noc_info_filter_initflow = hisi_filter_initflow_PHOE_es,
-	       .pfun_get_size = hisi_noc_get_array_size_PHOE_es,
-	       .pfun_clock_enable = hisi_noc_clock_enable_PHOE_es,
+	       .p_noc_info_bus = NULL,
+	       .p_noc_info_dump = NULL,
+	       .p_noc_info_filter_initflow = NULL,
+	       .pfun_get_size = NULL,
+	       .pfun_clock_enable = hisi_noc_clock_enable_check,
 	       },
-	/*hisi platform: PHOE */
+	/* hisi platform: PHOE */
 	[10] = {
-	       .name = "PHOE",
-	       .platform_id = 1 << PLATFORM_ID_BIT_PHOE,	/* must be same as the value defined in DTS. */
-	       .p_noc_info_bus = noc_buses_info_PHOE,
-	       .p_noc_info_dump = noc_dump_reg_list_PHOE,
-	       .p_noc_info_filter_initflow = hisi_filter_initflow_PHOE,
-	       .pfun_get_size = hisi_noc_get_array_size_PHOE,
-	       .pfun_clock_enable = hisi_noc_clock_enable_PHOE,
-	       }
+		.name = "PHOE",
+		.platform_id = 1 << PLATFORM_ID_BIT_PHOE,	/* must be same as the value defined in DTS. */
+		.p_noc_info_bus = NULL,
+		.p_noc_info_dump = NULL,
+		.p_noc_info_filter_initflow = NULL,
+		.pfun_get_size = NULL,
+		.pfun_clock_enable = hisi_noc_clock_enable_check,
+		},
+	/* hisi platform: PHOE_cs2 */
+	[11] = {
+		.name = "PHOE_cs2",
+		.platform_id = 1 << PLATFORM_ID_BIT_PHOE_cs2,	/* must be same as the value defined in DTS. */
+		.p_noc_info_bus = noc_buses_info_PHOE_cs2,
+		.p_noc_info_dump = noc_dump_reg_list_PHOE_cs2,
+		.p_noc_info_filter_initflow = hisi_filter_initflow_PHOE_cs2,
+		.pfun_get_size = hisi_noc_get_array_size_PHOE_cs2,
+		.pfun_clock_enable = hisi_noc_clock_enable_PHOE_cs2,
+		},
+	/* hisi platform: balt_es */
+	[12] = {
+	       .name = "BALT_es",
+	       .platform_id = 1 << PLATFORM_ID_BIT_BALT_ES,	/* must be same as the value defined in DTS. */
+	       .p_noc_info_bus = NULL,
+	       .p_noc_info_dump = NULL,
+	       .p_noc_info_filter_initflow = NULL,
+	       .pfun_get_size = NULL,
+	       .pfun_clock_enable = hisi_noc_clock_enable_check,
+	       },
+
+	[13] = {
+	    .name = "DEN",
+	    .platform_id = 1 << PLATFORM_ID_BIT_DEN,	/* must be same as the value defined in DTS. */
+	    .p_noc_info_bus = NULL,
+	    .p_noc_info_dump = NULL,
+	    .p_noc_info_filter_initflow = NULL,
+	    .pfun_get_size = NULL,
+	    .pfun_clock_enable = hisi_noc_clock_enable_check,
+	    },
 };
 
-static unsigned int g_info_index = 0;
+static unsigned int g_info_index;
 static struct noc_arr_info noc_buses_i;
-struct noc_dump_reg *noc_dump_reg_list = NULL;
-/*if noc_happend's nodename is in the hisi_modemnoc_nodemame,
-  firstly save log, then system reset.*/
-static const char *hisi_modemnoc_nodemame[] = {
+struct noc_dump_reg *noc_dump_reg_list;
+/* if noc_happend's nodename is in the hisi_modemnoc_nodemame,
+ * firstly save log, then system reset.
+ */
+static const char * const hisi_modemnoc_nodemame[] = {
 	"modem_bus",
-	NULL,			/*end */
+	"mmd_bus",
+	NULL,			/* end */
 };
 
 /*******************************************************************************
-Function:       hisi_get_modemnoc_nodename
-Description:    get the filter conditions of modemnoc.
-Input:          NA
-Output:         modemnoc_nodename:the filter condition of nodename
-Return:         NA
-********************************************************************************/
+ * Function:       hisi_get_modemnoc_nodename
+ * Description:    get the filter conditions of modemnoc.
+ * Input:          NA
+ * Output:         modemnoc_nodename:the filter condition of nodename
+ * Return:         NA
+ *******************************************************************************/
 void hisi_get_modemnoc_nodename(char ***modemnoc_nodename)
 {
 	*modemnoc_nodename = (char **)hisi_modemnoc_nodemame;
@@ -221,16 +245,15 @@ unsigned int hisi_noc_get_dump_reg_list_num(void)
 }
 
 /*******************************************************************************
-Function:       hisi_get_noc_initflow
-Description:    get the filter conditions of modem,hifi etc noc.
-Input:          NA
-Output:         noc_initflow:the filter condition of initflow
-Return:         NA
-********************************************************************************/
+ * Function:       hisi_get_noc_initflow
+ * Description:    get the filter conditions of modem,hifi etc noc.
+ * Input:          NA
+ * Output:         noc_initflow:the filter condition of initflow
+ * Return:         NA
+ *******************************************************************************/
 void hisi_get_noc_initflow(const struct noc_busid_initflow **filter_initflow)
 {
-	*filter_initflow =
-	    g_noc_platform_info[g_info_index].p_noc_info_filter_initflow;
+	*filter_initflow = g_noc_platform_info[g_info_index].p_noc_info_filter_initflow;
 }
 
 /*
@@ -238,11 +261,9 @@ void hisi_get_noc_initflow(const struct noc_busid_initflow **filter_initflow)
  * @noc_dev -- noc device node pointer;
  * return clock state of related node.
  */
-unsigned int hisi_noc_clock_enable(struct hisi_noc_device *noc_dev,
-				   struct noc_node *node)
+unsigned int hisi_noc_clock_enable(struct hisi_noc_device *noc_dev, struct noc_node *node)
 {
-	return g_noc_platform_info[g_info_index].pfun_clock_enable(noc_dev,
-								   node);
+	return g_noc_platform_info[g_info_index].pfun_clock_enable(noc_dev, node);
 }
 
 /*
@@ -271,31 +292,28 @@ int noc_set_buses_info(unsigned int platform_id)
 {
 	int ret;
 
-	/*get platform info index by platform id value defined in DTS. */
+	/* get platform info index by platform id value defined in DTS. */
 	ret = noc_get_platform_info_index(platform_id);
 	if (ret < 0) {
-		pr_err
-		    ("[%s]: Error!! platform_id[%d], No platform id matched!!\n",
-		     __func__, platform_id);
+		pr_err("[%s]: Error!! platform_id[%d], No platform id matched!!\n", __func__, platform_id);
 		return -1;
 	}
 
-	/*save platform info index. */
+	/* save platform info index. */
 	g_info_index = ret;
 	pr_crit("[%s]: info index is [%d], platform is:[%s].\n", __func__,
 		g_info_index, g_noc_platform_info[g_info_index].name);
 
-	/*get platform info array size. */
-	g_noc_platform_info[g_info_index].
-	    pfun_get_size(&g_noc_platform_info[g_info_index].noc_info_bus_len,
-			  &g_noc_platform_info[g_info_index].noc_info_dump_len);
-	if ((0 == g_noc_platform_info[g_info_index].noc_info_dump_len)
-	    || (0 == g_noc_platform_info[g_info_index].noc_info_bus_len)) {
+	/* get platform info array size. */
+	g_noc_platform_info[g_info_index].pfun_get_size(&g_noc_platform_info[g_info_index].noc_info_bus_len,
+							&g_noc_platform_info[g_info_index].noc_info_dump_len);
+	if ((g_noc_platform_info[g_info_index].noc_info_dump_len == 0)
+	    || (g_noc_platform_info[g_info_index].noc_info_bus_len == 0)) {
 		pr_err("[%s]: Get noc info length Error!!\n", __func__);
 		return -1;
 	}
 
-	/*save platform info. */
+	/* save platform info. */
 	noc_buses_i.ptr = g_noc_platform_info[g_info_index].p_noc_info_bus;
 	noc_buses_i.len = g_noc_platform_info[g_info_index].noc_info_bus_len;
 	noc_dump_reg_list = g_noc_platform_info[g_info_index].p_noc_info_dump;
@@ -304,14 +322,13 @@ int noc_set_buses_info(unsigned int platform_id)
 }
 
 /*
-Function: noc_get_mid_info
-Description: noc get mid_info and mid_info size
-input: bus_id
-output: noc_mid_info pointer and mid_info size
-return: none
-*/
-void noc_get_mid_info(unsigned int bus_id, struct noc_mid_info **pt_info,
-		      unsigned int *pt_size)
+ * Function: noc_get_mid_info
+ * Description: noc get mid_info and mid_info size
+ * input: bus_id
+ * output: noc_mid_info pointer and mid_info size
+ * return: none
+ */
+void noc_get_mid_info(unsigned int bus_id, struct noc_mid_info **pt_info, unsigned int *pt_size)
 {
 	const struct noc_bus_info *pt_noc_bus = noc_get_bus_info(bus_id);
 
@@ -321,18 +338,16 @@ void noc_get_mid_info(unsigned int bus_id, struct noc_mid_info **pt_info,
 	}
 	*pt_info = (struct noc_mid_info *)(pt_noc_bus->p_noc_mid_info);
 	*pt_size = pt_noc_bus->noc_mid_info_size;
-	return;
 }
 
 /*
-Function: noc_get_sec_info
-Description: noc get sec_info and sec_info size
-input: bus_id
-output: noc_sec_info pointer and sec_info size
-return: none
-*/
-void noc_get_sec_info(unsigned int bus_id, struct noc_sec_info **pt_info,
-		      unsigned int *pt_size)
+ * Function: noc_get_sec_info
+ * Description: noc get sec_info and sec_info size
+ * input: bus_id
+ * output: noc_sec_info pointer and sec_info size
+ * return: none
+ */
+void noc_get_sec_info(unsigned int bus_id, struct noc_sec_info **pt_info, unsigned int *pt_size)
 {
 	const struct noc_bus_info *pt_noc_bus = noc_get_bus_info(bus_id);
 
@@ -342,28 +357,27 @@ void noc_get_sec_info(unsigned int bus_id, struct noc_sec_info **pt_info,
 	}
 	*pt_info = (struct noc_sec_info *)(pt_noc_bus->p_noc_sec_info);
 	*pt_size = pt_noc_bus->noc_sec_info_size;
-	return;
 }
 
 /*
-Function: noc_get_buses_info
-Description: get noc_bus_info
-input: none
-output: none
-return: noc_arr_info pointer
-*/
+ * Function: noc_get_buses_info
+ * Description: get noc_bus_info
+ * input: none
+ * output: none
+ * return: noc_arr_info pointer
+ */
 struct noc_arr_info *noc_get_buses_info(void)
 {
 	return &noc_buses_i;
 }
 
 /*
-Function: noc_get_bus_info
-Description: get noc_bus_info from bus_id
-input: int bus_id -> bus id input
-output: none
-return: noc_bus_info
-*/
+ * Function: noc_get_bus_info
+ * Description: get noc_bus_info from bus_id
+ * input: int bus_id -> bus id input
+ * output: none
+ * return: noc_bus_info
+ */
 const struct noc_bus_info *noc_get_bus_info(unsigned int bus_id)
 {
 	const struct noc_bus_info *noc_bus = NULL;
@@ -386,12 +400,12 @@ const struct noc_bus_info *noc_get_bus_info(unsigned int bus_id)
  * Output: NA
  * Return: u64 -- NoC Error Local Address
  */
-u64 noc_find_addr_from_routeid(unsigned int idx, int initflow, int targetflow,
-			       int targetsubrange)
+u64 noc_find_addr_from_routeid(unsigned int idx, int initflow, int targetflow, int targetsubrange)
 {
 	unsigned int i;
 	unsigned int count;
-	const ROUTE_ID_ADDR_STRU *pastTbl;
+
+	const struct datapath_routid_addr *pastTbl = NULL;
 
 	if (idx >= hisi_noc_get_bus_info_num())
 		return 0;
@@ -400,11 +414,54 @@ u64 noc_find_addr_from_routeid(unsigned int idx, int initflow, int targetflow,
 	count = noc_buses_i.ptr[idx].routeid_tbl_size;
 
 	for (i = 0; i < count; i++) {
-		if ((pastTbl[i].targ_flow == targetflow) &&
-		    (pastTbl[i].targ_subrange == targetsubrange))
+		if ((pastTbl[i].targ_flow == targetflow) && (pastTbl[i].targ_subrange == targetsubrange))
 
 			return pastTbl[i].init_localaddr;
 	}
 
 	return 0;
+}
+
+/*
+ * hisi_noc_clock_enable - check noc clock state : on or off
+ * @noc_dev : hisi noc device poiter
+ * @node: hisi noc node poiter
+ *
+ * If clock enable, return 1, else return 0;
+ */
+unsigned int hisi_noc_clock_enable_check(struct hisi_noc_device *noc_dev, struct noc_node *node)
+{
+	void __iomem *reg_base = NULL;
+	unsigned int reg_value;
+	unsigned int i;
+	unsigned int ret = 1;
+
+	if ((noc_dev == NULL) || (node == NULL))
+		return 0;
+
+	if (noc_dev->pcrgctrl_base != NULL) {
+		reg_base = noc_dev->pcrgctrl_base;
+	} else {
+		pr_err("%s: bus id and clock domain error!\n", __func__);
+		return 0;
+	}
+
+	for (i = 0; i < HISI_NOC_CLOCK_MAX; i++) {
+		if (node->crg_clk[i].offset == HISI_NOC_CLOCK_REG_DEFAULT)
+			continue;
+
+		reg_value = readl_relaxed((u8 __iomem *) reg_base + node->crg_clk[i].offset);
+		/* Clock is enabled */
+		if (reg_value & (1U << node->crg_clk[i].mask_bit))
+			continue;
+		else {
+			ret = 0;
+			break;
+		}
+	}
+
+	if (noc_dev->noc_property->noc_debug)
+		pr_err("%s: clock_reg = 0x%pK\n", __func__, reg_base);
+
+	return ret;
 }

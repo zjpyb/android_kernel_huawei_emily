@@ -22,6 +22,7 @@
 #include "rdr_inner.h"
 #include "rdr_print.h"
 #include "rdr_field.h"
+#include <securec.h>
 
 static struct rdr_struct_s *pbb;
 static struct rdr_struct_s *tmp_pbb;
@@ -89,7 +90,10 @@ void rdr_field_baseinfo_init(void)
 	pbb->base_info.start_flag = 0;
 	pbb->base_info.savefile_flag = 0;
 	pbb->base_info.reboot_flag = 0;
-	memset(pbb->base_info.e_module, 0, MODULE_NAME_LEN);
+	if (EOK != memset_s(pbb->base_info.e_module,MODULE_NAME_LEN, 0, MODULE_NAME_LEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	memset(pbb->base_info.e_desc, 0, STR_EXCEPTIONDESC_MAXLEN);
 	memset(pbb->base_info.datetime, 0, DATATIME_MAXLEN);
 
@@ -110,9 +114,11 @@ void rdr_field_baseinfo_reinit(void)
 	pbb->base_info.e_subtype = 0;
 	pbb->base_info.start_flag = RDR_PROC_EXEC_START;
 	pbb->base_info.savefile_flag = RDR_DUMP_LOG_START;
-	/* memset(pbb->base_info.e_module, 0, MODULE_NAME_LEN); */
-	/* memset(pbb->base_info.e_desc, 0, STR_EXCEPTIONDESC_MAXLEN); */
-	memset(pbb->base_info.datetime, 0, DATATIME_MAXLEN);
+
+	if (EOK != memset_s(pbb->base_info.datetime,DATATIME_MAXLEN, 0, DATATIME_MAXLEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 
 	pbb->cleartext_info.savefile_flag = 0;
 
@@ -162,9 +168,12 @@ void rdr_field_top_init(void)
 	pbb->top_head.version = RDR_VERSION;
 	pbb->top_head.area_number = RDR_AREA_MAXIMUM;
 
-	rdr_get_builddatetime(pbb->top_head.build_time);
-	memcpy(pbb->top_head.product_name, RDR_PRODUCT,
-	       strlen(RDR_PRODUCT) > 16 ? 16 : strlen(RDR_PRODUCT));
+	rdr_get_builddatetime(pbb->top_head.build_time, RDR_BUILD_DATE_TIME_LEN);
+	if (EOK != memcpy_s(pbb->top_head.product_name,strlen(RDR_PRODUCT) > 16 ? 16 : strlen(RDR_PRODUCT) ,RDR_PRODUCT,
+	       strlen(RDR_PRODUCT) > 16 ? 16 : strlen(RDR_PRODUCT)))
+	{
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	}
 	memcpy(pbb->top_head.product_version, RDR_PRODUCT_VERSION,
 	       strlen(RDR_PRODUCT_VERSION) >
 	       16 ? 16 : strlen(RDR_PRODUCT_VERSION));
@@ -179,7 +188,7 @@ int rdr_field_init(void)
 	int index;
 	u32 last = 0;
 	unsigned int fpga_flag = 0;
-	struct device_node *np;
+	struct device_node *np = NULL;
 
 	BB_PRINT_START();
 
@@ -201,7 +210,10 @@ int rdr_field_init(void)
 	}
 
 	rdr_show_base_info(1);	/* show pbb */
-	memcpy(tmp_pbb, pbb, rdr_reserved_phymem_size());
+	if (EOK != memcpy_s(tmp_pbb,rdr_reserved_phymem_size() ,pbb, rdr_reserved_phymem_size()))
+	{
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	}
 	rdr_show_base_info(0);	/* show tmpbb */
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,hisifb");
@@ -218,9 +230,15 @@ int rdr_field_init(void)
 	 * need clear bbox memory.
 	 */
 	if ((AP_S_COLDBOOT == rdr_get_reboot_type()) && (1 != fpga_flag)) {
-		memset(pbb, 0, rdr_reserved_phymem_size());
+		if (EOK != memset_s(pbb,rdr_reserved_phymem_size() ,0, rdr_reserved_phymem_size()))
+		{
+			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		}
 	} else {
-		memset(pbb, 0, RDR_BASEINFO_SIZE);
+		if (EOK != memset_s(pbb,RDR_BASEINFO_SIZE ,0, RDR_BASEINFO_SIZE))
+		{
+			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		}
 	}
 
 	last = rdr_area_mem_size[0];
@@ -264,7 +282,10 @@ void rdr_fill_edata(struct rdr_exception_info_s *e,const char *date)
 	pbb->base_info.e_core = e->e_from_core;
 	pbb->base_info.e_type = e->e_exce_type;
 	pbb->base_info.e_subtype = e->e_exce_subtype;
-	memcpy(pbb->base_info.datetime, date, DATATIME_MAXLEN);
+	if (EOK != memcpy_s(pbb->base_info.datetime,DATATIME_MAXLEN ,date, DATATIME_MAXLEN))
+	{
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	}
 	memcpy(pbb->base_info.e_module, e->e_from_module, MODULE_NAME_LEN);
 	memcpy(pbb->base_info.e_desc, e->e_desc, STR_EXCEPTIONDESC_MAXLEN);
 	BB_PRINT_END();

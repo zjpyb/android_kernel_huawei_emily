@@ -47,9 +47,8 @@ static void rscan_init_do_work(struct work_struct *data)
 
 static int __init rscan_module_init(void)
 {
-	if (queue_work(system_wq, &rscan_init) == 0) {
+	if (queue_work(system_wq, &rscan_init) == 0)
 		RSLogError(TAG, "add rscan_init failed!");
-	}
 
 	return 0;
 }
@@ -64,3 +63,5 @@ module_exit(rscan_module_exit);     /* lint -save -e528 */
 
 MODULE_AUTHOR("likun <quentin.lee@huawei.com>");
 MODULE_DESCRIPTION("Huawei root scanner");
+
+

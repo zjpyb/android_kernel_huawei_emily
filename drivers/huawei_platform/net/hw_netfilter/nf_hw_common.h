@@ -3,6 +3,9 @@
 #ifndef _NF_HW_COMMON
 #define _NF_HW_COMMON
 #define MAX_HASH 256
+/* max URL length is 8000 from rfc7230 */
+#define MAX_URL_LENGTH 8000
+
 const char *strfind(const char *s1, const char *s2);
 const char *strfindpos(const char *s1, const char *s2, int len);
 const char *strfinds2(const char *s1, const char *s2, int s2l);

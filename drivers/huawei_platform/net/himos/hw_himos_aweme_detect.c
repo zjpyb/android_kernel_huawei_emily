@@ -83,6 +83,11 @@ static struct himos_aweme_detect_info *himos_alloc_aweme_detect_info(int flags)
 	info->detecting = 0;
 	info->local_sport = 0;
 	info->local_inbytes = 0;
+	info->cur_dict_index = 0;
+	info->dict_num = 0;
+	memset(info->sport_key_dict, 0,
+		AWEME_STALL_WINDOW * sizeof(struct himos_sport_key_dict));
+
 	return info;
 }
 
@@ -278,7 +283,7 @@ static void himos_aweme_report_cb(unsigned long arg)
 
 	struct sk_buff *skb;
 	size_t size = 0;
-	void *reply;
+	void *reply = NULL;
 	struct genlmsghdr *genlhdr;
 
 	uid = (__s32)arg;
@@ -342,7 +347,8 @@ out:
 static int himos_get_total_from_range(struct himos_aweme_detect_info *info,
 	struct stall_info *stall, const char *msg, int len)
 {
-	const char *loc1, *loc2;
+	const char *loc1 = NULL;
+	const char *loc2 = NULL;
 	int ret = -1;
 	char number[10];
 	int i = 0;
@@ -542,6 +548,89 @@ out:
 	return ret;
 }
 
+static void himos_set_sport_key_dict(struct himos_aweme_detect_info *info,
+	int req_index)
+{
+	int idx;
+	int sport_index;
+	unsigned short dict_sport;
+
+	sport_index = info->cur_dict_index;
+	for (idx = 0; idx < info->dict_num; idx++) {
+		sport_index--;
+		if (sport_index < 0)
+			sport_index = AWEME_STALL_WINDOW - 1;
+
+		dict_sport = info->sport_key_dict[sport_index].sport;
+		if ((dict_sport == info->stalls[req_index].sport) ||
+			!strncmp(info->sport_key_dict[sport_index].key,
+					info->stalls[req_index].key,
+					STALL_KEY_MAX))
+			break;
+	}
+
+	if (idx < info->dict_num) {
+		info->sport_key_dict[sport_index].sport =
+				info->stalls[req_index].sport;
+		memcpy(&info->sport_key_dict[sport_index].key,
+				info->stalls[req_index].key,
+				STALL_KEY_MAX);
+		WIFIPRO_DEBUG("update dict:(%d, %s), index:%d, req_index:%d",
+				info->sport_key_dict[sport_index].sport,
+				info->sport_key_dict[sport_index].key,
+				sport_index, req_index);
+		return;
+	}
+
+	info->sport_key_dict[info->cur_dict_index].sport =
+			info->stalls[req_index].sport;
+	memcpy(&info->sport_key_dict[info->cur_dict_index].key,
+			info->stalls[req_index].key,
+			STALL_KEY_MAX);
+	WIFIPRO_DEBUG("add new dict: sport=%d, key=%s, cur_idx:%d, req_idx:%d",
+			info->sport_key_dict[info->cur_dict_index].sport,
+			info->sport_key_dict[info->cur_dict_index].key,
+			info->cur_dict_index, req_index);
+
+	info->cur_dict_index++;
+	info->dict_num++;
+	if (info->cur_dict_index >= AWEME_STALL_WINDOW) {
+		info->cur_dict_index = 0;
+	}
+	if (info->dict_num >= AWEME_STALL_WINDOW) {
+		info->dict_num = AWEME_STALL_WINDOW;
+	}
+}
+
+static bool himos_is_sport_in_dict(struct himos_aweme_detect_info *info,
+	unsigned short sport, int *dict_index)
+{
+	int idx;
+	int sport_index;
+
+	// find sport in dict, get the key, and add inbytes to this key
+	sport_index = info->cur_dict_index;
+	for (idx = 0; idx < info->dict_num; idx++) {
+		sport_index--;
+		if (sport_index < 0)
+			sport_index = AWEME_STALL_WINDOW - 1;
+
+		if (info->sport_key_dict[sport_index].sport == sport) {
+			WIFIPRO_DEBUG("find in dict, idx:%d, sport:%d, key:%s",
+					sport_index,
+					info->sport_key_dict[sport_index].sport,
+					info->sport_key_dict[sport_index].key);
+			break;
+		}
+	}
+	*dict_index = sport_index;
+
+	if (idx < info->dict_num) {
+		return true;
+	}
+	return false;
+}
+
 static void himos_process_proxy_request(struct himos_aweme_detect_info *info,
 	struct sock *sk, const char *msg, int len)
 {
@@ -576,9 +665,12 @@ static void himos_process_proxy_request(struct himos_aweme_detect_info *info,
 		WIFIPRO_DEBUG("NOTE: we find the proxy request, but without exist key");
 		return;
 	}
+
 	WIFIPRO_DEBUG("proxy request and find the exist information(index:%d, proxy preload=%lu, preload=%lu)",
 		i, stall.preload, info->stalls[i].preload);
 	info->stalls[i].sport = stall.sport;
+	himos_set_sport_key_dict(info, i);
+
 	WIFIPRO_DEBUG("sport=%d, snum=%d", info->stalls[i].sport, sk->sk_num);
 	himos_log_detect_result(info);
 }
@@ -606,11 +698,13 @@ static void himos_process_preload_request(struct himos_aweme_detect_info *info,
 	if (likely(i >= info->valid_num)) {
 		memcpy(&info->stalls[info->cur_index], &stall, sizeof(struct stall_info));
 		info->stalls[info->cur_index].sport = htons(sk->sk_num);
+		himos_set_sport_key_dict(info, info->cur_index);
 		himos_add_stall_info(info);
 	}
 	else {
 		WIFIPRO_DEBUG("GET a preload request and it's a repeat one");
 		info->stalls[i].sport = stall.sport;
+		himos_set_sport_key_dict(info, i);
 	}
 
 	himos_log_detect_result(info);
@@ -724,7 +818,9 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 {
 	struct himos_aweme_detect_info *info;
 	struct stall_info *stall = NULL;
-	int i, j;
+	int sport_index;
+	int i;
+	int key_index;
 	char *buffer = NULL;
 	int len = -1;
 	__s32 uid;
@@ -738,7 +834,7 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 
 	//copy the data
 	buffer = kmalloc(BUF_LEN, GFP_KERNEL);
-	if(NULL == buffer){
+	if (NULL == buffer){
 		WIFIPRO_DEBUG("failed to allocate buffer\n");
 		return;
 	}
@@ -754,7 +850,7 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 		}
 	}
 	if (len <= 0){
-		if(buffer){
+		if (buffer){
 			kfree(buffer);
 			buffer = NULL;
 		}
@@ -800,22 +896,48 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 			info->stalls[info->cur_detect_index].local_inbytes = info->local_inbytes;
 			WIFIPRO_DEBUG("add inbytes=%u for local request(sport=%d)", inbytes, info->local_sport);
 		}
-		for (i = 0, j = info->cur_index; i < info->valid_num; ++i) {
-			if (--j < 0)
-				j = AWEME_STALL_WINDOW - 1;
-			if (info->stalls[j].sport == htons(sk->sk_num)) {
-				if (!stall)
-					stall = &info->stalls[j];
-				if (info->cur_detect_index == j){
-					info->stalls[j].inbytes += inbytes;
-					WIFIPRO_DEBUG("add inbytes=%u for proxy(sport=%d)", inbytes, stall->sport);
-				}
-				else {
-					info->stalls[j].preload += inbytes;
-					WIFIPRO_DEBUG("add inbytes=%u for preload(sport=%d)", inbytes, stall->sport);
-				}
+
+		// find the index of video key in stalls array
+		if (himos_is_sport_in_dict(info, htons(sk->sk_num),
+				&sport_index)) {
+			key_index = info->cur_index;
+			for (i = 0; i < info->valid_num; ++i) {
+				key_index--;
+				if (key_index < 0)
+					key_index = AWEME_STALL_WINDOW - 1;
+				if (!strncmp(info->stalls[key_index].key,
+					info->sport_key_dict[sport_index].key,
+					STALL_KEY_MAX))
+					break;
+			}
+
+			if (unlikely(i >= info->valid_num)) {
+				WIFIPRO_DEBUG("not find key in stall array:%s",
+					info->sport_key_dict[sport_index].key);
+				goto out;
+			}
+
+			if (key_index == info->cur_detect_index) {
+				info->stalls[info->cur_detect_index].inbytes +=
+						inbytes;
+				stall = &info->stalls[info->cur_detect_index];
+				WIFIPRO_DEBUG("add inbytes=%u proxy:sport=%d",
+						inbytes,
+						stall->sport);
+			}
+			else {
+				info->stalls[key_index].preload += inbytes;
+				stall = &info->stalls[key_index];
+				WIFIPRO_DEBUG("add inbytes=%u preload:sport=%d",
+						inbytes,
+						stall->sport);
 			}
 		}
+		else {
+			WIFIPRO_DEBUG("not concerned sport=%d",
+					htons(sk->sk_num));
+		}
+
 		if (!stall)
 			goto out;
 
@@ -825,7 +947,7 @@ void himos_aweme_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *n
 	}
 out:
 	spin_unlock_bh(&stats_info_lock);
-	if(buffer){
+	if (buffer){
 		kfree(buffer);
 		buffer = NULL;
 	}

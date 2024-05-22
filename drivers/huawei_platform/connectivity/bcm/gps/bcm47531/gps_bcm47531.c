@@ -37,7 +37,7 @@
 #include <linux/unistd.h>
 #include <linux/bug.h>
 #include <linux/mutex.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/of_device.h>
@@ -79,7 +79,7 @@ struct gps_geofence_wake {
 	/*misc driver structure*/
 	struct miscdevice misc;
 	/*wake_lock*/
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 };
 static struct gps_geofence_wake g_geofence_wake;
 static int gps_geofence_wake_open(struct inode *inode, struct file *filp)
@@ -114,7 +114,7 @@ static void gps_geofence_wake_lock(int gpio)
 {
 	struct gps_geofence_wake *ac_data = &g_geofence_wake;
 	/*we need to use wake_lock_timeout instead of wake_unlock*/
-	wake_lock_timeout(&ac_data->wake_lock, 5 * HZ);
+	__pm_wakeup_event(&ac_data->wake_lock, jiffies_to_msecs(5 * HZ));
 }
 
 static irqreturn_t gps_host_wake_isr(int irq, void *dev)
@@ -227,7 +227,7 @@ static ssize_t gps_write_proc_nstandby(struct file *filp,
 }
 
 static ssize_t gps_read_proc_nstandby(struct file *filp,
-				      const char __user *buffer, size_t len,
+				      char __user *buffer, size_t len,
 				      loff_t *off)
 {
 	int gps_nstandby = 0;
@@ -393,7 +393,7 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 		goto err_free_host_wake;
 	}
 	/*3. Init wake_lock*/
-	wake_lock_init(&ac_data->wake_lock, WAKE_LOCK_SUSPEND,
+	wakeup_source_init(&ac_data->wake_lock,
 		       "gps_geofence_wakelock");
 	pr_info("[gps]wake_lock_init done\n");
 	irq = gps_gpio_irq_init(gps_bcm->gpioid_hostwake.gpio);
@@ -473,7 +473,7 @@ err_free_clk:
 	clk_put(gps_bcm->clk);
 err_free_misc_register:
 	misc_deregister(&ac_data->misc);
-	wake_lock_destroy(&ac_data->wake_lock);
+	wakeup_source_trash(&ac_data->wake_lock);
 	pr_err("%s: misc_deregister!\n", __func__);
 err_free_host_wake:
 	gpio_free(gps_bcm->gpioid_hostwake.gpio);

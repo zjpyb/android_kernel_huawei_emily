@@ -54,7 +54,7 @@ HWLOG_REGIST();
 #endif
 
 #ifdef CONFIG_WAKELOCK
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 
 #define CXD224X_WAKE_LOCK_TIMEOUT	2		/* wake lock timeout for HOSTINT (sec) */
 #define CXD224X_WAKE_LOCK_NAME	"cxd224x-i2c"		/* wake lock for HOSTINT */
@@ -93,8 +93,8 @@ struct cxd224x_dev {
 	unsigned int users;
 	unsigned int count_irq;
 #ifdef CONFIG_WAKELOCK
-	struct wake_lock wakelock;	/* wake lock for HOSTINT */
-	struct wake_lock wakelock_lp;	/* wake lock for low-power-mode */
+	struct wakeup_source wakelock;	/* wake lock for HOSTINT */
+	struct wakeup_source wakelock_lp;	/* wake lock for low-power-mode */
 #endif
 	/* Driver message queue */
 	struct workqueue_struct *wqueue;
@@ -244,7 +244,7 @@ static unsigned int cxd224x_dev_poll(struct file *filp, poll_table *wait)
 
 #ifdef CONFIG_WAKELOCK
 	if(mask)
-		wake_lock_timeout(&cxd224x_dev->wakelock, CXD224X_WAKE_LOCK_TIMEOUT*HZ);
+		__pm_wakeup_event(&cxd224x_dev->wakelock, jiffies_to_msecs(CXD224X_WAKE_LOCK_TIMEOUT*HZ));
 #endif
 
 	return mask;
@@ -289,6 +289,7 @@ static ssize_t cxd224x_dev_read(struct file *filp, char __user *buf,
 	tmpStr = (char *)kzalloc(sizeof(tmp)*2 + 1, GFP_KERNEL);
 	if (!tmpStr) {
 		hwlog_err("%s:Cannot allocate memory for write tmpStr.\n", __func__);
+        mutex_unlock(&cxd224x_dev->read_mutex);
 		return -ENOMEM;
 	}
 
@@ -343,6 +344,7 @@ static ssize_t cxd224x_dev_write(struct file *filp, const char __user *buf,
 	tmpStr = (char *)kzalloc(sizeof(tmp)*2 + 1, GFP_KERNEL);
 	if (!tmpStr) {
 		hwlog_err("%s:Cannot allocate memory for write tmpStr.\n", __func__);
+        mutex_unlock(&cxd224x_dev->read_mutex);
 		return -ENOMEM;
 	}
 
@@ -430,7 +432,7 @@ static long cxd224x_dev_unlocked_ioctl(struct file *filp,
 	case CXDNFC_WAKE_CTL:
 		if (arg == 0) {
 #ifdef CONFIG_WAKELOCK
-			wake_lock_timeout(&cxd224x_dev->wakelock_lp, CXD224X_WAKE_LOCK_TIMEOUT_LP*HZ);
+			__pm_wakeup_event(&cxd224x_dev->wakelock_lp, jiffies_to_msecs(CXD224X_WAKE_LOCK_TIMEOUT_LP*HZ));
 #endif
 			/* PON HIGH (normal power mode)*/
 			//gpio_set_value(cxd224x_dev->gpio->wake_gpio, 1);
@@ -442,7 +444,7 @@ static long cxd224x_dev_unlocked_ioctl(struct file *filp,
 			//hisi_pmic_reg_write(0x240, 0x00);
 			cxd224x_pon_disable(g_p_nfc_data);
 #ifdef CONFIG_WAKELOCK
-			wake_unlock(&cxd224x_dev->wakelock_lp);
+			__pm_relax(&cxd224x_dev->wakelock_lp);
 #endif
 		} else {
 			/* do nothing */
@@ -647,8 +649,8 @@ static int cxd224x_probe(struct i2c_client *client,
 	cxd224x_dev->client = client;
 	cxd224x_dev->gpio = platform_data;
 #ifdef CONFIG_WAKELOCK
-	wake_lock_init(&cxd224x_dev->wakelock, WAKE_LOCK_SUSPEND, CXD224X_WAKE_LOCK_NAME);
-	wake_lock_init(&cxd224x_dev->wakelock_lp, WAKE_LOCK_SUSPEND, CXD224X_WAKE_LOCK_NAME_LP);
+	wakeup_source_init(&cxd224x_dev->wakelock, CXD224X_WAKE_LOCK_NAME);
+	wakeup_source_init(&cxd224x_dev->wakelock_lp, CXD224X_WAKE_LOCK_NAME_LP);
 #endif
 	cxd224x_dev->users =0;
 
@@ -735,8 +737,8 @@ static int cxd224x_remove(struct i2c_client *client)
 	unregister_reboot_notifier(&cxd224x_pon_low_notifier);
 	cxd224x_dev = i2c_get_clientdata(client);
 #ifdef CONFIG_WAKELOCK
-	wake_lock_destroy(&cxd224x_dev->wakelock);
-	wake_lock_destroy(&cxd224x_dev->wakelock_lp);
+	wakeup_source_trash(&cxd224x_dev->wakelock);
+	wakeup_source_trash(&cxd224x_dev->wakelock_lp);
 #endif
 	free_irq(client->irq, cxd224x_dev);
 	misc_deregister(&cxd224x_dev->cxd224x_device);
@@ -764,6 +766,7 @@ static int cxd224x_remove(struct i2c_client *client)
 	remove_sysfs_interfaces(&client->dev);
 	kfree(g_p_nfc_data);
 	kfree(cxd224x_dev);
+	g_p_nfc_data = NULL;
 
 	return 0;
 }

@@ -95,6 +95,14 @@ int hisi_pmic_array_write(int addr, const char *buff, unsigned int len);
 extern int hisi_get_pmic_irq_byname(unsigned int pmic_irq_list);
 extern int hisi_pmic_get_vbus_status(void);
 extern int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler);
+#if defined(CONFIG_HISI_PMIC_SUB_PMU_SPMI)
+ u32 hisi_sub_pmic_read(struct hisi_pmic *pmic, int reg);
+ void hisi_sub_pmic_write(struct hisi_pmic *pmic, int reg, u32 val);
+ unsigned int hisi_sub_pmic_reg_read(int addr);
+ void hisi_sub_pmic_reg_write(int addr, int val) ;
+ int hisi_sub_pmic_array_read(int addr, char *buff, unsigned int len);
+ int hisi_sub_pmic_array_write(int addr, const char *buff, unsigned int len);
+#endif
 #if defined(CONFIG_HISI_DIEID)
 u32 hisi_pmic_read_sub_pmu(u8 sid ,int reg);
 void hisi_pmic_write_sub_pmu(u8 sid ,int reg, u32 val);

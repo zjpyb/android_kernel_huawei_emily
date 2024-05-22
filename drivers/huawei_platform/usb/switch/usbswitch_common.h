@@ -29,7 +29,6 @@ struct usbswitch_common_ops {
 };
 
 int usbswitch_common_ops_register(struct usbswitch_common_ops *ops);
-
 int usbswitch_common_manual_sw(int input_select);
 int usbswitch_common_manual_detach(void);
 int usbswitch_common_dcd_timeout_enable(bool enable_flag);

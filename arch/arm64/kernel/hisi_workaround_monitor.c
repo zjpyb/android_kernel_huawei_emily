@@ -5,6 +5,20 @@
 #include <linux/perf/arm_pmu.h>
 #include <asm/mmu.h>
 
+/*
+ * the type definition of cpu is not unified in kernel,
+ * which will cause pclint violation. In order to satisfy
+ * pclint while respecting kernel native code, we have to
+ * redefine some cpu related macro here
+ */
+#if NR_CPUS != 1
+#undef for_each_cpu
+#define for_each_cpu(cpu, mask)					\
+	for ((cpu) = -1;					\
+		(cpu) = (int) cpumask_next((cpu), (mask)),	\
+		(cpu) < (int) nr_cpu_ids;)
+#endif
+
 struct wa2_pmu_monitor {
 	struct perf_event *pevent;
 	bool monitor_started;
@@ -69,10 +83,9 @@ static struct perf_event_attr *alloc_attr(void)
 }
 
 /* ignore debug code */
-int get_wa2_monitor_status(void)
+void get_wa2_monitor_status(void)
 {
-	struct wa2_pmu_monitor *monitor;
-	unsigned long stat = 0;
+	struct wa2_pmu_monitor *monitor = NULL;
 	int cpu;
 	u64 counter, need_apply;
 
@@ -80,7 +93,6 @@ int get_wa2_monitor_status(void)
 		need_apply = per_cpu(v2_apply, cpu);
 		monitor = &per_cpu(wa2_monitor, cpu);
 		if (monitor->monitor_started) {
-			stat |= (u32)BIT(cpu);
 			counter = per_cpu(pmu_counter, cpu);
 			pr_err("cpu=%d wa2_monitor_enable, counter=%llu, need-apply=%llu\n", cpu, counter, need_apply);
 		} else {
@@ -88,8 +100,6 @@ int get_wa2_monitor_status(void)
 		}
 		per_cpu(v2_apply, cpu) = 0;
 	}
-
-	return stat;
 }
 
 extern void hisi_get_slow_cpus(struct cpumask * cpumask);
@@ -97,9 +107,9 @@ extern u32 armv8pmu_get_counter(struct perf_event *event);
 static int __init wa2_monitor_init(void)
 {
 	int cpu;
-	struct wa2_pmu_monitor *monitor;
-	struct perf_event *pevent;
-	struct perf_event_attr *attr;
+	struct wa2_pmu_monitor *monitor = NULL;
+	struct perf_event *pevent = NULL;
+	struct perf_event_attr *attr = NULL;
 	struct cpumask slow_cpus;
 
 	attr = alloc_attr();
@@ -147,7 +157,7 @@ static int __init wa2_monitor_init(void)
 static void __exit wa2_monitor_exit(void)
 {
 	int cpu;
-	struct wa2_pmu_monitor *monitor;
+	struct wa2_pmu_monitor *monitor = NULL;
 
 	for_each_possible_cpu(cpu) {
 		monitor = &per_cpu(wa2_monitor, cpu);

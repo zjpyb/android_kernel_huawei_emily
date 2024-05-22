@@ -59,7 +59,9 @@
 #include "Ipv4DhcpServer.h"
 #include "PsCommonDef.h"
 #include "msp_at.h"
+#if (FEATURE_ON == FEATURE_LTE)
 #include "msp_diag.h"
+#endif
 #include "vos.h"
 #include "IpNdServer.h"
 #include "nv_stru_gucnas.h"
@@ -391,6 +393,15 @@ VOS_UINT32 Ndis_Init( VOS_VOID )
     VOS_UINT16     usPayLoad;
     NDIS_ARP_PERIOD_TIMER_STRU    *pstArpPeriodTimer;
 
+    #if (VOS_OS_VER != VOS_WIN32)
+    #ifndef MSP_GUNAS_AT_UNITE
+    if (PS_SUCC != Ndis_InitRegToAt())
+    {
+        PS_PRINTF("Ndis_Init, Reg to AT Fail!\n");
+        return PS_FAIL;
+    }
+    #endif
+    #endif
 
     /*lint -e746*/
     pucMacAddr = (VOS_UINT8 *)Ndis_GetMacAddr();                                 /*获得单板MAC地址*/
@@ -553,7 +564,9 @@ VOS_VOID Ndis_ProcARPTimerExp(VOS_VOID)
 
             if (PS_TRUE == pstIpV4Info->ulArpInitFlg)
             {
+                #if (VOS_OS_VER != VOS_WIN32)
                 Ndis_StopARPTimer(pstArpPeriodTimer);
+                #endif
             }
             else
             {
@@ -1097,6 +1110,7 @@ VOS_VOID  Ndis_Ipv4PdnInfoCfg(const AT_NDIS_IPV4_PDN_INFO_STRU *pstNasNdisInfo,
 
 VOS_UINT32 Ndis_StartARPTimer(NDIS_ENTITY_STRU *pstNdisEntity)
 {
+    #if (VOS_OS_VER != VOS_WIN32)
     VOS_UINT32                      ulRtn;
     NDIS_ARP_PERIOD_TIMER_STRU     *pstArpPeriodTimer;
 
@@ -1128,6 +1142,7 @@ VOS_UINT32 Ndis_StartARPTimer(NDIS_ENTITY_STRU *pstNdisEntity)
         pstArpPeriodTimer->hTm = VOS_NULL_PTR;
         return PS_FAIL;
     }
+    #endif
 
     return PS_SUCC;
 }
@@ -1795,6 +1810,7 @@ VOS_UINT32 APP_NDIS_FidInit(enum VOS_INIT_PHASE_DEFINE enPhase)
 }
 /*lint +e40*/
 
+#if (FEATURE_ON ==FEATURE_LTE)
 /*****************************************************************************
  Function Name  : Ndis_MsgHook
  Discription    :
@@ -1815,6 +1831,7 @@ VOS_UINT32 Ndis_MsgHook (VOS_UINT8 *pucData,VOS_UINT32 ulLength,
     return VOS_OK;
 
 }
+#endif
 VOS_UINT32 g_ulGUNdisOMSwitch = PS_FALSE;
 VOS_VOID GU_NDIS_OM_SWITCH_ON(VOS_VOID)
 {

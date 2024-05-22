@@ -75,29 +75,29 @@ extern uint32_t hisi_fb_msg_level;
  * LEVEL 6 KERN_INFO
  * LEVEL 7 KERN_DEBUG (Lowest priority)
  */
-#define HISI_FB_EMERG(msg, ...)    \
-	do { if (hisi_fb_msg_level > 0)  \
+#define HISI_FB_EMERG(msg, ...) \
+	do { if (hisi_fb_msg_level > 0) \
 		pr_emerg("[hisifb E]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_FB_ALERT(msg, ...)    \
-	do { if (hisi_fb_msg_level > 1)  \
+#define HISI_FB_ALERT(msg, ...) \
+	do { if (hisi_fb_msg_level > 1) \
 		pr_alert("[hisifb A]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_FB_CRIT(msg, ...)    \
-	do { if (hisi_fb_msg_level > 2)  \
+#define HISI_FB_CRIT(msg, ...) \
+	do { if (hisi_fb_msg_level > 2) \
 		pr_crit("[hisifb C]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_FB_ERR(msg, ...)    \
-	do { if (hisi_fb_msg_level > 3)  \
+#define HISI_FB_ERR(msg, ...) \
+	do { if (hisi_fb_msg_level > 3) \
 		pr_err("[hisifb E]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_FB_WARNING(msg, ...)    \
-	do { if (hisi_fb_msg_level > 4)  \
+#define HISI_FB_WARNING(msg, ...) \
+	do { if (hisi_fb_msg_level > 4) \
 		pr_warning("[hisifb W]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_FB_NOTICE(msg, ...)    \
-	do { if (hisi_fb_msg_level > 5)  \
+#define HISI_FB_NOTICE(msg, ...) \
+	do { if (hisi_fb_msg_level > 5) \
 		pr_info("[hisifb N]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_FB_INFO(msg, ...)    \
-	do { if (hisi_fb_msg_level > 6)  \
+#define HISI_FB_INFO(msg, ...) \
+	do { if (hisi_fb_msg_level > 6) \
 		pr_info("[hisifb I]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
-#define HISI_FB_DEBUG(msg, ...)    \
-	do { if (hisi_fb_msg_level > 7)  \
+#define HISI_FB_DEBUG(msg, ...) \
+	do { if (hisi_fb_msg_level > 7) \
 		pr_info("[hisifb D]:%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 
 //pr_debug("[hisifb]:%s: "msg, __func__, ## __VA_ARGS__);
@@ -109,6 +109,15 @@ extern uint32_t hisi_fb_msg_level;
 	}
 
 #define HISI_FB_ASSERT(x)   assert(x)
+
+#define hisi_log_enable_if(cond, msg, ...) \
+	do { \
+		if (cond) { \
+			HISI_FB_INFO(msg, ## __VA_ARGS__); \
+		} else { \
+			HISI_FB_DEBUG(msg, ## __VA_ARGS__); \
+		} \
+	} while(0)
 
 
 /*--------------------------------------------------------------------------*/

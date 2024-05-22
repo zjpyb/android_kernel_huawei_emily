@@ -82,9 +82,9 @@ int initTestToDo(void)
 	tests.MutualRawAdjLP = 0;
 
 	tests.MutualCx1 = 0;
-	tests.MutualCx2 = 0;
+	tests.MutualCx2 = 1;
 	tests.MutualCx2Adj = 0;
-	tests.MutualCxTotal = 1;
+	tests.MutualCxTotal = 0;
 	tests.MutualCxTotalAdj = 0;
 
 	tests.MutualCx1LP = 0;
@@ -827,11 +827,8 @@ static void st_fill_rawdata_buf(struct ts_rawdata_info *info, short *source_data
 		}
 		data_ptr = info->buff + info->used_size;
 		for (i = 0; i < rows; i++) {
-			for (j = 0; j < columns; j++) {
-					data_ptr[k++] = (int)source_data[i*columns + j];
-					printk("%d(%d) ", data_ptr[k - 1], source_data[i*columns + j]);
-			}
-			printk("\n");
+			for (j = 0; j < columns; j++)
+				data_ptr[k++] = (int)source_data[(i * columns) + j];
 		}
 
 		info->used_size += rows * columns;
@@ -1212,15 +1209,16 @@ int production_test_main(char *pathThresholds, int stop_on_fail, int saveInit, T
 		TS_LOG_ERR("%s production_test_main ERROR %08X\n",
 			__func__, ERROR_ALLOC);
 		res |= ERROR_ALLOC;
-		goto END;
+		goto end;
 	}
 	TS_LOG_INFO( "%s MAIN Production test is starting...\n", __func__);
 	res = production_test_ito(pathThresholds, todo,result);
 	if (res < 0) {
-		TS_LOG_INFO( "%s Error during ITO TEST! ERROR %08X\n", __func__, res);
-		goto END;	/* in case of ITO TEST failure is no sense keep going* */
+		TS_LOG_ERR("%s Error ITO TEST! ERROR %08X\n", __func__, res);
+		if (stop_on_fail)
+			goto end;
 	} else {
-		TS_LOG_INFO( "%s ITO TEST OK!\n", __func__);
+		TS_LOG_INFO("%s ITO TEST OK!\n", __func__);
 	}
 
 	TS_LOG_INFO( "%s INITIALIZATION TEST :\n", __func__);
@@ -1230,7 +1228,7 @@ int production_test_main(char *pathThresholds, int stop_on_fail, int saveInit, T
 			TS_LOG_INFO("%s Error during  INITIALIZATION TEST! ERROR %08X\n",
 				 __func__, res);
 			if (stop_on_fail) {
-				goto END;
+				goto end;
             }
 		} else {
 			TS_LOG_INFO( "%s INITIALIZATION TEST OK!\n", __func__);
@@ -1246,7 +1244,7 @@ int production_test_main(char *pathThresholds, int stop_on_fail, int saveInit, T
 			TS_LOG_ERR("%s production_test_main: system reset ERROR %08X\n", __func__, ret);
 			res |= ret;
 			if (stop_on_fail) {
-				goto END;
+				goto end;
             }
 		}
 	}
@@ -1277,7 +1275,7 @@ int production_test_main(char *pathThresholds, int stop_on_fail, int saveInit, T
 	/* the OR is important because if the data test is OK but
 	  * the init test fail, the main production test result should = FAIL */
 
-END:
+end:
 	if (res < OK) {
 		TS_LOG_INFO("%s MAIN Production test finished.................FAILED\n", __func__);
 		return res;
@@ -1320,7 +1318,13 @@ int production_test_ms_raw(char *path_limits, int stop_on_fail, TestToDo *todo,
 	TS_LOG_INFO( "%s\n", __func__);
 	TS_LOG_INFO( "%s MS RAW DATA TEST is starting...\n", __func__);
 	if (todo->MutualRaw == 1 || todo->MutualRawGap == 1 ||
-	    todo->MutualRawAdjGap == 1 || todo->MutualRawAdj == 1 ) {
+		todo->MutualRawAdjGap == 1 || todo->MutualRawAdj == 1 ) {
+		ret = getMSFrame3(MS_STRENGTH, &msStrengthFrame);
+		if (ret < OK) {
+			TS_LOG_ERR("%s get strength frame failed error %08X\n",
+				__func__, ERROR_PROD_TEST_DATA);
+			return ret | ERROR_PROD_TEST_DATA;
+		}
 		ret = setScanMode(SCAN_MODE_LOCKED, LOCKED_ACTIVE);
 		msleep(WAIT_FOR_FRESH_FRAMES);
 		ret |= setScanMode(SCAN_MODE_ACTIVE, 0x00);
@@ -1333,12 +1337,6 @@ int production_test_ms_raw(char *path_limits, int stop_on_fail, TestToDo *todo,
 				 __func__, ERROR_PROD_TEST_DATA);
 			return ret | ERROR_PROD_TEST_DATA;
 		}
-		ret |= getMSFrame3(MS_STRENGTH, &msStrengthFrame);
-			if (ret < OK) {
-				TS_LOG_ERR("%s production_test_data: getStrengthFrame failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				return ret | ERROR_PROD_TEST_DATA;
-			}
 		fts_mode_handler(st_info, 0);
 		TS_LOG_INFO( "%s MS RAW MIN MAX TEST:\n", __func__);
 		if (todo->MutualRaw == 1) {
@@ -1731,64 +1729,63 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
 
 	MutualSenseData msCompData;
 	TotMutualSenseData totCompData;
-	int i = 0;
-	u16 *total_adjhor = NULL;
-	u16 *total_adjvert = NULL;
-	int rows,columns = 0;
-	u16 *temp_u16_array = 0;
-	short ** temp_short = NULL;
+	int i;
+	int rows;
+	int columns;
+	u16 *temp_u16_array = NULL;
+	short **temp_short = NULL;
+	struct fts_ts_info *fts_info = fts_get_info();
 
 	/* MS CX TEST */
-	TS_LOG_INFO( "%s\n", __func__);
-	TS_LOG_INFO( "%s MS CX Testes are starting...\n", __func__);
-	if(!path_limits || !todo || !info || !result) {
-			TS_LOG_ERR( "%s NULL data \n", __func__);
-			return ret | ERROR_PROD_TEST_DATA;
-	}
-
-	ret = readMutualSenseCompensationData(LOAD_CX_MS_TOUCH, &msCompData);
-	/* read MS compensation data */
-	if (ret < 0) {
-		TS_LOG_ERR( "%s production_test_data: readMutualSenseCompensationData failed... ERROR %08X\n",
-			 __func__, ERROR_PROD_TEST_DATA);
+	TS_LOG_INFO("%s MS CX Testes are starting\n", __func__);
+	if ((path_limits == NULL) || (todo == NULL) || (info == NULL) ||
+			(result == NULL)) {
+		TS_LOG_ERR("%s NULL data\n", __func__);
 		return ret | ERROR_PROD_TEST_DATA;
 	}
-
+	ret = readMutualSenseCompensationData(LOAD_CX_MS_LOW_POWER,
+		&msCompData);
+	/* read MS compensation data */
+	if (ret < 0) {
+		TS_LOG_ERR("%s: MutualSense Data failed ERROR %08X\n",
+			__func__, ERROR_PROD_TEST_DATA);
+		return ret | ERROR_PROD_TEST_DATA;
+	}
 	ret = readTotMutualSenseCompensationData(LOAD_PANEL_CX_TOT_MS_TOUCH,
 						 &totCompData);
 	/* read  TOT MS compensation data */
 	if (ret < 0) {
-		TS_LOG_ERR( "%s production_test_data: readTotMutualSenseCompensationData failed... ERROR %08X\n",
+		TS_LOG_ERR("%s: TotMutualSense Data failed ERROR %08X\n",
 			 __func__, ERROR_PROD_TEST_DATA);
 		kfree(msCompData.node_data);
 		msCompData.node_data = NULL;
 		return ret | ERROR_PROD_TEST_DATA;
 	}
 
-	TS_LOG_INFO( "%s MS CX2 MIN MAX TEST:\n", __func__);
-	if (todo->MutualCx2 == 1) {
+	TS_LOG_INFO("%s MS CX2 MIN MAX TEST:\n", __func__);
+	if ((todo->MutualCx2 == 1) && fts_info->check_mutual_raw) {
 		ret = parseProductionTestLimits(path_limits, &limit_file,
 						MS_CX2_MAP_MIN, &thresholds_min,
 						&trows, &tcolumns);
 						/* load min thresholds */
-		if (ret < 0 || (trows != msCompData.header.force_node ||
-				tcolumns != msCompData.header.sense_node)) {
-			TS_LOG_ERR("%s production_test_data: parseProductionTestLimits MS_CX2_MAP_MIN failed... ERROR %08X\n",
-				 __func__, ERROR_PROD_TEST_DATA);
+		if ((ret < 0) || ((trows != msCompData.header.force_node) ||
+				(tcolumns != msCompData.header.sense_node))) {
+			TS_LOG_ERR("%s: parse Limits MS_CX2_MAP_MIN failed\n",
+				__func__);
 			ret |= ERROR_PROD_TEST_DATA;
-			goto ERROR_LIMITS;
+			goto error_limits;
 		}
 
 		ret = parseProductionTestLimits(path_limits, &limit_file,
 						MS_CX2_MAP_MAX, &thresholds_max,
 						&trows, &tcolumns);
 						/* load max thresholds */
-		if (ret < 0 || (trows != msCompData.header.force_node ||
-				tcolumns != msCompData.header.sense_node)) {
-			TS_LOG_ERR("%s production_test_data: parseProductionTestLimits MS_CX2_MAP_MAX failed... ERROR %08X\n",
-				 __func__, ERROR_PROD_TEST_DATA);
+		if ((ret < 0) || ((trows != msCompData.header.force_node) ||
+				(tcolumns != msCompData.header.sense_node))) {
+			TS_LOG_ERR("%s: parse Limits MS_CX2_MAP_MAX failed\n",
+				 __func__);
 			ret |= ERROR_PROD_TEST_DATA;
-			goto ERROR_LIMITS;
+			goto error_limits;
 		}
 
 		ret = checkLimitsMap(msCompData.node_data,
@@ -1797,234 +1794,51 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
 				     thresholds_min, thresholds_max);
 					 /* check the limits */
 		if (ret != OK) {
-			TS_LOG_ERR("%s production_test_data: checkLimitsMap MS CX2 MIN MAX failed... ERROR COUNT = %d\n",
+			TS_LOG_ERR("%s: MS CX2 MIN MAX failed ERROR COUNT %d\n",
 				 __func__, ret);
-			TS_LOG_INFO( "%s MS CX2 MIN MAX TEST:.................FAIL\n\n", __func__);
 			count_fail += 1;
+			result->MutualRawResGap = false;
 			if (stop_on_fail)
-				goto ERROR;
-		} else
-			TS_LOG_INFO("%s MS CX2 MIN MAX TEST:.................OK\n\n",__func__);
-
+				goto error;
+		} else {
+			result->MutualRawResGap = true;
+			TS_LOG_INFO("%s MS CX2 MIN MAX TEST: OK\n", __func__);
+		}
 		kfree(thresholds_min);
 		thresholds_min = NULL;
 		kfree(thresholds_max);
 		thresholds_max = NULL;
-	} else
-		TS_LOG_INFO("%s MS CX2 MIN MAX TEST:.................SKIPPED\n\n",__func__);
-
-	/* START OF TOTAL CHECK */
-	TS_LOG_INFO( "%s MS TOTAL CX TEST:\n", __func__);
-
-	if (todo->MutualCxTotal == 1 || todo->MutualCxTotalAdj == 1) {
-		TS_LOG_INFO( "%s MS TOTAL CX MIN MAX TEST:\n", __func__);
-		if (todo->MutualCxTotal == 1) {
-			ret = parseProductionTestLimits(path_limits,
-							&limit_file,
-							MS_TOTAL_CX_MAP_MIN,
-							&thresholds_min,
-							&trows, &tcolumns);
-			/* load min thresholds */
-			if (ret < 0 || (trows !=
-					totCompData.header.force_node ||
-					tcolumns !=
-					totCompData.header.sense_node)) {
-				TS_LOG_ERR("%s production_test_data: parseProductionTestLimits MS_TOTAL_CX_MAP_MIN failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-
-			ret = parseProductionTestLimits(path_limits,
-							&limit_file,
-							MS_TOTAL_CX_MAP_MAX,
-							&thresholds_max,
-							&trows, &tcolumns);
-			/* load max thresholds */
-			if (ret < 0 || (trows !=
-					totCompData.header.force_node ||
-					tcolumns !=
-					totCompData.header.sense_node)) {
-				TS_LOG_ERR("%s production_test_data: parseProductionTestLimits MS_TOTAL_CX_MAP_MAX failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-
-			ret = checkLimitsMapTotal(totCompData.node_data,
-						  totCompData.header.force_node,
-						  totCompData.header.sense_node,
-						  thresholds_min,
-						  thresholds_max);
-			/* check the limits */
-			if (ret != OK) {
-				TS_LOG_ERR("%s production_test_data: checkLimitsMap  MS TOTAL CX TEST failed... ERROR COUNT = %d\n",
-					 __func__, ret);
-				TS_LOG_INFO("%s MS TOTAL CX MIN MAX TEST:.................FAIL\n\n",__func__);
-				count_fail += 1;
-				if (stop_on_fail)
-					goto ERROR;
-			} else
-				TS_LOG_INFO("%s MS TOTAL CX MIN MAX TEST:.................OK\n\n", __func__);
-
-			kfree(thresholds_min);
-			thresholds_min = NULL;
-			kfree(thresholds_max);
-			thresholds_max = NULL;
-		} else
-			TS_LOG_INFO( "%s MS TOTAL CX MIN MAX TEST:.................SKIPPED\n\n",__func__);
-
-
-		TS_LOG_INFO( "%s MS TOTAL CX ADJ TEST:\n", __func__);
-		if (todo->MutualCxTotalAdj == 1) {
-			/* MS TOTAL CX ADJ HORIZ */
-			TS_LOG_INFO( "%s MS TOTAL CX ADJ HORIZ TEST:\n", __func__);
-
-			ret = computeAdjHorizTotal(totCompData.node_data,
-						   totCompData.header.force_node,
-						   totCompData.header.sense_node,
-						   &total_adjhor);
-			if (ret < 0) {
-				TS_LOG_ERR("%s production_test_data: computeAdjHoriz failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-			TS_LOG_INFO( "%s MS TOTAL CX ADJ HORIZ computed!\n", __func__);
-
-			ret = parseProductionTestLimits(path_limits,
-							&limit_file,
-							MS_TOTAL_CX_ADJH_MAP_MAX,
-							&thresholds_max,
-							&trows, &tcolumns);
-			if (ret < 0 || (trows !=
-					totCompData.header.force_node ||
-					tcolumns !=
-					totCompData.header.sense_node - 1)) {
-				TS_LOG_ERR( "%s production_test_data: parseProductionTestLimits MS_TOTAL_CX_ADJH_MAP_MAX failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-
-			ret = checkLimitsMapAdjTotal(total_adjhor,
-						     totCompData.header.
-						     force_node,
-						     totCompData.header.
-						     sense_node - 1,
-						     thresholds_max);
-			if (ret != OK) {
-				TS_LOG_ERR( "%s production_test_data: checkLimitsMapAdj MS TOTAL CX ADJH failed... ERROR COUNT = %d\n",
-					 __func__, ret);
-				TS_LOG_INFO("%s MS TOTAL CX ADJ HORIZ TEST:.................FAIL\n\n", __func__);
-				count_fail += 1;
-				if (stop_on_fail)
-					goto ERROR;
-			} else
-				TS_LOG_INFO( "%s MS TOTAL CX ADJ HORIZ TEST:.................OK\n\n", __func__);
-
-			kfree(thresholds_max);
-			thresholds_max = NULL;
-			kfree(total_adjhor);
-			total_adjhor = NULL;
-
-			/* MS TOTAL CX ADJ VERT */
-			TS_LOG_INFO( "%s MS TOTAL CX ADJ VERT TEST:\n", __func__);
-
-			ret = computeAdjVertTotal(totCompData.node_data,
-						  totCompData.header.force_node,
-						  totCompData.header.sense_node,
-						  &total_adjvert);
-			if (ret < 0) {
-				TS_LOG_ERR("%s production_test_data: computeAdjVert failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-			TS_LOG_INFO( "%s MS TOTAL CX ADJ VERT computed!\n", __func__);
-
-			ret = parseProductionTestLimits(path_limits,
-							&limit_file,
-							MS_TOTAL_CX_ADJV_MAP_MAX,
-							&thresholds_max,
-							&trows, &tcolumns);
-			if (ret < 0 || (trows != totCompData.header.force_node -
-					1 || tcolumns !=
-					totCompData.header.sense_node)) {
-				TS_LOG_ERR("%s production_test_data: parseProductionTestLimits MS_TOTAL_CX_ADJV_MAP_MAX failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-
-			ret = checkLimitsMapAdjTotal(total_adjvert,
-						     totCompData.header.
-						     force_node - 1,
-						     totCompData.header.
-						     sense_node - 1,
-						     thresholds_max);
-			if (ret != OK) {
-				TS_LOG_ERR("%s production_test_data: checkLimitsMapAdj MS TOTAL CX ADJV failed... ERROR COUNT = %d\n",
-					 __func__, ret);
-				TS_LOG_INFO("%s MS TOTAL CX ADJ HORIZ TEST:.................FAIL\n",
-					 __func__);
-				count_fail += 1;
-				if (stop_on_fail)
-					goto ERROR;
-			} else
-				TS_LOG_INFO( "%s MS TOTAL CX ADJ VERT TEST:.................OK\n",
-					 __func__);
-
-			kfree(thresholds_max);
-			thresholds_max = NULL;
-			kfree(total_adjvert);
-			total_adjvert = NULL;
-		} else
-			TS_LOG_INFO("%s MS TOTAL CX ADJ TEST:.................SKIPPED\n",
-				 __func__);
-
-		kfree(totCompData.node_data);
-		totCompData.node_data = NULL;
-	} else
-		TS_LOG_INFO( "%s MS TOTAL CX TEST:.................SKIPPED\n", __func__);
-
-
-
-	if (todo->MutualCxTotalLP == 1) {
-		ret = production_test_ms_cx_lp(path_limits, stop_on_fail, todo);
-		if (ret < OK) {
-			count_fail += 1;
-			TS_LOG_ERR("%s production_test_data: production_test_cx_lp failed... ERROR = %08X\n",
-				 __func__, ret);
-			TS_LOG_INFO("%s MS CX testes finished!.................FAILED  fails_count = %d\n\n",
-				 __func__, count_fail);
-			return ret;
-		}
-	} else
-		TS_LOG_INFO( "%s MS CX LP TEST:.................SKIPPED\n", __func__);
-
-	if(info && result){
-		columns= msCompData.header.sense_node;
-		rows = msCompData.node_data_size/columns;
-
-		temp_u16_array = (u16 *)kmalloc(sizeof(u16) * columns * rows, GFP_KERNEL);
-		for (i = 0; i < columns * rows; i++)
-			temp_u16_array[i] = (u16)msCompData.node_data[i];
-
-		st_fill_rawdata_buf(info, temp_u16_array, rows, columns, MUTUALCOMPENSATIONTYPE);
-		get_average_max_min(temp_u16_array, rows, columns, result->mutal_cal_res_buf);
-
-		kfree(temp_u16_array);
+	} else {
+		TS_LOG_INFO("%s MS CX2 MIN MAX TEST: SKIPPED\n", __func__);
 	}
+	if ((msCompData.header.sense_node <= 0) ||
+			(msCompData.node_data_size <= 0)) {
+		TS_LOG_ERR("%s msCompdata error\n", __func__);
+		goto error;
+        }
 
+	columns = msCompData.header.sense_node;
+	rows = msCompData.node_data_size / columns;
+	temp_u16_array = kzalloc(sizeof(u16) * columns * rows,
+					GFP_KERNEL);
+	if (temp_u16_array == NULL) {
+		TS_LOG_ERR("%s temp_u16_array NULL\n", __func__);
+		goto error;
+	}
+	for (i = 0; i < (columns * rows); i++)
+		temp_u16_array[i] = (u16)msCompData.node_data[i];
 
-ERROR:
-	TS_LOG_INFO( "%s\n", __func__);
+	st_fill_rawdata_buf(info, temp_u16_array, rows, columns,
+			MUTUALCOMPENSATIONTYPE);
+	get_average_max_min(temp_u16_array, rows, columns,
+			result->mutal_cal_res_buf);
+	kfree(temp_u16_array);
+
+error:
+	TS_LOG_INFO("%s\n", __func__);
 	if (count_fail == 0) {
-		TS_LOG_INFO( "%s MS CX testes finished!.................OK\n", __func__);
-		kfree(msCompData.node_data);
-		msCompData.node_data = NULL;
-		return OK;
+		TS_LOG_INFO("%s MS CX testes finished! OK\n", __func__);
+		ret = OK;
 	} else {
 		print_frame_i8("MS Init Data (Cx2) =", array1dTo2d_i8(
 				       msCompData.node_data,
@@ -2035,230 +1849,26 @@ ERROR:
 		temp_short =  array1dTo2d_short(totCompData.node_data,
 					  totCompData.node_data_size,
 					  totCompData.header.sense_node);
-		if(temp_short){
-			print_frame_short(" TOT MS Init Data (Cx) =", temp_short,
+		if (temp_short)
+			print_frame_short("TOT MS Init Data (Cx) =", temp_short,
 					  totCompData.header.force_node,
 					  totCompData.header.sense_node);
-		}
-		TS_LOG_INFO( "%s MS CX testes finished!.................FAILED  fails_count = %d\n\n", __func__, count_fail);
 
-		if (thresholds_min != NULL)
-			kfree(thresholds_min);
-		if (thresholds_max != NULL)
-			kfree(thresholds_max);
-		if (totCompData.node_data != NULL)
-			kfree(totCompData.node_data);
-		if (total_adjhor != NULL)
-			kfree(total_adjhor);
-		if (total_adjvert != NULL)
-			kfree(total_adjvert);
-		if (msCompData.node_data != NULL)
-			kfree(msCompData.node_data);
+		TS_LOG_INFO("%s MS CX testes finished! FAILED fails_count %d\n",
+				__func__, count_fail);
+
+		kfree(thresholds_min);
+		kfree(thresholds_max);
+		kfree(totCompData.node_data);
+		kfree(msCompData.node_data);
 		return ERROR_TEST_CHECK_FAIL | ERROR_PROD_TEST_DATA;
 	}
 
-ERROR_LIMITS:
-
-	if (thresholds_min != NULL)
-		kfree(thresholds_min);
-	if (thresholds_max != NULL)
-		kfree(thresholds_max);
-	if (totCompData.node_data != NULL)
-		kfree(totCompData.node_data);
-	if (total_adjhor != NULL)
-		kfree(total_adjhor);
-	if (total_adjvert != NULL)
-		kfree(total_adjvert);
-	if (msCompData.node_data != NULL)
-		kfree(msCompData.node_data);
-	return ret;
-}
-
-
-/**
-  * Perform all the tests selected in a TestTodo variable related to MS LowPower
-  * Init data (touch, keys etc..)
-  * @param path_limits name of Production Limit file to load or
-  * "NULL" if the limits data should be loaded by a .h file
-  * @param stop_on_fail if 1, the test flow stops at the first data check
-  * failure otherwise it keeps going performing all the selected test
-  * @param todo pointer to a TestToDo variable which select the test to do
-  * @return OK if success or an error code which specify the type of error
-  */
-int production_test_ms_cx_lp(char *path_limits, int stop_on_fail, TestToDo *todo)
-{
-	int ret = 0;
-	int count_fail = 0;
-
-	//int *thresholds = NULL;
-	int *thresholds_min = NULL;
-	int *thresholds_max = NULL;
-	int trows = 0;
-	int tcolumns = 0;
-	short ** temp_short = NULL;
-	MutualSenseData msCompData;
-	TotMutualSenseData totCompData;
-
-
-	//u16 container;
-	/* u16 *total_cx = NULL; */
-	//u16 *total_adjhor = NULL;
-	//u16 *total_adjvert = NULL;
-
-
-	/* MS CX TEST */
-	TS_LOG_INFO( "%s\n", __func__);
-	TS_LOG_INFO( "%s MS LP CX Testes are starting...\n", __func__);
-	if(!path_limits || !todo) {
-			TS_LOG_ERR( "%s NULL data \n", __func__);
-			return ret | ERROR_PROD_TEST_DATA;
-	}
-
-	ret = readMutualSenseCompensationData(LOAD_CX_MS_LOW_POWER, &msCompData);
-	/* read MS compensation data */
-	if (ret < 0) {
-		TS_LOG_ERR("%s : readMutualSenseCompensationData failed... ERROR %08X\n",
-			 __func__, ERROR_PROD_TEST_DATA);
-		return ret | ERROR_PROD_TEST_DATA;
-	}
-
-	ret = readTotMutualSenseCompensationData(LOAD_PANEL_CX_TOT_MS_LOW_POWER,
-						 &totCompData);
-	/* read  TOT MS compensation data */
-	if (ret < 0) {
-		TS_LOG_ERR( "%s : readTotMutualSenseCompensationData failed... ERROR %08X\n",
-			 __func__, ERROR_PROD_TEST_DATA);
-		kfree(msCompData.node_data);
-		msCompData.node_data = NULL;
-		return ret | ERROR_PROD_TEST_DATA;
-	}
-
-	/* START OF TOTAL CHECK */
-	TS_LOG_INFO( "%s MS TOTAL LP CX TEST:\n", __func__);
-
-	if (todo->MutualCxTotalLP == 1 ) {
-		TS_LOG_INFO( "%s MS TOTAL LP CX MIN MAX TEST:\n", __func__);
-			ret = parseProductionTestLimits(path_limits,
-							&limit_file,
-							MS_TOTAL_CX_LP_MAP_MIN,
-							&thresholds_min,
-							&trows, &tcolumns);
-			/* load min thresholds */
-			if (ret < 0 || (trows !=
-					totCompData.header.force_node ||
-					tcolumns !=
-					totCompData.header.sense_node)) {
-				TS_LOG_ERR( "%s : parseProductionTestLimits MS_TOTAL_CX_LP_MAP_MIN failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-
-			ret = parseProductionTestLimits(path_limits,
-							&limit_file,
-							MS_TOTAL_CX_LP_MAP_MAX,
-							&thresholds_max,
-							&trows, &tcolumns);
-			/* load max thresholds */
-			if (ret < 0 || (trows !=
-					totCompData.header.force_node ||
-					tcolumns !=
-					totCompData.header.sense_node)) {
-				TS_LOG_ERR( "%s : parseProductionTestLimits MS_TOTAL_CX_LP_MAP_MAX failed... ERROR %08X\n",
-					 __func__, ERROR_PROD_TEST_DATA);
-				ret |= ERROR_PROD_TEST_DATA;
-				goto ERROR_LIMITS;
-			}
-
-			ret = checkLimitsMapTotal(totCompData.node_data,
-						  totCompData.header.force_node,
-						  totCompData.header.sense_node,
-						  thresholds_min,
-						  thresholds_max);
-			/* check the limits */
-			if (ret != OK) {
-				TS_LOG_ERR( "%s : checkLimitsMap  MS TOTAL CX LP TEST failed... ERROR COUNT = %d\n",
-					 __func__, ret);
-				TS_LOG_INFO("%s MS TOTAL CX LP MIN MAX TEST:..........FAIL\n\n",__func__);
-				count_fail += 1;
-				if (stop_on_fail)
-					goto ERROR;
-			} else
-				TS_LOG_INFO( "%s MS TOTAL CX LP MIN MAX TEST:...........OK\n\n",__func__);
-
-			kfree(thresholds_min);
-			thresholds_min = NULL;
-			kfree(thresholds_max);
-			thresholds_max = NULL;
-
-		kfree(totCompData.node_data);
-		totCompData.node_data = NULL;
-	} else
-		TS_LOG_INFO( "%s MS TOTAL CX LP TEST:.................SKIPPED\n", __func__);
-
-
-
-ERROR:
-	TS_LOG_INFO( "%s\n", __func__);
-	if (count_fail == 0) {
-		TS_LOG_INFO( "%s MS LP CX testes finished!.................OK\n",__func__);
-		kfree(msCompData.node_data);
-		msCompData.node_data = NULL;
-		return OK;
-	} else {
-		print_frame_i8("MS LP Init Data (Cx2) =", array1dTo2d_i8(
-				       msCompData.node_data,
-				       msCompData.node_data_size,
-				       msCompData.header.sense_node),
-			       msCompData.header.force_node,
-			       msCompData.header.sense_node);
-		temp_short = array1dTo2d_short( totCompData.node_data,
-					  totCompData.node_data_size,
-					  totCompData.header.sense_node);
-		if(temp_short){
-			print_frame_short(" TOT MS LP Init Data (Cx) =", temp_short,
-							  totCompData.header.force_node,
-							  totCompData.header.sense_node);
-		}
-		TS_LOG_INFO( "%s MS LP CX testes finished!.................FAILED  fails_count = %d\n\n",
-			 __func__, count_fail);
-		if (thresholds_min != NULL){
-			kfree(thresholds_min);
-			thresholds_min = NULL;
-		}
-		if (thresholds_max != NULL){
-			kfree(thresholds_max);
-			thresholds_max = NULL;
-		}
-		if (totCompData.node_data != NULL){
-			kfree(totCompData.node_data);
-			totCompData.node_data = NULL;
-		}
-		if (msCompData.node_data != NULL){
-			kfree(msCompData.node_data);
-			msCompData.node_data = NULL;
-		}
-		return ERROR_TEST_CHECK_FAIL | ERROR_PROD_TEST_DATA;
-	}
-
-ERROR_LIMITS:
-
-	if (thresholds_min != NULL){
-		kfree(thresholds_min);
-		thresholds_min = NULL;
-	}
-	if (thresholds_max != NULL){
-		kfree(thresholds_max);
-		thresholds_max = NULL;
-	}
-	if (totCompData.node_data != NULL){
-		kfree(totCompData.node_data);
-		totCompData.node_data = NULL;
-	}
-	if (msCompData.node_data != NULL){
-		kfree(msCompData.node_data);
-		msCompData.node_data = NULL;
-	}
+error_limits:
+	kfree(thresholds_min);
+	kfree(thresholds_max);
+	kfree(totCompData.node_data);
+	kfree(msCompData.node_data);
 	return ret;
 }
 
@@ -3676,6 +3286,29 @@ int readLine(char *data, char *line, int size, int *n)
 	return OK;
 }
 
+/*
+ * String Lookup Replacement
+ * @param str The string to find
+ * @param original_char Characters that need to be found in a string
+ * @param target_char Characters in strings that need to be replaced
+ */
+static void string_lookup_replace(char *str, char original_char,
+	char target_char)
+{
+	int i;
+	int str_len;
+
+	if (!str) {
+		TS_LOG_ERR("%s str null\n", __func__);
+		return;
+	}
+	str_len = strlen(str);
+	for (i = 0; i < str_len; i++) {
+		if (str[i] == original_char)
+			str[i] = target_char;
+	}
+}
+
 int st_get_rawdata_aftertest(struct ts_rawdata_info *info,u8 signature)
 {
 	int ret = 0;
@@ -3773,14 +3406,14 @@ int st_get_rawdata_aftertest(struct ts_rawdata_info *info,u8 signature)
 	strncat(info->result, TestRes->mutal_raw_res_buf, ST_NP_TEST_RES_BUF_LEN);
 	strncat(info->result, TestRes->mutal_noise_res_buf, ST_NP_TEST_RES_BUF_LEN);
 	strncat(info->result, TestRes->mutal_cal_res_buf, ST_NP_TEST_RES_BUF_LEN);
-	strncat(info->result, ";", strlen(";"));
 	if (0 == strlen(info->result) || strstr(info->result, "F")) {
 		strncat(info->result, "panel_reason-", strlen("panel_reason-"));
 	}
 	strncat(info->result, "st-", strlen("st-"));
 	strncat(info->result, fts_info->project_id, ST_PROJECT_ID_LEN);
 	snprintf(fw_version_info, sizeof(fw_version_info) - 1,
-		"-%x.%x", systemInfo.u16_fwVer, systemInfo.u16_cfgVer);
+		"-%x_%x;", systemInfo.u16_fwVer, systemInfo.u16_cfgProjectId);
+	string_lookup_replace(fw_version_info, 'F', 'f');
 	strncat(info->result, fw_version_info, strlen(fw_version_info));
 
 	kfree(TestRes);

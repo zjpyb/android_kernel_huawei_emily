@@ -3,7 +3,7 @@
  *
  * get battery voltage by hkadc
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -45,37 +45,37 @@ static int __init early_parse_vbat_hkadc_cmdline(char *p)
 	char *token = NULL;
 
 	if (!p) {
-		hwlog_err("point is null\n");
+		hwlog_err("cmdline is null\n");
 		return -1;
 	}
-	hwlog_info("point=%s\n", p);
+
+	hwlog_info("vbat_hkadc=%s\n", p);
 
 	token = strsep(&p, ",");
 	if (token) {
-		if (kstrtoul(token, 10, &v_offset_a) != 0) {
-			hwlog_err("prase v_offset_a=%ld\n", v_offset_a);
+		/* 10: decimal base */
+		if (kstrtoul(token, 10, &v_offset_a) != 0)
 			return -1;
-		}
-	}
-	token = strsep(&p, ",");
-	if (token) {
-		if (kstrtol(token, 10, &v_offset_b) != 0) {
-			hwlog_err("prase v_offset_b=%ld\n", v_offset_b);
-			return -1;
-		}
 	}
 
-	if (V_OFFSET_A_MIN > v_offset_a || V_OFFSET_A_MAX < v_offset_a) {
+	token = strsep(&p, ",");
+	if (token) {
+		/* 10: decimal base */
+		if (kstrtol(token, 10, &v_offset_b) != 0)
+			return -1;
+	}
+
+	if (v_offset_a < V_OFFSET_A_MIN || v_offset_a > V_OFFSET_A_MAX) {
 		v_offset_a = V_OFFSET_A_DEFAULT;
-		hwlog_err("v_offset_a invalid when prase_cmdline\n");
+		hwlog_err("v_offset_a invalid\n");
 	}
 
-	if (V_OFFSET_B_MIN > v_offset_b || V_OFFSET_B_MAX < v_offset_b) {
+	if (v_offset_b < V_OFFSET_B_MIN || v_offset_b > V_OFFSET_B_MAX) {
 		v_offset_b = V_OFFSET_B_DEFAULT;
-		hwlog_err("v_offset_a invalid when prase_cmdline\n");
+		hwlog_err("v_offset_a invalid\n");
 	}
 
-	hwlog_info("prase cmdline: v_offset_a=%ld,v_offset_b=%ld\n",
+	hwlog_info("parse cmdline: v_offset_a=%ld,v_offset_b=%ld\n",
 		v_offset_a, v_offset_b);
 	return 0;
 }
@@ -151,10 +151,10 @@ struct hw_batt_vol_ops vbat_hkadc_ops = {
 }
 
 #define VBAT_HKADC_SYSFS_FIELD_RW(_name, n) \
-	VBAT_HKADC_SYSFS_FIELD(_name, n, 0644, vbat_hkadc_sysfs_store)
+	VBAT_HKADC_SYSFS_FIELD(_name, n, 0640, vbat_hkadc_sysfs_store)
 
 #define VBAT_HKADC_SYSFS_FIELD_RO(_name, n) \
-	VBAT_HKADC_SYSFS_FIELD(_name, n, 0444, NULL)
+	VBAT_HKADC_SYSFS_FIELD(_name, n, 0440, NULL)
 
 struct vbat_hkadc_sysfs_field_info {
 	struct device_attribute attr;
@@ -181,7 +181,8 @@ static const struct attribute_group vbat_hkadc_sysfs_attr_group = {
 
 static void vbat_hkadc_sysfs_init_attrs(void)
 {
-	int i, limit = ARRAY_SIZE(vbat_hkadc_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(vbat_hkadc_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++)
 		vbat_hkadc_sysfs_attrs[i] =
@@ -193,7 +194,8 @@ static void vbat_hkadc_sysfs_init_attrs(void)
 static struct vbat_hkadc_sysfs_field_info *vbat_hkadc_sysfs_field_lookup(
 	const char *name)
 {
-	int i, limit = ARRAY_SIZE(vbat_hkadc_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(vbat_hkadc_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++) {
 		if (!strncmp(name, vbat_hkadc_sysfs_field_tbl[i].attr.attr.name,
@@ -231,7 +233,7 @@ static ssize_t vbat_hkadc_sysfs_show(struct device *dev,
 			get_compensate_vbat_hkadc_mv());
 		break;
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -254,7 +256,7 @@ static ssize_t vbat_hkadc_sysfs_store(struct device *dev,
 	case VBAT_HKADC_SYSFS_V_OFFSET_A:
 		if ((kstrtol(buf, 10, &val) < 0) ||
 			(val < V_OFFSET_A_MIN) || (val > V_OFFSET_A_MAX)) {
-			hwlog_err("store v_offset_a = %ld\n", val);
+			hwlog_err("store v_offset_a=%ld\n", val);
 			return -EINVAL;
 		}
 		hwlog_info("v_offset_a_sysfs_store,val=%ld\n", val);
@@ -263,14 +265,14 @@ static ssize_t vbat_hkadc_sysfs_store(struct device *dev,
 	case VBAT_HKADC_SYSFS_V_OFFSET_B:
 		if ((kstrtol(buf, 10, &val) < 0) ||
 			(val < V_OFFSET_B_MIN) || (val > V_OFFSET_B_MAX)) {
-			hwlog_err("store v_offset_b = %ld\n", val);
+			hwlog_err("store v_offset_b=%ld\n", val);
 			return -EINVAL;
 		}
 		hwlog_info("v_offset_b_sysfs_store,val=%ld\n", val);
 		v_offset_b = val;
 		break;
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -280,7 +282,6 @@ static ssize_t vbat_hkadc_sysfs_store(struct device *dev,
 static int vbat_hkadc_sysfs_create_group(struct vbat_hkadc_info *di)
 {
 	vbat_hkadc_sysfs_init_attrs();
-
 	return sysfs_create_group(&di->dev->kobj, &vbat_hkadc_sysfs_attr_group);
 }
 
@@ -288,9 +289,7 @@ static void vbat_hkadc_sysfs_remove_group(struct vbat_hkadc_info *di)
 {
 	sysfs_remove_group(&di->dev->kobj, &vbat_hkadc_sysfs_attr_group);
 }
-
 #else
-
 static inline int vbat_hkadc_sysfs_create_group(struct vbat_hkadc_info *di)
 {
 	return 0;
@@ -372,19 +371,17 @@ static int vbat_hkadc_probe(struct platform_device *pdev)
 
 	hwlog_info("probe begin\n");
 
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
 	if (!di)
 		return -ENOMEM;
 
 	g_vbat_hkadc_di = di;
-
 	di->pdev = pdev;
 	di->dev = &pdev->dev;
 	np = pdev->dev.of_node;
-	if (!di->pdev || !di->dev || !np) {
-		hwlog_err("device_node is null\n");
-		goto fail_free_mem;
-	}
 
 	ret = vbat_hkadc_parse_dts(np, di);
 	if (ret)
@@ -405,7 +402,6 @@ static int vbat_hkadc_probe(struct platform_device *pdev)
 
 fail_create_sysfs:
 fail_parse_dts:
-fail_free_mem:
 	devm_kfree(&pdev->dev, di);
 	g_vbat_hkadc_di = NULL;
 
@@ -417,6 +413,9 @@ static int vbat_hkadc_remove(struct platform_device *pdev)
 	struct vbat_hkadc_info *info = platform_get_drvdata(pdev);
 
 	hwlog_info("remove begin\n");
+
+	if (!info)
+		return -ENODEV;
 
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, info);

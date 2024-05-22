@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef LINUX_MMC_IOCTL_H
 #define LINUX_MMC_IOCTL_H
 
@@ -43,7 +44,10 @@ struct mmc_ioc_cmd {
 	/* DAT buffer */
 	__u64 data_ptr;
 };
+
+/*lint -esym(773,*)*/
 #define mmc_ioc_cmd_set_data(ic, ptr) ic.data_ptr = (__u64)(unsigned long) ptr
+/*lint +esym(773,*)*/
 
 /**
  * struct mmc_ioc_multi_cmd - multi command information
@@ -55,7 +59,6 @@ struct mmc_ioc_multi_cmd {
 	__u64 num_of_cmds;
 	struct mmc_ioc_cmd cmds[0];
 };
-
 
 #define MMC_IOC_CMD _IOWR(MMC_BLOCK_MAJOR, 0, struct mmc_ioc_cmd)
 /*

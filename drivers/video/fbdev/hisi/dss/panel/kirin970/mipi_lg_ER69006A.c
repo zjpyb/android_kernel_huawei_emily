@@ -16,7 +16,6 @@
 /*lint -e569 -e574*/
 #define DTS_COMP_LG_ER69006 "hisilicon,mipi_lg_eR69006A"
 
-static struct hisi_fb_panel_data g_panel_data;
 static int g_lcd_fpga_flag;
 extern bool g_lcd_control_tp_power;
 
@@ -456,11 +455,13 @@ static int mipi_lg_ER69006A_panel_on(struct platform_device *pdev)
 		pinfo->lcd_init_step = LCD_INIT_MIPI_LP_SEND_SEQUENCE;
 	} else if (pinfo->lcd_init_step == LCD_INIT_MIPI_LP_SEND_SEQUENCE) {
 
+#ifdef CONFIG_HUAWEI_TS
 		if (g_lcd_control_tp_power && !g_lcd_fpga_flag) {
 			error = ts_power_control_notify(TS_RESUME_DEVICE, SHORT_SYNC_TIMEOUT);
 			if (error)
 				HISI_FB_ERR("ts resume device err\n");
 		}
+#endif
 
 		mipi_dsi_cmds_tx(set_display_address, \
 			ARRAY_SIZE(set_display_address), mipi_dsi0_base);
@@ -482,7 +483,6 @@ static int mipi_lg_ER69006A_panel_on(struct platform_device *pdev)
 		while (power_status & 0x10) {
 			udelay(50);
 			if (++try_times > 100) {
-				try_times = 0;
 				HISI_FB_ERR("Read lcd power status timeout!\n");
 				break;
 			}
@@ -495,11 +495,13 @@ static int mipi_lg_ER69006A_panel_on(struct platform_device *pdev)
 		pinfo->lcd_init_step = LCD_INIT_MIPI_HS_SEND_SEQUENCE;
 	} else if (pinfo->lcd_init_step == LCD_INIT_MIPI_HS_SEND_SEQUENCE) {
 
+#ifdef CONFIG_HUAWEI_TS
 		if (g_lcd_control_tp_power && !g_lcd_fpga_flag) {
 			error = ts_power_control_notify(TS_AFTER_RESUME, NO_SYNC_TIMEOUT);
 			if (error)
 				HISI_FB_ERR("ts after resume err\n");
 		}
+#endif
 
 	} else {
 		HISI_FB_ERR("failed to init lcd!\n");
@@ -569,6 +571,7 @@ static int mipi_lg_ER69006A_panel_off(struct platform_device *pdev)
 				ARRAY_SIZE(fpga_lcd_gpio_free_cmds));
 		}
 
+#ifdef CONFIG_HUAWEI_TS
 		if (g_lcd_control_tp_power && !g_lcd_fpga_flag && !hisifd->fb_shutdown) {
 			error = ts_power_control_notify(TS_BEFORE_SUSPEND, SHORT_SYNC_TIMEOUT);
 			if (error)
@@ -582,6 +585,7 @@ static int mipi_lg_ER69006A_panel_off(struct platform_device *pdev)
 		if (hisifd->fb_shutdown) {
 			ts_thread_stop_notify();
 		}
+#endif
 
 	} else {
 		HISI_FB_ERR("failed to uninit lcd!\n");
@@ -687,14 +691,14 @@ static int mipi_lg_ER69006A_panel_set_display_region(struct platform_device *pde
 		dirty->x, dirty->y, dirty->w, dirty->h);
 	}
 
-	lcd_disp_x[1] = (dirty->x >> 8) & 0xff;
-	lcd_disp_x[2] = dirty->x & 0xff;
-	lcd_disp_x[3] = ((dirty->x + dirty->w - 1) >> 8) & 0xff;
-	lcd_disp_x[4] = (dirty->x + dirty->w - 1) & 0xff;
-	lcd_disp_y[1] = (dirty->y >> 8) & 0xff;
-	lcd_disp_y[2] = dirty->y & 0xff;
-	lcd_disp_y[3] = ((dirty->y + dirty->h - 1) >> 8) & 0xff;
-	lcd_disp_y[4] = (dirty->y + dirty->h - 1) & 0xff;
+	lcd_disp_x[1] = ((unsigned)dirty->x >> 8) & 0xff;
+	lcd_disp_x[2] = (unsigned)dirty->x & 0xff;
+	lcd_disp_x[3] = ((unsigned)(dirty->x + dirty->w - 1) >> 8) & 0xff;
+	lcd_disp_x[4] = (unsigned)(dirty->x + dirty->w - 1) & 0xff;
+	lcd_disp_y[1] = ((unsigned)dirty->y >> 8) & 0xff;
+	lcd_disp_y[2] = (unsigned)dirty->y & 0xff;
+	lcd_disp_y[3] = ((unsigned)(dirty->y + dirty->h - 1) >> 8) & 0xff;
+	lcd_disp_y[4] = (unsigned)(dirty->y + dirty->h - 1) & 0xff;
 
 	mipi_dsi_cmds_tx(set_display_address, \
 		ARRAY_SIZE(set_display_address), mipi_dsi0_base);

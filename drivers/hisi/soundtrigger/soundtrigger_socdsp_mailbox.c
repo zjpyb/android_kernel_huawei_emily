@@ -5,7 +5,8 @@
 #include <linux/kthread.h>
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/errno.h>
 #include "../hi64xx_dsp/hi64xx_algo_interface.h"
 #include "soundtrigger_socdsp_mailbox.h"
@@ -13,13 +14,15 @@
 #include "soundtrigger_socdsp_pcm.h"
 #include "soundtrigger_event.h"
 
+#ifdef CONFIG_HIFI_MAILBOX
 #include "drv_mailbox_cfg.h"
+#endif
 
 struct completion start_msg_complete;
 struct completion stop_msg_complete;
 struct completion parameter_set_msg_complete;
 struct completion parameter_get_msg_complete;
-struct wake_lock soundtrigger_rcv_wake_lock;
+struct wakeup_source soundtrigger_rcv_wake_lock;
 
 #define SOCDSP_WAKEUP_MSG_TIMEOUT (2 * HZ)
 #define NORMAL_BUFFER_LEN (640) //16K*1ch*2byte*20ms
@@ -36,6 +39,7 @@ struct soundtrigger_rcv_msg {
 
 static int g_socdsp_handle = 0;
 char *g_model_buf = NULL;
+static bool wakeup_is_start = false;
 
 static void soundtrigger_hotword_detected_work(struct work_struct *wk)
 {
@@ -55,23 +59,25 @@ int soundtrigger_mailbox_send_data(const void *pmsg_body, unsigned int msg_len, 
 	return (int)ret;
 }
 
-static irq_rt_t soundtrigger_mailbox_recv_isr(void *usr_para, void *mail_handle, unsigned int mail_len)
+static void soundtrigger_mailbox_recv_proc(const void *usr_para,
+	struct mb_queue *mail_handle, unsigned int mail_len)
 {
 	struct soundtrigger_rcv_msg rcv_msg;
 	unsigned int ret = MAILBOX_OK;
 	unsigned int mail_size = mail_len;
+
 	memset(&rcv_msg, 0, sizeof(rcv_msg));/* unsafe_function_ignore: memset */
 
 	ret = DRV_MAILBOX_READMAILDATA(mail_handle, (unsigned char*)&rcv_msg, &mail_size);
-	if ((ret != MAILBOX_OK)
-		|| (mail_size == 0)
-		|| (mail_size > sizeof(rcv_msg))) {
-		pr_err("Empty point or data length error! size: %d  ret:%d sizeof(struct soundtrigger_rcv_msg):%lu\n",
-						mail_size, ret, sizeof(rcv_msg));
-		return IRQ_NH_MB;
+	if ((ret != MAILBOX_OK) ||
+		(mail_size == 0) ||
+		(mail_size > sizeof(rcv_msg))) {
+		pr_err("mailbox read error, read result:%u, read mail size:%u\n",
+			ret, mail_size);
+		return;
 	}
 
-	wake_lock_timeout(&soundtrigger_rcv_wake_lock, msecs_to_jiffies(1000));
+	__pm_wakeup_event(&soundtrigger_rcv_wake_lock, 1000);
 	switch(rcv_msg.msg_type) {
 	case WAKEUP_CHN_MSG_START_ACK:
 		pr_info("receive message: start succ.\n");
@@ -104,26 +110,27 @@ static irq_rt_t soundtrigger_mailbox_recv_isr(void *usr_para, void *mail_handle,
 		break;
 	}
 
-	return IRQ_HDD;
+	return;
 }
 
-static int soundtrigger_mailbox_isr_register(irq_hdl_t pisr)
+static int soundtrigger_mailbox_isr_register(mb_msg_cb receive_func)
 {
-	int ret = 0;
-	unsigned int mailbox_ret = MAILBOX_OK;
+	unsigned int ret = MAILBOX_OK;
 
-	if (NULL == pisr) {
-		pr_err("pisr==NULL!\n");
-		ret = ERROR;
-	} else {
-		mailbox_ret = DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_WAKEUP, (void *)pisr, NULL);/*lint !e611 */
-		if (MAILBOX_OK != mailbox_ret) {
-			ret = ERROR;
-			pr_err("register isr for soundtrigger channel failed, ret : %d,0x%x\n", ret, MAILBOX_MAILCODE_HIFI_TO_ACPU_WAKEUP);
-		}
+	if (receive_func == NULL) {
+		pr_err("receive func is null\n");
+		return ERROR;
 	}
 
-	return ret;
+	ret = DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_WAKEUP,
+		receive_func, NULL);
+	if (ret != MAILBOX_OK) {
+		pr_err("register receive func error, ret:%u, mailcode:0x%x\n",
+			ret, MAILBOX_MAILCODE_HIFI_TO_ACPU_WAKEUP);
+		return ERROR;
+	}
+
+	return 0;
 }
 
 int parameter_set_msg(int module_id, struct parameter_set *set_val)
@@ -191,14 +198,20 @@ int start_recognition_msg(int module_id)
 		return -ETIME;
 	}
 
+	wakeup_is_start = true;
+
 	return ret;
 }
 
 int stop_recognition_msg(int module_id)
 {
-	int ret;
+	int ret = 0;
 	unsigned long retval;
 	struct wakeup_stop_msg stop_msg;
+
+	if (!wakeup_is_start)
+		return ret;
+
 	init_completion(&stop_msg_complete);
 
 	memset(&stop_msg, 0, sizeof(stop_msg));/* unsafe_function_ignore: memset */
@@ -218,6 +231,8 @@ int stop_recognition_msg(int module_id)
 		pr_err("start recognition msg send timeout\n");
 		return -ETIME;
 	}
+
+	wakeup_is_start = false;
 
 	return ret;
 }
@@ -254,16 +269,15 @@ int get_handle_msg(int *socdsp_handle)
 int soundtrigger_mailbox_init(void)
 {
 	int ret = 0;
-	pr_info("soundtrigger_mailbox_init \n");
+	pr_info("soundtrigger mailbox init\n");
 
-	/* register soundtrigger mailbox message isr */
-	ret = soundtrigger_mailbox_isr_register((void*)soundtrigger_mailbox_recv_isr);/*lint !e611 */
+	ret = soundtrigger_mailbox_isr_register(soundtrigger_mailbox_recv_proc);/*lint !e611 */
 	if (ret) {
-		pr_err("soundtrigger_mailbox_isr_register failed : %d\n", ret);
+		pr_err("soundtrigger mailbox receive isr registe failed:%d\n", ret);
 		return -EIO;
 	}
 
-	wake_lock_init(&soundtrigger_rcv_wake_lock, WAKE_LOCK_SUSPEND, "soundtrigger_rcv_msg");
+	wakeup_source_init(&soundtrigger_rcv_wake_lock, "soundtrigger_rcv_msg");
 
 	g_model_buf = ioremap_wc(HISI_AP_AUDIO_WAKEUP_MODEL_ADDR, HISI_AP_AUDIO_WAKEUP_MODEL_SIZE);
 	if (g_model_buf == NULL) {
@@ -284,6 +298,6 @@ void soundtrigger_mailbox_deinit(void)
 		g_model_buf = NULL;
 	}
 	DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_WAKEUP, NULL, NULL);
-	wake_lock_destroy(&soundtrigger_rcv_wake_lock);
+	wakeup_source_trash(&soundtrigger_rcv_wake_lock);
 }
 

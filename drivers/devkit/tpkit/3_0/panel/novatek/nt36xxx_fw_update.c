@@ -2,7 +2,7 @@
 #include <linux/firmware.h>
 #include <linux/vmalloc.h>
 //#include <linux/fs.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -367,7 +367,7 @@ static int32_t Erase_Flash(void)
 	int32_t ret = NO_ERR;
 	int32_t count = NO_ERR;
 	int32_t i = NO_ERR;
-	int32_t Flash_Address = NO_ERR;
+	uint32_t Flash_Address;
 	int32_t retry = NO_ERR;
 
 	// Write Enable
@@ -563,7 +563,9 @@ static int32_t Write_Flash(void)
 	uint8_t buf[64] = {0};
 	uint32_t XDATA_Addr = nvt_ts->mmap->RW_FLASH_DATA_ADDR;
 	uint32_t Flash_Address = 0;
-	int32_t i = 0, j = 0, k = 0;
+	int32_t i;
+	int32_t k;
+	uint32_t j;
 	uint8_t tmpvalue = 0;
 	int32_t count = 0;
 	int32_t ret = 0;
@@ -605,7 +607,8 @@ static int32_t Write_Flash(void)
 			}
 			ret = novatek_ts_kit_write(I2C_BLDR_Address, buf, 33);
 			if (ret < 0) {
-				TS_LOG_ERR("%s: Write Page error!!(%d), j=%d\n", __func__, ret, j);
+				TS_LOG_ERR("%s: Write Page error! ret = %d\n",
+					__func__, ret);
 				return ret;
 			}
 		}

@@ -477,7 +477,13 @@ VOS_VOID* At_HeapAllocD(VOS_UINT32 ulSize)
         return NULL;
     }
 
+#if (VOS_VXWORKS == VOS_OS_VER)
+    ret = (VOS_VOID *)malloc(ulSize);
+#elif (VOS_LINUX == VOS_OS_VER)
     ret = (VOS_VOID *)kmalloc(ulSize, GFP_KERNEL);
+#else
+    ret = (VOS_VOID *)malloc(ulSize);
+#endif
 
     return ret;
 }
@@ -490,7 +496,13 @@ VOS_VOID At_HeapFreeD(VOS_VOID *pAddr)
         return ;
     }
 
+#if (VOS_VXWORKS == VOS_OS_VER)
+    free(pAddr);
+#elif (VOS_LINUX == VOS_OS_VER)
     kfree(pAddr);
+#else
+    free(pAddr);
+#endif
 
     return;
 }

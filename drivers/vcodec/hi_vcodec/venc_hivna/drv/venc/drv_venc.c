@@ -3,17 +3,14 @@
 #include "venc_regulator.h"
 #include "drv_venc_osal.h"
 
-
-HI_U32 b_Regular_down_flag = HI_TRUE;
-HI_BOOL g_vencSmmuSetFlag = HI_FALSE;
-
-HI_S32 VENC_DRV_BoardInit(HI_VOID)
+HI_S32 venc_drv_board_init(HI_VOID)
 {
-	HI_S32 ret = 0;
+	HI_S32 ret;
+
 	HI_DBG_VENC("enter %s()\n", __func__);
 
-	ret = Venc_Regulator_Enable();/*lint !e838 */
-	if (ret != 0){
+	ret = venc_regulator_enable();
+	if (ret != 0) {
 		HI_INFO_VENC("enable regulator failed\n", __func__);
 		return HI_FAILURE;
 	}
@@ -22,11 +19,10 @@ HI_S32 VENC_DRV_BoardInit(HI_VOID)
 	return HI_SUCCESS;
 }
 
-HI_VOID VENC_DRV_BoardDeinit(HI_VOID)
+HI_VOID venc_drv_board_deinit(HI_VOID)
 {
 	HI_DBG_VENC("enter %s ()\n", __func__);
-	g_vencSmmuSetFlag = HI_FALSE;
-	Venc_Regulator_Disable();
+	venc_regulator_disable();
 	HI_DBG_VENC("exit %s ()\n", __func__);
 }
 

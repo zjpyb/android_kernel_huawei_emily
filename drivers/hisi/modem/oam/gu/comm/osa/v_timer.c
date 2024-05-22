@@ -97,6 +97,10 @@
 
 
 /* LINUX 不支持 */
+#if (VOS_VXWORKS== VOS_OS_VER)
+#include "stdio.h"
+#include "stdlib.h"
+#endif
 
 
 
@@ -144,9 +148,11 @@ typedef struct VOS_TIMER_CONTROL_STRU
     VOS_UINT8       State;/* timer's state */
     VOS_UINT8       Reserved[2];/* for 4 byte aligned */
 
+#if VOS_YES == VOS_TIMER_CHECK
     VOS_UINT32      ulAllocTick;/* CPU tick of block allocation */
     VOS_UINT32      ulFileID;/* alloc file ID */
     VOS_UINT32      ulLineNo;/* alloc line no. */
+#endif
     VOS_UINT32      ulBackUpTimerId;/* timer ID */
 } VOS_TIMER_CONTROL_BLOCK;
 
@@ -187,17 +193,27 @@ SYS_T                    g_SysTime;
 
 VOS_CHAR g_acVosTimerCtrlBuf[VOS_TIMER_CTRL_BUF_SIZE];
 
+#if VOS_YES == VOS_TIMER_CHECK
 
 VOS_VOID VOS_ShowUsed26MTimerInfo( VOS_VOID );
 
+#endif
 
+#if (VOS_WIN32 == VOS_OS_VER)
+/* Magnify timer length -> length * g_ulMagnifyTimerLength  */
+VOS_UINT32               g_ulMagnifyTimerLength = 1;
+#endif
 
 VOS_VOID VOS_TimerDump(VOS_INT lModId, VOS_UINT32 ulFileID, VOS_UINT32 ulLineNo);
 
 /* 自旋锁，用来作Timer的临界资源保护 */
 VOS_SPINLOCK                  g_stVosTimerSpinLock;
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
 #define VOS_26M_TIMER_ID     (TIMER_ACPU_OM_TCXO_ID)
+#else
+#define VOS_26M_TIMER_ID     (TIMER_CCPU_OM_TCXO_ID)
+#endif
 
 /* 记录 VOS 26 timer 可维可测信息 */
 VOS_TIMER_SOC_TIMER_INFO_STRU g_st26MSocTimerInfo;
@@ -524,9 +540,11 @@ VOS_TIMER_CONTROL_BLOCK *VOS_TimerCtrlBlkGet(VOS_UINT32 ulFileID,
     temp_Timer_Ctrl_Ptr->next = VOS_NULL_PTR;
     temp_Timer_Ctrl_Ptr->previous = VOS_NULL_PTR;
 
+#if VOS_YES == VOS_TIMER_CHECK
     temp_Timer_Ctrl_Ptr->ulFileID = ulFileID;
     temp_Timer_Ctrl_Ptr->ulLineNo = (VOS_UINT32)usLineNo;
     temp_Timer_Ctrl_Ptr->ulAllocTick = VOS_GetSlice();
+#endif
 
     return temp_Timer_Ctrl_Ptr;
 }
@@ -623,8 +641,13 @@ VOS_VOID VOS_TimerTaskFunc( VOS_UINT32 Para0, VOS_UINT32 Para1,
                         head_Ptr->Name,
                         head_Ptr->Para,
                         VOS_RELTIMER_LOOP,
+#if VOS_YES == VOS_TIMER_CHECK
                         head_Ptr->ulFileID,
                         (VOS_INT32)head_Ptr->ulLineNo);
+#else
+                        VOS_FILE_ID,
+                        (VOS_INT32)(__LINE__));
+#endif
                 }
                 else
                 {
@@ -636,8 +659,13 @@ VOS_VOID VOS_TimerTaskFunc( VOS_UINT32 Para0, VOS_UINT32 Para1,
                         head_Ptr->Para,
                         VOS_RELTIMER_LOOP,
                         head_Ptr->CallBackFunc,
+#if VOS_YES == VOS_TIMER_CHECK
                         head_Ptr->ulFileID,
                         (VOS_INT32)head_Ptr->ulLineNo);
+#else
+                        VOS_FILE_ID,
+                        (VOS_INT32)(__LINE__));
+#endif
                 }
             }
 
@@ -660,6 +688,7 @@ VOS_VOID VOS_TimerTaskFunc( VOS_UINT32 Para0, VOS_UINT32 Para1,
                     TempValue            = (VOS_UINT_PTR)(vos_Timer_expire_head_Ptr->TimeOutValueInMilliSeconds);
                     pstExpireMsg->hTm    = (HTIMER)TempValue;
 
+#if (VOS_YES == VOS_TIMER_CHECK)
                     TempValue            = (VOS_UINT_PTR)(vos_Timer_expire_head_Ptr->ulAllocTick);
                     pstExpireMsg->pNext
                         = (struct REL_TIMER_MSG_STRU *)TempValue;
@@ -667,6 +696,7 @@ VOS_VOID VOS_TimerTaskFunc( VOS_UINT32 Para0, VOS_UINT32 Para1,
                     TempValue            = (VOS_UINT_PTR)VOS_GetSlice();
                     pstExpireMsg->pPrev
                         = (struct REL_TIMER_MSG_STRU *)TempValue;
+#endif
 
                     if(VOS_OK != VOS_SendMsg( DOPRA_PID_TIMER,
                         pstExpireMsg ))
@@ -941,6 +971,9 @@ VOS_UINT32 V_StartRelTimer( HTIMER *phTm, VOS_PID Pid, VOS_UINT32 ulLength,
         ulLength = MILLISECONDS_PER_TICK;
     }
 
+#if (VOS_WIN32 == VOS_OS_VER)
+    ulLength = ulLength * g_ulMagnifyTimerLength;
+#endif
 
     stTimerEvent.ucAction    = VOS_TIMER_OM_START;
     stTimerEvent.ucMode      = ucMode;
@@ -954,6 +987,7 @@ VOS_UINT32 V_StartRelTimer( HTIMER *phTm, VOS_PID Pid, VOS_UINT32 ulLength,
     /* 获取RTC的可维可测信息(Action和Slice) */
     RTC_GetDebugSocInfo(&(stTimerEvent.ulRTCAction), &(stTimerEvent.ulRTCSlice), &(stTimerEvent.ulCoreId));
 
+#if (VOS_32K_TIMER_ENABLE == VOS_YES)
 
 #if ((VOS_VXWORKS == VOS_OS_VER) || (VOS_NUCLEUS == VOS_OS_VER) \
         || (VOS_LINUX == VOS_OS_VER) || (VOS_RTOSCK == VOS_OS_VER))
@@ -971,6 +1005,7 @@ VOS_UINT32 V_StartRelTimer( HTIMER *phTm, VOS_PID Pid, VOS_UINT32 ulLength,
     }
 #endif
 
+#endif
 
     ulResult = V_Start26MRelTimer(phTm, Pid, ulLength, ulName, ulParam,
         ucMode, ulFileID, usLineNo);
@@ -1446,15 +1481,53 @@ VOS_BOOL VOS_Is26MTimer( HTIMER *phTm )
     return VOS_FALSE;
 }
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+VOS_UINT32 VOS_GetTick( VOS_VOID )
+{
+    return (VOS_UINT32)SRE_TickCountGet();
+}
+#endif
 
+#if (VOS_VXWORKS == VOS_OS_VER)
 
+extern VOS_UINT32 tickGet (VOS_VOID);
 
+VOS_UINT32 VOS_GetTick( VOS_VOID )
+{
+    /*return vos_CPU_TICK.ulLow;*/
+
+    return tickGet();
+}
+
+#endif
+
+#if (VOS_WIN32 == VOS_OS_VER)
+VOS_UINT32 VOS_GetTick( VOS_VOID )
+{
+    return vos_CPU_TICK.ulLow;
+}
+#endif
+
+#if ( VOS_LINUX == VOS_OS_VER )
 VOS_UINT32 VOS_GetTick( VOS_VOID )
 {
     return (VOS_UINT32)jiffies;
 }
+#endif
 
 
+#if (VOS_NUCLEUS == VOS_OS_VER)
+
+extern VOS_UINT32 NU_Retrieve_Clock(VOS_VOID);
+
+VOS_UINT32 VOS_GetTick( VOS_VOID )
+{
+    /*return vos_CPU_TICK.ulLow;*/
+
+    return NU_Retrieve_Clock();
+}
+
+#endif
 
 /*****************************************************************************
  Function   : VOS_MaxDate
@@ -1894,6 +1967,9 @@ VOS_UINT32 V_StartCallBackRelTimer( HTIMER *phTm, VOS_PID Pid,
         ulLength = MILLISECONDS_PER_TICK;
     }
 
+#if (VOS_WIN32 == VOS_OS_VER)
+    ulLength = ulLength * g_ulMagnifyTimerLength;
+#endif
 
     stTimerEvent.ucAction    = VOS_TIMER_OM_START;
     stTimerEvent.ucMode      = ucMode;
@@ -1907,6 +1983,7 @@ VOS_UINT32 V_StartCallBackRelTimer( HTIMER *phTm, VOS_PID Pid,
     /* 获取RTC的可维可测信息(Action和Slice) */
     RTC_GetDebugSocInfo(&(stTimerEvent.ulRTCAction), &(stTimerEvent.ulRTCSlice), &(stTimerEvent.ulCoreId));
 
+#if (VOS_32K_TIMER_ENABLE == VOS_YES)
 
 #if ((VOS_VXWORKS == VOS_OS_VER) || (VOS_NUCLEUS == VOS_OS_VER) \
         || (VOS_LINUX == VOS_OS_VER) || (VOS_RTOSCK == VOS_OS_VER))
@@ -1924,6 +2001,7 @@ VOS_UINT32 V_StartCallBackRelTimer( HTIMER *phTm, VOS_PID Pid,
     }
 #endif
 
+#endif
 
     ulResult = V_Start26MCallBackRelTimer(phTm, Pid, ulLength, ulName,
         ulParam, ucMode, TimeOutRoutine, ulFileID, usLineNo);
@@ -2035,6 +2113,11 @@ VOS_UINT32 VOS_TmTickToMillSec( VOS_UINT32 ulTicks )
 {
     VOS_UINT32 ulTempMillSec;
 
+#if ( 0 == MILLISECONDS_PER_TICK )
+    ulTempMillSec = VOS_NULL_DWORD;
+
+    (VOS_VOID)VOS_SetErrorNo( VOS_ERRNO_SYSTIME_TK2MS_MSECPERTICKISZERO );
+#else
     if( ulTicks > ( VOS_NULL_DWORD / MILLISECONDS_PER_TICK ) )
     {
         ulTempMillSec = VOS_NULL_DWORD;
@@ -2044,6 +2127,7 @@ VOS_UINT32 VOS_TmTickToMillSec( VOS_UINT32 ulTicks )
     {
         ulTempMillSec = ulTicks * MILLISECONDS_PER_TICK;
     }
+#endif
 
     return ulTempMillSec;
 }
@@ -2310,6 +2394,7 @@ VOS_BOOL VOS_CalcTimerInfo(VOS_VOID)
     return VOS_FALSE;
 }
 
+#if VOS_YES == VOS_TIMER_CHECK
 
 /*****************************************************************************
  Function   : VOS_ShowUsed26MTimerInfo
@@ -2348,7 +2433,14 @@ VOS_VOID VOS_ShowUsed26MTimerInfo( VOS_VOID )
     return;
 }
 
+#endif
 
+#if (VOS_WIN32 == VOS_OS_VER)
+VOS_VOID VOS_MagnifyTimerLength(VOS_UINT32 ulRatio )
+{
+    g_ulMagnifyTimerLength = ulRatio;
+}
+#endif
 
 /*****************************************************************************
  Function   : VOS_TimerDump
@@ -2382,8 +2474,10 @@ VOS_VOID VOS_TimerDump(VOS_INT lModId, VOS_UINT32 ulFileID, VOS_UINT32 ulLineNo)
     {
         *(pulDumpBuffer++) = pstTimer->Pid;
         *(pulDumpBuffer++) = pstTimer->Name;
+#if VOS_YES == VOS_TIMER_CHECK
         *(pulDumpBuffer++) = pstTimer->ulFileID;
         *(pulDumpBuffer++) = pstTimer->ulLineNo;
+#endif
         pstTimer = pstTimer->next;
     }
 

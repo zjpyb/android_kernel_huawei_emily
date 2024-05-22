@@ -1,4 +1,5 @@
 ccflags-y += -Wall -Werror
+EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
 
 ifeq ($(TARGET_VERSION_MODE),factory)
 ccflags-y += -DFACTORY_TEST_HISEE

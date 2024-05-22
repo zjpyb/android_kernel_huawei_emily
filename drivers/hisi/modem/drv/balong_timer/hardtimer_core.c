@@ -424,6 +424,7 @@ static int bsp_timer_probe(struct platform_device *dev){
 	}
 }
 
+#ifdef CONFIG_PM
 
 static s32 timer_suspend_noirq(struct device *dev)
 {
@@ -462,6 +463,9 @@ static const struct dev_pm_ops timer_pm_ops ={
 	.resume_noirq   = timer_resume_noirq,
 };
 #define BALONG_DEV_PM_OPS (&timer_pm_ops)
+#else
+#define BALONG_DEV_PM_OPS NULL
+#endif
 static struct platform_driver balong_timer_driver = {
 	.probe = bsp_timer_probe,
 	.driver = {

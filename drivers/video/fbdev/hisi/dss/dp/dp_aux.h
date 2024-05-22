@@ -29,8 +29,8 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
 
 #ifndef __DPTX_AUX_H__
 #define __DPTX_AUX_H__
@@ -70,4 +70,7 @@ int dptx_read_bytes_from_i2c(struct dp_ctrl *dptx,
 
 int dptx_write_bytes_to_i2c(struct dp_ctrl *dptx,
 	uint32_t device_addr, uint8_t *bytes, uint32_t len);
+
+int dptx_i2c_address_only(struct dp_ctrl *dptx,
+	uint32_t device_addr);
 #endif

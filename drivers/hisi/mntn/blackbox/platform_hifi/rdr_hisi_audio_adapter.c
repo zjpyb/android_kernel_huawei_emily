@@ -310,7 +310,7 @@ int parse_hifi_cpuview(char *original_buf, unsigned int original_buf_size,
 	if (index < cpuview_info_num) {
 		unsigned int i;
 		char single_info[CPUVIEW_ONE_INFO_LEN];
-		struct cpuview_slice_record *slice;
+		struct cpuview_slice_record *slice = NULL;
 
 		snprintf(parsed_buf + strlen(parsed_buf), parsed_data_size - strlen(parsed_buf),
 			"Target         Target Id                                ACTION          OrigTS \n");
@@ -345,7 +345,7 @@ int parse_hifi_trace(char *original_data, unsigned int original_data_size,
 	unsigned int i;
 	unsigned int stack_depth;
 	unsigned int stack_top;
-	unsigned int *stack;
+	unsigned int *stack = NULL;
 
 	if (NULL == original_data || NULL == parsed_data) {
 	    BB_PRINT_ERR("input data buffer is null\n");
@@ -429,9 +429,6 @@ static int rdr_audio_loopwrite_open(char *name, unsigned int *pfd)
 	int ret;
 	int fd;
 
-	WARN_ON(NULL == pfd);
-	WARN_ON(NULL == name);
-
 	ret = rdr_audio_create_dir(name);
 	if (ret) {
 		BB_PRINT_ERR("create dir fail, name: %s, ret: %d\n", name, ret);
@@ -486,8 +483,11 @@ int rdr_audio_write_file(char *name, const char *data, u32 size)
 	unsigned int fd = 0;
 	mm_segment_t oldfs;
 
-	WARN_ON(NULL == name);
-	WARN_ON(NULL == data);
+	if (name == NULL || data == NULL) {
+		BB_PRINT_ERR("para is invalid\n");
+		return -EINVAL;
+	}
+
 	WARN_ON(0 == size);
 
 	oldfs = get_fs();/*lint !e501*/
@@ -557,10 +557,15 @@ void rdr_audio_dump_log(u32 modid, u32 etype, u64 coreid,
 			break;
 		default:
 			if (modid >= (unsigned int)HISI_BB_MOD_CP_START	&& modid <= (unsigned int)HISI_BB_MOD_CP_END) {
+#ifdef RDR_SOCHIFI
 				snprintf(s_rdr_audio_des.soc_pathname, RDR_FNAME_LEN, "%s", pathname);
 				BB_PRINT_PN("modem reset soc hifi dump = %s, begin\n", s_rdr_audio_des.soc_pathname);
 				rdr_audio_soc_dump(modid, s_rdr_audio_des.soc_pathname, pfn_cb);
 				BB_PRINT_PN("modem reset soc hifi dump = %s, end\n", s_rdr_audio_des.soc_pathname);
+#else
+				BB_PRINT_PN("sochifi rdr is close right now, do not dump hifi log\n");
+				pfn_cb(modid, RDR_HIFI);
+#endif
 			} else {
 				BB_PRINT_ERR("mod id is invalide: 0x%x[0x%x - 0x%x]\n",
 								modid, (unsigned int)RDR_AUDIO_MODID_START, (unsigned int)RDR_AUDIO_MODID_END);
@@ -747,13 +752,17 @@ static int __init rdr_audio_init(void)
 	memset(s_rdr_audio_des.soc_pathname, 0, RDR_FNAME_LEN);
 	memset(s_rdr_audio_des.codec_pathname, 0, RDR_FNAME_LEN);
 
+#ifdef RDR_SOCHIFI
 	ret = rdr_audio_soc_init();
 	if (ret)
 		BB_PRINT_ERR("init rdr soc hifi fail\n");
+#endif
 
+#ifdef RDR_CODECDSP
 	ret = rdr_audio_codec_init();
 	if (ret)
 		BB_PRINT_ERR("init rdr codec hifi fail\n");
+#endif
 
 	BB_PRINT_END();
 

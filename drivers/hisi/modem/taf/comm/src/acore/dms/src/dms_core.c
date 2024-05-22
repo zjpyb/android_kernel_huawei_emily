@@ -75,33 +75,49 @@
 
 DMS_MAIN_INFO                           g_stDmsMainInfo = {0};
 
+#if (VOS_OS_VER == VOS_WIN32)
+static const struct file_operations     g_stPortCfgOps;
+#else
 static const struct file_operations     g_stPortCfgOps =
 {
     .owner      = THIS_MODULE,
     .write      = DMS_WritePortCfgFile,
     .read       = DMS_ReadPortCfgFile,
 };
+#endif
 
+#if (VOS_OS_VER == VOS_WIN32)
+static const struct file_operations g_stGetSliceOps;
+#else
 static const struct file_operations g_stGetSliceOps      =
 {
     .owner      = THIS_MODULE,
     .read       = DMS_ReadGetSliceFile,
 };
+#endif
 
+#if (VOS_OS_VER == VOS_WIN32)
+static const struct file_operations     g_stModemStatus;
+#else
 static const struct file_operations     g_stModemStatus =
 {
     .owner      = THIS_MODULE,
     .read       = DMS_ReadModemStatusFile,
 };
+#endif
 
 DMS_NLK_ENTITY_STRU                     g_stDmsNlkEntity = {0};
 
+#if (VOS_OS_VER == VOS_WIN32)
+static struct netlink_kernel_cfg        g_stDmsNlkCfg;
+#else
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
 static struct netlink_kernel_cfg        g_stDmsNlkCfg =
 {
     .input      = DMS_NLK_Input,
 };
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0) */
+#endif /* VOS_OS_VER == VOS_WIN32 */
 
 VOS_UINT8                               g_ucDmsPrintModemLogType = 0;
 
@@ -503,8 +519,12 @@ ssize_t DMS_WritePortCfgFile(
     return (ssize_t)len;
 }
 
+#if (VOS_LINUX == VOS_OS_VER)
+#if (FEATURE_ON == FEATURE_DELAY_MODEM_INIT)
 module_init(DMS_InitPorCfgFile);
 module_init(DMS_InitGetSliceFile);
+#endif
+#endif
 
 
 VOS_UINT32 DMS_RegOmChanDataReadCB(
@@ -1193,6 +1213,10 @@ VOS_VOID DMS_InitModemStatus(VOS_VOID)
 
 /* This function is called on driver initialization and exit */
 module_init(DMS_InitModemStatusFile);
+#if (FEATURE_ON == FEATURE_LOGCAT_SINGLE_CHANNEL)
+module_init(DMS_NLK_Init);
+module_exit(DMS_NLK_Exit);
+#endif
 
 
 

@@ -458,6 +458,7 @@ static void mxt_regulator_set(struct mxt_data *data)
 static void mxt_regulator_enable(struct mxt_data *data)
 {
 	int error = 0;
+	int ret;
 
 	if (!data->chip_data->reset_gpio) {
 		TS_LOG_ERR("Must have reset GPIO to use regulator support\n");
@@ -488,7 +489,12 @@ static void mxt_regulator_enable(struct mxt_data *data)
 		TS_LOG_ERR("set iomux normal error, %d\n", error);
 	}
 	gpio_direction_output(data->chip_data->reset_gpio, 1);
-	gpio_direction_input(data->chip_data->irq_gpio);
+	ret = gpio_direction_input(data->chip_data->irq_gpio);
+	if (ret) {
+		TS_LOG_INFO("gpio_direction_input %d failed, ret:0x%X\n",
+			data->chip_data->irq_gpio, ret);
+		return;
+	}
 	return;
 }
 
@@ -795,17 +801,29 @@ retry_bootloader:
 
 static void mxt_regulator_disable(struct mxt_data *data)
 {
+	int error;
+
 	if (!data->chip_data->reset_gpio)
 		return;
 
 	gpio_direction_output(data->chip_data->reset_gpio, 0);
 	mdelay(2);
 
-	if (data->reg_avdd)
-		regulator_disable(data->reg_avdd);
+	if (data->reg_avdd) {
+		error = regulator_disable(data->reg_avdd);
+		if (error < 0) {
+			TS_LOG_ERR("failed to disable regulator reg_avdd\n");
+			return;
+		}
+	}
 	mdelay(1);
-	if (data->reg_vddio)
-		regulator_disable(data->reg_vddio);
+	if (data->reg_vddio) {
+		error = regulator_disable(data->reg_vddio);
+		if (error < 0) {
+			TS_LOG_ERR("failed to disable regulator reg_vddio\n");
+			return;
+		}
+	}
 
 	return;
 }
@@ -1685,10 +1703,6 @@ static int mxt_read_t100_config(struct mxt_data *data)
 		TS_LOG_ERR("read data->tchcfg failed\n");
 		return error;
 	}
-
-	/* Handle default values */
-	if (range_x == 0)
-		range_x = 1023;
 
 	/* Handle default values */
 	if (range_x == 0)
@@ -2883,7 +2897,6 @@ static void mxt_proc_T81_messages(struct mxt_data *data, u8 *msg)
 	TS_LOG_DEBUG("T81 Status 0x%x Info: %x %x %x %x\n",
 		     status, msg[2], msg[3], msg[4], msg[5]);
 
-	msg[0] -= data->T81_reportid_min;
 
 	msg[0] = reportid;
 }

@@ -5,6 +5,7 @@
 #include <linux/list.h>
 #include <linux/dma-buf.h>
 #include <linux/version.h>
+#include <linux/slab.h>
 #include "ipu_smmu_drv.h"
 #include "ipu_mntn.h"
 
@@ -94,8 +95,10 @@ struct smmu_common_reg_offset smmu_common_reg_offset;
 
 struct ion_client *ipu_ion_client = NULL;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0))
 static struct iommu_domain *ipu_smmu_domain = NULL;
 static struct gen_pool *ipu_iova_pool = NULL;
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 static struct device *ipu_dev = NULL;
@@ -110,7 +113,9 @@ struct smmu_manager smmu_manager;
 
 struct memory_manage_node memory_manager;
 
+#ifdef CONFIG_HUAWEI_DSM
 char register_info[REGISTER_INFO_MAX_LEN] = {0};
+#endif /* CONFIG_HUAWEI_DSM */
 
 DEFINE_MUTEX(ipu_pool_mutex);/*lint !e651 !e708 !e570 !e64 !e785 */
 DEFINE_MUTEX(ipu_mem_mngr_mutex);/*lint !e651 !e708 !e570 !e64 !e785 */
@@ -124,9 +129,9 @@ void ipu_mem_mngr_init(void) {
 
 /* this func use mutex, for interface only, and SHOULD NOT be called by other mem_mngr functions */
 void ipu_mem_mngr_deinit(unsigned long *reset_va) {
-	struct list_head *pos;
-	struct list_head *n;
-	struct memory_manage_node *memory_node;
+	struct list_head *pos = NULL;
+	struct list_head *n = NULL;
+	struct memory_manage_node *memory_node = NULL;
 
 	mutex_lock(&ipu_mem_mngr_mutex);
 	if (list_empty(&memory_manager.head)) {
@@ -162,8 +167,8 @@ void ipu_mem_mngr_deinit(unsigned long *reset_va) {
 }
 
 void ipu_mem_mngr_dump(void) {
-	struct list_head *pos;
-	struct memory_manage_node *memory_node;
+	struct list_head *pos = NULL;
+	struct memory_manage_node *memory_node = NULL;
 
 	list_for_each(pos, &memory_manager.head) {
 		memory_node = (struct memory_manage_node *)pos;
@@ -173,8 +178,8 @@ void ipu_mem_mngr_dump(void) {
 }
 
 static void * ipu_mem_mngr_check_repeat(struct map_data *map, bool check_va) {
-	struct list_head *pos;
-	struct memory_manage_node *memory_node;
+	struct list_head *pos = NULL;
+	struct memory_manage_node *memory_node = NULL;
 
 	list_for_each(pos, &memory_manager.head) {
 		memory_node = (struct memory_manage_node *)pos;
@@ -192,8 +197,8 @@ static void * ipu_mem_mngr_check_repeat(struct map_data *map, bool check_va) {
 
 /* this func use mutex, for interface only, and SHOULD NOT be called by other mem_mngr functions */
 void * ipu_mem_mngr_add(struct map_data *map) {
-	struct memory_manage_node *node;
-	struct memory_manage_node *memory_node;
+	struct memory_manage_node *node = NULL;
+	struct memory_manage_node *memory_node = NULL;
 
 	mutex_lock(&ipu_mem_mngr_mutex);
 	memory_node = (struct memory_manage_node *)ipu_mem_mngr_check_repeat(map, false);
@@ -222,7 +227,7 @@ void * ipu_mem_mngr_add(struct map_data *map) {
 
 /* this func use mutex, for interface only, and SHOULD NOT be called by other mem_mngr functions */
 int ipu_mem_mngr_del(struct map_data *map) {
-	struct memory_manage_node *memory_node;
+	struct memory_manage_node *memory_node = NULL;
 
 	mutex_lock(&ipu_mem_mngr_mutex);
 	memory_node = (struct memory_manage_node *)ipu_mem_mngr_check_repeat(map, true);
@@ -243,8 +248,8 @@ int ipu_mem_mngr_del(struct map_data *map) {
 /* this func use mutex, for interface only, and SHOULD NOT be called by other mem_mngr functions */
 int ipu_mem_mngr_check_valid(unsigned int inst_addr)
 {
-	struct list_head *pos;
-	struct memory_manage_node *memory_node;
+	struct list_head *pos = NULL;
+	struct memory_manage_node *memory_node = NULL;
 
 	if (inst_addr > 0x7fffffff) {
 		printk(KERN_ERR"[%s] IPU_ERROR:FATAL: inst_addr=%d>0x7fffffff\n", __func__, inst_addr);
@@ -300,6 +305,7 @@ static void ipu_reg_bit_write_dword(
 	return;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 /* get ptr of iommu domain when probe */
 static int ipu_enable_iommu(struct device *dev)
 {
@@ -380,7 +386,21 @@ static struct gen_pool *iova_pool_setup(unsigned long start,
 
 	return pool;
 }
+#endif
 
+#if LINUX_VERSION_CODE >=  KERNEL_VERSION(4,14,0)
+unsigned long ipu_get_smmu_base_phy(struct device *dev)
+{
+	if (!dev) {
+		IPU_ERR("dev is NULL");
+		return 0;
+	}
+	ipu_dev = dev;
+	dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));/*lint !e598 !e648*/
+
+	return (unsigned long) hisi_domain_get_ttbr(dev);
+}
+#else  /* LINUX_VERSION_CODE */
 unsigned long ipu_get_smmu_base_phy(struct device *dev)
 {
 	struct iommu_domain_data *domain_data = 0;
@@ -410,6 +430,7 @@ unsigned long ipu_get_smmu_base_phy(struct device *dev)
 
 	return ((unsigned long)domain_data->phy_pgd_base);
 }
+#endif  /* LINUX_VERSION_CODE */
 
 static void ipu_smmu_mstr_init(bool port_sel, bool hardware_start)
 {
@@ -531,6 +552,7 @@ void ipu_smmu_deinit(void)
 		(void *)(uintptr_t)((uintptr_t)smmu_manager.common_io_addr + smmu_common_reg_offset.smmu_intmask_ns));
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
 static unsigned long ipu_alloc_iova(struct gen_pool *pool,
 		unsigned long size)
 {
@@ -556,7 +578,56 @@ static void ipu_free_iova(struct gen_pool *pool,
 
 	mutex_unlock(&ipu_pool_mutex);
 }
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+long ipu_smmu_map(struct map_data *map)
+{
+	int ret = 0;
+	unsigned long iova_size = 0;
+	unsigned long iova_start = 0;
+	struct map_format *format;
+	struct dma_buf *dma_buf;
+
+	if (!map) {
+		IPU_ERR("map_data is NULL!");
+		return -EINVAL;
+	}
+	format = &(map->format);
+
+	if (!ipu_dev) {
+		IPU_ERR("ipu_dev is NULL!", __func__);
+		return -EFAULT;
+	}
+
+	dma_buf = dma_buf_get(map->share_fd);
+	if (IS_ERR_OR_NULL(dma_buf)) {
+		IPU_ERR("dma_buf_get fail, share_fd=%d, dma_buf=%pK", map->share_fd, dma_buf);
+		return -EFAULT;
+	}
+
+	iova_start = hisi_iommu_map_dmabuf(ipu_dev, dma_buf, format->prot, &iova_size);
+	if (iova_start == 0 || iova_size == 0) {
+		IPU_ERR("hisi_iommu_map_dmabuf fail, share_fd=%d, iova_start=%lx, iova_size=%lx", map->share_fd, iova_start, iova_size);
+		if (iova_start) {
+			ret = hisi_iommu_unmap_dmabuf(ipu_dev, dma_buf, iova_start);
+			if (ret != 0){
+				IPU_ERR("hisi_iommu_unmap_dmabuf fail, share_fd=%d, iova_start=%lx, iova_size=%lx",
+					map->share_fd, iova_start, iova_size);
+			}
+			iova_start = 0;
+		}
+		dma_buf_put(dma_buf);
+		return -EFAULT;
+	}
+
+	format->iova_start = iova_start;
+	format->iova_size = iova_size;
+
+	dma_buf_put(dma_buf);
+	return 0;
+}
+#else  /* LINUX_VERSION_CODE */
 long ipu_smmu_map(struct map_data *map)
 {
 	long ret;
@@ -564,16 +635,16 @@ long ipu_smmu_map(struct map_data *map)
 	unsigned long phys_len;
 	unsigned long iova_size;
 	unsigned long iova_start;
-	struct scatterlist *sg;
-	struct sg_table *table;
-	struct scatterlist *sgl;
+	struct scatterlist *sg = NULL;
+	struct sg_table *table = NULL;
+	struct scatterlist *sgl = NULL;
 	struct map_format *format = &(map->format);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 	struct dma_buf_attachment *attach;
 	struct dma_buf *dma_buf;
 #else
-        struct ion_handle *hdl;
+        struct ion_handle *hdl = NULL;
 #endif
 
 	if (0 == ipu_smmu_domain || 0 == ipu_iova_pool) {
@@ -664,7 +735,51 @@ long ipu_smmu_map(struct map_data *map)
 
 	return ret;
 }
+#endif  /* LINUX_VERSION_CODE */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+long ipu_smmu_unmap(struct map_data *map)
+{
+	int ret;
+	struct dma_buf *dma_buf;
+	struct map_format *format;
+
+	if (!map) {
+		IPU_ERR("map_data is NULL!");
+		return -EINVAL;
+	}
+	if (!ipu_dev) {
+		IPU_ERR("ipu_dev is NULL!");
+		return -EFAULT;
+	}
+
+	if (!current->files) {
+		/* the called process exit abnormally,
+		 * system has called dma_buf_release() -> dmabuf_release_iommu() to free iova,
+		 * no need to free again.
+		 */
+		IPU_ERR("The current abnormal process is \"%s\" (pid=%i, tgid=%i, flags=0x%x, exit_code=%d, exit_signal=%d)",
+			current->comm, current->pid, current->tgid, current->flags, current->exit_code, current->exit_signal);
+		return 0;
+	}
+
+	dma_buf = dma_buf_get(map->share_fd);
+	if (IS_ERR_OR_NULL(dma_buf)) {
+		IPU_ERR("dma_buf_get fail, share_fd=%d, dma_buf=%pK", map->share_fd, dma_buf);
+		return -EFAULT;
+	}
+
+	format = &(map->format);
+	ret = hisi_iommu_unmap_dmabuf(ipu_dev, dma_buf, format->iova_start);
+	if (ret != 0) {
+		IPU_ERR("hisi_iommu_unmap_dmabuf fail, share_fd=%d, iova_start=%lx, iova_size=%lx",
+			map->share_fd, format->iova_start, format->iova_size);
+	}
+
+	dma_buf_put(dma_buf);
+	return 0;
+}
+#else  /* LINUX_VERSION_CODE */
 long ipu_smmu_unmap(struct map_data *map)
 {
 	int ret;
@@ -699,6 +814,7 @@ long ipu_smmu_unmap(struct map_data *map)
 
 	return ret;
 }
+#endif  /* LINUX_VERSION_CODE */
 
 int ipu_smmu_mngr_init(void)
 {
@@ -1038,9 +1154,11 @@ void ipu_smmu_dump_strm(void)
 		IPU_SMMU_MSTR_DEBUG_AXI_RD_CMD_ADDR, IPU_SMMU_MSTR_DEBUG_AXI_RD_CMD_INFO,
 		IPU_SMMU_MSTR_DEBUG_AXI_WR_CMD_ADDR, IPU_SMMU_MSTR_DEBUG_AXI_WR_CMD_INFO};
 
+	#ifdef CONFIG_HUAWEI_DSM
 	int sz = REGISTER_INFO_MAX_LEN;
 	char *perr = register_info;
 	int dsm_offset = 0;
+	#endif /* CONFIG_HUAWEI_DSM */
 
 	struct smmu_master_reg_offset *offset = &smmu_master_reg_offset;
 	uintptr_t mstr_io_addr = (uintptr_t)smmu_manager.master_io_addr;
@@ -1063,6 +1181,7 @@ void ipu_smmu_dump_strm(void)
 			port_out[16], port_out[17], port_out[18], port_out[19], port_out[20], port_out[21], port_out[22], port_out[23],
 			port_out[24], port_out[25], port_out[26], port_out[27], port_out[28], port_out[29], port_out[30], port_out[31]);
 
+		#ifdef CONFIG_HUAWEI_DSM
 		if (0 < dsm_offset){
 			perr += dsm_offset;
 			sz -= dsm_offset;
@@ -1073,6 +1192,7 @@ void ipu_smmu_dump_strm(void)
 		port_out[8], port_out[9], port_out[10], port_out[11], port_out[12], port_out[13], port_out[14], port_out[15],
 		port_out[16], port_out[17], port_out[18], port_out[19], port_out[20], port_out[21], port_out[22], port_out[23],
 		port_out[24], port_out[25], port_out[26], port_out[27], port_out[28], port_out[29], port_out[30], port_out[31]);
+		#endif  /* CONFIG_HUAWEI_DSM */
 
 	}
 

@@ -19,26 +19,25 @@
 
 #define pr_fmt(fmt) "logger: " fmt
 
-#include <linux/version.h>
+#include "chipset_common/hwlogger/hw_logger.h"
+
+#include <asm/ioctls.h>
+#include <linux/aio.h>
 #include <linux/module.h>
-#include <linux/fs.h>
 #include <linux/miscdevice.h>
-#include <linux/uaccess.h>
 #include <linux/poll.h>
+#include <linux/printk.h>
+#include <linux/ratelimit.h>
 #include <linux/slab.h>
 #include <linux/time.h>
+#include <linux/uaccess.h>
+#include <linux/uio.h>
+#include <linux/version.h>
 #include <linux/vmalloc.h>
-#include <linux/aio.h>
-#include <linux/ratelimit.h>
+#include <uapi/linux/uio.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #include <linux/sched/signal.h>
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0))
-#include <linux/uio.h>
-#endif
-#include <chipset_common/hwlogger/hw_logger.h>
-#include <uapi/linux/uio.h>
-
 #ifdef CONFIG_HW_ZEROHUNG
 #include <chipset_common/hwzrhung/zrhung.h>
 #endif
@@ -48,20 +47,23 @@
 #ifdef CONFIG_HW_ERECOVERY
 #include <chipset_common/hwerecovery/erecovery.h>
 #endif
+#include <chipset_common/hwmemcheck/memcheck.h>
 #include <asm/ioctls.h>
-#include <huawei_platform/log/log_switch.h>
 
 #include <huawei_platform/log/hw_log.h>
 
-#define TAG_BUFF_SIZE (32*1024)
-#define MAX_NAME_LEN 20
-#define LEVEL_LEN 2
+#define TAG_BUFF_SIZE			(32 * 1024)
+#define MAX_NAME_LEN			20
+#define LEVEL_LEN			2
+#define LOGGER_LOG_EXCEPTION_BUF_SIZE	(128 * 1024)
+#define LOGGER_LOG_JANK_BUF_SIZE	(64 * 1024)
+#define LOGGER_LOG_DUBAI_BUF_SIZE	(64 * 1024)
 /* LEVEL_LEN plus the len of " 0X" */
-#define LEVEL_AND_CHAR_LEN (LEVEL_LEN+3)
+#define LEVEL_AND_CHAR_LEN		(LEVEL_LEN + 3)
 /* LEVEL_AND_CHAR_LEN plus the len of "/n" */
-#define LEVEL_BUFF_LEN (LEVEL_AND_CHAR_LEN+1)
-#define MAX_NAME_AND_LEVEL_BUFF_SIZE (MAX_NAME_LEN+LEVEL_BUFF_LEN+1)
-#define MAX_LEVEL 0XFF
+#define LEVEL_BUFF_LEN			(LEVEL_AND_CHAR_LEN + 1)
+#define MAX_NAME_AND_LEVEL_BUFF_SIZE	(MAX_NAME_LEN + LEVEL_BUFF_LEN + 1)
+#define MAX_LEVEL			0XFF
 
 struct logger_log_tag {
 	unsigned char *tag_save_buff;
@@ -72,19 +74,7 @@ static struct logger_log_tag *log_tag;
 
 static int calc_iovc_ki_left(const struct iovec *iov, int nr_segs);
 
-typedef enum android_LogPriority {
-	ANDROID_LOG_UNKNOWN = 0,
-	ANDROID_LOG_DEFAULT,	/* only for SetMinPriority() */
-	ANDROID_LOG_VERBOSE,
-	ANDROID_LOG_DEBUG,
-	ANDROID_LOG_INFO,
-	ANDROID_LOG_WARN,
-	ANDROID_LOG_ERROR,
-	ANDROID_LOG_FATAL,
-	ANDROID_LOG_SILENT,	/* only for SetMinPriority(); must be last */
-} android_LogPriority;
-
-/**
+/*
  * struct logger_log - represents a specific log, such as 'main' or 'radio'
  * @buffer:	The actual ring buffer
  * @misc:	The "misc" device representing the log
@@ -114,7 +104,7 @@ struct logger_log {
 
 static LIST_HEAD(log_list);
 
-/**
+/*
  * struct logger_reader - a logging device open for reading
  * @log:	The associated log
  * @list:	The associated entry in @logger_log's list
@@ -157,9 +147,11 @@ static inline struct logger_log *file_get_log(struct file *file)
 {
 	if (file->f_mode & FMODE_READ) {
 		struct logger_reader *reader = file->private_data;
+
 		return reader->log;
-	} else
+	} else {
 		return file->private_data;
+	}
 }
 
 /*
@@ -173,12 +165,12 @@ static struct logger_entry *get_entry_header(struct logger_log *log,
 					     size_t off,
 					     struct logger_entry *scratch)
 {
-	size_t len = min(sizeof(struct logger_entry), log->size - off);
+	size_t len = min(sizeof(*scratch), log->size - off);
 
-	if (len != sizeof(struct logger_entry)) {
+	if (len != sizeof(*scratch)) {
 		memcpy(((void *)scratch), log->buffer + off, len);
 		memcpy(((void *)scratch) + len, log->buffer,
-		       sizeof(struct logger_entry) - len);
+		       sizeof(*scratch) - len);
 		return scratch;
 	}
 
@@ -198,7 +190,7 @@ static struct logger_entry *get_entry_header(struct logger_log *log,
 static __u32 get_entry_msg_len(struct logger_log *log, size_t off)
 {
 	struct logger_entry scratch;
-	struct logger_entry *entry;
+	struct logger_entry *entry = NULL;
 
 	entry = get_entry_header(log, off, &scratch);
 	return entry->len;
@@ -215,7 +207,7 @@ static size_t get_user_hdr_len(int ver)
 static ssize_t copy_header_to_user(int ver, struct logger_entry *entry,
 				   char __user *buf)
 {
-	void *hdr;
+	void *hdr = NULL;
 	size_t hdr_len;
 	struct user_logger_entry_compat v1;
 
@@ -247,7 +239,7 @@ static ssize_t do_read_log_to_user(struct logger_log *log,
 				   char __user *buf, size_t count)
 {
 	struct logger_entry scratch;
-	struct logger_entry *entry;
+	struct logger_entry *entry = NULL;
 	size_t len;
 	size_t msg_start;
 
@@ -295,7 +287,7 @@ static size_t get_next_entry_by_uid(struct logger_log *log,
 				    size_t off, kuid_t euid)
 {
 	while (off != log->w_off) {
-		struct logger_entry *entry;
+		struct logger_entry *entry = NULL;
 		struct logger_entry scratch;
 		size_t next_len;
 
@@ -314,12 +306,10 @@ static size_t get_next_entry_by_uid(struct logger_log *log,
 static inline int is_between_revers(size_t a, size_t b, size_t c)
 {
 	if (a < b) {
-		/* is c between a and b? */
-		if (a <= c && c < b)
+		if ((a <= c) && (c < b))
 			return 1;
 	} else {
-		/* is c outside of b through a? */
-		if (c < b || a <= c)
+		if ((c < b) || (a <= c))
 			return 1;
 	}
 
@@ -343,7 +333,7 @@ static ssize_t logger_read(struct file *file, char __user *buf,
 {
 	struct logger_reader *reader = file->private_data;
 	struct logger_log *log = reader->log;
-	struct logger_reader *other_reader;
+	struct logger_reader *other_reader = NULL;
 	ssize_t ret;
 	DEFINE_WAIT(wait);
 
@@ -378,7 +368,8 @@ start:
 	mutex_lock(&log->mutex);
 
 	if (!reader->r_all)
-		reader->r_off = get_next_entry_by_uid(log, reader->r_off, current_euid());	/*lint !e666 */
+		reader->r_off = get_next_entry_by_uid(log, reader->r_off,
+						      current_euid());
 
 	/* is there still something to read or did we race? */
 	if (unlikely(log->w_off == reader->r_off)) {
@@ -398,7 +389,8 @@ start:
 	ret = do_read_log_to_user(log, reader, buf, ret);
 	if (file->f_flags & O_HWLOGGER_RDDEL) {
 		list_for_each_entry(other_reader, &log->readers, list)
-			if (is_between_revers(log->head, reader->r_off, other_reader->r_off))
+			if (is_between_revers(log->head, reader->r_off,
+					      other_reader->r_off))
 				other_reader->r_off = reader->r_off;
 		log->head = reader->r_off;
 	}
@@ -421,7 +413,7 @@ static size_t get_next_entry(struct logger_log *log, size_t off, size_t len)
 
 	do {
 		size_t nr = sizeof(struct logger_entry) +
-		    get_entry_msg_len(log, off);
+			get_entry_msg_len(log, off);
 		off = logger_offset(log, off + nr);
 		count += nr;
 	} while (count < len);
@@ -446,12 +438,10 @@ static size_t get_next_entry(struct logger_log *log, size_t off, size_t len)
 static inline int is_between(size_t a, size_t b, size_t c)
 {
 	if (a < b) {
-		/* is c between a and b? */
-		if (a < c && c <= b)
+		if ((a < c) && (c <= b))
 			return 1;
 	} else {
-		/* is c outside of b through a? */
-		if (c <= b || a < c)
+		if ((c <= b) || (a < c))
 			return 1;
 	}
 
@@ -470,14 +460,14 @@ static void fix_up_readers(struct logger_log *log, size_t len)
 {
 	size_t old = log->w_off;
 	size_t new = logger_offset(log, old + len);
-	struct logger_reader *reader;
+	struct logger_reader *reader = NULL;
 
 	if (is_between(old, new, log->head))
 		log->head = get_next_entry(log, log->head, len);
 
 	list_for_each_entry(reader, &log->readers, list)
-	    if (is_between(old, new, reader->r_off))
-		reader->r_off = get_next_entry(log, reader->r_off, len);
+		if (is_between(old, new, reader->r_off))
+			reader->r_off = get_next_entry(log, reader->r_off, len);
 }
 
 /*
@@ -531,7 +521,6 @@ static ssize_t do_write_log_from_user(struct logger_log *log,
 	return count;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0))
 static ssize_t hw_logger_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct logger_log *log = file_get_log(iocb->ki_filp);
@@ -540,107 +529,17 @@ static ssize_t hw_logger_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	struct timespec now;
 	ssize_t ret = 0;
 	unsigned long nr_segs = from->nr_segs;
-	const struct iovec *iov  = from->iov;
-	int	invaliddata = 0;
+	const struct iovec *iov = from->iov;
+	int invaliddata = 0;
 
 	if (unlikely(nr_segs < 1)) {
 		invaliddata = EVecSeg;
 	} else if (unlikely(iov[0].iov_len != sizeof(int))) {
 		invaliddata = EVecLen;
 	} else {
-		int  code = 0;
-		if (copy_from_user(&code, iov[0].iov_base, sizeof(int))) {
-			invaliddata = EVecCopy;
-		}else if (unlikely(code != CHECK_CODE)) {
-			invaliddata = EVecCode;
-		} else {
-			nr_segs--;
-			iov++;
-		}
-	}
+		int code = 0;
 
-	if (unlikely(invaliddata)) {
-		pr_err_ratelimited("%s: invalid log data, error code is %d\n", log->misc.name, invaliddata);
-		return -EINVAL;
-	}
-
-	now = current_kernel_time();
-
-	header.pid = current->tgid;
-	header.tid = current->pid;
-	header.sec = now.tv_sec;
-	header.nsec = now.tv_nsec;
-	header.euid = current_euid();	/*lint !e666 */
-	header.len =
-	    min_t(size_t, calc_iovc_ki_left(iov, nr_segs),
-		  LOGGER_ENTRY_MAX_PAYLOAD);
-	header.hdr_size = sizeof(struct logger_entry);
-
-	/* null writes succeed, return zero */
-	if (unlikely(!header.len))
-		return 0;
-
-	mutex_lock(&log->mutex);
-
-	/*
-	 * Fix up any readers, pulling them forward to the first readable
-	 * entry after (what will be) the new write offset. We do this now
-	 * because if we partially fail, we can end up with clobbered log
-	 * entries that encroach on readable buffer.
-	 */
-	fix_up_readers(log, sizeof(struct logger_entry) + header.len);
-
-	do_write_log(log, &header, sizeof(struct logger_entry));
-
-	while (nr_segs-- > 0) {
-		size_t len;
-		ssize_t nr;
-
-		/* figure out how much of this vector we can keep */
-		len = min_t(size_t, iov->iov_len, header.len - ret);
-
-		/* write out this segment's payload */
-		nr = do_write_log_from_user(log, iov->iov_base, len);
-		if (unlikely(nr < 0)) {
-			log->w_off = orig;
-			mutex_unlock(&log->mutex);
-			return nr;
-		}
-
-		iov++;
-		ret += nr;
-	}
-
-	mutex_unlock(&log->mutex);
-
-	/* wake up any blocked readers */
-	wake_up_interruptible(&log->wq);
-
-	return ret;
-}
-#else
-/*
- * logger_aio_write - our write method, implementing support for write(),
- * writev(), and aio_write(). Writes are our fast path, and we try to optimize
- * them above all else.
- */
-static ssize_t hw_logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
-			unsigned long nr_segs, loff_t ppos)
-{
-	struct logger_log *log = file_get_log(iocb->ki_filp);
-	size_t orig = log->w_off;
-	struct logger_entry header;
-	struct timespec now;
-	ssize_t ret = 0;
-	int	invaliddata = 0;
-
-	if (unlikely(nr_segs < 1)) {
-		invaliddata = EVecSeg;
-	} else if (unlikely(iov[0].iov_len != sizeof(int))) {
-		invaliddata = EVecLen;
-	} else {
-		int  code = 0;
-		if (copy_from_user(&code, iov[0].iov_base, sizeof(int))) {
+		if (copy_from_user(&code, iov[0].iov_base, sizeof(code))) {
 			invaliddata = EVecCopy;
 		} else if (unlikely(code != CHECK_CODE)) {
 			invaliddata = EVecCode;
@@ -651,7 +550,8 @@ static ssize_t hw_logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	}
 
 	if (unlikely(invaliddata)) {
-		pr_err_ratelimited("%s: invalid log data, error code is %d\n", log->misc.name, invaliddata);
+		pr_err_ratelimited("%s: invalid log data, error code is %d\n",
+				   log->misc.name, invaliddata);
 		return -EINVAL;
 	}
 
@@ -661,13 +561,12 @@ static ssize_t hw_logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	header.tid = current->pid;
 	header.sec = now.tv_sec;
 	header.nsec = now.tv_nsec;
-	header.euid = current_euid();	/*lint !e666 */
-	header.len =
-	    min_t(size_t, calc_iovc_ki_left(iov, nr_segs),
-		  LOGGER_ENTRY_MAX_PAYLOAD);
+	header.euid = current_euid();
+	header.len = min_t(size_t, calc_iovc_ki_left(iov, nr_segs),
+			   LOGGER_ENTRY_MAX_PAYLOAD);
 	header.hdr_size = sizeof(struct logger_entry);
 
-	/* null writes succeed, return zero */
+	/* null writes succeed */
 	if (unlikely(!header.len))
 		return 0;
 
@@ -709,15 +608,14 @@ static ssize_t hw_logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 
 	return ret;
 }
-#endif
 
 static struct logger_log *get_log_from_minor(int minor)
 {
-	struct logger_log *log;
+	struct logger_log *log = NULL;
 
 	list_for_each_entry(log, &log_list, logs)
-	    if (log->misc.minor == minor)
-		return log;
+		if (log->misc.minor == minor)
+			return log;
 	return NULL;
 }
 
@@ -728,7 +626,7 @@ static struct logger_log *get_log_from_minor(int minor)
  */
 static int logger_open(struct inode *inode, struct file *file)
 {
-	struct logger_log *log;
+	struct logger_log *log = NULL;
 	int ret;
 
 	ret = nonseekable_open(inode, file);
@@ -740,9 +638,8 @@ static int logger_open(struct inode *inode, struct file *file)
 		return -ENODEV;
 
 	if (file->f_mode & FMODE_READ) {
-		struct logger_reader *reader;
+		struct logger_reader *reader = kmalloc(sizeof(*reader), GFP_KERNEL);
 
-		reader = kmalloc(sizeof(struct logger_reader), GFP_KERNEL);
 		if (!reader)
 			return -ENOMEM;
 
@@ -759,8 +656,9 @@ static int logger_open(struct inode *inode, struct file *file)
 		mutex_unlock(&log->mutex);
 
 		file->private_data = reader;
-	} else
+	} else {
 		file->private_data = log;
+	}
 
 	return 0;
 }
@@ -797,8 +695,8 @@ static int logger_release(struct inode *ignored, struct file *file)
  */
 static unsigned int logger_poll(struct file *file, poll_table *wait)
 {
-	struct logger_reader *reader;
-	struct logger_log *log;
+	struct logger_reader *reader = NULL;
+	struct logger_log *log = NULL;
 	unsigned int ret = POLLOUT | POLLWRNORM;
 
 	if (!(file->f_mode & FMODE_READ))
@@ -811,7 +709,8 @@ static unsigned int logger_poll(struct file *file, poll_table *wait)
 
 	mutex_lock(&log->mutex);
 	if (!reader->r_all)
-		reader->r_off = get_next_entry_by_uid(log, reader->r_off, current_euid());	/*lint !e666 */
+		reader->r_off = get_next_entry_by_uid(log, reader->r_off,
+						      current_euid());
 
 	if (log->w_off != reader->r_off)
 		ret |= POLLIN | POLLRDNORM;
@@ -823,27 +722,28 @@ static unsigned int logger_poll(struct file *file, poll_table *wait)
 static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct logger_log *log = file_get_log(file);
-	struct logger_reader *reader;
+	struct logger_reader *reader = NULL;
 	long ret = -EINVAL;
 
 #ifdef CONFIG_HW_ZEROHUNG
 	ret = zrhung_ioctl(file, cmd, arg);
-	if(ret != ZRHUNG_CMD_INVALID) {
+	if (ret != ZRHUNG_CMD_INVALID)
 		return ret;
-	}
 #endif
 #ifdef CONFIG_HW_FDLEAK
 	ret = fdleak_ioctl(file, cmd, arg);
-	if(ret != FDLEAK_CMD_INVALID) {
+	if (ret != FDLEAK_CMD_INVALID)
 		return ret;
-	}
 #endif
 #ifdef CONFIG_HW_ERECOVERY
-        ret = erecovery_ioctl(file, cmd, arg);
-        if(ret != ERECOVERY_CMD_INVALID) {
-                return ret;
-        }
+	ret = erecovery_ioctl(file, cmd, arg);
+	if (ret != ERECOVERY_CMD_INVALID)
+		return ret;
 #endif
+	ret = memcheck_ioctl(file, cmd, arg);
+	if(ret != MEMCHECK_CMD_INVALID) {
+		return ret;
+	}
 	mutex_lock(&log->mutex);
 
 	switch (cmd) {
@@ -869,7 +769,8 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		reader = file->private_data;
 
 		if (!reader->r_all)
-			reader->r_off = get_next_entry_by_uid(log, reader->r_off, current_euid());	/*lint !e666 */
+			reader->r_off = get_next_entry_by_uid(log,
+				reader->r_off, current_euid());
 
 		if (log->w_off != reader->r_off)
 			ret = get_user_hdr_len(reader->r_ver) +
@@ -888,7 +789,7 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			break;
 		}
 		list_for_each_entry(reader, &log->readers, list)
-		    reader->r_off = log->w_off;
+			reader->r_off = log->w_off;
 		log->head = log->w_off;
 		ret = 0;
 		break;
@@ -910,9 +811,10 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case FIONREAD:
 		if (!strncmp(log->misc.name, LOGGER_LOG_JANK, strlen(LOGGER_LOG_JANK)) ||
-			!strncmp(log->misc.name, LOGGER_LOG_DUBAI, strlen(LOGGER_LOG_DUBAI))) {
+		    !strncmp(log->misc.name, LOGGER_LOG_DUBAI, strlen(LOGGER_LOG_DUBAI)))
 			ret = -ENOTTY;
-		}
+		break;
+	default:
 		break;
 	}
 
@@ -924,11 +826,7 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 static const struct file_operations logger_fops = {
 	.owner = THIS_MODULE,
 	.read = logger_read,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0))
 	.write_iter = hw_logger_write_iter,
-#else
-	.aio_write = hw_logger_aio_write,
-#endif
 	.poll = logger_poll,
 	.unlocked_ioctl = logger_ioctl,
 #ifdef CONFIG_COMPAT
@@ -940,29 +838,30 @@ static const struct file_operations logger_fops = {
 
 static int check_tag_level_to_show(char *srcbuff, const char *name, int level)
 {
-	char checkbuff[MAX_NAME_AND_LEVEL_BUFF_SIZE] = { 0 };
+	char checkbuff[MAX_NAME_AND_LEVEL_BUFF_SIZE] = {0};
 	char *findstr = NULL;
 
-	if (srcbuff == NULL) {
+	if (!srcbuff) {
 		pr_err_ratelimited("buff is null\n");
 		return -2;
 	}
 
-	if (name == NULL) {
+	if (!name) {
 		pr_err_ratelimited("name is null\n");
 		return -2;
 	}
 
 	if (strlen(name) > MAX_NAME_LEN) {
-		pr_warn_ratelimited("name: %s is lang than %d\n", name, MAX_NAME_LEN);
+		pr_warn_ratelimited("name: %s is longer than %d\n", name,
+				    MAX_NAME_LEN);
 	}
 
 	snprintf(checkbuff, MAX_NAME_LEN + 1, "%s", name);
 	strcat(checkbuff, " ");
 	findstr = strstr(srcbuff, checkbuff);
-	if (findstr != NULL) {
+	if (findstr) {
 		pr_debug("%s is 0X%0*X need not to show\n", name, LEVEL_LEN,
-			    level);
+			 level);
 		return -1;
 	}
 
@@ -973,113 +872,99 @@ static int check_tag_level_to_show(char *srcbuff, const char *name, int level)
 static ssize_t log_tag_read(struct file *file, char __user *buf, size_t count,
 			    loff_t *pos)
 {
-	struct huawei_log_tag *t;
+	struct huawei_log_tag *t = NULL;
 	unsigned char *str = NULL;
 	int checkresult = 0;
 	int len = 0;
 	size_t readlen;
 
-	pr_info("log_tag_read enter,*pos=%lld,count=%d\n", *pos, (int)count);
+	pr_info("%s enter, *pos = %lld, count = %d\n", __func__, *pos, (int)count);
 
 	mutex_lock(&log_tag->mutex);
 	memset(log_tag->tag_save_buff, 0, TAG_BUFF_SIZE);
 	str = log_tag->tag_save_buff;
 	for (t = &__start_hwlog_tag; t < &__stop_hwlog_tag; t++) {
 		pr_debug("%s is %0*X\n", t->name, LEVEL_LEN, t->level);
-		checkresult =
-		    check_tag_level_to_show(log_tag->tag_save_buff, t->name,
-					    t->level);
+		checkresult = check_tag_level_to_show(log_tag->tag_save_buff, t->name, t->level);
 		if (checkresult == 1) {
 			pr_debug("%s is %0*X to show\n", t->name, LEVEL_LEN,
-				    t->level);
-			if (&log_tag->tag_save_buff[TAG_BUFF_SIZE - 1] - str <=
+				 t->level);
+			if ((&log_tag->tag_save_buff[TAG_BUFF_SIZE - 1] - str) <=
 			    MAX_NAME_AND_LEVEL_BUFF_SIZE) {
-				pr_warn_ratelimited("tag buffer is full.");
+				pr_warn_ratelimited("tag buffer is full\n");
 				break;
 			}
 			len = snprintf(str, MAX_NAME_LEN + 1, "%s", t->name);
 			str += min(len, MAX_NAME_LEN);
-			len =
-			    snprintf(str, LEVEL_AND_CHAR_LEN + 1, " 0X%0*X",
-				     LEVEL_LEN, t->level);
+			len = snprintf(str, LEVEL_AND_CHAR_LEN + 1, " 0X%0*X",
+				       LEVEL_LEN, t->level);
 			str += min(len, LEVEL_AND_CHAR_LEN);
-			str +=
-			    snprintf(str,
-				     MAX_NAME_AND_LEVEL_BUFF_SIZE -
-				     LEVEL_AND_CHAR_LEN - MAX_NAME_LEN + 1,
-				     "\n");
+			str += snprintf(str, MAX_NAME_AND_LEVEL_BUFF_SIZE -
+					LEVEL_AND_CHAR_LEN - MAX_NAME_LEN + 1,
+					"\n");
 		}
 	}
 	str = NULL;
 	pr_debug("tag buff is: %s.\n", log_tag->tag_save_buff);
 
-	readlen =
-	    simple_read_from_buffer(buf, count, pos,
-				    (void *)log_tag->tag_save_buff,
-				    strlen(log_tag->tag_save_buff));
+	readlen = simple_read_from_buffer(buf, count, pos,
+					  (void *)log_tag->tag_save_buff,
+					  strlen(log_tag->tag_save_buff));
 	mutex_unlock(&log_tag->mutex);
 
-	pr_info("log_tag_read end,readlen=%d,*pos=%lld\n", (int)readlen,
-		   *pos);
+	pr_info("%s end,readlen=%d,*pos=%lld\n", __func__,
+		(int)readlen, *pos);
 	return readlen;
 }
 
 static ssize_t log_tag_write(struct file *file, const char __user *buf,
 			     size_t count, loff_t *pos)
 {
-	char name[MAX_NAME_AND_LEVEL_BUFF_SIZE] = { 0 };
-	char kernelbuf[MAX_NAME_AND_LEVEL_BUFF_SIZE] = { 0 };
+	char name[MAX_NAME_AND_LEVEL_BUFF_SIZE] = {0};
+	char kernelbuf[MAX_NAME_AND_LEVEL_BUFF_SIZE] = {0};
 	u32 val = 0;
 	struct huawei_log_tag *t = NULL;
-	int ret = 0;
+	int ret;
 	int find_tag_num = 0;
 
-	pr_info("log_tag_write enter,count=%d,*pos=%lld\n", (int)count,
-		   *pos);
+	pr_info("%s enter, count = %d, *pos = %lld\n", __func__, (int)count, *pos);
 
 	if (count >= MAX_NAME_AND_LEVEL_BUFF_SIZE) {
 		pr_err("write count:%d is larger than %d.\n", (int)count,
-			  MAX_NAME_AND_LEVEL_BUFF_SIZE);
+		       MAX_NAME_AND_LEVEL_BUFF_SIZE);
 		return -EINVAL;
 	}
 
 	ret = copy_from_user(kernelbuf, buf, count);
-	if (0 != ret) {
-		pr_err
-		    ("copy %d to kernel buff failed,%d byty is not copied,return -EINVAL.",
-		     (int)count, ret);
+	if (ret != 0) {
+		pr_err("copy %d to kernel buff failed, %d byty is not copied\n",
+			 (int)count, ret);
 		return -EINVAL;
 	}
 	pr_info("copy from user,kernelbuf=%s\n", kernelbuf);
 
 	ret = sscanf(kernelbuf, "%s 0X%X", name, &val);
 	if (ret != 2) {
-		pr_err
-		    ("read name and level from buff failed,ret =%d,return -EINVAL.",
-		     ret);
+		pr_err("read name and level from buff failed, ret = %d\n", ret);
 		return -EINVAL;
 	}
 	if (strlen(name) > MAX_NAME_LEN) {
-		pr_err
-		    ("read name=%s,the length is larger than %d,return -EINVAL.",
-		     name, MAX_NAME_LEN);
+		pr_err("read name=%s, the length is larger than %d\n",
+			name, MAX_NAME_LEN);
 		return -EINVAL;
 	}
 	if (val > MAX_LEVEL) {
-		pr_err("read val=0X%X,is larger than 0X%X,return -EINVAL.",
-			  val, MAX_LEVEL);
+		pr_err("read val=0X%X,is larger than 0X%X\n", val, MAX_LEVEL);
 		return -EINVAL;
 	}
-	pr_info("get from kernel buff,tag=%s,level=0X%0*X\n", name,
-		   LEVEL_LEN, val);
-	pr_debug("get from kernel buff,tag=%s,level=0X%08X\n", name, val);
+	pr_info("get from kernel buff,tag=%s,level=0X%0*X\n",
+		name, LEVEL_LEN, val);
 
 	mutex_lock(&log_tag->mutex);
 	for (t = &__start_hwlog_tag; t < &__stop_hwlog_tag; t++) {
-		if (NULL != t->name
-		    && strncmp(name, t->name, MAX_NAME_LEN) == 0) {
-		        /*_ro_after_init do not allow modify text segment*/
-		        /*t->level = val;*/
+		if (t->name &&
+		    (strncmp(name, t->name, MAX_NAME_LEN) == 0)) {
+			/* _ro_after_init do not allow modify text segment */
 			pr_debug("%s set to 0X%0*X\n", name, LEVEL_LEN, val);
 			find_tag_num++;
 		}
@@ -1087,12 +972,11 @@ static ssize_t log_tag_write(struct file *file, const char __user *buf,
 	mutex_unlock(&log_tag->mutex);
 
 	pr_debug("find %d times of tag:%s\n", find_tag_num, name);
-	if (0 == find_tag_num) {
-		pr_warn
-		    ("tag=%s,level=0X%0*X, is not set for can't find tag\n",
-		     name, LEVEL_LEN, val);
+	if (find_tag_num == 0) {
+		pr_warn("tag = %s, level = 0X%0*X, not set for unfound tag\n",
+			name, LEVEL_LEN, val);
 	}
-	pr_info("log_tag_write end,return %d\n", (int)count);
+	pr_info("%s end,return %d\n", __func__, (int)count);
 	return count;
 }
 
@@ -1115,16 +999,19 @@ static struct miscdevice log_tag_misc_dev = {
  */
 static int __init create_log(char *log_name, int size)
 {
-	int ret = 0;
-	struct logger_log *log;
-	unsigned char *buffer;
+	int ret;
+	struct logger_log *log = NULL;
+	unsigned char *buffer = NULL;
 
+	if (size <= 0)
+		return -EINVAL;
 	buffer = vmalloc(size);
-	if (buffer == NULL)
+	if (!buffer)
 		return -ENOMEM;
+	memset(buffer, 0, size);
 
-	log = kzalloc(sizeof(struct logger_log), GFP_KERNEL);
-	if (log == NULL) {
+	log = kzalloc(sizeof(*log), GFP_KERNEL);
+	if (!log) {
 		ret = -ENOMEM;
 		goto out_free_buffer;
 	}
@@ -1132,7 +1019,7 @@ static int __init create_log(char *log_name, int size)
 
 	log->misc.minor = MISC_DYNAMIC_MINOR;
 	log->misc.name = kstrdup(log_name, GFP_KERNEL);
-	if (log->misc.name == NULL) {
+	if (!log->misc.name) {
 		ret = -ENOMEM;
 		goto out_free_log;
 	}
@@ -1174,27 +1061,26 @@ static int __init logger_init(void)
 {
 	int ret;
 
-	ret = create_log(LOGGER_LOG_EXCEPTION, 128 * 1024);	/*must modified with EXCEPTION_LOG_BUF_LEN*/
+	/* must modified with EXCEPTION_LOG_BUF_LEN */
+	ret = create_log(LOGGER_LOG_EXCEPTION, LOGGER_LOG_EXCEPTION_BUF_SIZE);
 	if (unlikely(ret))
 		goto out;
-#if defined (CONFIG_HWLOG_KERNEL)
-	ret = create_log(LOGGER_LOG_JANK, 64 * 1024);
+#if defined CONFIG_HWLOG_KERNEL
+	ret = create_log(LOGGER_LOG_JANK, LOGGER_LOG_JANK_BUF_SIZE);
 	if (unlikely(ret))
 		goto out;
-	ret = create_log(LOGGER_LOG_DUBAI, 64 * 1024);
+	ret = create_log(LOGGER_LOG_DUBAI, LOGGER_LOG_DUBAI_BUF_SIZE);
 	if (unlikely(ret))
 		goto out;
 #endif
-	log_tag = kzalloc(sizeof(struct logger_log_tag), GFP_KERNEL);
-	if (log_tag == NULL) {
-		pr_err("malloc buff for logger_log_tag struct failed.");
+	log_tag = kzalloc(sizeof(*log_tag), GFP_KERNEL);
+	if (!log_tag) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	log_tag->tag_save_buff = (unsigned char *)vmalloc(TAG_BUFF_SIZE);
-	if (log_tag->tag_save_buff == NULL) {
-		pr_err("malloc buff for log_tag->tag_save_buff struct failed.");
+	log_tag->tag_save_buff = vmalloc(TAG_BUFF_SIZE);
+	if (!log_tag->tag_save_buff) {
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -1204,11 +1090,11 @@ static int __init logger_init(void)
 
 	ret = misc_register(&log_tag_misc_dev);
 	if (unlikely(ret)) {
-		pr_err("log_tag_misc_dev:%s  register failed.",
+		pr_err("log_tag_misc_dev:%s  register failed\n",
 		       log_tag_misc_dev.name);
 		goto out;
 	}
-	pr_info("log_tag_misc_dev:%s  register success.",
+	pr_info("log_tag_misc_dev:%s  register success\n",
 		log_tag_misc_dev.name);
 out:
 	return ret;
@@ -1216,34 +1102,38 @@ out:
 
 static void __exit logger_exit(void)
 {
-	struct logger_log *current_log, *next_log;
+	struct logger_log *current_log = NULL;
+	struct logger_log *next_log = NULL;
 
 	list_for_each_entry_safe(current_log, next_log, &log_list, logs) {
 		/* we have to delete all the entry inside log_list */
 		misc_deregister(&current_log->misc);
-		vfree(current_log->buffer);
+		if (current_log->buffer) {
+			vfree(current_log->buffer);
+			current_log->buffer = NULL;
+		}
 		kfree(current_log->misc.name);
+		current_log->misc.name = NULL;
 		list_del(&current_log->logs);
 		kfree(current_log);
+		current_log = NULL;
 	}
 	misc_deregister(&log_tag_misc_dev);
-	if (log_tag->tag_save_buff != NULL) {
+	if (log_tag->tag_save_buff) {
 		vfree(log_tag->tag_save_buff);
 		log_tag->tag_save_buff = NULL;
 	}
-	if (log_tag != NULL) {
-		kfree(log_tag);
-		log_tag = NULL;
-	}
+	kfree(log_tag);
+	log_tag = NULL;
 }
 
 static struct logger_log *get_log_from_name(const char *name)
 {
-	struct logger_log *log;
+	struct logger_log *log = NULL;
 
 	list_for_each_entry(log, &log_list, logs)
-	    if (!strcmp(log->misc.name, name))
-		return log;
+		if (!strcmp(log->misc.name, name))
+			return log;
 	return NULL;
 }
 
@@ -1251,7 +1141,7 @@ static int calc_iovc_ki_left(const struct iovec *iov, int nr_segs)
 {
 	int ret = 0;
 	int seg;
-	ssize_t len = 0;
+	ssize_t len;
 
 	for (seg = 0; seg < nr_segs; seg++) {
 		len = (ssize_t) iov[seg].iov_len;
@@ -1270,17 +1160,17 @@ ssize_t write_log_to_exception(const char *category, char level,
 	ssize_t ret = 0;
 	struct iovec vec[4];
 	struct iovec *iov = vec;
-	int nr_segs = sizeof(vec) / sizeof(vec[0]);
-	int iovc_ki_left_len = 0;
-	kuid_t euid = { 0 };
+	int nr_segs = ARRAY_SIZE(vec);
+	int iovc_ki_left_len;
+	kuid_t euid = {0};
 
 	pr_info("%s:%s\n", __func__, msg);
-	/*according to the arguments, fill the iovec struct  */
+	/* according to the arguments, fill the iovec struct  */
 	vec[0].iov_base = (unsigned char *)&level;
 	vec[0].iov_len = 1;
 
 	vec[1].iov_base = "message";
-	vec[1].iov_len = strlen("message");	/*here won't add \0*/
+	vec[1].iov_len = strlen("message");	/* here won't add \0 */
 
 	vec[2].iov_base = (void *)category;
 	vec[2].iov_len = strlen(category) + 1;
@@ -1339,8 +1229,8 @@ ssize_t write_log_to_exception(const char *category, char level,
 
 	return ret;
 }
-
 EXPORT_SYMBOL(write_log_to_exception);
+
 device_initcall(logger_init);
 module_exit(logger_exit);
 

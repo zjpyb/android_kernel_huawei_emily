@@ -25,7 +25,9 @@ struct bbst_device_ops {
 	bool (*device_check)(void);
 	bool (*pwr_good)(void);
 	int (*set_vout)(unsigned int);
+	int (*set_pwm_enable)(unsigned int);
 };
+
 struct bbst_device_info {
 	struct device *dev;
 	struct bbst_device_ops *ops;
@@ -33,10 +35,16 @@ struct bbst_device_info {
 
 #ifdef CONFIG_BUCKBOOST
 extern int buck_boost_ops_register(struct bbst_device_ops *ops);
+extern int buck_boost_set_pwm_enable(unsigned int enable);
 extern int buck_boost_set_vol(unsigned int vol);
 extern bool buck_boost_pwr_good(void);
 #else
 static inline int buck_boost_ops_register(struct bbst_device_ops *ops)
+{
+	return 0;
+}
+
+static inline int buck_boost_set_pwm_enable(unsigned int enable)
 {
 	return 0;
 }

@@ -160,9 +160,9 @@ static struct device_attribute *mass_storage_function_attributes[] = {
 
 static int create_mass_storage_device(struct usb_function_instance *fi)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	struct device_attribute **attrs;
-	struct device_attribute *attr;
+	struct device_attribute *attr = NULL;
 	int err = 0;
 
 	dev = create_function_device("f_mass_storage");

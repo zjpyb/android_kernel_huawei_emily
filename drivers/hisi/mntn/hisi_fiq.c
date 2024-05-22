@@ -12,7 +12,9 @@
 #include <asm/system_misc.h>
 #include <asm/cacheflush.h>
 
+#ifdef CONFIG_HISI_DDRC_SEC
 #include <linux/hisi/hisi_ddr.h>
+#endif
 #include <linux/hisi/mntn_record_sp.h>
 #include <linux/hisi/eeye_ftrace_pub.h>
 #include <linux/hisi/hisi_fiq.h>
@@ -22,7 +24,7 @@
 #include "blackbox/rdr_inner.h"
 #include "blackbox/rdr_field.h"
 #include <linux/hisi/hisi_sp805_wdt.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/hisi/rdr_pub.h>
 #include <linux/version.h>
 #include <linux/hisi/hisi_bbox_diaginfo.h>
@@ -53,7 +55,9 @@ void hisi_mntn_inform(void)
     if (get_bl31_exception_flag() == BL31_PANIC_MAGIC)
         bl31_panic_ipi_handle();
     else {
+#ifdef CONFIG_HISI_DDRC_SEC
         dmss_ipi_handler();
+#endif
     }
 }
 
@@ -62,7 +66,7 @@ void hisi_mntn_inform(void)
 
 asmlinkage void fiq_dump(struct pt_regs *regs, unsigned int esr)
 {
-	struct rdr_exception_info_s *p_exce_info;
+	struct rdr_exception_info_s *p_exce_info = NULL;
 	char date[DATATIME_MAXLEN];
 	int ret = 0;
 	u64 err1_status, err1_misc0;
@@ -84,7 +88,9 @@ asmlinkage void fiq_dump(struct pt_regs *regs, unsigned int esr)
 
 	pr_emerg("%s", linux_banner);
 
+#ifdef CONFIG_HISI_DDRC_SEC
     dmss_fiq_handler();
+#endif
 	console_verbose();
 	show_regs(regs);
 
@@ -93,6 +99,7 @@ asmlinkage void fiq_dump(struct pt_regs *regs, unsigned int esr)
 	dump_stack();
 	smp_send_stop();
 
+#ifdef CONFIG_HISI_BB
 	if (!rdr_init_done()) {
 		pr_crit("rdr init faild!\n");
 		return;
@@ -100,8 +107,11 @@ asmlinkage void fiq_dump(struct pt_regs *regs, unsigned int esr)
 
 	last_task_stack_dump();
 	regs_dump(); /*"sctrl", "pctrl", "peri_crg", "gic"*/
+#endif
 
+#ifdef CONFIG_HISI_BB
 	save_module_dump_mem();
+#endif
 
 	sp805_wdt_dump();
 
@@ -110,9 +120,8 @@ asmlinkage void fiq_dump(struct pt_regs *regs, unsigned int esr)
 	p_exce_info = rdr_get_exception_info(MODID_AP_S_WDT);
 	if (p_exce_info) {
 		if (EOK != memset_s(date, DATATIME_MAXLEN, 0, DATATIME_MAXLEN)) {
-			pr_crit("%s():%d:memset_s fail!\n", __func__, __LINE__);
+			pr_err("[%s:%d]: memset_s err\n", __func__, __LINE__);
 		}
-
 		ret = snprintf_s(date, DATATIME_MAXLEN, DATATIME_MAXLEN - 1, "%s-%08lld",
 			 rdr_get_timestamp(), rdr_get_tick());
 		if(unlikely(ret < 0)){

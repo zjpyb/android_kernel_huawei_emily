@@ -81,12 +81,10 @@ static irqreturn_t hisi_soh_pmic_ovp_irq_handle(int irq,  void *_di)
     }
 
     if (irq == di->soh_ovh_irq) {
-        /*disable_irq_nosync(di->soh_ovh_irq);*/
         hisi_call_drv_atomic_notifiers(SOH_OVH, NULL);
     }
 
     if (irq == di->soh_ovh_dis_irq) {
-        /*disable_irq_nosync(di->soh_ovh_dis_irq);*/
         hisi_call_drv_atomic_notifiers(SOH_OVL, NULL);
     }
 
@@ -121,7 +119,7 @@ STATIC void hisi_soh_pmic_pd_leak_enable(int enable)
 STATIC unsigned int hisi_soh_pmic_pd_get_ocv_rtc(unsigned int index)
 {
     unsigned int ts_sec = 0, ts;      /* timestamp in seconds */
-    int i;
+    unsigned int i;
     u8 reg_val, temp;
 
     reg_val = HISI_SOH_PMIC_REG_READ(PD_OCV_RTC_OCV_REG);
@@ -409,7 +407,7 @@ STATIC int hisi_soh_pmic_acr_calculate_acr(void)
             return -1;
         }
     }
-    return (int)(acr_value*ACR_MOHM_TO_UOHM/ACR_CAL_MAGNIFICATION);
+    return (int)(abs(acr_value)*ACR_MOHM_TO_UOHM/ACR_CAL_MAGNIFICATION);
 }
 
 /*******************************************************
@@ -721,7 +719,7 @@ STATIC void hisi_soh_pmic_dcr_set_timer(enum dcr_timer_choose  dcr_timer)
 ********************************************************/
 STATIC unsigned int hisi_soh_pmic_dcr_get_timer(void)
 {
-    int reg_val;
+    unsigned int reg_val;
     unsigned int timer_s = 32;
 
 #ifdef CONFIG_HISI_COUL_HI6421V700
@@ -771,7 +769,7 @@ STATIC unsigned int hisi_soh_pmic_dcr_get_timer(void)
 static void parse_pmic_acr_dts(struct soh_pmic_device *di)
 {
     int ret = 0;
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di)
         return;
@@ -788,7 +786,7 @@ static void parse_pmic_acr_dts(struct soh_pmic_device *di)
 STATIC void parse_pmic_dcr_dts(struct soh_pmic_device *di)
 {
     int ret = 0;
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di)
         return;
@@ -806,7 +804,7 @@ STATIC void parse_pmic_dcr_dts(struct soh_pmic_device *di)
 STATIC void parse_pmic_pd_leak_dts(struct soh_pmic_device *di)
 {
     int ret = 0;
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di)
         return;
@@ -824,7 +822,7 @@ STATIC void parse_pmic_soh_ovp_dts(struct soh_pmic_device *di)
 {
 
     int ret = 0;
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di)
         return;
@@ -1245,7 +1243,7 @@ acr_init_err:
 static int  hisi_soh_pmic_ovp_init(struct soh_pmic_device *di)
 {
     int ret;
-    struct spmi_device *pdev;
+    struct spmi_device *pdev = NULL;
 
     if (!di)
         return -1;
@@ -1313,7 +1311,7 @@ static void hisi_soh_pmic_soh_vbat_uvp_thd(int mv)
 {
     u16 reg_val;
 
-    reg_val = (hisi_coul_convert_mv2regval(mv) >> SOH_VBAT_UVP_SHIFT);
+    reg_val = (((unsigned int)hisi_coul_convert_mv2regval(mv)) >> SOH_VBAT_UVP_SHIFT);
     HISI_SOH_PMIC_REGS_WRITE(SOH_VBAT_UVP_BASE, &reg_val, SOH_VBAT_UVP_NUM);
 }
 

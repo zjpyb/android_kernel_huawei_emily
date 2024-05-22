@@ -147,14 +147,26 @@ static void sw_kb_detect_irq_work(struct work_struct *work)
 		struct sw_gpio_detector, irq_work);
 
 	SW_PRINT_INFO("sw_kb_detect_irq_work in\n");
-	if (detector == NULL)
-		return;
 
 	cur_devstate = detector->dev_state;
 
 	if (detector->chg_detecor != NULL)
 		detector->chg_detecor->detect_call(detector,
 			detector->chg_detecor);
+
+	/*
+	 * 1.detect pogopin chg, so do not need detect kb
+	 * 2.if pre is pogopin chg, future irq is pogopin chg disconnet,
+	 * so do not need detect kb
+	 */
+	if ((detector->dev_state == DEVSTAT_CHGDEV_ONLINE) ||
+		(cur_devstate == DEVSTAT_CHGDEV_ONLINE)) {
+		SW_PRINT_INFO("in pogopin not detect kb,cur = %d,now = %d\n",
+			cur_devstate, detector->dev_state);
+		if (cur_devstate != detector->dev_state)
+			sw_gpio_detect_notify(detector);
+		return;
+	}
 
 	if (detector->kb_detecor != NULL)
 		detector->kb_detecor->detect_call(detector,

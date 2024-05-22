@@ -10,7 +10,6 @@
 
 #include <linux/kernel.h>
 #include <linux/switch.h>
-#include <linux/wakelock.h>
 #include <linux/delay.h>
 #include <linux/vmalloc.h>
 #include <linux/proc_fs.h>
@@ -198,9 +197,9 @@ static const struct file_operations hicodec_debug_rh_fops = {
 
 static void hicodec_debug_dapm_widget_dump(char *buf)
 {
-	struct list_head *l;
-	struct snd_soc_dapm_widget *w;
-	struct snd_soc_dapm_context *dc;
+	struct list_head *l = NULL;
+	struct snd_soc_dapm_widget *w = NULL;
+	struct snd_soc_dapm_context *dc = NULL;
 	int i = -1;
 
 	if (!g_codec) {
@@ -261,11 +260,11 @@ static const struct file_operations hicodec_debug_dwidget_fops = {
 
 static void hicodec_debug_dapm_path_dump(char *buf)
 {
-	struct list_head *l;
-	struct snd_soc_dapm_path *p;
-	struct snd_soc_dapm_widget *source;
-	struct snd_soc_dapm_widget *sink;
-	struct snd_soc_dapm_context *dc;
+	struct list_head *l = NULL;
+	struct snd_soc_dapm_path *p = NULL;
+	struct snd_soc_dapm_widget *source = NULL;
+	struct snd_soc_dapm_widget *sink = NULL;
+	struct snd_soc_dapm_context *dc = NULL;
 
 	int i = -1;
 
@@ -337,11 +336,11 @@ static const struct file_operations hicodec_debug_dpath_fops = {
 
 static void hicodec_debug_kcontrol_dump(char *buf)
 {
-	struct list_head *l;
-	struct snd_kcontrol *ctrl;
+	struct list_head *l = NULL;
+	struct snd_kcontrol *ctrl = NULL;
 	struct snd_ctl_elem_info info;
 	struct snd_ctl_elem_value value;
-	struct snd_soc_dapm_context *dc;
+	struct snd_soc_dapm_context *dc = NULL;
 
 	int num_controls = 0;
 	int i = -1;
@@ -429,7 +428,7 @@ static void hicodec_debug_rr_page_dump(char *buf)
 {
 	unsigned int regi;
 	unsigned int i;
-	struct hicodec_dump_reg_entry *entry;
+	struct hicodec_dump_reg_entry *entry = NULL;
 
 	if (!g_codec || !reg_info) {
 		snprintf(buf, HICODEC_DBG_SIZE_PAGE, "g_codec or reg_info is null\n"); /*lint !e747 */
@@ -456,7 +455,7 @@ static void hicodec_debug_rr_page_dump(char *buf)
 static ssize_t hicodec_debug_rr_read(struct file *file, char __user *user_buf,
 		size_t count, loff_t *ppos)
 {
-	char *kn_buf;
+	char *kn_buf = NULL;
 	ssize_t byte_read;
 
 	if (!g_codec || !(g_codec->driver) || !(g_codec->driver->read)) {
@@ -495,7 +494,7 @@ static ssize_t hicodec_debug_rr_read(struct file *file, char __user *user_buf,
  */
 static ssize_t hicodec_debug_rr_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos)
 {
-	char *kn_buf;
+	char *kn_buf = NULL;
 	ssize_t byte_writen;
 	int num = 0;
 	unsigned int vs_reg = 0;

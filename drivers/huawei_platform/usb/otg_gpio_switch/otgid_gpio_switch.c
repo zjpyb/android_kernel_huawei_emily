@@ -1,4 +1,20 @@
-
+/*
+ * otgid_gpio_switch.c
+ *
+ * gpio switch for otgid driver
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -19,182 +35,204 @@
 #define HWLOG_TAG otgid_gpio_switch
 HWLOG_REGIST();
 
-#define GPIO_HIGH_VOLTAGE           (1)
-#define GPIO_LOW_VOLTAGE            (0)
-#define TIMER_DEBOUNCE              (50)
+#define GPIO_HIGH     1
+#define GPIO_LOW      0
+#define DEBOUNCE      500
 
-#define DEV_NAME    "switch-gpio"
-#define OF_NAME     "huawei,gpio_switch_otg"
-
-struct otg_id_switch_gpio{
-    int otg_id_gpio;
-    int otg_id_gpio_irq;
-    int otg_id_gpio_last_state;
-    struct timer_list id_timer;
-    struct delayed_work gpio_switch_work;
+struct gpio_switch_device_info {
+	int gpio_int;
+	int irq_int;
+	int last_state;
+	struct timer_list timer;
+	struct delayed_work timer_work;
 };
 
-static struct otg_id_switch_gpio otg_id_switch;
+static struct gpio_switch_device_info *g_gpio_switch_dev;
 
-static void gpio_switch_work_func(struct work_struct *work)
+static void gpio_switch_timer_work_func(struct work_struct *work)
 {
-    int state;
+	int state;
+	struct gpio_switch_device_info *di = g_gpio_switch_dev;
 
-    state = gpio_get_value(otg_id_switch.otg_id_gpio);
-    hwlog_info("gpio_switch_work state = %d ---\n", state);
+	if (!di) {
+		hwlog_err("di is null\n");
+		return;
+	}
 
-    if (otg_id_switch.otg_id_gpio_last_state == GPIO_HIGH_VOLTAGE
-            && state == GPIO_LOW_VOLTAGE) {
-        hwlog_err("gpio_switch_work ID_FALL_EVENT ---\n");
-        hisi_usb_id_change(ID_FALL_EVENT);
-        otg_id_switch.otg_id_gpio_last_state = state;
-        return;
-    }
+	state = gpio_get_value(di->gpio_int);
+	hwlog_info("gpio_int state=%d\n", state);
 
-    if (otg_id_switch.otg_id_gpio_last_state == GPIO_LOW_VOLTAGE
-            && state == GPIO_HIGH_VOLTAGE) {
-        hwlog_err("gpio_switch_work ID_RISE_EVENT +++\n");
-        hisi_usb_id_change(ID_RISE_EVENT);
-        otg_id_switch.otg_id_gpio_last_state = state;
-        return;
-    }
+	if (di->last_state == GPIO_HIGH && state == GPIO_LOW) {
+		hwlog_err("otgid fall event\n");
+		hisi_usb_id_change(ID_FALL_EVENT);
+		di->last_state = state;
+		return;
+	}
+
+	if (di->last_state == GPIO_LOW && state == GPIO_HIGH) {
+		hwlog_err("otgid rise event\n");
+		hisi_usb_id_change(ID_RISE_EVENT);
+		di->last_state = state;
+		return;
+	}
 }
 
-static void otg_id_gpio_timer(unsigned long data)
+static void gpio_switch_timer(unsigned long data)
 {
-    hwlog_info("gpio_irq_handler state = %d\n",
-        gpio_get_value(otg_id_switch.otg_id_gpio));
-    cancel_delayed_work(&otg_id_switch.gpio_switch_work);
-    schedule_delayed_work(&otg_id_switch.gpio_switch_work, msecs_to_jiffies(0));
-    return;
+	struct gpio_switch_device_info *di = g_gpio_switch_dev;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return;
+	}
+
+	cancel_delayed_work(&di->timer_work);
+	schedule_delayed_work(&di->timer_work, msecs_to_jiffies(0));
 }
 
-static irqreturn_t gpio_irq_handler(int irq, void *dev_id)
+static irqreturn_t gpio_switch_interrupt(int irq, void *_di)
 {
-    if (irq == otg_id_switch.otg_id_gpio_irq)
-    {
-        mod_timer(&otg_id_switch.id_timer, jiffies + msecs_to_jiffies(TIMER_DEBOUNCE));
-    }
-    return IRQ_HANDLED;
+	struct gpio_switch_device_info *di = _di;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -1;
+	}
+
+	hwlog_info("gpio_switch int happened\n");
+
+	if (irq == di->irq_int)
+		mod_timer(&di->timer, jiffies + msecs_to_jiffies(DEBOUNCE));
+
+	return IRQ_HANDLED;
 }
 
 static int gpio_switch_probe(struct platform_device *pdev)
 {
-    int ret = 0;
-    struct device_node *np = NULL;
+	int ret;
+	struct gpio_switch_device_info *di = NULL;
+	struct device_node *np = NULL;
 
-    if (!pdev)
-        return -EBUSY;
+	hwlog_info("probe begin\n");
 
-    otg_id_switch.otg_id_gpio = -1;
-    otg_id_switch.otg_id_gpio_irq = -1;
-    otg_id_switch.otg_id_gpio_last_state = GPIO_HIGH_VOLTAGE;
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
 
-    np = of_find_compatible_node(NULL, NULL, OF_NAME);
-    if (np) {
-        otg_id_switch.otg_id_gpio = of_get_named_gpio(np, "otg_int_gpio", 0);
-        if (!gpio_is_valid(otg_id_switch.otg_id_gpio)) {
-            hwlog_err("%s:otg_int_gpio is not config, %d\n",__FUNCTION__, otg_id_switch.otg_id_gpio);
-            return -ENXIO;
-        }
-        hwlog_info("%s:huawei,otg_int_gpio %d\n",__FUNCTION__, otg_id_switch.otg_id_gpio);
-    } else {
-        hwlog_err("%s: can not find node: %s\n",__FUNCTION__, OF_NAME);
-        return -ENODEV;
-    }
+	di = kzalloc(sizeof(*di), GFP_KERNEL);
+	if (!di)
+		return -ENOMEM;
 
-    ret = gpio_request(otg_id_switch.otg_id_gpio, pdev->name);
-    if (ret < 0) {
-        hwlog_err("err_request_gpio\n");
-        return -EBUSY;
-    }
+	g_gpio_switch_dev = di;
+	np = pdev->dev.of_node;
 
-    ret = gpio_direction_input(otg_id_switch.otg_id_gpio);
-    if (ret < 0) {
-        hwlog_err("err_set_gpio_input\n");
-        ret = -EBUSY;
-        goto err_set_gpio_input;
-    }
+	di->gpio_int = of_get_named_gpio(np, "otg_int_gpio", 0);
+	hwlog_info("gpio_int=%d\n", di->gpio_int);
 
-    INIT_DELAYED_WORK(&otg_id_switch.gpio_switch_work, gpio_switch_work_func);
+	if (!gpio_is_valid(di->gpio_int)) {
+		hwlog_err("gpio is not valid\n");
+		ret = -EINVAL;
+		goto fail_free_mem;
+	}
 
-    otg_id_switch.otg_id_gpio_irq = gpio_to_irq(otg_id_switch.otg_id_gpio);
-    if (otg_id_switch.otg_id_gpio_irq < 0) {
-        hwlog_err("err_detect_irq_num_failed\n");
-        ret = otg_id_switch.otg_id_gpio_irq;
-        goto err_detect_irq_num_failed;
-    }
+	ret = gpio_request(di->gpio_int, "otg_int_gpio");
+	if (ret < 0) {
+		hwlog_err("gpio request fail\n");
+		goto fail_free_mem;
+	}
 
-    setup_timer(&otg_id_switch.id_timer, otg_id_gpio_timer, (unsigned long )pdev);
+	ret = gpio_direction_input(di->gpio_int);
+	if (ret) {
+		hwlog_err("gpio set input fail\n");
+		goto fail_free_gpio_int;
+	}
 
-    ret = request_irq(otg_id_switch.otg_id_gpio_irq, gpio_irq_handler,
-            IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING, pdev->name, pdev);
-    if (ret < 0) {
-        hwlog_err("err_request_irq  \n");
-        goto err_request_irq;
-    }
+	di->irq_int = gpio_to_irq(di->gpio_int);
+	if (di->irq_int < 0) {
+		hwlog_err("gpio map to irq fail\n");
+		ret = -EINVAL;
+		goto fail_free_gpio_int;
+	}
 
-    /* Perform initial detection */
-    otg_id_switch.otg_id_gpio_last_state = 1;
-    if (!gpio_get_value_cansleep(otg_id_switch.otg_id_gpio))
-    {
-        hwlog_err("otg id fall @ init\n");
-        mod_timer(&otg_id_switch.id_timer, jiffies + msecs_to_jiffies(TIMER_DEBOUNCE*10));
-    }
+	INIT_DELAYED_WORK(&di->timer_work, gpio_switch_timer_work_func);
+	setup_timer(&di->timer, gpio_switch_timer, (unsigned long)di);
 
-    return 0;
+	ret = request_irq(di->irq_int, gpio_switch_interrupt,
+		IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
+		"otg_int_irq", di);
+	if (ret) {
+		hwlog_err("gpio irq request fail\n");
+		goto fail_free_gpio_int;
+	}
 
-err_request_irq:
-err_detect_irq_num_failed:
-err_set_gpio_input:
-    gpio_free(otg_id_switch.otg_id_gpio);
+	/* perform initial detection */
+	di->last_state = GPIO_HIGH;
+	if (!gpio_get_value_cansleep(di->gpio_int)) {
+		hwlog_err("gpio get value fail\n");
+		mod_timer(&di->timer, jiffies + msecs_to_jiffies(DEBOUNCE));
+	}
 
-    return ret;
+	hwlog_info("probe end\n");
+	return 0;
+
+fail_free_gpio_int:
+	gpio_free(di->gpio_int);
+fail_free_mem:
+	kfree(di);
+	g_gpio_switch_dev = NULL;
+
+	return ret;
 }
 
 static int gpio_switch_remove(struct platform_device *pdev)
 {
-    free_irq(otg_id_switch.otg_id_gpio_irq, pdev);
-    cancel_work_sync(&(otg_id_switch.gpio_switch_work));
-    gpio_free(otg_id_switch.otg_id_gpio);
+	struct gpio_switch_device_info *di = g_gpio_switch_dev;
 
-    return 0;
+	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
+
+	gpio_free(di->gpio_int);
+	free_irq(di->irq_int, di);
+	cancel_delayed_work_sync(&di->timer_work);
+	kfree(di);
+	g_gpio_switch_dev = NULL;
+
+	hwlog_info("remove end\n");
+	return 0;
 }
 
-#ifdef CONFIG_OF
 static const struct of_device_id gpio_switch_otg_ids[] = {
-    { .compatible = OF_NAME },
-    {},
+	{
+		.compatible = "huawei,gpio_switch_otg",
+		.data = NULL,
+	},
+	{},
 };
-MODULE_DEVICE_TABLE(of, gpio_switch_otg_ids);
-#else
-#define gpio_switch_otg_ids NULL
-#endif
 
 static struct platform_driver gpio_switch_driver = {
-    .probe		= gpio_switch_probe,
-    .remove		= gpio_switch_remove,
-    .driver		= {
-        .name	= DEV_NAME,
-        .owner	= THIS_MODULE,
-        .of_match_table = of_match_ptr(gpio_switch_otg_ids),
-    },
+	.probe = gpio_switch_probe,
+	.remove = gpio_switch_remove,
+	.driver = {
+		.name = "switch-gpio",
+		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(gpio_switch_otg_ids),
+	},
 };
 
 static int __init gpio_switch_init(void)
 {
-    return platform_driver_register(&gpio_switch_driver);
+	return platform_driver_register(&gpio_switch_driver);
 }
 
 static void __exit gpio_switch_exit(void)
 {
-    platform_driver_unregister(&gpio_switch_driver);
+	platform_driver_unregister(&gpio_switch_driver);
 }
 
 module_init(gpio_switch_init);
 module_exit(gpio_switch_exit);
 
-MODULE_AUTHOR("(liuqi 81004140)liuqi@huawei.com");
-MODULE_DESCRIPTION("OTG ID GPIO Switch driver");
 MODULE_LICENSE("GPL v2");
-
+MODULE_DESCRIPTION("gpio switch for otgid driver");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

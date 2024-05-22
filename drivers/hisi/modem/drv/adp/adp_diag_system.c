@@ -61,6 +61,7 @@
 #include <scm_cfg.h>
 #include <scm_common.h>
 
+#if (!defined(DRV_BUILD_SEPARATE)) && defined(CONFIG_DIAG_SYSTEM)
 
 unsigned int mdrv_scm_get_ind_src_buff(unsigned int ulDataLen, SCM_CODER_SRC_PACKET_HEADER_STRU** pstCoderHeader, SOCP_BUFFER_RW_STRU *pstSocpBuf)
 {
@@ -136,4 +137,81 @@ void  mdrv_scm_set_power_on_log(void)
 {
     scm_set_power_on_log();
 }
+#else
+unsigned int mdrv_scm_get_ind_src_buff(unsigned int ulDataLen, SCM_CODER_SRC_PACKET_HEADER_STRU** pstCoderHeader, SOCP_BUFFER_RW_STRU *pstSocpBuf)
+{
+    return 0;
+}
+void mdrv_scm_ind_src_buff_mempy(SCM_CODER_SRC_MEMCPY_STRU *pInfo, SOCP_BUFFER_RW_STRU *pstSocpBuf)
+{
+    return;
+}
+
+unsigned int mdrv_scm_get_cnf_src_buff(unsigned int ulDataLen, SCM_CODER_SRC_PACKET_HEADER_STRU** pstCoderHeader, SOCP_BUFFER_RW_STRU *pstSocpBuf)
+{
+    return 0;
+}
+void mdrv_scm_cnf_src_buff_mempy(SCM_CODER_SRC_MEMCPY_STRU *pInfo, SOCP_BUFFER_RW_STRU *pstSocpBuf)
+{
+    return;
+}
+unsigned int mdrv_scm_send_cnf_src_data(unsigned char *pucSendDataAddr, unsigned int ulSendLen)
+{
+    return 0;
+}
+
+void mdrv_diag_PTR(DIAG_PTR_ID_ENUM enType, u32 paraMark, u32 para0, u32 para1)
+{
+    return;
+}
+void mdrv_PPM_RegDisconnectCb(PPM_DisconnectTLPortFuc cb)
+{
+    return;
+}
+unsigned int mdrv_GetThrputInfo(DIAG_THRPUT_ID_ENUM type)
+{
+    return 0;
+}
+
+void mdrv_scm_reg_ind_coder_dst_send_fuc(void)
+{
+    return;
+}
+unsigned int mdrv_PPM_LogPortSwitch(u32  ulPhyPort, unsigned int ulEffect)
+{
+    return 0;
+}
+unsigned int mdrv_PPM_QueryLogPort(unsigned int  *pulLogPort)
+{
+    return 0;
+}
+unsigned int mdrv_CPM_ComSend(CPM_LOGIC_PORT_ENUM_UINT32 enLogicPort, unsigned char *pucVirData, unsigned char *pucPHYData, unsigned int ulLen)
+{
+    return 0;
+}
+void mdrv_CPM_LogicRcvReg(CPM_LOGIC_PORT_ENUM_UINT32 enLogicPort, CPM_RCV_FUNC pRcvFunc)
+{
+    return;
+}
+unsigned int mdrv_SCM_RegDecoderDestProc(SOCP_DECODER_DST_ENUM_U32 enChanlID, SCM_DECODERDESTFUCN func)
+{
+    return 0;
+}
+unsigned int mdrv_scm_send_ind_src_data(unsigned char *pucSendDataAddr, unsigned int ulSendLen)
+{
+    return 0;
+}
+void mdrv_diag_get_dst_mntn_info(DIAG_MNTN_DST_INFO_STRU * dst_mntn)
+{
+    return;
+}
+void mdrv_diag_reset_dst_mntn_info(void)
+{
+    return;
+}
+void  mdrv_scm_set_power_on_log(void)
+{
+    return;
+}
+#endif
 

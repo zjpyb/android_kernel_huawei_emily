@@ -17,7 +17,7 @@ struct buffer {
 	uint8_t data[BST_MAX_READ_PAYLOAD];
 };
 
-extern void ind_hisi_com(void *info, u32 len);
+extern void ind_hisi_com(const void *info, u32 len);
 
 extern void ind_modem_reset(uint8_t *value, uint32_t len);
 
@@ -96,7 +96,11 @@ int bastet_modem_dev_write(uint8_t *msg, uint32_t len)
 		print_hex_dump(KERN_ERR, "bstmsg:", 0, 16, 1, (void *)msg, len, 1);
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	ret = kernel_write(dev_filp, msg, len, &offset);
+#else
 	ret = kernel_write(dev_filp, msg, len, offset);
+#endif
 	BASTET_LOGI("ret %ld", ret);
 
 	return ret;
@@ -105,7 +109,7 @@ int bastet_modem_dev_write(uint8_t *msg, uint32_t len)
 int bastet_comm_write(uint8_t *msg, uint32_t len, uint32_t type)
 {
 	bst_acom_msg *pMsg = NULL;
-	uint8_t *buf;
+	uint8_t *buf = NULL;
 	uint32_t ulLength;
 	int ret;
 
@@ -185,7 +189,7 @@ static void bastet_aspen_pkt_drop_proc(uint8_t *msg, uint32_t len)
 
 static int handle_event(uint8_t *msg, uint32_t len)
 {
-	bst_common_msg *bst_msg;
+	bst_common_msg *bst_msg = NULL;
 
 	if (msg == NULL) {
 		BASTET_LOGE("msg is null");
@@ -311,8 +315,18 @@ static int get_more_data(uint8_t *firstdata)
 			return -ENOMEM;
 		}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		ret = kernel_read(dev_filp, buf->data, BST_MAX_READ_PAYLOAD, &offset);
+#else
 		ret = kernel_read(dev_filp, offset, buf->data, BST_MAX_READ_PAYLOAD);
+#endif
 		BASTET_LOGI("read %d", ret);
+
+		if (-EBUSY == ret) {
+			msleep(5000);
+			kfree(buf);
+			continue;
+		}
 
 		if (ret > 0 && ret < BST_MAX_READ_PAYLOAD) {
 			if (BASTET_DEBUG) {
@@ -365,7 +379,7 @@ static int get_event(void)
 {
 	int32_t size = 0;
 	int ret = 0;
-	uint8_t *buf;
+	uint8_t *buf = NULL;
 	loff_t offset = 0;
 
 	if (IS_ERR_OR_NULL(dev_filp)) {
@@ -377,8 +391,20 @@ static int get_event(void)
 		return -ENOMEM;
 	}
 
-	size = kernel_read(dev_filp, offset, buf, BST_MAX_READ_PAYLOAD);
-	BASTET_LOGI("read %d", size);
+	while (1) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		size = kernel_read(dev_filp, buf, BST_MAX_READ_PAYLOAD, &offset);
+#else
+		size = kernel_read(dev_filp, offset, buf, BST_MAX_READ_PAYLOAD);
+#endif
+		BASTET_LOGI("read %d", size);
+		if (-EBUSY == size) {
+			msleep(5000);
+			continue;
+		} else {
+			break;
+		}
+	}
 
 	if (size > 0 && size < BST_MAX_READ_PAYLOAD) {
 		if (BASTET_DEBUG) {

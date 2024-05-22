@@ -26,40 +26,34 @@
 #include <sound/pcm_params.h>
 
 static int hifi_vir_dai_startup(struct snd_pcm_substream *substream,
-						struct snd_soc_dai *dai)
+				struct snd_soc_dai *dai)
 {
 	return 0;
 }
 
 static void hifi_vir_dai_shutdown(struct snd_pcm_substream *substream,
-						  struct snd_soc_dai *dai)
+				struct snd_soc_dai *dai)
 {
 	/* do nothing */
 }
 
 static int hifi_vir_dai_hw_params(struct snd_pcm_substream *substream,
-						  struct snd_pcm_hw_params *params,
-						  struct snd_soc_dai *dai)
+				struct snd_pcm_hw_params *params,
+				struct snd_soc_dai *dai)
 {
-	int ret = 0;
-
-	return ret;
+	return 0;
 }
 
-static  int hifi_vir_dai_trigger(struct snd_pcm_substream *substream, int cmd,
-						 struct snd_soc_dai *dai)
+static int hifi_vir_dai_trigger(struct snd_pcm_substream *substream, int cmd,
+				struct snd_soc_dai *dai)
 {
-	int ret = 0;
-
-	return ret;
+	return 0;
 }
 
 static int hifi_vir_dai_hw_free(struct snd_pcm_substream *substream,
-						struct snd_soc_dai *dai)
+				struct snd_soc_dai *dai)
 {
-	int ret = 0;
-
-	return ret;
+	return 0;
 }
 
 static const struct snd_soc_dai_ops hifi_vir_dai_ops = {
@@ -75,22 +69,22 @@ static int hifi_vir_dai_probe(struct snd_soc_dai *dai)
 	return 0;
 }
 
-
 static const struct snd_soc_component_driver hifi_vir_dai_component = {
-	.name		= "hifi-vir-dai",
+	.name = "hifi-vir-dai",
 };
-
 
 static struct snd_soc_dai_driver hifi_vir_dais[] = {
 	{
 		.playback = {
 			.rates = SNDRV_PCM_RATE_8000_192000,
-			.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S16_BE |
-			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_BE,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				SNDRV_PCM_FMTBIT_S16_BE |
+				SNDRV_PCM_FMTBIT_S24_LE |
+				SNDRV_PCM_FMTBIT_S24_BE,
 			.channels_min = 1,
 			.channels_max = 2,
-			.rate_min =     8000,
-			.rate_max =	    192000,
+			.rate_min = 8000,
+			.rate_max = 192000,
 		},
 		.ops = &hifi_vir_dai_ops,
 		.probe = hifi_vir_dai_probe,
@@ -101,15 +95,15 @@ static struct snd_soc_dai_driver hifi_vir_dais[] = {
 static int hifi_vir_dai_dev_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	int ret = 0;
+	int ret;
 
-	pr_info("[%s:%d] hifi_vir_dai probe!\n", __func__, __LINE__);
+	pr_info("%s-%d: hifi_vir_dai probe\n", __func__, __LINE__);
 
 	dev_set_name(dev, "hifi-vir-dai");
 	pr_info("%s: hifi_dai %s\n", __func__, dev_name(dev));
 
 	ret = snd_soc_register_component(&pdev->dev, &hifi_vir_dai_component,
-					 hifi_vir_dais, ARRAY_SIZE(hifi_vir_dais));
+		hifi_vir_dais, ARRAY_SIZE(hifi_vir_dais));
 
 	return ret;
 }
@@ -121,7 +115,7 @@ static int hifi_vir_dai_dev_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id hifi_vir_dai_dt_match[] = {
-	{.compatible = "huawei,hifi-vir-dai"},
+	{ .compatible = "huawei,hifi-vir-dai" },
 	{}
 };
 
@@ -147,6 +141,4 @@ static void __exit hifi_vir_dai_exit(void)
 }
 module_exit(hifi_vir_dai_exit);
 
-
 MODULE_LICENSE("GPL");
-

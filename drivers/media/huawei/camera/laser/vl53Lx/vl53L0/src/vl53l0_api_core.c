@@ -230,7 +230,7 @@ VL53L0_Error VL53L0_get_info_from_device(VL53L0_DEV Dev, uint8_t option)
 	uint32_t DistMeasFixed1104_400_mm = 0;
 	uint32_t SignalRateMeasFixed1104_400_mm = 0;
 	char ProductId[19];
-	char *ProductId_tmp;
+	char *ProductId_tmp = NULL;
 	uint8_t ReadDataFromDeviceDone;
 	FixPoint1616_t SignalRateMeasFixed400mmFix = 0;
 	uint8_t NvmRefGoodSpadMap[VL53L0_REF_SPAD_BUFFER_SIZE];

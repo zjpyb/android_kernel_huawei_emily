@@ -107,17 +107,19 @@ HWLOG_REGIST();
 #define STARTING_SPEED_STD_FULLSTEP        800
 #define SPEED_STEP_MIN                     100
 #define SPEED_STEP_MAX                     2000
-#define STARTING_SPEED_STEP_STD            800
+#define STARTING_SPEED_STEP_STD            1600
+#define STARTING_SPEED_STEP_SLOW           800
 #define STARTING_SPEED_STEP_STD_FULLSTEP   800
 #define DUR_PER_STEP_MIN                   10
 #define DUR_PER_STEP_MAX                   200
-#define START_DUR_PER_STEP_MS              100
+#define START_DUR_PER_STEP_MS              40
 
 #define TARGET_SPEED_MIN                   400
 #define TARGET_SPEED_MAX                   2600
 #define TARGET_SPEED_NORMAL_STD            2400
 #define TARGET_SPEED_NORMAL_STD_FULLSTEP   2400
 #define TARGET_SPEED_FAST_STD              2400
+#define TARGET_SPEED_SLOW_STD              1600
 
 #define WORK_DURATION_MIN                  100
 #define WORK_DURATION_MAX                  3000
@@ -143,7 +145,8 @@ enum direction {
 
 enum speed_mode {
 	SPEED_NORMAL,
-	SPEED_FAST
+	SPEED_FAST,
+	SPEED_SLOW
 };
 
 enum drv_state {
@@ -2079,6 +2082,39 @@ static bool drv8846_handle_overtime_protect_param_set(struct drv_data *di,
 }
 #endif
 
+static void step_mode_set_speed(struct drv_data *di, int value, int *speed)
+{
+	*speed = value * di->microsteps;
+	if (di->rising_edge_valid && di->falling_edge_valid)
+		*speed = (*speed) / HALF_DIVISOR;
+}
+
+static void step_motor_set_speed_mode(struct drv_data *di, int val)
+{
+	hwlog_info("%s, mode=%d\n", __func__, val);
+
+	spin_lock(&di->state_change_lock);
+	switch (val) {
+	case SPEED_FAST:
+	case SPEED_NORMAL:
+		step_mode_set_speed(di, TARGET_SPEED_NORMAL_STD,
+			&(di->target_speed_normal));
+		step_mode_set_speed(di, STARTING_SPEED_STEP_STD,
+			&(di->speed_step));
+		break;
+	case SPEED_SLOW:
+		step_mode_set_speed(di, TARGET_SPEED_SLOW_STD,
+			&(di->target_speed_normal));
+		step_mode_set_speed(di, STARTING_SPEED_STEP_SLOW,
+			&(di->speed_step));
+		break;
+	default:
+		hwlog_err("%s, invalid para\n", __func__);
+		break;
+	}
+	spin_unlock(&di->state_change_lock);
+}
+
 /*
  * Common function for handling param set in sysfs from user space.
  *
@@ -2138,6 +2174,11 @@ static ssize_t drv8846_param_set_value(struct device *dev,
 		mutex_lock(&di->cmd_mutex);
 		step_motor_set_vdd_voltage(di, val);
 		mutex_unlock(&di->cmd_mutex);
+		return count;
+	}
+
+	if (strcmp("set_speed_mode", name) == 0) {
+		step_motor_set_speed_mode(di, val);
 		return count;
 	}
 
@@ -2364,7 +2405,7 @@ static int drv8846_gpio_init(struct drv_data *di)
 
 static void step_motor_set_direction(struct drv_data *di)
 {
-	int temp = 0;
+	unsigned int temp = 0;
 	struct device_node *np = NULL;
 
 	if (!di) {
@@ -2373,7 +2414,7 @@ static void step_motor_set_direction(struct drv_data *di)
 	}
 	np = di->pdev->of_node;
 	if (of_property_read_u32(np, "motor_direction", &temp) == SUCCESS)
-		di->direction = (temp >> (di->ic_vendor)) & 0x01;
+		di->direction = (temp >> (unsigned int)(di->ic_vendor)) & 0x01;
 	else
 		di->direction = 0;
 	hwlog_info("step_direction is %d, temp is 0x%x", di->direction, temp);

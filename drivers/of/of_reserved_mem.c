@@ -25,7 +25,7 @@
 #include <linux/sort.h>
 #include <linux/slab.h>
 
-#if defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_DEBUG_FS)
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #define DT_MEM_RESERVED  "dt_mem_reserved"
@@ -35,8 +35,7 @@
 static struct reserved_mem reserved_mem[MAX_RESERVED_REGIONS];
 static int reserved_mem_count;
 static unsigned long reserved_mem_size_info;
-
-#if defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_DEBUG_FS)
 static  int dynamic_mem_reserved_count = 0;
 static  const char *dynamic_mem_reserved_array[MAX_RESERVED_REGIONS];
 static  int cma_mem_reserved_count = 0;
@@ -99,7 +98,7 @@ void __init fdt_reserved_mem_save_node(unsigned long node, const char *uname,
 	rmem->name = uname;
 	rmem->base = base;
 	rmem->size = size;
-#if defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_DEBUG_FS)
 	if((of_get_flat_dt_prop(node, "reusable", NULL))
 	   &&  (cma_mem_reserved_count < MAX_RESERVED_REGIONS)) {
 		cma_mem_reserved_array[cma_mem_reserved_count] = rmem->name;
@@ -198,7 +197,7 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 		pr_info("failed to allocate memory for node '%s'\n", uname);
 		return -ENOMEM;
 	}
-#if defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_DEBUG_FS)
 	if(dynamic_mem_reserved_count < MAX_RESERVED_REGIONS) {
 		dynamic_mem_reserved_array[dynamic_mem_reserved_count] = uname;
 		dynamic_mem_reserved_count++;
@@ -307,12 +306,11 @@ void __init fdt_init_reserved_mem(void)
 						 &rmem->base, &rmem->size);
 		if (err == 0)
 			__reserved_mem_init_node(rmem);
-
 		if (of_get_flat_dt_prop(node, "visible_to_users", NULL))
 			continue;
 
 		reserved_mem_size_info += rmem->size;
-	}
+    }
 }
 
 static inline struct reserved_mem *__find_rmem(struct device_node *node)
@@ -385,6 +383,10 @@ int of_reserved_mem_device_init_by_idx(struct device *dev,
 		mutex_lock(&of_rmem_assigned_device_mutex);
 		list_add(&rd->list, &of_rmem_assigned_device_list);
 		mutex_unlock(&of_rmem_assigned_device_mutex);
+		/* ensure that dma_ops is set for virtual devices
+		 * using reserved memory
+		 */
+		of_dma_configure(dev, np);
 
 		dev_info(dev, "assigned reserved memory node %s\n", rmem->name);
 	} else {
@@ -427,10 +429,9 @@ EXPORT_SYMBOL_GPL(of_reserved_mem_device_release);
 
 unsigned long dt_memory_reserved_sizeinfo_get(void)
 {
-	return reserved_mem_size_info;
+    return reserved_mem_size_info;
 }
-
-#if defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_DEBUG_FS)
 
 static int dt_memory_reserved_debug_show(struct seq_file *m, void *private)
 {
@@ -500,5 +501,5 @@ static int __init dt_memory_reserved_init_debugfs(void)
 }
 __initcall(dt_memory_reserved_init_debugfs);
 
-#endif /* CONFIG_HISI_DEBUG_FS */
+#endif /* CONFIG_DEBUG_FS */
 

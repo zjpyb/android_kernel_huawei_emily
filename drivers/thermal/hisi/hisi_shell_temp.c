@@ -13,7 +13,7 @@
 #define CREATE_TRACE_POINTS
 
 #include <trace/events/shell_temp.h>
-
+#include <securec.h>
 #define	MUTIPLY_FACTOR		(100000)
 #define	DEFAULT_SHELL_TEMP	(25000)
 #define ERROR_SHELL_TEMP	(125000)
@@ -94,7 +94,7 @@ static ssize_t
 hisi_shell_show_temp(struct device *dev, struct device_attribute *devattr,
 		       char *buf)
 {
-	struct hisi_shell_t *hisi_shell;
+	struct hisi_shell_t *hisi_shell = NULL;
 
 	if (dev == NULL || devattr == NULL)
 		return 0;
@@ -104,7 +104,7 @@ hisi_shell_show_temp(struct device *dev, struct device_attribute *devattr,
 
 	hisi_shell = dev->driver_data;
 
-	return snprintf(buf, (PAGE_SIZE - 1), "%d\n", hisi_shell->temp);
+	return snprintf_s(buf, PAGE_SIZE, (PAGE_SIZE - 1), "%d\n", hisi_shell->temp);
 }
 static DEVICE_ATTR(temp, S_IWUSR | S_IRUGO,
            hisi_shell_show_temp, NULL);
@@ -115,8 +115,8 @@ hisi_shell_store_debug_temp(struct device *dev, struct device_attribute *devattr
 						   const char *buf, size_t count)
 {
 	int channel, temp;
-	struct platform_device *pdev;
-	struct hisi_shell_t *hisi_shell;
+	struct platform_device *pdev = NULL;
+	struct hisi_shell_t *hisi_shell = NULL;
 	if (dev == NULL || devattr == NULL)
 		return 0;
 
@@ -189,7 +189,7 @@ static ssize_t store_##temp_name				\
 	if (dev == NULL || attr == NULL)						\
 		return 0;											\
 															\
-	if (kstrtouint(buf, 10, &temp_name)) /*lint !e64*/		\
+	if (kstrtoint(buf, 10, &temp_name)) /*lint !e64*/		\
 		return -EINVAL;										\
 															\
 	prev_temp = hw_thermal_info.temperature_node.temp_name;	\
@@ -237,7 +237,7 @@ struct thermal_zone_device_ops shell_thermal_zone_ops = {
 static int calc_shell_temp(struct hisi_shell_t *hisi_shell)
 {
 	int i, j, k;
-	struct hisi_shell_sensor_t *shell_sensor;
+	struct hisi_shell_sensor_t *shell_sensor = NULL;
 	long sum = 0;
 
 	for (i = 0; i < hisi_shell->sensor_count; i++) {
@@ -302,7 +302,7 @@ static int calc_sensor_temp_avg(struct hisi_shell_t *hisi_shell, int *tsensor_av
 	int sum_ntc_temp = 0;
 	int have_tsensor = 0;
 	int have_ntc = 0;
-	struct hisi_shell_sensor_t *shell_sensor;
+	struct hisi_shell_sensor_t *shell_sensor = NULL;
 
 	for (i = 0; i < hisi_shell->sensor_count; i++) {
 		shell_sensor = (struct hisi_shell_sensor_t *)(uintptr_t)((u64)(uintptr_t)(hisi_shell->hisi_shell_sensor) + (u64)((long)i) * (sizeof(struct hisi_shell_sensor_t)
@@ -342,7 +342,7 @@ static int handle_invalid_temp(struct hisi_shell_t *hisi_shell)
 	int invalid_temp = ERROR_SHELL_TEMP;
 	int tsensor_avg = DEFAULT_SHELL_TEMP;
 	int ntc_avg = DEFAULT_SHELL_TEMP;
-	struct hisi_shell_sensor_t *shell_sensor;
+	struct hisi_shell_sensor_t *shell_sensor = NULL;
 
 	if (calc_sensor_temp_avg(hisi_shell, &tsensor_avg, &ntc_avg))
 		return 1;
@@ -374,7 +374,7 @@ static int calc_shell_temp_first(struct hisi_shell_t *hisi_shell)
 	int temp = 0;
 	int sum_board_sensor_temp = 0;
 	int count_board_sensor = 0;
-	struct hisi_shell_sensor_t *shell_sensor;
+	struct hisi_shell_sensor_t *shell_sensor = NULL;
 
 	temp = hisi_battery_temperature() * 1000;
 	if ((temp <= hisi_shell->ntc_max_temp) && (temp >= hisi_shell->ntc_min_temp))
@@ -440,9 +440,9 @@ static void hkadc_sample_temp(struct work_struct *work)
 {
 	int i, index, ret;
 	int have_invalid_temp = 0;
-	struct hisi_shell_t *hisi_shell;
-	struct hisi_shell_sensor_t *shell_sensor;
-	struct thermal_zone_device *tz;
+	struct hisi_shell_t *hisi_shell = NULL;
+	struct hisi_shell_sensor_t *shell_sensor = NULL;
+	struct thermal_zone_device *tz = NULL;
 	int temp = 0;
 
 	hisi_shell = container_of((struct delayed_work *)work, struct hisi_shell_t, work); /*lint !e826*/
@@ -480,9 +480,10 @@ static void hkadc_sample_temp(struct work_struct *work)
 static int fill_sensor_coef(struct hisi_shell_t *hisi_shell, struct device_node *np)
 {
 	int i = 0, j = 0, coef = 0, ret = 0;
-	const char *ptr_coef = NULL, *ptr_type = NULL;
-	struct device_node *child;
-	struct hisi_shell_sensor_t *shell_sensor;
+	const char *ptr_coef = NULL;
+	const char *ptr_type = NULL;
+	struct device_node *child = NULL;
+	struct hisi_shell_sensor_t *shell_sensor = NULL;
 	struct thermal_zone_device *tz = NULL;
 
 	for_each_child_of_node(np, child) {
@@ -585,8 +586,8 @@ static int hisi_shell_probe(struct platform_device *pdev)
 	int ret;
 	int sample_count, sensor_count;
 	int tsensor_para[SENSOR_PARA_COUNT], ntc_para[SENSOR_PARA_COUNT];
-	struct device_node *np;
-	struct hisi_shell_t *hisi_shell;
+	struct device_node *np = NULL;
+	struct hisi_shell_t *hisi_shell = NULL;
 
 	if (!of_device_is_available(dev_node)) {
 		dev_err(dev, "HISI shell dev not found\n");
@@ -600,7 +601,7 @@ static int hisi_shell_probe(struct platform_device *pdev)
 	}
 
 	np = of_find_node_by_name(dev_node, "sensors");
-	if (!np) {
+	if (np == NULL) {
 		pr_err("sensors node not found\n");
 		ret = -ENODEV;
 		goto exit;
@@ -615,7 +616,7 @@ static int hisi_shell_probe(struct platform_device *pdev)
 
 	hisi_shell = kzalloc(sizeof(struct hisi_shell_t) + (u64)((long)sensor_count) * (sizeof(struct hisi_shell_sensor_t)
 					+ sizeof(struct hisi_temp_tracing_t) * (u64)((long)sample_count)), GFP_KERNEL);
-	if (!hisi_shell) {
+	if (hisi_shell == NULL) {
 		ret = -ENOMEM;
 		pr_err("no enough memory\n");
 		goto node_put;
@@ -712,7 +713,7 @@ static int hisi_shell_remove(struct platform_device *pdev)
 {
 	struct hisi_shell_t *hisi_shell = platform_get_drvdata(pdev);
 
-	if (hisi_shell) {
+	if (hisi_shell != NULL) {
 		platform_set_drvdata(pdev, NULL);
 		thermal_zone_device_unregister(hisi_shell->tz_dev);
 		kfree(hisi_shell);
@@ -730,12 +731,12 @@ MODULE_DEVICE_TABLE(of, hisi_shell_of_match);
 
 int shell_temp_pm_resume(struct platform_device *pdev)
 {
-	struct hisi_shell_t *hisi_shell;
+	struct hisi_shell_t *hisi_shell = NULL;
 
 	pr_info("%s+\n", __func__);
 	hisi_shell = platform_get_drvdata(pdev);
 
-	if (hisi_shell) {
+	if (hisi_shell != NULL) {
 		hisi_shell->temp = hisi_battery_temperature() * 1000;
 		pr_info("%s: temp %d\n", hisi_shell->tz_dev->type, hisi_shell->temp);
 		hisi_shell->index = 0;

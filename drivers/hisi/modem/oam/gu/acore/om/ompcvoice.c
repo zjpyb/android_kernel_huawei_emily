@@ -68,7 +68,11 @@
 
 
 /* 按照宽带规格，640每帧大小 仅支持 V3R3*/
+#if (FEATURE_VOICE_UP == FEATURE_OFF)
 #define OM_PCV_BUF_SIZE                         (320*6*2)
+#else
+#define OM_PCV_BUF_SIZE                         (640*6*2)
+#endif
 #define OM_PCV_PORT_PCSC                        (3)
 
 #define PAM_PCV_BIT_N(num)                      (0x01 << (num))
@@ -198,6 +202,23 @@ typedef struct
     VOS_UINT32                          ulRsv;          /* Reserve */
 }OM_PCV_UNCACHE_MEM_CTRL;
 
+#if (FEATURE_VOICE_UP == FEATURE_ON)
+/*****************************************************************************
+ 结构名    : OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU
+ 结构说明  : ring buffer控制信息结构体
+*****************************************************************************/
+typedef struct
+{
+    VOS_UINT32                          uwProtectWord1;                         /*保护字 0x55AA55AA*/
+    VOS_UINT32                          uwProtectWord2;                         /*保护字 0x5A5A5A5A*/
+    VOS_UINT32                          uwWriteAddr;                            /*下一个写入操作的相对地址,其指向单位为Byte*/
+    VOS_UINT32                          uwReadAddr;                             /*下一个读取操作的相对地址,其指向单位为Byte*/
+    VOS_UINT32                          uwBufSize;                              /*ring buffer的长度,单位byte */
+    VOS_UINT32                          uwBufAddr;                              /*ring buffer的基址(实地址)*/
+    VOS_UINT32                          uwProtectWord3;                         /*保护字 0x55AA55AA*/
+    VOS_UINT32                          uwProtectWord4;                         /*保护字 0x5A5A5A5A*/
+}OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU;
+#endif
 
 /*****************************************************************************
  实体名称  : OM_COMM_VOICE_PCVOICE_DATA_DIRECTION_ENUM
@@ -225,6 +246,13 @@ OM_PCV_ADDR_INFO_STRU           g_stPcvOmToDspAddr;
 
 OM_PCV_ADDR_INFO_STRU           g_stPcvDspToOmAddr;
 
+#if (FEATURE_VOICE_UP == FEATURE_ON)
+/* ring buffer控制头信息(数据方向: USB -> COMM -> VOICE -> PHY -> 网侧) */
+OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU  g_stRingBufferControlTXAddr;
+
+/* ring buffer控制头信息(数据方向: USB <- COMM <- VOICE <- PHY <- 网侧) */
+OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU  g_stRingBufferControlRXAddr;
+#endif
 
 /* the semaphore which be used to wake up PC voice transmit task */
 VOS_SEM                         g_ulPcvTransmitSem;
@@ -690,6 +718,9 @@ VOS_VOID OM_PcvTransmitTaskEntry( VOS_VOID )
     VOS_UINT16                          usLen;
     VOS_UINT32                          ulHookFrameSN = 0;
     VOS_INT32                           lRet;
+#if (VOS_WIN32 == VOS_OS_VER)
+    VOS_UINT32                          i;
+#endif
 
     PAM_MEM_SET_S((VOS_CHAR *)(&g_stPcvDebuggingInfo),
                   sizeof(OM_PCV_DEBUGGING_INFO_STRU),
@@ -726,7 +757,11 @@ VOS_VOID OM_PcvTransmitTaskEntry( VOS_VOID )
     /* ERRORLOG 记录块 */
     PAM_MEM_SET_S(&g_stErrLogFlag, sizeof(g_stErrLogFlag), 0, sizeof(g_stErrLogFlag));
 
+#if (VOS_WIN32 == VOS_OS_VER)
+    for(i = 0; i < 1; i++)
+#else
     for( ; ; )
+#endif
     {
         if (VOS_OK != VOS_SmP(g_ulPcvTransmitSem, 0))
         {
@@ -797,7 +832,9 @@ VOS_VOID OM_PcvTransmitTaskEntry( VOS_VOID )
 VOS_VOID OM_PcvIpcIsr(VOS_VOID)
 {
     /* HIFI 上移后不再需要 IPC 中断 */
+#if (FEATURE_VOICE_UP == FEATURE_OFF)
     (VOS_VOID)mdrv_ipc_int_disable((IPC_INT_LEV_E)IPC_ACPU_INT_SRC_HIFI_PC_VOICE_RX_DATA);
+#endif
 
     if (OM_PCV_CHANNEL_OPEN == g_ulPcvStatus)
     {
@@ -807,7 +844,9 @@ VOS_VOID OM_PcvIpcIsr(VOS_VOID)
         (VOS_VOID)VOS_SmV(g_ulPcvTransmitSem);
     }
 
+#if (FEATURE_VOICE_UP == FEATURE_OFF)
     (VOS_VOID)mdrv_ipc_int_enable((IPC_INT_LEV_E)IPC_ACPU_INT_SRC_HIFI_PC_VOICE_RX_DATA);
+#endif
 }
 
 
@@ -848,12 +887,30 @@ VOS_UINT32 OM_PcvPidInit(enum VOS_INIT_PHASE_DEFINE ip)
     switch(ip)
     {
         case VOS_IP_LOAD_CONFIG:
+#if (FEATURE_VOICE_UP == FEATURE_OFF)
             (VOS_VOID)mdrv_ipc_int_connect((IPC_INT_LEV_E)IPC_ACPU_INT_SRC_HIFI_PC_VOICE_RX_DATA, (VOIDFUNCPTR)OM_PcvIpcIsr, 0);
             (VOS_VOID)mdrv_ipc_int_enable((IPC_INT_LEV_E)IPC_ACPU_INT_SRC_HIFI_PC_VOICE_RX_DATA);
 /*lint -e413*/
+#if (VOS_LINUX == VOS_OS_VER)
             g_stPcvDspToOmAddr.ulMailBoxAddr = (VOS_UINT_PTR)mdrv_phy_to_virt(MEM_DDR_MODE, (VOS_VOID *)MAILBOX_QUEUE_ADDR(HIFI, ACPU, MSG));
             g_stPcvOmToDspAddr.ulMailBoxAddr = (VOS_UINT_PTR)mdrv_phy_to_virt(MEM_DDR_MODE, (VOS_VOID *)MAILBOX_QUEUE_ADDR(ACPU, HIFI, MSG));
+#endif
 /*lint +e413*/
+#else
+            PAM_MEM_SET_S(&g_stRingBufferControlTXAddr,
+                          sizeof(OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU),
+                          0,
+                          sizeof(OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU));
+
+            g_stPcvOmToDspAddr.ulMailBoxAddr = (VOS_UINT_PTR)&g_stRingBufferControlTXAddr;
+
+            PAM_MEM_SET_S(&g_stRingBufferControlRXAddr,
+                          sizeof(OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU),
+                          0,
+                          sizeof(OM_COMM_VOICE_RING_BUFFER_CONTROL_STRU));
+
+            g_stPcvDspToOmAddr.ulMailBoxAddr = (VOS_UINT_PTR)&g_stRingBufferControlRXAddr;
+#endif
 
             /*申请uncache的动态内存区*/
             g_stPcvOmToDspAddr.ulBufVirtAddr = (VOS_UINT_PTR)VOS_UnCacheMemAllocDebug(OM_PCV_BUF_SIZE, &g_stPcvOmToDspAddr.ulBufPhyAddr, (VOS_UINT32)ACPU_PCV_OM_PHY_ADDR);
@@ -935,6 +992,10 @@ VOS_UINT32 COMM_VOICE_GetPcVoiceRingBuffCtrlAddr(OM_COMM_VOICE_PCVOICE_DATA_DIRE
 *****************************************************************************/
 VOS_UINT32 COMM_VOICE_TransferPcVoiceRxData(VOS_VOID)
 {
+#if (FEATURE_VOICE_UP == FEATURE_ON)
+    /* 释放信号量 */
+    OM_PcvIpcIsr();
+#endif
     return VOS_OK;
 }
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * linux/fs/ext4/readpage.c
  *
@@ -88,7 +89,7 @@ static void mpage_end_io(struct bio *bio)
 		ext4_trace_read_completion(bio);
 
 	if (ext4_bio_encrypted(bio)) {
-		if (bio->bi_error) {
+		if (bio->bi_status) {
 			fscrypt_release_ctx(bio->bi_private);
 		} else {
 			fscrypt_enqueue_decrypt_bio(bio->bi_private, bio);
@@ -98,7 +99,7 @@ static void mpage_end_io(struct bio *bio)
 	bio_for_each_segment_all(bv, bio, i) {
 		struct page *page = bv->bv_page;
 
-		if (!bio->bi_error) {
+		if (!bio->bi_status) {
 			SetPageUptodate(page);
 		} else {
 			ClearPageUptodate(page);
@@ -304,7 +305,7 @@ int ext4_mpage_readpages(struct address_space *mapping,
 					fscrypt_release_ctx(ctx);
 				goto set_error_page;
 			}
-			bio->bi_bdev = bdev;
+			bio_set_dev(bio, bdev);
 			bio->bi_iter.bi_sector = blocks[0] << (blkbits - 9);
 			bio->bi_end_io = mpage_end_io;
 			bio->bi_private = ctx;
@@ -345,8 +346,9 @@ int ext4_mpage_readpages(struct address_space *mapping,
 	}
 
 	if (io_submited)
-		while (--io_submited)
-			blk_throtl_get_quota(bdev, PAGE_SIZE,
-					     msecs_to_jiffies(100), true);
+		/* we have got one quota at the beginning, so sub 1 here */
+		blk_throtl_get_quotas(bdev, PAGE_SIZE,
+				      msecs_to_jiffies(100), true,
+				      io_submited - 1);
 	return 0;
 }

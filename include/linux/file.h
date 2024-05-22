@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Wrapper functions for accessing the file_struct fd array.
  */
@@ -17,8 +18,13 @@ struct file_operations;
 struct vfsmount;
 struct dentry;
 struct path;
-extern struct file *alloc_file(struct path *, fmode_t mode,
+struct inode;
+
+extern struct file *alloc_file(const struct path *, fmode_t mode,
 	const struct file_operations *fop);
+
+extern struct file *alloc_file_pseudo(struct inode *, struct vfsmount *,
+	const char *, int flags, const struct file_operations *);
 
 static inline void fput_light(struct file *file, int fput_needed)
 {

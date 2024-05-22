@@ -440,11 +440,9 @@ si_doattach(si_info_t *sii, uint devid, osl_t *osh, void *regs,
 {
 	struct si_pub *sih = &sii->pub;
 	uint32 w, savewin;
-	chipcregs_t *cc;
+	chipcregs_t *cc = NULL;
 	char *pvars = NULL;
 	uint origidx;
-#if !defined(_CFEZ_) || defined(CFG_WL)
-#endif 
 
 	ASSERT(GOODREGS(regs));
 

@@ -17,6 +17,9 @@
 #ifdef CONFIG_HUAWEI_XENGINE
 #include <huawei_platform/emcom/emcom_xengine.h>
 #endif
+#ifdef CONFIG_MPTCP_EPC
+#include <net/mptcp_epc.h>
+#endif
 
 #define ENABLE_BY_UID                   0
 #define ENABLE_BY_UID_DIP_DPORT         1
@@ -26,20 +29,6 @@
 #define ENABLE_BY_FIRST_PATH            5
 
 #define MPTCP_HW_EXT_INVALID_GID        0xF
-
-/* SOCKS v4 client request message */
-struct socks4_request {
-	uint8_t ver;
-	uint8_t cmd;
-	uint16_t port;
-	uint32_t addr;
-	uint8_t user;
-} __attribute__((packed));
-
-#define SOCKS4_VERSON			0x04    /* Socks version 4 */
-#define SOCKS4_CMD_CONNECT		0x01  	/* CONNECT */
-#define SOCKS4_REQUEST_GRANTED		0x5a	/* Request granted */
-#define SOCKS4_ECHO_LEN              8
 
 struct mptcp_hw_ext_uid_conf {
 	uint32_t flags;
@@ -109,17 +98,6 @@ struct mptcp_hw_ext_uid_gid_carrier_info {
 	struct mptcp_hw_ext_gid mptcp_hw_ext_gid_addr_tbl[MPTCP_HW_EXT_MAX_GID];
 };
 
-struct mptcp_hw_ext_hag_enable_all_app_info {
-	bool enable_all_app;
-	struct mptcp_hw_ext_hag_gw_info hag_gw_info;
-	struct mptcp_hw_ext_hag_config hag_config;
-};
-
-struct mptcp_hw_ext_hag_enable_all_app_info mptcp_hag_proxy = {
-	.enable_all_app = false,
-	.hag_config.black_list_num = 0,
-};
-
 #ifdef CONFIG_HUAWEI_XENGINE
 
 static void xengine_report_uid_fallback(int32_t uid, int32_t reason)
@@ -129,7 +107,7 @@ static void xengine_report_uid_fallback(int32_t uid, int32_t reason)
 
 	report.uid = uid;
 	report.reason = reason;
-	Emcom_Xengine_MptcpProxyFallback(&report, sizeof(report));
+	emcom_xengine_mptcp_proxy_fallback(&report, sizeof(report));
 }
 
 
@@ -153,14 +131,14 @@ void xengine_report_fallback(struct sock *meta_sk)
 	mptcp_info("%s: uid:%d pid:%d fd:%d mptcp sock\n", __func__,
 		report.sock.uid, report.sock.pid, report.sock.fd);
 
-	Emcom_Xengine_MptcpFallback(&report, sizeof(report));
+	emcom_xengine_mptcp_fallback(&report, sizeof(report));
 }
 #endif
 
 
 static struct mptcp_hw_ext_uid *mptcp_hw_ext_uid_in_list(int32_t uid)
 {
-	struct mptcp_hw_ext_uid *node;
+	struct mptcp_hw_ext_uid *node = NULL;
 
 	list_for_each_entry(node, &mptcp_hw_ext_uid_list, list) {
 		if (node->uid == uid)
@@ -232,7 +210,7 @@ static bool mptcp_hw_ext_dport_valid(
 
 
 static bool mptcp_hw_validate_conf_values_common(uint32_t value_type,
-				union mptcp_hw_ext_value *val, char *if_name)
+				union mptcp_hw_ext_value *val, const char *if_name)
 {
 	if (!val)
 		return false;
@@ -329,7 +307,9 @@ static int mptcp_hw_validate_set_conf_values_ipport(
 
 
 static int mptcp_hw_validate_set_conf_values(uint32_t value_type,
-				union mptcp_hw_ext_value *val, char *if_name, bool is_add)
+					     union mptcp_hw_ext_value *val,
+					     const char *if_name,
+					     bool is_add)
 {
 	switch (value_type) {
 	case MPTCP_HW_CONF_VALUE_MPTCP:
@@ -448,7 +428,8 @@ static int mptcp_hw_set_conf_values(uint32_t value_type,
 static struct mptcp_hw_ext_dip_node *mptcp_hw_ext_get_node_by_dip(
 	struct mptcp_hw_ext_dip_list *dip_list, uint32_t dip)
 {
-	struct mptcp_hw_ext_dip_node *node, *next;
+	struct mptcp_hw_ext_dip_node *node = NULL;
+	struct mptcp_hw_ext_dip_node *next = NULL;
 
 	list_for_each_entry_safe(node, next, &(dip_list->list), dip_node) {
 		if (node->dip == dip)
@@ -464,7 +445,7 @@ static bool mptcp_hw_ext_dport_enable_valid(
 	struct mptcp_hw_ext *config, uint8_t key_type, uint32_t port_to_add)
 {
 	int i;
-	struct mptcp_hw_ext_dport_node *dport_node;
+	struct mptcp_hw_ext_dport_node *dport_node = NULL;
 	struct mptcp_hw_dport_range *dport_range = config->conf.dip_dport.dport_range;
 	union mptcp_hw_ext_value *value = &(config->conf_value);
 	char *port_key = config->conf.dip_dport.port_key;
@@ -509,7 +490,8 @@ static bool mptcp_hw_ext_dport_enable_valid(
 static bool mptcp_hw_ext_dport_update_config_valid(
 	struct mptcp_hw_ext_dip_node *node, struct mptcp_hw_ext *config)
 {
-	struct mptcp_hw_ext_dport_node *dport_node, *dport_next;
+	struct mptcp_hw_ext_dport_node *dport_node = NULL;
+	struct mptcp_hw_ext_dport_node *dport_next = NULL;
 
 	if (!node || 0 == strnlen(config->conf.dip_dport.port_key, MPTCP_HW_EXT_PORT_KEY_MAX_LEN))
 		return false;
@@ -541,7 +523,7 @@ static bool mptcp_hw_ext_dport_match_with_exist(
 static struct mptcp_hw_ext_dport_node *mptcp_hw_ext_get_node_by_dport(
 	struct list_head *dport_list, uint16_t dport)
 {
-	struct mptcp_hw_ext_dport_node *dport_node;
+	struct mptcp_hw_ext_dport_node *dport_node = NULL;
 	int i;
 
 	list_for_each_entry(dport_node, dport_list, dport_node) {
@@ -581,9 +563,9 @@ static void mptcp_hw_ext_set_uid_gid_carrier_ip(__be32 dip,
 
 static struct file *__fget_by_pid(pid_t pid, unsigned int fd, fmode_t mask)
 {
-	struct task_struct *task;
-	struct file *file;
-	struct files_struct *files;
+	struct task_struct *task = NULL;
+	struct file *file = NULL;
+	struct files_struct *files = NULL;
 
 	rcu_read_lock();
 
@@ -619,7 +601,7 @@ static struct file *fget_by_pid_fd(pid_t pid, unsigned int fd)
 
 
 static void mptcp_hw_ext_update_subflow_buf_info(struct tcp_sock *tp,
-	__s32 snd_buf, __s32 rcv_buf, char *if_name)
+	__s32 snd_buf, __s32 rcv_buf, const char *if_name)
 {
 	uint8_t i = 0;
 
@@ -643,7 +625,7 @@ static void mptcp_hw_ext_update_subflow_buf_info(struct tcp_sock *tp,
 
 
 static void mptcp_hw_ext_update_subflow_prio_at_meta(struct tcp_sock *tp,
-	char *if_name, uint8_t low_prio)
+	const char *if_name, uint8_t low_prio)
 {
 	uint8_t i = 0;
 	for (i = 0; i < MAX_SUPPORT_SUBFLOW_NUM; i++) {
@@ -700,10 +682,10 @@ static int mptcp_hw_ext_set_config_by_pid_fd(struct mptcp_hw_ext *config,
 {
 	int ret = -EBADF;
 	int err = 0;
-	struct file *file;
-	struct socket *sock;
-	struct sock *sk;
-	struct tcp_sock *tp;
+	struct file *file = NULL;
+	struct socket *sock = NULL;
+	struct sock *sk = NULL;
+	struct tcp_sock *tp = NULL;
 	pid_t pid = config->conf.pid_fd.pid;
 	int fd = config->conf.pid_fd.fd;
 	union mptcp_hw_ext_value *value = &(config->conf_value);
@@ -773,7 +755,7 @@ static int mptcp_hw_ext_set_config_by_pid_fd(struct mptcp_hw_ext *config,
 		}
 
 		if (value->i_val.mp_capability) {
-			struct mptcp_hw_ext_uid *uid_node;
+			struct mptcp_hw_ext_uid *uid_node = NULL;
 
 			tp->mptcp_cap_flag = MPTCP_CAP_PID_FD;
 			read_lock_bh(&mptcp_hw_ext_lock);
@@ -868,8 +850,8 @@ void mptcp_hw_get_ifname_fr_sock(struct sock *sk, char *ifname)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct net *net = sock_net(sk);
-	struct net_device *dev;
-	struct in_device *in_dev;
+	struct net_device *dev = NULL;
+	struct in_device *in_dev = NULL;
 	__be32 saddr;
 
 	ifname[0] = 0;
@@ -906,12 +888,12 @@ void mptcp_hw_get_ifname_fr_sock(struct sock *sk, char *ifname)
 static int mptcp_hw_try_get_throughput_from_delete_subflow(
 	const struct sock *meta_sk,
 	struct mptcp_hw_ext_subflow_info *value,
-	char *if_name)
+	const char *if_name)
 {
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	u64 sent = 0;
 	u64 recv = 0;
-	struct mptcp_deleted_flow_info *deleted;
+	struct mptcp_deleted_flow_info *deleted = NULL;
 	int ret = -EINVAL;
 
 	if (meta_tp->mpcb == NULL) {
@@ -938,9 +920,9 @@ static int mptcp_get_subflow_info(const struct sock *meta_sk,
 			   char *if_name)
 {
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sock *sk;
+	struct sock *sk = NULL;
 	char sk_ifname[IFNAMSIZ];
-	struct tcp_sock *tp;
+	struct tcp_sock *tp = NULL;
 	u64 sent = 0;
 	u64 recv = 0;
 
@@ -980,10 +962,10 @@ static int mptcp_hw_ext_pid_fd_get_mptcp_info(pid_t pid, int fd,
 {
 	int ret;
 	int err;
-	struct file *file;
-	struct socket *sock;
-	struct sock *sk;
-	struct tcp_sock *tp;
+	struct file *file = NULL;
+	struct socket *sock = NULL;
+	struct sock *sk = NULL;
+	struct tcp_sock *tp = NULL;
 	__kernel_size_t len;
 
 	len = strnlen(if_name, IFNAMSIZ);
@@ -1045,9 +1027,9 @@ static int mptcp_hw_ext_pid_fd_get_mptcp_info(pid_t pid, int fd,
 static struct mptcp_hw_ext_dip_node *mptcp_hw_ext_get_node_by_uid_dip(
 	int32_t uid, uint32_t dip)
 {
-	struct mptcp_hw_ext_uid *uid_node;
-	struct mptcp_hw_ext_dip_list *dip_list;
-	struct mptcp_hw_ext_dip_node *dip_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
+	struct mptcp_hw_ext_dip_list *dip_list = NULL;
+	struct mptcp_hw_ext_dip_node *dip_node = NULL;
 
 	uid_node = mptcp_hw_ext_uid_in_list(uid);
 	if (NULL == uid_node)
@@ -1070,8 +1052,8 @@ static struct mptcp_hw_ext_dip_node *mptcp_hw_ext_get_node_by_uid_dip(
 static struct mptcp_hw_ext_dport_node *mptcp_hw_ext_get_node_by_uid_dip_dport(
 	int32_t uid, uint32_t dip, uint16_t dport)
 {
-	struct mptcp_hw_ext_dip_node *dip_node;
-	struct mptcp_hw_ext_dport_node *dport_node;
+	struct mptcp_hw_ext_dip_node *dip_node = NULL;
+	struct mptcp_hw_ext_dport_node *dport_node = NULL;
 	dip_node = mptcp_hw_ext_get_node_by_uid_dip(uid, dip);
 	if (NULL == dip_node)
 		return NULL;
@@ -1087,7 +1069,7 @@ static int mptcp_hw_ext_add_new_dport_node(struct list_head *dport_list,
 	int ret;
 	int dport_range_len;
 	int malloc_len;
-	struct mptcp_hw_ext_dport_node *dport_node;
+	struct mptcp_hw_ext_dport_node *dport_node = NULL;
 
 	dport_range_len = port_to_add * sizeof(struct mptcp_hw_dport_range);
 	malloc_len = sizeof(struct mptcp_hw_ext_dport_node) + dport_range_len;
@@ -1122,8 +1104,8 @@ static int mptcp_hw_ext_add_new_dip_node(struct list_head *dip_list,
 	uint8_t key_type, uint32_t value_type, uint32_t port_to_add)
 {
 	uint32_t dip = config->conf.dip_dport.dip;
+	struct mptcp_hw_ext_dip_node *dip_node = NULL;
 
-	struct mptcp_hw_ext_dip_node *dip_node;
 	dip_node = (struct mptcp_hw_ext_dip_node *)kzalloc(sizeof(struct mptcp_hw_ext_dip_node), GFP_ATOMIC);
 	if (NULL == dip_node) {
 		pr_err("%d kzalloc mptcp_hw_ext_dip_node fail\n", __LINE__);
@@ -1156,7 +1138,7 @@ static int mptcp_hw_ext_add_new_uid_node(struct mptcp_hw_ext *config,
 	int32_t uid;
 	int ret;
 
-	struct mptcp_hw_ext_uid *uid_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
 	uid_node = (struct mptcp_hw_ext_uid *)kzalloc(sizeof(struct mptcp_hw_ext_uid), GFP_ATOMIC);
 	if (NULL == uid_node) {
 		pr_err("%d kzalloc mptcp_hw_ext_uid node fail\n", __LINE__);
@@ -1166,7 +1148,7 @@ static int mptcp_hw_ext_add_new_uid_node(struct mptcp_hw_ext *config,
 
 	switch (key_type) {
 	case ENABLE_BY_UID: {
-			struct mptcp_hw_ext_uid_conf *conf;
+			struct mptcp_hw_ext_uid_conf *conf = NULL;
 			uid = config->conf.uid;
 			uid_node->config = kzalloc(sizeof(struct mptcp_hw_ext_uid_conf), GFP_ATOMIC);
 			if (NULL == uid_node->config) {
@@ -1190,7 +1172,7 @@ static int mptcp_hw_ext_add_new_uid_node(struct mptcp_hw_ext *config,
 		break;
 	case ENABLE_BY_UID_DIP_DPORT:
 	case ENABLE_BY_UID_DIP_DPORT_ISP: {
-			struct mptcp_hw_ext_dip_list *dip_list;
+			struct mptcp_hw_ext_dip_list *dip_list = NULL;
 			uid = config->conf.dip_dport.uid;
 			uid_node->config = kzalloc(sizeof(struct mptcp_hw_ext_dip_list), GFP_ATOMIC);
 			if (NULL == uid_node->config) {
@@ -1211,7 +1193,7 @@ static int mptcp_hw_ext_add_new_uid_node(struct mptcp_hw_ext *config,
 			}
 
 			if (key_type == ENABLE_BY_UID_DIP_DPORT_ISP) {
-				struct mptcp_hw_ext_uid_gid_carrier_info *isp;
+				struct mptcp_hw_ext_uid_gid_carrier_info *isp = NULL;
 				uid_node->isp = kzalloc(sizeof(struct mptcp_hw_ext_uid_gid_carrier_info), GFP_ATOMIC);
 				if (NULL == uid_node->isp) {
 					pr_err("%d kzalloc mptcp_hw_ext_uid_gid_carrier_info fail\n", __LINE__);
@@ -1264,7 +1246,7 @@ static int mptcp_hw_ext_update_uid_node_config(
 
 	switch (key_type) {
 	case ENABLE_BY_UID: {
-			struct mptcp_hw_ext_uid_conf *conf;
+			struct mptcp_hw_ext_uid_conf *conf = NULL;
 			if (NULL == uid_node->config) {
 				/*
 					a. user switch can create this uid node before enable
@@ -1304,9 +1286,9 @@ static int mptcp_hw_ext_update_uid_node_config(
 		break;
 	case ENABLE_BY_UID_DIP_DPORT:
 	case ENABLE_BY_UID_DIP_DPORT_ISP: {
-			struct mptcp_hw_ext_dip_list *dip_list;
-			struct mptcp_hw_ext_dip_node *dip_node;
-			struct mptcp_hw_ext_dport_node *dport_node;
+			struct mptcp_hw_ext_dip_list *dip_list = NULL;
+			struct mptcp_hw_ext_dip_node *dip_node = NULL;
+			struct mptcp_hw_ext_dport_node *dport_node = NULL;
 			uint32_t dip = config->conf.dip_dport.dip;
 			char ip_str[INET_ADDRSTRLEN];
 
@@ -1464,7 +1446,8 @@ static int mptcp_hw_ext_chk_param_valid_before_use(
 
 static void mptcp_hw_ext_reset_dport_list(struct list_head *dport_list)
 {
-	struct mptcp_hw_ext_dport_node *node, *next;
+	struct mptcp_hw_ext_dport_node *node = NULL;
+	struct mptcp_hw_ext_dport_node *next = NULL;
 
 	list_for_each_entry_safe(node, next, dport_list, dport_node) {
 		list_del_init(&(node->dport_node));
@@ -1475,7 +1458,9 @@ static void mptcp_hw_ext_reset_dport_list(struct list_head *dport_list)
 
 static void mptcp_hw_ext_reset_dip_list(struct list_head *dip_list)
 {
-	struct mptcp_hw_ext_dip_node *node, *next;
+	struct mptcp_hw_ext_dip_node *node = NULL;
+	struct mptcp_hw_ext_dip_node *next = NULL;
+
 	list_for_each_entry_safe(node, next, dip_list, dip_node) {
 		list_del_init(&(node->dip_node));
 		mptcp_hw_ext_reset_dport_list(&(node->dport_list));
@@ -1486,8 +1471,8 @@ static void mptcp_hw_ext_reset_dip_list(struct list_head *dip_list)
 
 static void mptcp_hw_user_switch_sock_update(int32_t uid, bool on, const char *prim_iface)
 {
-	const struct hlist_nulls_node *node;
-	struct tcp_sock *meta_tp;
+	const struct hlist_nulls_node *node = NULL;
+	struct tcp_sock *meta_tp = NULL;
 	int32_t i;
 
 	write_unlock_bh(&mptcp_hw_ext_lock);
@@ -1496,7 +1481,7 @@ static void mptcp_hw_user_switch_sock_update(int32_t uid, bool on, const char *p
 		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
 					       tk_table) {
 			struct sock *meta_sk = (struct sock *)meta_tp;
-			struct mptcp_cb *mpcb;
+			struct mptcp_cb *mpcb = NULL;
 
 			bh_lock_sock(meta_sk);
 			mpcb = meta_tp->mpcb;
@@ -1508,9 +1493,15 @@ static void mptcp_hw_user_switch_sock_update(int32_t uid, bool on, const char *p
 						(void)strncpy(meta_tp->prim_iface, prim_iface, IFNAMSIZ);
 						meta_tp->prim_iface[IFNAMSIZ - 1] = '\0';
 						meta_tp->user_switch = on;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+						if (!test_and_set_bit(TCPF_USER_SWTCH_DEFERRED,
+								      &meta_sk->sk_tsq_flags))
+							sock_hold(meta_sk);
+#else
 						if (!test_and_set_bit(MPTCP_USER_SWTCH_DEFERRED,
 								      &meta_tp->tsq_flags))
 							sock_hold(meta_sk);
+#endif
 					} else
 						mpcb->pm_ops->user_switch(meta_sk, on, prim_iface);
 				}
@@ -1525,7 +1516,8 @@ static void mptcp_hw_user_switch_sock_update(int32_t uid, bool on, const char *p
 
 static void mptcp_hw_ext_reset_rules(void)
 {
-	struct mptcp_hw_ext_uid *node, *next;
+	struct mptcp_hw_ext_uid *node = NULL;
+	struct mptcp_hw_ext_uid *next = NULL;
 
 	list_for_each_entry_safe(node, next, &mptcp_hw_ext_uid_list, list) {
 		list_del_init(&node->list);
@@ -1566,7 +1558,8 @@ static void mptcp_hw_ext_reset_rules(void)
 
 static void mptcp_hw_ext_reset_rules_by_uid(int32_t uid)
 {
-	struct mptcp_hw_ext_uid *node, *next;
+	struct mptcp_hw_ext_uid *node = NULL;
+	struct mptcp_hw_ext_uid *next = NULL;
 
 	list_for_each_entry_safe(node, next, &mptcp_hw_ext_uid_list, list) {
 		if (node->uid == uid) {
@@ -1612,7 +1605,7 @@ static void mptcp_hw_ext_delete_uid_gid_carrier_ip(
 {
 	uint8_t dst_addr_cnt;
 	uint8_t i, j;
-	uint32_t *paddr;
+	uint32_t *paddr = NULL;
 
 	dst_addr_cnt = isp->mptcp_hw_ext_gid_addr_tbl[gid]\
 						.carrier_info[carrier_id].dst_addr_cnt;
@@ -1695,7 +1688,7 @@ static void mptcp_hw_ext_delete_dport_node(
 static bool mptcp_hw_ext_try_to_delete_dport_node(struct list_head *dport_list,
 	struct mptcp_hw_ext *config)
 {
-	struct mptcp_hw_ext_dport_node *pdport_node;
+	struct mptcp_hw_ext_dport_node *pdport_node = NULL;
 	struct mptcp_hw_ext_dport_node *del_node = NULL;
 	char *dport_key = config->conf.dip_dport.port_key;
 	bool ret = false;
@@ -1720,7 +1713,7 @@ static bool mptcp_hw_ext_try_to_delete_config_in_dport_node(
 	struct list_head *dport_list,
 	struct mptcp_hw_ext *config, uint32_t value_type)
 {
-	struct mptcp_hw_ext_dport_node *pdport_node;
+	struct mptcp_hw_ext_dport_node *pdport_node = NULL;
 	char *dport_key = config->conf.dip_dport.port_key;
 	bool ret = false;
 
@@ -1769,8 +1762,8 @@ static int mptcp_hw_ext_delete_exist_uid_config(
 		break;
 	case ENABLE_BY_UID_DIP_DPORT:
 	case ENABLE_BY_UID_DIP_DPORT_ISP: {
-			struct mptcp_hw_ext_dip_list *dip_list;
-			struct mptcp_hw_ext_dip_node *dip_node;
+			struct mptcp_hw_ext_dip_list *dip_list = NULL;
+			struct mptcp_hw_ext_dip_node *dip_node = NULL;
 			struct mptcp_hw_dip_dport *dip_dport = &(config->conf.dip_dport);
 			uint32_t dip = dip_dport->dip;
 			char ip_str[INET_ADDRSTRLEN];
@@ -1859,7 +1852,7 @@ static __be32
 mptcp_get_dst_addr_from_info(int32_t uid, uint8_t gid,
 	uint8_t carrier_id, uint8_t deploy_mode)
 {
-	struct mptcp_hw_ext_uid_gid_carrier_info *node;
+	struct mptcp_hw_ext_uid_gid_carrier_info *node = NULL;
 	if ((gid >= MPTCP_HW_EXT_MAX_GID) || (carrier_id >= MPTCP_HW_EXT_CARRIER_INVALID)
 		|| (deploy_mode >= MPTCP_HW_EXT_DEPLOY_INVALID)) {
 		pr_err("%s: Invalid gid:%u carrier_id:%u deploy_mode:%u not found \n",
@@ -1891,7 +1884,7 @@ mptcp_get_dst_addr_from_info(int32_t uid, uint8_t gid,
 int mptcp_get_raddr_carrier_info(int32_t uid, __be32 raddr)
 {
 	int i, j, k;
-	struct mptcp_hw_ext_uid_gid_carrier_info *node;
+	struct mptcp_hw_ext_uid_gid_carrier_info *node = NULL;
 
 	read_lock_bh(&mptcp_hw_ext_lock);
 	node = mptcp_hw_ext_get_isp_info_by_uid(uid);
@@ -1924,7 +1917,7 @@ static void mptcp_set_sec_addr_for_sk(struct sock *sk, int32_t uid,
 	uint8_t carrier_id;
 	__be32 rem_addr;
 	union inet_addr addr;
-	struct mptcp_cb *mpcb;
+	struct mptcp_cb *mpcb = NULL;
 	char ip_str[INET_ADDRSTRLEN];
 
 	if (mptcp_is_subflow_from_iface(sk, mptcp_intf_carrier.mptcp_carrier_info[0].if_name))
@@ -1976,9 +1969,9 @@ static void mptcp_set_sec_addr_for_sk(struct sock *sk, int32_t uid,
 void mptcp_add_rem_addr_for_sk(struct sock *meta_sk)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct mptcp_hw_ext_dip_node *dip_node;
-	struct mptcp_hw_ext_dport_node *dport_node;
-	struct sock *sk;
+	struct mptcp_hw_ext_dip_node *dip_node = NULL;
+	struct mptcp_hw_ext_dport_node *dport_node = NULL;
+	struct sock *sk = NULL;
 
 	if (meta_tp->mptcp_cap_flag != MPTCP_CAP_UID_DIP_DPORT)
 		return;
@@ -2006,7 +1999,7 @@ void mptcp_add_rem_addr_for_sk(struct sock *meta_sk)
 
 char *anonymousIPv4addr(__be32 ip, char *buf, size_t size)
 {
-	char *pos;
+	char *pos = NULL;
 
 	if ((NULL == buf) || (0 == size))
 		return "NULL";
@@ -2080,7 +2073,7 @@ static int mptcp_hw_ext_add_config(struct mptcp_hw_ext *config,
 	int ret;
 	uint32_t port_to_add;
 
-	struct mptcp_hw_ext_uid *uid_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
 
 	/* 1.  distinguish DIP_DPORT_ISP from DIP_DPORT here */
 	if (key_type == ENABLE_BY_UID_DIP_DPORT && value_type == MPTCP_HW_CONF_VALUE_MPTCP) {
@@ -2157,7 +2150,7 @@ static int mptcp_hw_ext_del_config(struct mptcp_hw_ext *config,
 	uint8_t key_type, uint32_t value_type)
 {
 	int32_t uid;
-	struct mptcp_hw_ext_uid *uid_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
 	int ret;
 
 	/* check param valid firstly */
@@ -2289,9 +2282,9 @@ static int mptcp_hw_chck_action_type(uint32_t flag,
 
 static int mptcp_hw_user_switch(struct mptcp_hw_ext *ext)
 {
-	struct mptcp_hw_ext_uid *uid_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
 	int32_t uid = ext->conf.uid;
-	bool on;
+	bool on = false;
 	int ret = 0;
 
 	on = !strncmp(ext->if_name, "all", IFNAMSIZ);
@@ -2327,7 +2320,7 @@ static int mptcp_hw_user_switch(struct mptcp_hw_ext *ext)
 static int mptcp_hw_ext_set_first_path_info(struct mptcp_hw_ext *ext)
 {
 	size_t len;
-	struct mptcp_hw_ext_uid *uid_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
 	int32_t uid = ext->conf.uid;
 	int ret;
 
@@ -2357,42 +2350,19 @@ static int mptcp_hw_ext_set_first_path_info(struct mptcp_hw_ext *ext)
 }
 
 
-static void mptcp_hw_ext_set_hag_gw_info(struct mptcp_hw_ext *ext)
-{
-	switch(ext->cmd) {
-	case MPTCP_HW_EXT_SET_CONF_HAG_GW_INFO: {
-		mptcp_hag_proxy.hag_gw_info = ext->conf.hag_gw_info;
-		mptcp_hag_proxy.enable_all_app = ext->conf.hag_gw_info.lte_ip != 0 && ext->conf.hag_gw_info.port != 0 &&
-			ext->conf.hag_gw_info.tunnel_id != 0 &&	ext->conf.hag_gw_info.wifi_ip !=0;
-		break;
-	}
-
-	case MPTCP_HW_EXT_SET_CONF_HAG_CONFIG: {
-		(void)memcpy(&mptcp_hag_proxy.hag_config, &ext->conf.hag_config, sizeof(struct mptcp_hw_ext_hag_config));
-		break;
-	}
-
-	default:
-		break;
-	}
-}
-
-
 int mptcp_hw_ext_cmd_get_sockopt(struct mptcp_hw_ext *ext)
 {
 	unsigned int key_type;
-	unsigned int action;
 	unsigned int value_type;
 
 	if (ext->cmd >= MPTCP_HW_EXT_CMD_MAX_INVALID ||
-	    ((ext->cmd & 0xFFFFFF) >= MPTCP_HW_EXT_MAX_VALUE_TYPE)) {
+	    (((uint32_t)ext->cmd & 0xFFFFFF) >= MPTCP_HW_EXT_MAX_VALUE_TYPE)) {
 		pr_err("%s cmd exceeds the maximum value\n", __func__);
 		return -ENOTSUPP;
 	}
 
 	key_type = mptcp_hw_ext_get_cmd_type(ext->cmd);
 	mptcp_hw_ext_get_conf_type(ext->cmd, value_type);
-	action = mptcp_hw_chck_action_type(value_type, &ext->conf_value);
 
 	mptcp_debug("%s: cmd_type:%u, cfg_type:%u\n", __func__, key_type,
 		    value_type);
@@ -2429,7 +2399,7 @@ int mptcp_hw_ext_cmd_set_sockopt(struct mptcp_hw_ext *ext)
 	int ret = -ENOTSUPP;
 
 	if (ext->cmd >= MPTCP_HW_EXT_CMD_MAX_INVALID ||
-	    ((ext->cmd & 0xFFFFFF) >= MPTCP_HW_EXT_MAX_VALUE_TYPE)) {
+	    (((uint32_t)ext->cmd & 0xFFFFFF) >= MPTCP_HW_EXT_MAX_VALUE_TYPE)) {
 		pr_err("%s cmd exceeds the maximum value\n", __func__);
 		return ret;
 	}
@@ -2500,11 +2470,13 @@ int mptcp_hw_ext_cmd_set_sockopt(struct mptcp_hw_ext *ext)
 		break;
 	}
 
+#ifdef CONFIG_MPTCP_EPC
 	case MPTCP_HW_CONF_KEY_HAG_ALL_APP: {
 		mptcp_hw_ext_set_hag_gw_info(ext);
 		ret = 0;
 		break;
 	}
+#endif
 
 	default:
 		pr_err("%s: unsupported cmd %d\n", __func__, ext->cmd);
@@ -2518,45 +2490,47 @@ int mptcp_hw_ext_cmd_set_sockopt(struct mptcp_hw_ext *ext)
 EXPORT_SYMBOL(mptcp_hw_ext_cmd_set_sockopt);
 
 
-bool mptcp_hw_is_enable_hag_gw(struct sock *sk)
-{
-	int32_t uid;
-	uint8_t index;
-	struct sock *meta_sk;
-	struct tcp_sock *tp;
-
-	if (!mptcp_hag_proxy.enable_all_app)
-		return false;
-
-	tp = tcp_sk(sk);
-	meta_sk = tp->meta_sk ? tp->meta_sk : sk;
-	uid = sock_i_uid(meta_sk).val;
-
-	for (index = 0; index < mptcp_hag_proxy.hag_config.black_list_num; index++) {
-		if (mptcp_hag_proxy.hag_config.black_app_list[index] == uid)
-			return false;
-	}
-	return true;
-}
-
-
 static bool is_ipv4_private_address(__be32 addr)
 {
 	return (ipv4_is_private_10(addr) || ipv4_is_private_172(addr) || ipv4_is_private_192(addr));
 }
 
+bool check_ip_addrss_for_mptcp_available_v4(__be32 s_addr)
+{
+	return !ipv4_is_loopback(s_addr) && !ipv4_is_multicast(s_addr) &&
+		!ipv4_is_zeronet(s_addr) && !ipv4_is_lbcast(s_addr);
+}
 
-static bool check_ip_addrss_for_mptcp_available(struct sockaddr *addr)
+bool check_ip_addrss_for_mptcp_available_v6(struct sockaddr_in6 *usin6)
+{
+	if (ipv6_addr_v4mapped(&usin6->sin6_addr)) {
+		__be32 addr_v4 = usin6->sin6_addr.s6_addr32[3];
+		char src_ip_str[INET_ADDRSTRLEN];
+
+		mptcp_debug("%s: ipv6 check ip=%s\n",  __func__,
+			anonymousIPv4addr(addr_v4, src_ip_str,
+				INET_ADDRSTRLEN));
+
+		return check_ip_addrss_for_mptcp_available_v4(addr_v4);
+	}
+	return !ipv6_addr_loopback(&usin6->sin6_addr) &&
+		!ipv6_addr_is_multicast(&usin6->sin6_addr);
+}
+
+
+bool check_ip_addrss_for_mptcp_available(struct sockaddr *addr)
 {
 	if (addr->sa_family == AF_INET) {
 		struct sockaddr_in *usin = (struct sockaddr_in *)addr;
-		return !ipv4_is_loopback(usin->sin_addr.s_addr) && !ipv4_is_multicast(usin->sin_addr.s_addr) &&
-			!ipv4_is_zeronet(usin->sin_addr.s_addr) && !ipv4_is_lbcast(usin->sin_addr.s_addr);
+		__be32 s_addr = usin->sin_addr.s_addr;
+
+		return check_ip_addrss_for_mptcp_available_v4(s_addr);
 	}
 #if IS_ENABLED(CONFIG_IPV6)
 	else if (addr->sa_family == AF_INET6) {
 		struct sockaddr_in6 *usin6 = (struct sockaddr_in6 *)addr;
-		return !ipv6_addr_loopback(&usin6->sin6_addr) && !ipv6_addr_is_multicast(&usin6->sin6_addr);
+
+		return check_ip_addrss_for_mptcp_available_v6(usin6);
 	}
 #endif
 
@@ -2564,7 +2538,7 @@ static bool check_ip_addrss_for_mptcp_available(struct sockaddr *addr)
 }
 
 
-static bool check_ip_addrss_public_available(struct sockaddr *addr)
+bool check_ip_addrss_public_available(struct sockaddr *addr)
 {
 	struct sockaddr_in *usin = (struct sockaddr_in *)addr;
 	if (usin->sin_family == AF_INET) {
@@ -2606,7 +2580,7 @@ static void mptcp_enable_first_path(struct sock *sk, char *first_path_iface)
 
 static void mptcp_enable_first_path_search_uid(struct sock *sk)
 {
-	struct mptcp_hw_ext_uid *uid_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
 	int32_t uid;
 
 	uid = sock_i_uid(sk).val;
@@ -2630,10 +2604,10 @@ static int32_t in_mptcp_uid_list(struct sock *sk, struct sockaddr_in *daddr,
 			struct mptcp_hw_ext_conf_value *values,
 			struct mptcp_hw_ext_first_path *first_path)
 {
-	struct mptcp_hw_ext_uid *uid_node;
+	struct mptcp_hw_ext_uid *uid_node = NULL;
 	uint8_t key_type;
 	int32_t flags = 0;
-	struct sock *meta_sk;
+	struct sock *meta_sk = NULL;
 	int32_t uid;
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -2658,9 +2632,9 @@ static int32_t in_mptcp_uid_list(struct sock *sk, struct sockaddr_in *daddr,
 		break;
 	case ENABLE_BY_UID_DIP_DPORT:
 	case ENABLE_BY_UID_DIP_DPORT_ISP: {
-			struct mptcp_hw_ext_dip_list *dip_list;
-			struct mptcp_hw_ext_dip_node *dip_node;
-			struct mptcp_hw_ext_dport_node *dport_node;
+			struct mptcp_hw_ext_dip_list *dip_list = NULL;
+			struct mptcp_hw_ext_dip_node *dip_node = NULL;
+			struct mptcp_hw_ext_dport_node *dport_node = NULL;
 
 			dip_list = (struct mptcp_hw_ext_dip_list *)(uid_node->config);
 			if (NULL == dip_list)
@@ -2728,14 +2702,17 @@ void mptcp_init_tcp_sock(struct sock *sk,
 		mptcp_debug("%s: sk addrss is not available\n", __func__);
 		return;
 	}
-
-	if (mptcp_hw_is_enable_hag_gw(sk)) {
+#ifdef CONFIG_MPTCP_EPC
+	if (mptcp_hw_is_enable_hag_gw(sk) && check_ip_addrss_public_available((struct sockaddr *)daddr)) {
+		struct sock *meta_sk = tp->meta_sk ? tp->meta_sk : sk;
 		mptcp_enable_sock(sk);
 		tp->mptcp_cap_flag = MPTCP_CAP_ALL_APP;
+		tcp_sk(meta_sk)->user_switch = true;
+		tp->user_switch = true;
 		mptcp_debug("%s: enable mptcp for all app\n", __func__);
 		return;
 	};
-
+#endif
 	if (tp->mptcp_cap_flag) {
 		mptcp_debug("%s: enable mptcp by pid_fd\n", __func__);
 		mptcp_enable_sock(sk);
@@ -2791,8 +2768,8 @@ void mptcp_init_tcp_sock(struct sock *sk,
 void mptcp_init_sub_sock(struct sock *sk, bool master_sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_sock *meta_tp;
-	struct sock *meta_sk;
+	struct tcp_sock *meta_tp = NULL;
+	struct sock *meta_sk = NULL;
 	uint8_t i;
 
 	if (!tp || mptcp_init_failed || (sysctl_mptcp_enabled != MPTCP_SYSCTL))
@@ -2837,7 +2814,7 @@ void mptcp_init_sub_sock(struct sock *sk, bool master_sk)
 	if (master_sk && meta_tp->user_switch &&
 	    meta_tp->mptcp_cap_flag == MPTCP_CAP_UID_DIP_DPORT) {
 		int32_t uid = sock_i_uid(tp->meta_sk).val;
-		struct mptcp_hw_ext_dip_node *dip_node;
+		struct mptcp_hw_ext_dip_node *dip_node = NULL;
 
 		read_lock_bh(&mptcp_hw_ext_lock);
 		dip_node = mptcp_hw_ext_get_node_by_uid_dip(uid, meta_sk->sk_daddr);
@@ -2852,7 +2829,7 @@ void mptcp_init_sub_sock(struct sock *sk, bool master_sk)
 int32_t mptcp_hw_ext_get_port_key(struct sock *sk, char *port_key, size_t len)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct mptcp_hw_ext_dport_node *dport_node;
+	struct mptcp_hw_ext_dport_node *dport_node = NULL;
 	int32_t ret = -EINVAL;
 
 	if (!sk || sk->sk_family != AF_INET || sk->sk_state != TCP_ESTABLISHED) {
@@ -2891,8 +2868,11 @@ EXPORT_SYMBOL(mptcp_hw_ext_get_port_key);
 bool mptcp_hw_ext_get_switch_by_uid(int32_t uid)
 {
 	bool is_on = false;
-	struct mptcp_hw_ext_uid *uid_node;
-
+	struct mptcp_hw_ext_uid *uid_node = NULL;
+#ifdef CONFIG_MPTCP_EPC
+	if (mptcp_hw_is_enable_hag_config())
+		return true;
+#endif
 	read_lock_bh(&mptcp_hw_ext_lock);
 	uid_node = mptcp_hw_ext_uid_in_list(uid);
 	if (uid_node)
@@ -2905,9 +2885,9 @@ bool mptcp_hw_ext_get_switch_by_uid(int32_t uid)
 
 int mptcp_is_subflow_from_iface(struct sock *sk, const char *iface_name)
 {
-	struct net_device *net_dev;
-	struct in_device *in_dev;
-	struct in_ifaddr *addr;
+	struct net_device *net_dev = NULL;
+	struct in_device *in_dev = NULL;
+	struct in_ifaddr *addr = NULL;
 	struct net *net = sock_net(sk);
 
 	net_dev = dev_get_by_name(net, iface_name);
@@ -2974,29 +2954,15 @@ void mptcp_proxy_rewrite_dst_addr(struct sock *sk, struct sockaddr *uaddr)
 }
 
 
-void mptcp_teid_syn_options(const struct sock *sk, struct tcp_out_options *opts,
-	unsigned int *remaining)
-{
-	if (*remaining < MPTCP_SUB_LEN_TEID_ALIGN) {
-		tcp_write_err((struct sock *)sk);
-
-		mptcp_debug("%s: not enough space to add new teid option.\n", __func__);
-		return;
-	}
-	opts->mptcp_options |= OPTION_MP_OPT_TEID;
-	*remaining -= MPTCP_SUB_LEN_TEID_ALIGN;
-
-	mptcp_debug("%s: add options OPTION_MP_OPT_TEID.\n", __func__);
-}
-
-
 void mptcp_hw_add_syn_options(const struct sock *sk, struct tcp_out_options *opts,
 	unsigned int *remaining)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+#ifdef CONFIG_MPTCP_EPC
 	if (tp->mptcp_cap_flag == MPTCP_CAP_ALL_APP)
 		mptcp_teid_syn_options(sk, opts, remaining);
 	else
+#endif
 		mptcp_proxy_syn_options(sk, opts, remaining);
 }
 
@@ -3005,20 +2971,8 @@ void mptcp_hw_add_options_write(__be32 *ptr, struct tcp_sock *tp,
 			 const struct tcp_out_options *opts,
 			 struct sk_buff *skb)
 {
-	if (unlikely(OPTION_MP_OPT_TEID & opts->mptcp_options)) {
-		struct mp_option_teid *mp_teid = (struct mp_option_teid *)ptr;
-
-		mp_teid->kind = TCPOPT_MPTCP;
-		mp_teid->len = MPTCP_SUB_LEN_TEID;
-		mp_teid->sub = MPTCP_SUB_TEID;
-		mp_teid->rsv = 0;
-		mp_teid->teid = mptcp_hag_proxy.hag_gw_info.tunnel_id;
-		ptr += MPTCP_SUB_LEN_TEID_ALIGN >> 2;
-
-		mptcp_debug("%s: write options OPTION_MP_OPT_TEID.\n", __func__);
-	}
 	if (unlikely(OPTION_MPTCP_PROXY & opts->options)) {
-		struct sockaddr_in *server_addr;
+		struct sockaddr_in *server_addr = NULL;
 		struct mptcp_proxy_server_addr *mp_proxy_addr = (struct mptcp_proxy_server_addr *)ptr;
 		mp_proxy_addr->kind = TCPOPT_PROXY_MPTCP;
 		mp_proxy_addr->len = MPTCP_PROXY_OP_LEN_OPT_SERVER_ADDR4;
@@ -3028,50 +2982,19 @@ void mptcp_hw_add_options_write(__be32 *ptr, struct tcp_sock *tp,
 		mp_proxy_addr->port = ntohs(server_addr->sin_port);
 		ptr += MPTCP_PROXY_OP_LEN_OPT_SERVER_ADDR4 >> 2;
 	}
-}
-
-
-void mptcp_gw_rewrite_dst_addr(struct sock *sk, struct sockaddr *uaddr)
-{
-	const struct tcp_sock *tp = tcp_sk(sk);
-	struct sockaddr_in *usin = (struct sockaddr_in *)uaddr;
-
-	(void)memcpy((void *)&(tp->server_addr), (const void *)uaddr, sizeof(struct sockaddr));
-
-	if (sk->sk_bound_dev_if == 0) {
-		usin->sin_addr.s_addr = mptcp_hag_proxy.hag_gw_info.wifi_ip;
-		usin->sin_port = htons(mptcp_hag_proxy.hag_gw_info.port);
-
-		mptcp_debug("%s: sk_bound_dev_if == 0, write wifi ip.\n", __func__);
-	} else {
-		struct net_device *net_dev = dev_get_by_index(sock_net(sk), sk->sk_bound_dev_if);
-		if (net_dev) {
-			if (memcmp(net_dev->name, "wlan0", 5) == 0) {
-				usin->sin_addr.s_addr = mptcp_hag_proxy.hag_gw_info.wifi_ip;
-				usin->sin_port = htons(mptcp_hag_proxy.hag_gw_info.port);
-
-				mptcp_debug("%s: sk_bound_dev_if == wifi, write wifi ip.\n", __func__);
-			} else if (memcmp(net_dev->name, "rmnet", 5) == 0) {
-				usin->sin_addr.s_addr = mptcp_hag_proxy.hag_gw_info.lte_ip;
-				usin->sin_port = htons(mptcp_hag_proxy.hag_gw_info.port);
-
-				mptcp_debug("%s: sk_bound_dev_if == lte, write lte ip.\n", __func__);
-			} else {
-				mptcp_debug("%s: not rewrite dst addr.\n", __func__);
-			}
-			dev_put(net_dev);
-		}
-	}
+#ifdef CONFIG_MPTCP_EPC
+	mptcp_teid_options_write(ptr, tp, opts, skb);
+#endif
 }
 
 
 int mptcp_proxy_fallback(struct sock *sk, int reason, bool is_add)
 {
-	struct mptcp_hw_ext_uid *node;
+	struct mptcp_hw_ext_uid *node = NULL;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sockaddr_in *server_addr = (struct sockaddr_in *) (&(tp->server_addr));
 	int32_t uid;
-	struct mptcp_hw_ext_uid_conf *conf;
+	struct mptcp_hw_ext_uid_conf *conf = NULL;
 	int32_t need_fallback = MPTCP_FALLBACK_UNDO;
 
 #ifdef CONFIG_HUAWEI_XENGINE
@@ -3160,99 +3083,10 @@ void mptcp_hw_add_rewrite_dst_addr(struct sock *sk, struct sockaddr *uaddr)
 
 	mptcp_debug("%s, src_ip=%s, tp->mptcp_cap_flag=%d", __func__,
 		anonymousIPv4addr(((struct sockaddr_in *)uaddr)->sin_addr.s_addr, src_ip_str, INET_ADDRSTRLEN), tp->mptcp_cap_flag);
-
+#ifdef CONFIG_MPTCP_EPC
 	if (tp->mptcp_cap_flag == MPTCP_CAP_ALL_APP)
 		mptcp_gw_rewrite_dst_addr(sk, uaddr);
 	else
+#endif
 		mptcp_proxy_rewrite_dst_addr(sk, uaddr);
-}
-
-
-int mptcp_hw_socks_recv(struct sock *sk, struct sk_buff *skb)
-{
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct iphdr *iph = ip_hdr(skb);
-	unsigned char* payload = skb->data;
-	unsigned int ip_hlen = ip_hdrlen(skb);
-	unsigned int tcp_hlen = tcp_hdrlen(skb);
-	unsigned int len = ntohs(iph->tot_len);
-
-	if ((len < ip_hlen) || ((len - ip_hlen - tcp_hlen) != SOCKS4_ECHO_LEN))
-		return -EFAULT;
-
-	if (!meta_sk || !tcp_sk(meta_sk)->mpcb || (tcp_sk(meta_sk)->mpcb->socks_sate == 1))
-		return -EFAULT;
-
-	if (payload[1] == SOCKS4_REQUEST_GRANTED)
-		tcp_sk(meta_sk)->mpcb->socks_sate = 1;
-	else
-		return -EFAULT;
-
-	if (!sock_flag(meta_sk, SOCK_DEAD)) {
-		sk_wake_async(meta_sk, SOCK_WAKE_IO, POLL_OUT);
-	}
-
-	return 0;
-}
-
-
-void mptcp_hw_init_data_skb(struct sk_buff *skb, u32 seq, u32 data_len)
-{
-	skb->ip_summed = CHECKSUM_PARTIAL;
-	skb->csum = 0;
-
-	TCP_SKB_CB(skb)->tcp_flags = TCPHDR_PSH | TCPHDR_ACK;
-	TCP_SKB_CB(skb)->sacked = 0;
-
-	tcp_skb_pcount_set(skb, 0);
-
-	TCP_SKB_CB(skb)->seq = seq;
-	TCP_SKB_CB(skb)->end_seq = seq + data_len;
-}
-
-
-void mptcp_hw_socks4_send(struct sock *sk)
-{
-	int data_len = sizeof(struct socks4_request);
-	struct sk_buff *skb;
-	struct socks4_request *request;
-	struct tcp_sock *tp = tcp_sk(sk);
-	struct sock *meta_sk = mptcp_meta_sk(sk);
-	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct sockaddr_in *server_addr;
-
-	if (tp->mptcp_cap_flag != MPTCP_CAP_ALL_APP) {
-		return;
-	}
-
-	server_addr = (struct sockaddr_in *) (&(tp->server_addr));
-	if (server_addr->sin_addr.s_addr == 0 || server_addr->sin_port == 0) {
-		mptcp_debug("%s: addr == null.\n", __func__);
-		return;
-	}
-
-	skb = alloc_skb(data_len + MAX_TCP_HEADER, GFP_ATOMIC);
-	if (unlikely(!skb)) {
-		mptcp_debug("%s: buff alloc failed.\n", __func__);
-		return;
-	}
-
-	/* Reserve space for headers and prepare control bits. */
-	skb_reserve(skb, MAX_TCP_HEADER);
-	mptcp_hw_init_data_skb(skb, meta_tp->write_seq, data_len);
-
-	meta_tp->write_seq += data_len;
-	meta_tp->pushed_seq = meta_tp->write_seq;
-
-	skb_mstamp_get(&skb->skb_mstamp);
-
-	request = (struct socks4_request *) skb_push(skb, sizeof(struct socks4_request));
-	request->ver = SOCKS4_VERSON;
-	request->cmd = SOCKS4_CMD_CONNECT;
-	request->port = server_addr->sin_port;
-	request->addr = server_addr->sin_addr.s_addr;
-	request->user = 0x00;
-
-	tcp_queue_skb(meta_sk, skb);
-	__tcp_push_pending_frames(meta_sk, mptcp_current_mss(meta_sk), TCP_NAGLE_PUSH);
 }

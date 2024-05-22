@@ -26,6 +26,8 @@
 #include <huawei_platform/usb/pd/richtek/tcpci_typec.h>
 #include <huawei_platform/usb/pd/richtek/tcpci_event.h>
 
+#include <huawei_platform/power/huawei_charger.h>
+
 #ifdef CONFIG_USB_POWER_DELIVERY
 #include <huawei_platform/usb/pd/richtek/pd_dpm_core.h>
 #endif /* CONFIG_USB_POWER_DELIVERY */
@@ -79,10 +81,15 @@ void tcpci_vbus_level_init(struct tcpc_device *tcpc_dev, uint16_t power_status)
 	mutex_unlock(&tcpc_dev->access_lock);
 }
 
+#define MAX_IVALID_VBUS_CNT    200
+#define PS_ERR_DMD_BUF_SIZE    256
 static int tcpci_alert_power_status_changed(struct tcpc_device *tcpc_dev)
 {
 	int rv = 0;
 	uint16_t power_status = 0;
+	int vbus;
+	static int cnt;
+	char dsm_buf[PS_ERR_DMD_BUF_SIZE] = {0};
 
 	rv = tcpci_get_power_status(tcpc_dev, &power_status);
 	if (rv < 0)
@@ -90,7 +97,20 @@ static int tcpci_alert_power_status_changed(struct tcpc_device *tcpc_dev)
 
 	tcpci_vbus_level_init(tcpc_dev, power_status);
 
-	TCPC_INFO("ps_change=%d\r\n", tcpc_dev->vbus_level);
+	vbus = charge_get_vbus();
+	TCPC_INFO("ps_change = %u, vbus = %d\n", tcpc_dev->vbus_level, vbus);
+	if (tcpc_dev->vbus_level == TCPC_VBUS_VALID) {
+		cnt = 0;
+	} else {
+		cnt++;
+		if (cnt >= MAX_IVALID_VBUS_CNT) {
+			TCPC_INFO("ps_change warning, mask vsafe0v\n");
+			tcpci_mask_vsafe0v(tcpc_dev, 1);
+			snprintf(dsm_buf, PS_ERR_DMD_BUF_SIZE - 1, "ps_err vbus = %d\n", vbus);
+			power_dsm_dmd_report(POWER_DSM_BATTERY, ERROR_NO_WATER_CHECK_IN_USB, dsm_buf);
+		}
+	}
+
 	rv = tcpc_typec_handle_ps_change(tcpc_dev, tcpc_dev->vbus_level);
 	if (rv < 0)
 		return rv;
@@ -184,7 +204,7 @@ static int tcpci_alert_tx_discard(struct tcpc_device *tcpc_dev)
 static int tcpci_alert_recv_msg(struct tcpc_device *tcpc_dev)
 {
 	int retval;
-	pd_msg_t *pd_msg;
+	pd_msg_t *pd_msg = NULL;
 	enum tcpm_transmit_type type;
 
 	const uint32_t alert_rx =
@@ -379,7 +399,8 @@ EXPORT_SYMBOL(tcpci_alert);
 int tcpci_set_wake_lock(
 	struct tcpc_device *tcpc, bool pd_lock, bool user_lock)
 {
-	bool ori_lock, new_lock;
+	bool ori_lock = false;
+	bool new_lock = false;
 
 	if (tcpc->wake_lock_pd && tcpc->wake_lock_user)
 		ori_lock = true;
@@ -394,10 +415,10 @@ int tcpci_set_wake_lock(
 	if (new_lock != ori_lock) {
 		if (new_lock) {
 			TCPC_INFO("wake_lock=1\r\n");
-			wake_lock(&tcpc->attach_wake_lock);
+			__pm_stay_awake(&tcpc->attach_wake_lock);
 		} else {
 			TCPC_INFO("wake_lock=0\r\n");
-			wake_unlock(&tcpc->attach_wake_lock);
+			__pm_relax(&tcpc->attach_wake_lock);
 		}
 	}
 
@@ -418,12 +439,12 @@ static inline int tcpci_set_wake_lock_pd(
 		wake_lock_pd--;
 
 	if (wake_lock_pd == 0)
-		wake_lock_timeout(&tcpc->dettach_temp_wake_lock, 5 * HZ);
+		__pm_wakeup_event(&tcpc->dettach_temp_wake_lock, jiffies_to_msecs(5 * HZ));
 
 	tcpci_set_wake_lock(tcpc, wake_lock_pd, tcpc->wake_lock_user);
 
 	if (wake_lock_pd == 1)
-		wake_unlock(&tcpc->dettach_temp_wake_lock);
+		__pm_relax(&tcpc->dettach_temp_wake_lock);
 
 	tcpc->wake_lock_pd = wake_lock_pd;
 	mutex_unlock(&tcpc->access_lock);

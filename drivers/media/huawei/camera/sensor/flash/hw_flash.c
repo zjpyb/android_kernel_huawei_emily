@@ -322,61 +322,74 @@ static struct hw_flash_ctrl_t *get_sctrl(struct v4l2_subdev *sd)
 
 int hw_flash_config(struct hw_flash_ctrl_t *flash_ctrl, void *arg)
 {
-    struct hw_flash_cfg_data * cdata;
-    int rc = 0;
-    unsigned int state;
+	struct hw_flash_cfg_data *cdata;
+	int rc = 0;
+	unsigned int state;
 
-    if (NULL == flash_ctrl || NULL == arg) {
-        cam_err("%s flash_ctrl or arg is NULL.", __func__);
-        return -1;
-    }
-    cdata = (struct hw_flash_cfg_data *)arg;
+	if (NULL == flash_ctrl || NULL == arg) {
+		cam_err("%s flash_ctrl or arg is NULL.", __func__);
+		return -1;
+	}
+	cdata = (struct hw_flash_cfg_data *)arg;
 
-    cam_debug("%s enter cfgtype=%d.\n", __func__, cdata->cfgtype);
+	cam_debug("%s enter cfgtype=%d.\n", __func__, cdata->cfgtype);
 
-    switch (cdata->cfgtype) {
-    case CFG_FLASH_TURN_ON:
-        state = hw_flash_get_state();
-        if (0 == state) {
-            rc = flash_ctrl->func_tbl->flash_on(flash_ctrl, arg);
-        } else {
-            cam_info("%s flashe led is disable(0x%x).", __func__, state);
-            rc = -1;
-        }
-        break;
-    case CFG_FLASH_TURN_OFF:
-        rc = flash_ctrl->func_tbl->flash_off(flash_ctrl);
-        break;
-    case CFG_FLASH_GET_FLASH_NAME:
-        mutex_lock(flash_ctrl->hw_flash_mutex);
-        memset_s(cdata->cfg.name, sizeof(cdata->cfg.name), 0, sizeof(cdata->cfg.name));
-        rc = strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, flash_ctrl->flash_info.name,
-            sizeof(cdata->cfg.name) - 1);
-        if (rc != 0) {
-            cam_err("%s flash name copy error.\n", __func__);
-            rc = -EFAULT;
-        }
-        mutex_unlock(flash_ctrl->hw_flash_mutex);
-        break;
-    case CFG_FLASH_GET_FLASH_STATE:
-        mutex_lock(flash_ctrl->hw_flash_mutex);
-        cdata->mode = (flash_mode)flash_ctrl->state.mode;
-        cdata->data = flash_ctrl->state.data;
-        mutex_unlock(flash_ctrl->hw_flash_mutex);
-        break;
-    case CFG_FLASH_SET_POSITION:
-        mutex_lock(flash_ctrl->hw_flash_mutex);
-        flash_ctrl->mix_pos = cdata->data;
-        mutex_unlock(flash_ctrl->hw_flash_mutex);
-        cam_info("%s position =%d.", __func__, cdata->data);
-        break;
-    default:
-        cam_err("%s cfgtype error.\n", __func__);
-        rc = -EFAULT;
-        break;
-    }
+	switch (cdata->cfgtype) {
+	case CFG_FLASH_TURN_ON:
+		state = hw_flash_get_state();
+		if (state == 0) {
+			rc = flash_ctrl->func_tbl->flash_on(flash_ctrl, arg);
+		} else {
+			cam_info("%s flashe led is disable(0x%x).", __func__, state);
+			rc = -1;
+		}
+		break;
+	case CFG_FLASH_TURN_OFF:
+		rc = flash_ctrl->func_tbl->flash_off(flash_ctrl);
+		break;
+	case CFG_FLASH_GET_FLASH_NAME:
+		mutex_lock(flash_ctrl->hw_flash_mutex);
+		rc = memset_s(cdata->cfg.name,
+			sizeof(cdata->cfg.name),
+			0,
+			sizeof(cdata->cfg.name));
+		if (rc != 0)
+			cam_err("memset failed %d", __LINE__);
+		rc = strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1,
+			flash_ctrl->flash_info.name,
+			sizeof(cdata->cfg.name) - 1);
+		if (rc != 0) {
+			cam_err("%s flash name copy error.\n", __func__);
+			rc = -EFAULT;
+		}
+		mutex_unlock(flash_ctrl->hw_flash_mutex);
+		break;
+	case CFG_FLASH_GET_FLASH_STATE:
+		mutex_lock(flash_ctrl->hw_flash_mutex);
+		cdata->mode = (flash_mode)flash_ctrl->state.mode;
+		cdata->data = flash_ctrl->state.data;
+		mutex_unlock(flash_ctrl->hw_flash_mutex);
+		break;
+	case CFG_FLASH_SET_POSITION:
+		mutex_lock(flash_ctrl->hw_flash_mutex);
+		flash_ctrl->mix_pos = cdata->data;
+		mutex_unlock(flash_ctrl->hw_flash_mutex);
+		cam_info("%s position =%d.", __func__, cdata->data);
+		break;
+	case CFG_FLASH_GET_FLASH_TYPE:
+		mutex_lock(flash_ctrl->hw_flash_mutex);
+		cdata->data = flash_ctrl->flash_info.type;
+		mutex_unlock(flash_ctrl->hw_flash_mutex);
+		cam_info("%s flash type =%d.", __func__, cdata->data);
+		break;
 
-    return rc;
+	default:
+		cam_err("%s cfgtype error.\n", __func__);
+		rc = -EFAULT;
+		break;
+	}
+
+	return rc;
 }
 EXPORT_SYMBOL(hw_flash_config);
 
@@ -384,7 +397,6 @@ static long hw_flash_subdev_ioctl(struct v4l2_subdev *sd,
             unsigned int cmd, void *arg)
 {
     struct hw_flash_ctrl_t *flash_ctrl = get_sctrl(sd);
-    //long rc = 0;
 
     if (!flash_ctrl) {
         cam_err("%s flash_ctrl is NULL\n", __func__);
@@ -575,124 +587,126 @@ int32_t hw_flash_platform_probe(struct platform_device *pdev,
 }
 
 int32_t hw_flash_i2c_probe(struct i2c_client *client,
-    const struct i2c_device_id *id)
+	const struct i2c_device_id *id)
 {
-    struct i2c_adapter *adapter;
-    struct hw_flash_ctrl_t *flash_ctrl;
+	struct i2c_adapter *adapter;
+	struct hw_flash_ctrl_t *flash_ctrl;
 
-    uint32_t group_id;
-    int32_t rc=0;
+	uint32_t group_id;
+	int32_t rc=0;
 
-    cam_info("%s client name = %s.\n", __func__, client->name);
+	cam_info("%s client name = %s.\n", __func__, client->name);
 
-    adapter = client->adapter;
-    if (!i2c_check_functionality(adapter, I2C_FUNC_I2C)) {
-        cam_err("%s i2c_check_functionality failed.\n", __func__);
-        return -EIO;
-    }
+	adapter = client->adapter;
+	if (!i2c_check_functionality(adapter, I2C_FUNC_I2C)) {
+		cam_err("%s i2c_check_functionality failed.\n", __func__);
+		return -EIO;
+	}
 
-    flash_ctrl = (struct hw_flash_ctrl_t *)id->driver_data;
-    flash_ctrl->flash_i2c_client->client = client;
-    flash_ctrl->dev = &client->dev;
-    flash_ctrl->flash_i2c_client->i2c_func_tbl = &hw_flash_i2c_func_tbl;
+	flash_ctrl = (struct hw_flash_ctrl_t *)id->driver_data;
+	flash_ctrl->flash_i2c_client->client = client;
+	flash_ctrl->dev = &client->dev;
+	flash_ctrl->flash_i2c_client->i2c_func_tbl = &hw_flash_i2c_func_tbl;
 
-    if (hisi_is_clt_flag()) {
-        flash_ctrl->func_tbl->flash_init = hw_simulate_init;
-        flash_ctrl->func_tbl->flash_exit = hw_simulate_exit;
-        flash_ctrl->func_tbl->flash_on = hw_simulate_on;
-        flash_ctrl->func_tbl->flash_off = hw_simulate_off;
-        flash_ctrl->func_tbl->flash_match = hw_simulate_match;
-    }
-    rc = hw_flash_get_dt_data(flash_ctrl);
-    if (rc < 0) {
-        cam_err("%s hw_flash_get_dt_data failed.", __func__);
-        return -EFAULT;
-    }
+	if (hisi_is_clt_flag()) {
+		flash_ctrl->func_tbl->flash_init = hw_simulate_init;
+		flash_ctrl->func_tbl->flash_exit = hw_simulate_exit;
+		flash_ctrl->func_tbl->flash_on = hw_simulate_on;
+		flash_ctrl->func_tbl->flash_off = hw_simulate_off;
+		flash_ctrl->func_tbl->flash_match = hw_simulate_match;
+	}
+	rc = hw_flash_get_dt_data(flash_ctrl);
+	if (rc < 0) {
+		cam_err("%s hw_flash_get_dt_data failed.", __func__);
+		return -EFAULT;
+	}
 
-    rc = flash_ctrl->func_tbl->flash_get_dt_data(flash_ctrl);
-    if (rc < 0) {
-        cam_err("%s flash_get_dt_data failed.", __func__);
-        return -EFAULT;
-    }
+	rc = flash_ctrl->func_tbl->flash_get_dt_data(flash_ctrl);
+	if (rc < 0) {
+		cam_err("%s flash_get_dt_data failed.", __func__);
+		return -EFAULT;
+	}
 
-    flash_ctrl->flash_type = FLASH_ALONE;//default alone
-    rc = flash_ctrl->func_tbl->flash_init(flash_ctrl);
-    if (rc < 0) {
-        cam_err("%s flash init failed.\n", __func__);
-        return -EFAULT;
-    }
+	flash_ctrl->flash_type = FLASH_ALONE;
+	rc = flash_ctrl->func_tbl->flash_init(flash_ctrl);
+	if (rc < 0) {
+		cam_err("%s flash init failed.\n", __func__);
+		return -EFAULT;
+	}
 
-    rc = flash_ctrl->func_tbl->flash_match(flash_ctrl);
-    if (rc < 0) {
-        cam_err("%s flash match failed.\n", __func__);
-        flash_ctrl->func_tbl->flash_exit(flash_ctrl);
-        return -EFAULT;
-    }
+	rc = flash_ctrl->func_tbl->flash_match(flash_ctrl);
+	if (rc < 0) {
+		cam_err("%s flash match failed.\n", __func__);
+		flash_ctrl->func_tbl->flash_exit(flash_ctrl);
+		return -EFAULT;
+	}
 
-    if (!flash_ctrl->flash_v4l2_subdev_ops)
-        flash_ctrl->flash_v4l2_subdev_ops = &hw_flash_subdev_ops;
+	if (!flash_ctrl->flash_v4l2_subdev_ops)
+		flash_ctrl->flash_v4l2_subdev_ops = &hw_flash_subdev_ops;
 
-    v4l2_subdev_init(&flash_ctrl->hw_sd.sd,
-            flash_ctrl->flash_v4l2_subdev_ops);
+	flash_ctrl->hw_sd.sd.internal_ops = &hw_flash_subdev_internal_ops;
 
-    rc = snprintf_s(flash_ctrl->hw_sd.sd.name,
-        sizeof(flash_ctrl->hw_sd.sd.name),sizeof(flash_ctrl->hw_sd.sd.name)-1, "%s",
-        flash_ctrl->flash_info.name);
-    if (rc < 0) {
-        cam_err("%s  flash name in overflow.\n", __func__);
-        return -EFAULT;
-    }
+	v4l2_subdev_init(&flash_ctrl->hw_sd.sd,
+		flash_ctrl->flash_v4l2_subdev_ops);
 
-    v4l2_set_subdevdata(&flash_ctrl->hw_sd.sd, client);
+	rc = snprintf_s(flash_ctrl->hw_sd.sd.name,
+		sizeof(flash_ctrl->hw_sd.sd.name),sizeof(flash_ctrl->hw_sd.sd.name)-1, "%s",
+			flash_ctrl->flash_info.name);
+	if (rc < 0) {
+		cam_err("%s  flash name in overflow.\n", __func__);
+		return -EFAULT;
+	}
 
-    group_id = flash_ctrl->flash_info.index ? HWCAM_SUBDEV_FLASH1
-                    : HWCAM_SUBDEV_FLASH0;
+	v4l2_set_subdevdata(&flash_ctrl->hw_sd.sd, client);
+
+	group_id = flash_ctrl->flash_info.index ? HWCAM_SUBDEV_FLASH1
+		: HWCAM_SUBDEV_FLASH0;
 
 	if ( flash_ctrl->flash_info.index == 2 ) {
 		cam_info("%s group id is HWCAME_SUBDEV_FLASH2  flash name = %s.\n", __func__, client->name);
 		group_id = HWCAM_SUBDEV_FLASH2;
 	}
 
-    flash_ctrl->hw_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-    init_subdev_media_entity(&flash_ctrl->hw_sd.sd,group_id);
-    hwcam_cfgdev_register_subdev(&flash_ctrl->hw_sd.sd,group_id);
-    rc = flash_ctrl->func_tbl->flash_register_attribute(flash_ctrl,
-            &flash_ctrl->hw_sd.sd.devnode->dev);
-    if (rc < 0) {
-        cam_err("%s failed to register flash attribute node.", __func__);
-        return rc;
-    }
+	flash_ctrl->hw_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
+	init_subdev_media_entity(&flash_ctrl->hw_sd.sd,group_id);
+	hwcam_cfgdev_register_subdev(&flash_ctrl->hw_sd.sd,group_id);
+	rc = flash_ctrl->func_tbl->flash_register_attribute(flash_ctrl,
+		&flash_ctrl->hw_sd.sd.devnode->dev);
+	if (rc < 0) {
+		cam_err("%s failed to register flash attribute node.", __func__);
+		return rc;
+	}
 
-    /*for mix flash, mix:flash_type = 1; alone:flash_type = 0; */
-    if (FLASH_MIX == flash_ctrl->flash_type) {
-        rc = hw_flash_mix_register_attribute(flash_ctrl,
-            &flash_ctrl->hw_sd.sd.devnode->dev);
-        if (rc < 0) {
-            cam_err("%s failed to register hisi flash mix attribute node.", __func__);
-            return rc;
-        }
-    }
+	/*for mix flash, mix:flash_type = 1, alone:flash_type = 0, */
+	if (FLASH_MIX == flash_ctrl->flash_type) {
+		rc = hw_flash_mix_register_attribute(flash_ctrl,
+			&flash_ctrl->hw_sd.sd.devnode->dev);
+		if (rc < 0) {
+			cam_err("%s failed to register hisi flash mix attribute node.", __func__);
+			return rc;
+		}
+	}
 
-    rc = hw_flash_register_attribute(flash_ctrl,
-            &flash_ctrl->hw_sd.sd.devnode->dev);
-    if (rc < 0) {
-        cam_err("%s failed to register hisi flash attribute node.", __func__);
-        return rc;
-    }
+	rc = hw_flash_register_attribute(flash_ctrl,
+		&flash_ctrl->hw_sd.sd.devnode->dev);
+	if (rc < 0) {
+		cam_err("%s failed to register hisi flash attribute node.", __func__);
+		return rc;
+	}
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
     /* detect current device successful, set the flag as present */
-    if (flash_ctrl->flash_info.index == 0) {
-        set_hw_dev_flag(DEV_I2C_TPS);
-    } else if (flash_ctrl->flash_info.index == 1 || flash_ctrl->flash_info.index == 2) {
-        set_hw_dev_flag(DEV_I2C_FFLASH);
-    }
+	if (flash_ctrl->flash_info.index == 0) {
+		set_hw_dev_flag(DEV_I2C_TPS);
+	} else if (flash_ctrl->flash_info.index == 1 || flash_ctrl->flash_info.index == 2) {
+		set_hw_dev_flag(DEV_I2C_FFLASH);
+	}
 #endif
-    hw_set_flash_ctrl(flash_ctrl);
+	hw_set_flash_ctrl(flash_ctrl);
 
-    if(client_flash == NULL){
-        client_flash = dsm_register_client(&dev_flash);
-    }
-    return rc;
+	if(client_flash == NULL){
+		client_flash = dsm_register_client(&dev_flash);
+	}
+	return rc;
 }
 
 #ifdef CONFIG_LLT_TEST

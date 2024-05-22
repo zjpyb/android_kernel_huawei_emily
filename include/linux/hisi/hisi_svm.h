@@ -1,31 +1,29 @@
-/*
- *
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- */
 #ifndef __HISI_SVM_H
 #define __HISI_SVM_H
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/mmu_notifier.h>
 
+enum smmu_evt_type {
+	PG_FAULT,
+	HW_SERROR
+};
+
+struct smmu_evt_msg {
+	unsigned long fault_ss;
+	unsigned long fault_reason;
+	unsigned long fault_addr;
+	unsigned long fault_resv;
+};
+
 struct hisi_svm {
 	char                *name;
 	struct device       *dev;
 	struct mm_struct    *mm;
-	struct mmu_notifier  mn;
 	struct iommu_domain *dom;
 	unsigned long        l2addr;
 	struct dentry       *debug_root;
+	pid_t                pid;
 };
 
 struct hisi_aicpu_irq_info {
@@ -45,4 +43,9 @@ int hisi_svm_get_ssid(struct hisi_svm *svm, u16 *ssid,  u64 *ttbr, u64 *tcr);
 int hisi_svm_flush_cache(struct mm_struct *mm,
 	unsigned long addr, size_t size);
 int hisi_aicpu_irq_offset_register(struct hisi_aicpu_irq_info info);
+int hisi_svm_flag_set(struct task_struct *task, u32 flag);
+
+int hisi_smmu_evt_register_notify(struct notifier_block *n);
+int hisi_smmu_evt_unregister_notify(struct notifier_block *n);
+
 #endif

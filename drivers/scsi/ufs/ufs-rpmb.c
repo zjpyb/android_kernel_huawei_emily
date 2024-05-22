@@ -11,7 +11,6 @@
  * GNU General Public License for more details.
  */
 
-
 #include "ufs-rpmb.h"
 #ifdef CONFIG_HISI_BOOTDEVICE
 #include <linux/bootdevice.h>

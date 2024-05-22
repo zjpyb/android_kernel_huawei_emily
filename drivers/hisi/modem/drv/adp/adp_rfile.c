@@ -47,6 +47,7 @@
  */
 
 /*lint --e{533,750}*/
+#ifdef __KERNEL__
 /*lint -save -e537*/
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -68,6 +69,16 @@
 #include <linux/hrtimer.h>
 #include <linux/kthread.h>
 /*lint -restore*/
+#else /* __VXWORKS__ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <stat.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <semLib.h>
+
+#endif /* end of __KERNEL__ */
 
 #include "drv_comm.h"
 #include "osl_types.h"
@@ -82,6 +93,7 @@
 #include <securec.h>
 
 
+#ifdef __KERNEL__
 
 #define rfile_print_info        printk
 
@@ -91,6 +103,17 @@ typedef  struct semaphore       rfile_sem_id;
 
 #define Rfile_Free(ptr)         kfree(ptr)
 
+#else /* __VXWORKS__ */
+
+typedef  SEM_ID                 rfile_sem_id;
+
+#define rfile_print_info        printf
+
+#define Rfile_Malloc(size)      malloc(size)
+
+#define Rfile_Free(ptr)         free(ptr)
+
+#endif /* end of __KERNEL__ */
 
 #define RFILE_TIMEOUT_MAX           (2000)           /* ×î³¤µÈ´ý2s */
 
@@ -505,7 +528,11 @@ void adp_rfile_init()
 {
     INIT_LIST_HEAD(&g_adp_rfile.rfile_listhead);
 
+#ifdef __KERNEL__
     sema_init(&g_adp_rfile.semList, 1);
+#else /* __VXWORKS__ */
+    g_adp_rfile.semList = semBCreate(SEM_Q_FIFO, (SEM_B_STATE)SEM_FULL);
+#endif /* end of __KERNEL__ */
 
 }
 

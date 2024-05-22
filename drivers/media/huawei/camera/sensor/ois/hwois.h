@@ -42,7 +42,6 @@
 #include "../../cci/hw_cci.h"
 
 typedef struct _tag_hw_ois_vtbl hw_ois_vtbl_t;
-typedef struct _tag_hw_ois_intf hw_ois_intf_t;
 
 /* ois controler struct define */
 struct hw_ois_info {

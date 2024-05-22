@@ -223,8 +223,7 @@ static inline int handle_err_hist(struct fb_info *info, int wait_ret) {
 	if (hisifd->panel_power_on) {
 		if (wait_ret > 0) {
 			ret = 3;//panel on hist not return hist stop is true
-		} else if (wait_ret == -ERESTARTSYS){
-			hisifb_ce_service_deinit();
+		} else if (wait_ret == -ERESTARTSYS) {
 			ret = 4;//system err and return -ERESTARTSYS
 		} else {
 			ret = 2;//hist not return time out
@@ -622,7 +621,7 @@ int hisifb_ce_service_get_param(struct fb_info *info, void __user *argp)
 	ktime_get_ts(&ts);
 	pinfo->hiace_param.lTimestamp = ts.tv_sec * MSEC_PER_SEC + ts.tv_nsec / NSEC_PER_MSEC;
 	if (metadata_ctrl->count <= META_DATA_SIZE) {
-		memcpy(pinfo->hiace_param.Classifieresult, metadata_ctrl->metadata, (size_t)metadata_ctrl->count);
+		memcpy(pinfo->hiace_param.Classifieresult, metadata_ctrl->metadata, (size_t)metadata_ctrl->count); //lint !e571
 		pinfo->hiace_param.iResultLen = metadata_ctrl->count;
 	}
 
@@ -650,6 +649,7 @@ int hisifb_ce_service_get_hist(struct fb_info *info, void __user *argp)
 	ce_service_t *service = &g_hiace_service;
 	int ret = 0;
 	long wait_ret = 0;
+	int times = 0;
 	long timeout = msecs_to_jiffies(100000);
 
 	if (runmode_is_factory()) {
@@ -683,8 +683,17 @@ int hisifb_ce_service_get_hist(struct fb_info *info, void __user *argp)
 
 	if (g_is_effect_init) {
 		unlock_fb_info(info);
-		wait_ret = wait_event_interruptible_timeout(service->wq_hist, service->new_hist || service->hist_stop, timeout);
-		lock_fb_info(info);
+		while (1) {
+			wait_ret = wait_event_interruptible_timeout(service->wq_hist, service->new_hist || service->hist_stop, timeout);
+			if ((wait_ret == -ERESTARTSYS) && (times++ < 100)) {
+				mdelay(10);
+			} else {
+				if (times != 0)
+					HISI_FB_INFO("[effect] wait_ret is -ERESTARTSYS, max times=%d\n", times);
+				break;
+			}
+		}
+		(void)lock_fb_info(info);
 		service->hist_stop = false;
 	}
 	if (!g_is_effect_init) {
@@ -1347,13 +1356,13 @@ void init_hiace(struct hisi_fb_data_type *hisifd)
 	block_pixel_num = (half_block_w * half_block_h) << 2;
 	max_lhist_block_pixel_num = block_pixel_num << 2;
 	max_lhist_bin_reg_num = (1 << 16) - 1; /* each local hist bin 20bit -> 16bit */
-	if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num << 1)) {
+	if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num)) {
 		lhist_sft = 0;
-	} else if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num << 2)) {
+	} else if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num << 1)) {
 		lhist_sft = 1;
-	} else if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num << 3)) {
+	} else if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num << 2)) {
 		lhist_sft = 2;
-	} else if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num << 4)) {
+	} else if (max_lhist_block_pixel_num < (max_lhist_bin_reg_num << 3)) {
 		lhist_sft = 3;
 	} else {
 		lhist_sft = 4;
@@ -1996,7 +2005,7 @@ int hisifb_use_dynamic_gamma(struct hisi_fb_data_type *hisifd, char __iomem *dpp
 	return 0;//lint !e438
 
 }//lint !e550
-
+/*lint -e571, -e573, -e737, -e732, -e850, -e730, -e713, -e529, -e574, -e679, -e732, -e845, -e570, -e774, -e559*/
 int hisifb_use_dynamic_degamma(struct hisi_fb_data_type *hisifd, char __iomem *dpp_base)
 {
 	uint32_t i = 0;
@@ -2133,8 +2142,6 @@ void hisifb_update_gm_from_reserved_mem(uint32_t *gm_r, uint32_t *gm_g, uint32_t
 	g_factory_gamma_enable = 1;
 	return;
 }
-
-/*lint -e571, -e573, -e737, -e732, -e850, -e730, -e713, -e529, -e574, -e679, -e732, -e845, -e570, -e774*/
 
 static void free_acm_table(struct acm_info *acm)
 {
@@ -3441,7 +3448,7 @@ void hisi_effect_lcp_set_reg(struct hisi_fb_data_type *hisifd)
 	char __iomem *lcp_base = NULL;
 	uint32_t degama_lut_sel;
 	uint32_t gmp_lut_sel;
-	bool ret;
+	bool ret = false;
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd is NULL!");
@@ -4477,5 +4484,5 @@ int hisi_effect_hiace_config(struct hisi_fb_data_type *hisifd) {
 
 	return set_hiace_param(hisifd);
 }
-/*lint +e571, +e573, +e737, +e732, +e850, +e730, +e713, +e529, +e574, +e679, +e732, +e845, +e570, +e774*/
+/*lint +e571, +e573, +e737, +e732, +e850, +e730, +e713, +e529, +e574, +e679, +e732, +e845, +e570, +e774, +e559*/
 //lint +e747, +e838

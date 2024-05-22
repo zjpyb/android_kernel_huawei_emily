@@ -32,6 +32,7 @@
 
 
 #include "product_config.h"
+#if(FEATURE_ON == FEATURE_PPP)
 /******************************************************************************
    1 头文件包含
 ******************************************************************************/
@@ -1098,5 +1099,29 @@ VOS_VOID Ppp_RcvConfigInfoReqMntnInfo(VOS_UINT16  usPppID, PPP_REQ_CONFIG_INFO_S
     return;
 }
 
+#else
+
+/*****************************************************************************
+  1 头文件包含
+*****************************************************************************/
+#include "ppp_public.h"
+
+/*****************************************************************************
+  3 函数实现
+*****************************************************************************/
+
+
+VOS_UINT32 PPP_PullPacketEvent(VOS_UINT16 usPppId, PPP_ZC_STRU *pstImmZc)
+{
+    return PS_SUCC;
+}
+
+
+VOS_UINT32 PPP_PullRawDataEvent(VOS_UINT16 usPppId, PPP_ZC_STRU *pstImmZc)
+{
+    return PS_SUCC;
+}
+
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 
 

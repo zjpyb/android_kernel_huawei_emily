@@ -29,7 +29,7 @@
 #define K(x) (((x) << (PAGE_SHIFT - 10)))
 static int meminfo_lite_proc_show(struct seq_file *m, void *v)
 {
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 	struct sysinfo i;
 	long available;
 
@@ -79,7 +79,8 @@ static int meminfo_lite_proc_show(struct seq_file *m, void *v)
 	 * and cannot be freed. Cap this estimate at the low watermark.
 	 */
 	available += global_page_state(NR_SLAB_RECLAIMABLE) -
-		min(global_page_state(NR_SLAB_RECLAIMABLE) / 2, wmark_low);/*lint !e666*/
+		min(global_page_state(NR_SLAB_RECLAIMABLE) / 2,
+		wmark_low); /*lint !e666*/
 
 	/*
 	 * Add the ioncache pool pages
@@ -120,7 +121,7 @@ static const struct file_operations meminfo_lite_proc_fops = {
 
 static int __init proc_meminfo_lite_init(void)
 {
-	proc_create("meminfo_lite", 0, NULL, &meminfo_lite_proc_fops);
+	proc_create("meminfo_lite", 0444, NULL, &meminfo_lite_proc_fops);
 	return 0;
 }
 

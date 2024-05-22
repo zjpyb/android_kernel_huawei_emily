@@ -142,15 +142,15 @@ int32_t VL53L0_set_page(VL53L0_DEV dev, uint8_t page_data)
 }
 
 int32_t VL53L0_write_multi(VL53L0_DEV dev, uint8_t index, uint8_t *pdata,
-			int32_t count)
+	int32_t count)
 {
 	int32_t status = STATUS_OK;
-	uint8_t *buffer;
+	uint8_t *buffer = NULL;
 
 #ifdef VL53L0_LOG_ENABLE
 	int32_t i = 0;
 	char value_as_str[VL53L0_MAX_STRING_LENGTH_PLT];
-	char *pvalue_as_str;
+	char *pvalue_as_str = NULL;
 
 	pvalue_as_str =  value_as_str;
 
@@ -173,15 +173,15 @@ int32_t VL53L0_write_multi(VL53L0_DEV dev, uint8_t index, uint8_t *pdata,
 }
 
 int32_t VL53L0_read_multi(VL53L0_DEV dev, uint8_t index, uint8_t *pdata,
-			int32_t count)
+	int32_t count)
 {
 	int32_t status = STATUS_OK;
-	uint8_t *buffer;
+	uint8_t *buffer = NULL;
 
 #ifdef VL53L0_LOG_ENABLE
-	int32_t      i = 0;
-	char   value_as_str[VL53L0_MAX_STRING_LENGTH_PLT];
-	char *pvalue_as_str;
+	int32_t i = 0;
+	char value_as_str[VL53L0_MAX_STRING_LENGTH_PLT];
+	char *pvalue_as_str = NULL;
 #endif
 
 	if ((count + 1) > VL53L0_MAX_I2C_XFER_SIZE)

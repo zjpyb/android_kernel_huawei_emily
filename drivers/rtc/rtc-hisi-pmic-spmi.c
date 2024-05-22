@@ -304,7 +304,7 @@ static unsigned long hisi_pmu_rtc_read_bulk(unsigned int base)
 
 static void hisi_pmu_rtc_irq_enable(unsigned int enable)
 {
-	struct irq_desc *desc;
+	struct irq_desc *desc = NULL;
 	struct hisi_rtc_dev *ldata = hisi_rtc_ldata_get();/*lint !e578 */
 
 	desc = irq_to_desc(ldata->pmu_rtc_irq);
@@ -329,7 +329,8 @@ void hisi_pmu_rtc_readtime(struct rtc_time *tm)
 	struct hisi_rtc_dev *ldata = hisi_rtc_ldata_get();/*lint !e578 */
 #ifdef CONFIG_HISI_RTC_SECURE_FEATURE
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
-	int ret, offset;
+	int ret;
+	int offset = 0;
 #endif
 #endif
 
@@ -509,9 +510,9 @@ static int hisi_soc_rtc_read_alarmtime(struct device *dev,
 	rtc_time_to_tm(time, &alarm->time);
 
 	alarm->pending =
-	    readl(ldata->soc_rtc_baseaddr + SOC_RTC_RIS) & SOC_RTCALARM_INT;
+	    (unsigned int)readl(ldata->soc_rtc_baseaddr + SOC_RTC_RIS) & SOC_RTCALARM_INT;
 	alarm->enabled =
-	    readl(ldata->soc_rtc_baseaddr + SOC_RTC_IMSC) & SOC_RTCALARM_INT;
+	    (unsigned int)readl(ldata->soc_rtc_baseaddr + SOC_RTC_IMSC) & SOC_RTCALARM_INT;
 
 	return 0;
 }

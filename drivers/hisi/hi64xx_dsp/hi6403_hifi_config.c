@@ -181,7 +181,6 @@ static void hi6403_hifi_init(void)
 	/* enable hifi auto clk */
 	hi64xx_hifi_write_reg(HI6403_DSP_CG_CTRL0, 0x0);
 	hi64xx_hifi_write_reg(HI6403_DSP_CG_CTRL1, 0x0);
-	//hi64xx_hifi_reg_set_bit(HI6403_CFG_REG_CLK_CTRL, HI6403_REGFILE_CLK_CG_EN_BIT);
 
 	/* release dsp_pd_srst_req */
 	hi64xx_hifi_reg_clr_bit(HI6403_SW_RST_REQ, HI6403_DSP_PD_SRST_REQ_BIT);
@@ -528,6 +527,7 @@ int hi6403_hifi_config_init(struct snd_soc_codec *codec,
 	dsp_config.dsp_ops.runstall = hi6403_hifi_runstall_cfg;
 	dsp_config.dsp_ops.wtd_enable = hi6403_hifi_watchdog_enable;
 	dsp_config.dsp_ops.uart_enable = hi6403_hifi_uart_enable;
+	dsp_config.dsp_ops.i2c_enable = NULL;
 	dsp_config.dsp_ops.notify_dsp = hi6403_hifi_notify_dsp;
 	dsp_config.dsp_ops.dsp_power_ctrl = hi6403_dsp_power_ctrl;
 	dsp_config.dsp_ops.soundtrigger_fasttrans_ctrl = hi6403_soundtrigger_fasttrans_ctrl;

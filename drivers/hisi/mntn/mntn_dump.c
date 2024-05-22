@@ -12,7 +12,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
- #include <linux/stddef.h>
+#include <linux/stddef.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
 #include <linux/compiler.h>
@@ -21,7 +21,10 @@
 #include <linux/of.h>
 #include <linux/io.h>
 #include <linux/of_address.h>
+#include <linux/hisi/mntn_dump.h>
 #include <mntn_public_interface.h>
+#include <securec.h>
+
 #define HISI_LOG_TAG  MNTN_DUMP_TAG
 #include <linux/hisi/hisi_log.h>
 #include "blackbox/rdr_print.h"
@@ -38,13 +41,15 @@ struct mntn_dump_mem_info{
 	unsigned int clean_flag; // clean flag
 };
 struct mntn_dump_mem_info g_mntn_dump_mem_size[MNTN_DUMP_MAX] = {
-	{MNTN_DUMP_HEAD_SIZE,0},
-	{MNTN_DUMP_ETR_SIZE,0},
-	{MNTN_DUMP_KERNEL_DUMP_SIZE,0},
-	{MNTN_DUMP_PANIC_SIZE,0},
-	{MNTN_DUMP_FTRACE_SIZE,0},
-	{MNTN_DUMP_PSTORE_RAMOOPS_SIZE,0},
-	{MNTN_DUMP_BC_PANIC_SIZE,MNTN_DUMP_NOCLEAN}
+	{MNTN_DUMP_HEAD_SIZE, 0},
+	{MNTN_DUMP_ETR_SIZE, 0},
+	{MNTN_DUMP_KERNEL_DUMP_SIZE, 0},
+	{MNTN_DUMP_PANIC_SIZE, 0},
+	{MNTN_DUMP_FTRACE_SIZE, 0},
+	{MNTN_DUMP_PSTORE_RAMOOPS_SIZE, 0},
+	{MNTN_DUMP_BC_PANIC_SIZE, MNTN_DUMP_NOCLEAN},
+	{MNTN_DUMP_LOGBUF_SIZE, 0},
+	{MNTN_DUMP_HWDIAG_SIZE, MNTN_DUMP_NOCLEAN},
 };
 
 static DEFINE_RAW_SPINLOCK(g_mdump_lock);
@@ -57,10 +62,10 @@ struct mdump_mem_info g_mdump_mem_info[MNTN_DUMP_MAX];
 
 static int get_mntn_dump_reserve_addr(void)
 {
-	struct device_node *np;
-	const char *name;
+	struct device_node *np = NULL;
+	const char *name = NULL;
 	int 	len;
-	const unsigned long *p;
+	const unsigned long *p = NULL;
 
 	np = of_find_node_by_path(DTS_MNTNDUMP_NAME);
 	if (!np) {
@@ -98,6 +103,12 @@ err:
 	return -1;
 }
 
+static void mntn_dump_head_crc(void)
+{
+	g_mdump_head->crc = 0;
+	g_mdump_head->crc = checksum32((u32 *)g_mdump_head, sizeof(struct mdump_head));
+}
+
 int mntn_dump_init(void)
 {
 	int i;
@@ -121,8 +132,9 @@ int mntn_dump_init(void)
 	}
 	BB_PRINT_PN("%s: mntn dump base addr:%pK\n", __func__, g_mntn_dump_base);
 	/* clean the memory of information struct  */
-	memset((void *)g_mdump_mem_info, 0x00, sizeof(g_mdump_mem_info));
-
+	if (EOK != memset_s((void *)g_mdump_mem_info, sizeof(g_mdump_mem_info), 0x00, sizeof(g_mdump_mem_info))) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
 
 	offset = 0;
 	for (i = 0; i < MNTN_DUMP_MAX; i++) {
@@ -149,7 +161,7 @@ int mntn_dump_init(void)
 	g_mdump_head->regs_info[0].size = g_mdump_mem_info[MNTN_DUMP_HEAD].size;
 	g_mdump_head->regs_info[0].offset = g_mdump_mem_info[MNTN_DUMP_HEAD].offset;
 	g_mdump_head->nums = 1;
-
+	mntn_dump_head_crc();
 	g_mntn_dump_init = 1;
 	return 0;
 err:
@@ -208,6 +220,8 @@ int register_mntn_dump(int mod_id, unsigned int size, void **vaddr)
 	g_mdump_head->regs_info[i].size = g_mdump_mem_info[mod_id].size;
 	g_mdump_head->regs_info[i].offset = g_mdump_mem_info[mod_id].offset;
 	g_mdump_head->nums += 1;
+
+	mntn_dump_head_crc();
 
 	*ptr = (char *)g_mdump_mem_info[mod_id].vaddr;
 	raw_spin_unlock(&g_mdump_lock);

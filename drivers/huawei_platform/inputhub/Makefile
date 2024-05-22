@@ -1,3 +1,4 @@
+subdir-ccflags-y += -Idrivers/hisi/tzdriver
 ifeq ($(wildcard $(srctree)/drivers/huawei_platform/inputhub/$(TARGET_BOARD_PLATFORM)),)
 obj-y += default/
 else

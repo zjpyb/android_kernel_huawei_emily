@@ -19,6 +19,7 @@
 
 #ifdef CONFIG_HISI_CLK_DEBUG
 #include "hisi-clk-debug.h"
+#include <securec.h>
 #endif
 
 #ifdef CONFIG_HISI_CLK
@@ -75,9 +76,13 @@ static int clk_factor_set_rate(struct clk_hw *hw, unsigned long rate,
 #ifdef CONFIG_HISI_CLK_DEBUG
 static int hi3xxx_dumpfixed_factor(struct clk_hw *hw, char* buf, struct seq_file *s)
 {
+	int ret = 0;
 	struct clk_fixed_factor *fix = to_clk_fixed_factor(hw);
 	if(buf && !s) {
-		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : fixed div value = %d\n", __clk_get_name(hw->clk), fix->div);
+		ret = snprintf_s(buf, DUMP_CLKBUFF_MAX_SIZE, DUMP_CLKBUFF_MAX_SIZE - 1, \
+			"[%s] : fixed div value = %d\n", __clk_get_name(hw->clk), fix->div);
+		if(ret == -1)
+			pr_err("%s snprintf_s failed!\n", __func__);
 	}
 	if(!buf && s) {
 		seq_printf(s, "    %-15s    %-15s    DIV-%d", "NONE", "fixed-factor", fix->div);
@@ -127,7 +132,7 @@ struct clk_hw *clk_hw_register_fixed_factor(struct device *dev,
 		hw = ERR_PTR(ret);
 	}
 
-	return hw; /*lint !e593 */
+	return hw;
 }
 EXPORT_SYMBOL_GPL(clk_hw_register_fixed_factor);
 
@@ -256,7 +261,6 @@ static int of_fixed_factor_clk_remove(struct platform_device *pdev)
 {
 	struct clk *clk = platform_get_drvdata(pdev);
 
-	of_clk_del_provider(pdev->dev.of_node);
 	clk_unregister_fixed_factor(clk);
 
 	return 0;

@@ -139,7 +139,9 @@ FC_PRIVATE_POLICY_ID_ENUM_UINT8         g_aenPrivatePolicyTbl[FC_MODEM_ID_NUM][F
         FC_PRIVATE_POLICY_ID_GPRS_MODEM_0,
         FC_PRIVATE_POLICY_ID_TMP_MODEM_0,
         FC_PRIVATE_POLICY_ID_CPU_C_MODEM_0,
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
         FC_PRIVATE_POLICY_ID_CDMA_MODEM_0
+#endif        
     },
     {
         FC_PRIVATE_POLICY_ID_MEM_MODEM_1,
@@ -149,7 +151,9 @@ FC_PRIVATE_POLICY_ID_ENUM_UINT8         g_aenPrivatePolicyTbl[FC_MODEM_ID_NUM][F
         FC_PRIVATE_POLICY_ID_GPRS_MODEM_1,
         FC_PRIVATE_POLICY_ID_TMP_MODEM_1,
         FC_PRIVATE_POLICY_ID_CPU_C_MODEM_1,
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
         FC_PRIVATE_POLICY_ID_CDMA_MODEM_1,
+#endif 
     }
 };
 
@@ -1589,10 +1593,12 @@ STATIC VOS_UINT32  FC_CFG_SetDefaultValue( FC_CFG_STRU *pstFcCfg )
     pstFcCfg->stFcCfgUmUlRateForTmp.ausRate[1]  = 1000;
     pstFcCfg->stFcCfgUmUlRateForTmp.ausRate[2]  = 384;
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     pstFcCfg->stFcCfgCdma.stThresholdMemCnt.ulSetThreshold  = 500;
     pstFcCfg->stFcCfgCdma.stThresholdMemCnt.ulStopThreshold = 220;
     pstFcCfg->stFcCfgCdma.stThresholdMemSize.ulSetThreshold = 491000; /* 250*404+250*1560 */
     pstFcCfg->stFcCfgCdma.stThresholdMemSize.ulStopThreshold= 216040; /* 110*404+110*1560 */
+#endif
 
     return VOS_OK;
 }
@@ -1631,9 +1637,11 @@ STATIC VOS_UINT32  FC_CFG_SetNvValue( FC_CFG_NV_STRU  *pstFcCfgNv )
 
     PSACORE_MEM_CPY(&(pstFcCfg->stFcCfgUmUlRateForTmp), sizeof(FC_CFG_UM_UL_RATE_STRU), &(pstFcCfgNv->stFcCfgUmUlRateForTmp), sizeof(FC_CFG_UM_UL_RATE_STRU));
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     PSACORE_MEM_CPY(&(pstFcCfg->stFcCfgCdma.stThresholdMemCnt), sizeof(FC_CFG_MEM_THRESHOLD_STRU), &(pstFcCfgNv->stFcCfgCdmaMemCnt), sizeof(FC_CFG_MEM_THRESHOLD_STRU));
 
     PSACORE_MEM_CPY(&(pstFcCfg->stFcCfgCdma.stThresholdMemSize), sizeof(FC_CFG_MEM_THRESHOLD_STRU), &(pstFcCfgNv->stFcCfgCdmaMemSize), sizeof(FC_CFG_MEM_THRESHOLD_STRU));
+#endif
 
     return VOS_OK;
 }

@@ -8,7 +8,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/usb/otg.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
@@ -211,6 +211,7 @@ static int hi6522_write_mask(u8 reg, u8 MASK, u8 SHIFT, u8 value)
 *                      value:register value
 *  return value:  0-sucess or others-fail
 **********************************************************/
+#ifdef CONFIG_HISI_DEBUG_FS
 static int hi6522_read_mask(u8 reg, u8 MASK, u8 SHIFT, u8 * value)
 {
 	int ret = 0;
@@ -225,7 +226,7 @@ static int hi6522_read_mask(u8 reg, u8 MASK, u8 SHIFT, u8 * value)
 
 	return 0;
 }
-
+#endif
 #define CONFIG_SYSFS_SCHG
 #ifdef CONFIG_SYSFS_SCHG
 /*
@@ -321,8 +322,8 @@ static struct hi6522_sysfs_field_info *hi6522_sysfs_field_lookup(const char
 static ssize_t hi6522_sysfs_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
-	struct hi6522_sysfs_field_info *info;
-	struct hi6522_sysfs_field_info *info2;
+	struct hi6522_sysfs_field_info *info = NULL;
+	struct hi6522_sysfs_field_info *info2 = NULL;
 #ifdef CONFIG_HISI_DEBUG_FS
 	int ret;
 #endif
@@ -370,8 +371,8 @@ static ssize_t hi6522_sysfs_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
-	struct hi6522_sysfs_field_info *info;
-	struct hi6522_sysfs_field_info *info2;
+	struct hi6522_sysfs_field_info *info = NULL;
+	struct hi6522_sysfs_field_info *info2 = NULL;
 	int ret;
 	u8 v;
 
@@ -750,8 +751,11 @@ static int hi6522_set_watchdog_timer(int value)
 static int hi6522_reset_watchdog_timer(void)
 {
 	u8 dog_status = 0;
+	int ret;
 	/*scharger v200 need to write wdt timer */
-	hi6522_read_byte(CHG_WDT_TIMER_REG, &dog_status);
+	ret = hi6522_read_byte(CHG_WDT_TIMER_REG, &dog_status);
+	if (ret)
+		return ret;
 	if ((dog_status & CHG_WDT_TIMER_MSK) == 0)
 		hi6522_set_watchdog_timer(TIMER_40S);
 	return hi6522_write_mask(CHG_WDT_RST_REG, CHG_WDT_RST_MSK,
@@ -764,7 +768,7 @@ static int hi6522_reset_watchdog_timer(void)
 *  Parameters:   reg_value:string for save register value
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int hi6522_dump_register(char *reg_value)
+static int hi6522_dump_register(char *reg_value, int size)
 {
 	u8 reg[HI6522_REG_TOTAL_NUM] = { 0 };
 	char buff[26] = { 0 };
@@ -774,7 +778,7 @@ static int hi6522_dump_register(char *reg_value)
 		SCHARGER_ERR("%s hi6522_device_info is NULL!\n", __func__);
 		return -ENOMEM;
 	}
-	memset(reg_value, 0, CHARGELOG_SIZE);
+	memset(reg_value, 0, size);
 	hi6522_read_block(di, &reg[0], 0, HI6522_REG_TOTAL_NUM);
 	for (i = 0; i < HI6522_REG_TOTAL_NUM; i++) {
 		snprintf(buff, 26, "0x%-8x", reg[i]);
@@ -789,12 +793,12 @@ static int hi6522_dump_register(char *reg_value)
 *  Parameters:   reg_head:string for save register head
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int hi6522_get_register_head(char *reg_head)
+static int hi6522_get_register_head(char *reg_head, int size)
 {
 	char buff[26] = { 0 };
 	int i = 0;
 
-	memset(reg_head, 0, CHARGELOG_SIZE);
+	memset(reg_head, 0, size);
 	for (i = 0; i < HI6522_REG_TOTAL_NUM; i++) {
 		snprintf(buff, 26, "Reg[0x%2x] ", i);
 		strncat(reg_head, buff, strlen(buff));
@@ -840,7 +844,7 @@ static int hi6522_config_power_on_reg01(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_set_charge_enable(int val)
 {
-	int ret = 0;
+	int ret0, ret1;
 	struct hi6522_device_info *di = g_hi6522_dev;
 	if (NULL == di) {
 		SCHARGER_ERR("%s hi6522_device_info is NULL!\n", __func__);
@@ -852,17 +856,17 @@ static int hi6522_set_charge_enable(int val)
 		return -EINTR;
 	}
 	di->chg_en = (unsigned char)val;
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG01,
 			     &di->power_on_config_reg01.value);
 	di->power_on_config_reg01.reg.chg_en_int = di->chg_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG01,
 			      di->power_on_config_reg01.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg01 is 0x%x \n", __func__,
 		     di->power_on_config_reg01.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -875,17 +879,17 @@ static int hi6522_set_charge_enable(int val)
 static int hi6522_config_charger_nolock_enable(struct hi6522_device_info *di)
 {
 
-	int ret = 0;
-	ret =
+	int ret0, ret1;
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG01,
 			     &di->power_on_config_reg01.value);
 	di->power_on_config_reg01.reg.chg_en_int = di->chg_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG01,
 			      di->power_on_config_reg01.value);
 	SCHARGER_INF("[%s] :power_on_config_reg01 is 0x%x \n", __func__,
 		     di->power_on_config_reg01.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -897,7 +901,7 @@ static int hi6522_config_charger_nolock_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_set_otg_enable(int val)
 {
-	int ret = 0;
+	int ret0, ret1;
 	struct hi6522_device_info *di = g_hi6522_dev;
 	if (NULL == di) {
 		SCHARGER_ERR("%s hi6522_device_info is NULL!\n", __func__);
@@ -915,18 +919,18 @@ static int hi6522_set_otg_enable(int val)
 		di->otg_en = CHG_OTG_FORCE_DIS;
 	}
 	/*config otg en */
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG01,
 			     &di->power_on_config_reg01.value);
 	di->power_on_config_reg01.reg.otg_en_int = di->otg_en;
 	di->power_on_config_reg01.reg.chg_en_int = di->chg_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG01,
 			      di->power_on_config_reg01.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg01 is 0x%x \n", __func__,
 		     di->power_on_config_reg01.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /**********************************************************
@@ -965,23 +969,23 @@ int hi6522_set_otg_current(int value)
 ****************************************************************************/
 static int hi6522_config_wled_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_wled_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG01,
 			     &di->power_on_config_reg01.value);
 	di->power_on_config_reg01.reg.wled_en_int = di->wled_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG01,
 			      di->power_on_config_reg01.value);
 
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg01 is 0x%x \n", __func__,
 		     di->power_on_config_reg01.value);
-	return ret;
+	return (ret0 || ret1);
 }
 /****************************************************************************
   Function:     hi6522_config_enable_chopper
@@ -992,25 +996,25 @@ static int hi6522_config_wled_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_enable_chopper(struct hi6522_device_info *di,int value)
 {
-    int ret;
+    int ret0, ret1;
     unsigned char val = 0;
     if (down_interruptible(&di->charger_data_busy_lock)) {
         SCHARGER_ERR("hi6522_config_wled_enable sema fail! \n");
         return -EINTR;
     }
-    ret = hi6522_read_byte(WLED_REG8_CONTROL, (u8 *)&val);
+    ret0 = hi6522_read_byte(WLED_REG8_CONTROL, (u8 *)&val);
     val &= HI6XXX_WLED_REG8_CHOOPER_MASK;
     if(1==value)
     {
         val |= HI6XXX_WLED_REG8_CHOOPER_ENABLE;
     }
 
-    ret |= hi6522_write_byte(WLED_REG8_CONTROL, val);
+    ret1 = hi6522_write_byte(WLED_REG8_CONTROL, val);
 
     up(&di->charger_data_busy_lock);
     SCHARGER_ERR("[%s] :hi6522_config_enable_chopper is %d\n", __func__,
              val);
-    return ret;
+    return (ret0 || ret1);
 }
 /****************************************************************************
   Function:     hi6522_config_enable_ifb1_ifb2
@@ -1021,23 +1025,23 @@ static int hi6522_config_enable_chopper(struct hi6522_device_info *di,int value)
 ****************************************************************************/
 static int hi6522_config_enable_ifb1_ifb2(struct hi6522_device_info *di,int mode)
 {
-    int ret;
+    int ret0, ret1;
     unsigned char val = 0;
 
     if (down_interruptible(&di->charger_data_busy_lock)) {
         SCHARGER_ERR("hi6522_config_wled_enable sema fail! \n");
         return -EINTR;
     }
-    ret = hi6522_read_byte(WLED_REG5_CONTROL, (u8 *)&val);
+    ret0 = hi6522_read_byte(WLED_REG5_CONTROL, (u8 *)&val);
     val &= HI6XXX_IFB1_IFB2_ENABLE_MASK;
     val |= (unsigned char)(mode);
 
-    ret |= hi6522_write_byte(WLED_REG5_CONTROL, (u8)val);
+    ret1 = hi6522_write_byte(WLED_REG5_CONTROL, (u8)val);
 
     up(&di->charger_data_busy_lock);
     SCHARGER_ERR("[%s] :hi6522_config_enable_ifb1_ifb22 is %d\n", __func__,
              val);
-    return ret;
+    return (ret0 || ret1);
 }
 /****************************************************************************
   Function:     hi6522_config_ldo1_200ma_enable
@@ -1048,22 +1052,22 @@ static int hi6522_config_enable_ifb1_ifb2(struct hi6522_device_info *di,int mode
 ****************************************************************************/
 static int hi6522_config_ldo1_200ma_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_ldo1_200ma_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG01,
 			     &di->power_on_config_reg01.value);
 	di->power_on_config_reg01.reg.ldo1_200ma_en_int = di->ldo1_200ma_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG01,
 			      di->power_on_config_reg01.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg01 is 0x%x \n", __func__,
 		     di->power_on_config_reg01.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1075,22 +1079,22 @@ static int hi6522_config_ldo1_200ma_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_ldo2_200ma_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_ldo2_200ma_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG01,
 			     &di->power_on_config_reg01.value);
 	di->power_on_config_reg01.reg.ldo2_200ma_en_int = di->ldo2_200ma_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG01,
 			      di->power_on_config_reg01.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg01 is 0x%x \n", __func__,
 		     di->power_on_config_reg01.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1102,22 +1106,22 @@ static int hi6522_config_ldo2_200ma_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_lcd_boost_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_lcd_boost_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG00,
 			     &di->power_on_config_reg00.value);
 	di->power_on_config_reg00.reg.lcd_bst_en_int = di->lcd_bst_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG00,
 			      di->power_on_config_reg00.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg00 is 0x%x \n", __func__,
 		     di->power_on_config_reg00.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1129,22 +1133,22 @@ static int hi6522_config_lcd_boost_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_lcd_ldo_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_lcd_ldo_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG00,
 			     &di->power_on_config_reg00.value);
 	di->power_on_config_reg00.reg.lcd_ldo_en_int = di->lcd_ldo_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG00,
 			      di->power_on_config_reg00.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg00 is 0x%x \n", __func__,
 		     di->power_on_config_reg00.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1156,22 +1160,22 @@ static int hi6522_config_lcd_ldo_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_lcd_ncp_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_lcd_ncp_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG00,
 			     &di->power_on_config_reg00.value);
 	di->power_on_config_reg00.reg.lcd_ncp_en_int = di->lcd_ncp_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG00,
 			      di->power_on_config_reg00.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg00 is 0x%x \n", __func__,
 		     di->power_on_config_reg00.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1183,23 +1187,23 @@ static int hi6522_config_lcd_ncp_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_lcd_ldo_ncp_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_lcd_ldo_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG00,
 			     &di->power_on_config_reg00.value);
 	di->power_on_config_reg00.reg.lcd_ldo_en_int = di->lcd_ldo_en;
 	di->power_on_config_reg00.reg.lcd_ncp_en_int = di->lcd_ncp_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG00,
 			      di->power_on_config_reg00.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg00 is 0x%x \n", __func__,
 		     di->power_on_config_reg00.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1211,22 +1215,22 @@ static int hi6522_config_lcd_ldo_ncp_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_flash_boost_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR("hi6522_config_flash_boost_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG00,
 			     &di->power_on_config_reg00.value);
 	di->power_on_config_reg00.reg.flash_bst_en_int = di->flash_bst_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG00,
 			      di->power_on_config_reg00.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg00 is 0x%x \n", __func__,
 		     di->power_on_config_reg00.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1238,24 +1242,24 @@ static int hi6522_config_flash_boost_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_flash_led_flash_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR
 		    ("hi6522_config_flash_led_flash_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG00,
 			     &di->power_on_config_reg00.value);
 	di->power_on_config_reg00.reg.flash_led_flash_en =
 	    di->flash_led_flash_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG00,
 			      di->power_on_config_reg00.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg00 is 0x%x \n", __func__,
 		     di->power_on_config_reg00.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1267,24 +1271,24 @@ static int hi6522_config_flash_led_flash_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_flash_led_torch_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR
 		    ("hi6522_config_flash_led_torch_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret =
+	ret0 =
 	    hi6522_read_byte(POWER_ON_CONFIG_REG00,
 			     &di->power_on_config_reg00.value);
 	di->power_on_config_reg00.reg.flash_led_torch_en =
 	    di->flash_led_torch_en;
-	ret |=
+	ret1 =
 	    hi6522_write_byte(POWER_ON_CONFIG_REG00,
 			      di->power_on_config_reg00.value);
 	up(&di->charger_data_busy_lock);
 	SCHARGER_INF("[%s] :power_on_config_reg00 is 0x%x \n", __func__,
 		     di->power_on_config_reg00.value);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1297,19 +1301,19 @@ static int hi6522_config_flash_led_torch_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_flash_led_timeout_enable(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 
 	if (down_interruptible(&di->charger_data_busy_lock)) {
 		SCHARGER_ERR
 		    ("hi6522_config_flash_led_timeout_enable sema fail! \n");
 		return -EINTR;
 	}
-	ret = hi6522_read_byte(FLASH_LED_REG7_REG, &di->flash_led_reg7.value);
+	ret0 = hi6522_read_byte(FLASH_LED_REG7_REG, &di->flash_led_reg7.value);
 	di->flash_led_reg7.reg.flash_led_timeout_en =
 	    di->chg_flash_led_timeout_en;
-	ret |= hi6522_write_byte(FLASH_LED_REG7_REG, di->flash_led_reg7.value);
+	ret1 = hi6522_write_byte(FLASH_LED_REG7_REG, di->flash_led_reg7.value);
 	up(&di->charger_data_busy_lock);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1322,7 +1326,7 @@ static int hi6522_config_flash_led_timeout_enable(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_flash_led_timeout(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	unsigned int flash_led_timeout = 0;
 	unsigned char tout = 0;
 
@@ -1341,11 +1345,11 @@ static int hi6522_config_flash_led_timeout(struct hi6522_device_info *di)
 		SCHARGER_ERR("hi6522_config_flash_led_timeout sema fail! \n");
 		return -EINTR;
 	}
-	ret = hi6522_read_byte(FLASH_LED_REG6_REG, &di->flash_led_reg6.value);
+	ret0 = hi6522_read_byte(FLASH_LED_REG6_REG, &di->flash_led_reg6.value);
 	di->flash_led_reg6.reg.flash_led_timeout = tout;
-	ret |= hi6522_write_byte(FLASH_LED_REG6_REG, di->flash_led_reg6.value);
+	ret1 = hi6522_write_byte(FLASH_LED_REG6_REG, di->flash_led_reg6.value);
 	up(&di->charger_data_busy_lock);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1358,7 +1362,7 @@ static int hi6522_config_flash_led_timeout(struct hi6522_device_info *di)
 ****************************************************************************/
 static int hi6522_config_flash_torch_timeout(struct hi6522_device_info *di)
 {
-	int ret = 0;
+	int ret0, ret1;
 	unsigned int flash_torch_timeout = 0;
 	unsigned char tout = 0;
 
@@ -1374,11 +1378,11 @@ static int hi6522_config_flash_torch_timeout(struct hi6522_device_info *di)
 		SCHARGER_ERR("hi6522_config_flash_torch_timeout sema fail! \n");
 		return -EINTR;
 	}
-	ret = hi6522_read_byte(FLASH_LED_REG6_REG, &di->flash_led_reg6.value);
+	ret0 = hi6522_read_byte(FLASH_LED_REG6_REG, &di->flash_led_reg6.value);
 	di->flash_led_reg6.reg.flash_led_watchdog_timer = tout;
-	ret |= hi6522_write_byte(FLASH_LED_REG6_REG, di->flash_led_reg6.value);
+	ret1 = hi6522_write_byte(FLASH_LED_REG6_REG, di->flash_led_reg6.value);
 	up(&di->charger_data_busy_lock);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1391,59 +1395,52 @@ static int hi6522_config_flash_torch_timeout(struct hi6522_device_info *di)
 
 static void hi6522_config_opt_param(void)
 {
+	int ret[32] = {0};
+	unsigned int i;
 	if(!(strstr(saved_command_line, "androidboot.swtype=factory"))){
 		unsigned char chooper = 0;
 
-		hi6522_read_byte(0x1D, &chooper);
+		ret[0] = hi6522_read_byte(0x1D, &chooper);
 		chooper &= 0x2;
 		chooper |= 0x69;
-		hi6522_write_byte(0x1D, chooper);
+		ret[1] = hi6522_write_byte(0x1D, chooper);
 	}else{
-		hi6522_write_byte(0x1D, 0x6B);
+		ret[0] = hi6522_write_byte(0x1D, 0x6B);
 	}
 
-	hi6522_write_byte(0x48, 0x14);
-	hi6522_write_byte(0x40, 0x8A);
-
-	hi6522_write_byte(0x42, 0x2A);
-	hi6522_write_byte(0x3B, 0x11);
-	hi6522_write_byte(0x37, 0xF3);
-	hi6522_write_byte(0x45, 0x82);
-	hi6522_write_byte(0x41, 0x25);
-	hi6522_write_byte(0x3e, 0x11);
-
-	hi6522_write_byte(0x1C, 0x7F);
-	hi6522_write_byte(0x17, 0x78);
-	hi6522_write_byte(0x16, 0xC8);
-	hi6522_write_byte(0x18, 0x99);
-	hi6522_write_byte(0x2F, 0x18);
-	hi6522_write_byte(0x31, 0x2C);
-
-	hi6522_write_byte(0x21, 0x0A);
-	hi6522_write_byte(0x25, 0x7B);
-	hi6522_write_byte(0x27, 0x07);
-
-	hi6522_write_byte(0x64, 0x26);
-	hi6522_write_byte(0x69, 0x0F);
-	/*scharger v220 need not to config 0x56 0x5e */
-	//hi6522_write_byte(0x56, 0x1A);
-	//hi6522_write_byte(0x5E, 0x1D);
-	hi6522_write_byte(0x58, 0x2F);
-	hi6522_write_byte(0x59, 0x6C);
-	hi6522_write_byte(0x5B, 0xF9);
-	hi6522_write_byte(0x5D, 0x33);
-	hi6522_write_byte(0x65, 0x12);
-	hi6522_write_byte(0x33, 0x08);
-	hi6522_write_byte(0x23, 0x85);
-
+	ret[2] = hi6522_write_byte(0x48, 0x14);
+	ret[3] = hi6522_write_byte(0x40, 0x8A);
+	ret[4] = hi6522_write_byte(0x42, 0x2A);
+	ret[5] = hi6522_write_byte(0x3B, 0x11);
+	ret[6] = hi6522_write_byte(0x37, 0xF3);
+	ret[7] = hi6522_write_byte(0x45, 0x82);
+	ret[8] = hi6522_write_byte(0x41, 0x25);
+	ret[9] = hi6522_write_byte(0x3e, 0x11);
+	ret[10] = hi6522_write_byte(0x1C, 0x7F);
+	ret[11] = hi6522_write_byte(0x17, 0x78);
+	ret[12] = hi6522_write_byte(0x16, 0xC8);
+	ret[13] = hi6522_write_byte(0x18, 0x99);
+	ret[14] = hi6522_write_byte(0x2F, 0x18);
+	ret[15] = hi6522_write_byte(0x31, 0x2C);
+	ret[16] = hi6522_write_byte(0x21, 0x0A);
+	ret[17] = hi6522_write_byte(0x25, 0x7B);
+	ret[18] = hi6522_write_byte(0x27, 0x07);
+	ret[19] = hi6522_write_byte(0x64, 0x26);
+	ret[20] = hi6522_write_byte(0x69, 0x0F);
+	ret[21] = hi6522_write_byte(0x58, 0x2F);
+	ret[22] = hi6522_write_byte(0x59, 0x6C);
+	ret[23] = hi6522_write_byte(0x5B, 0xF9);
+	ret[24] = hi6522_write_byte(0x5D, 0x33);
+	ret[25] = hi6522_write_byte(0x65, 0x12);
+	ret[26] = hi6522_write_byte(0x33, 0x08);
+	ret[27] = hi6522_write_byte(0x23, 0x85);
 	/*Modify flash_led_vbatdroop from 3.5V to 3.3V*/
 	/*Modify flash_led_vbattorch from 3.5V to 3.2V*/
-	hi6522_write_byte(0x62, 0x52);
-
+	ret[28] = hi6522_write_byte(0x62, 0x52);
 	/*Modify flash_led_isafe from 200mA to 400mA */
-	hi6522_write_byte(0x67, 0x07);
+	ret[29] = hi6522_write_byte(0x67, 0x07);
 
-	hi6522_write_byte(0x63, 0x18);
+	ret[30] = hi6522_write_byte(0x63, 0x18);
 	/*Modify WLED OVP VOLTAGE*/
 	if(NULL == g_hi6522_dev)
 	{
@@ -1452,7 +1449,11 @@ static void hi6522_config_opt_param(void)
 	}
 	if(VOL_DEFAULT != g_hi6522_dev->wled_ovp_vol){
 		SCHARGER_INF("Re-write WLED OVP value to %d!\n", g_hi6522_dev->wled_ovp_vol);
-		hi6522_write_mask(WLED_OVP_REG,WLED_OVP_MASK,WLED_OVP_SHIFT,(u8)(g_hi6522_dev->wled_ovp_vol));
+		ret[31] = hi6522_write_mask(WLED_OVP_REG,WLED_OVP_MASK,WLED_OVP_SHIFT,(u8)(g_hi6522_dev->wled_ovp_vol));
+	}
+	for (i = 0; i < ARRAY_SIZE(ret); i++) {
+		if (ret[i])
+			SCHARGER_ERR("%s:ret[%d] fail!\n", __func__, ret[i]);
 	}
 }
 
@@ -1684,8 +1685,8 @@ int scharger_power_off(int id)
 int scharger_power_set_voltage(unsigned int vset_regs, unsigned int mask,
 			       int shift, int index)
 {
-	int ret = 0;
-	struct hi6522_device_info *di;
+	int ret0, ret1;
+	struct hi6522_device_info *di = NULL;
 	unsigned char reg_value = 0;
 /* return ok when charger probe later than regulator*/
 	if (NULL == scharger_di) {
@@ -1697,11 +1698,11 @@ int scharger_power_set_voltage(unsigned int vset_regs, unsigned int mask,
 		return -EINTR;
 	}
 	/*set voltage */
-	ret = hi6522_read_byte((u8) vset_regs, &reg_value);
-	CHG_REG_SETBITS(reg_value, (u32)shift, mask, index);
-	ret |= hi6522_write_byte((u8) vset_regs, reg_value);
+	ret0 = hi6522_read_byte((u8) vset_regs, &reg_value);
+	CHG_REG_SETBITS(reg_value, (u32)shift, mask, (u32)index);
+	ret1 = hi6522_write_byte((u8) vset_regs, reg_value);
 	up(&di->charger_data_busy_lock);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1715,7 +1716,7 @@ int scharger_power_get_voltage_index(unsigned int vget_regs, unsigned int mask,
 				     int shift)
 {
 	int ret = 0;
-	struct hi6522_device_info *di;
+	struct hi6522_device_info *di = NULL;
 	unsigned char reg_value = 0;
 	int index = 0;
 /* return ok when charger probe later than regulator*/
@@ -1746,8 +1747,8 @@ int scharger_power_get_voltage_index(unsigned int vget_regs, unsigned int mask,
 int scharger_power_set_current_limit(unsigned int vset_regs, unsigned int mask,
 				     int shift, int index)
 {
-	int ret = 0;
-	struct hi6522_device_info *di;
+	int ret0, ret1;
+	struct hi6522_device_info *di = NULL;
 	unsigned char reg_value = 0;
 
 /* return ok when charger probe later than regulator*/
@@ -1761,11 +1762,11 @@ int scharger_power_set_current_limit(unsigned int vset_regs, unsigned int mask,
 		return -EINTR;
 	}
 	/*set current */
-	ret = hi6522_read_byte((u8) vset_regs, &reg_value);
-	CHG_REG_SETBITS(reg_value, shift, mask, index);
-	ret |= hi6522_write_byte((u8) vset_regs, reg_value);
+	ret0 = hi6522_read_byte((u8) vset_regs, &reg_value);
+	CHG_REG_SETBITS(reg_value, (u32)shift, mask, (u32)index);
+	ret1 = hi6522_write_byte((u8) vset_regs, reg_value);
 	up(&di->charger_data_busy_lock);
-	return ret;
+	return (ret0 || ret1);
 }
 
 /****************************************************************************
@@ -1779,7 +1780,7 @@ int scharger_power_get_current_limit_index(unsigned int vget_regs,
 					   unsigned int mask, int shift)
 {
 	int ret = 0;
-	struct hi6522_device_info *di;
+	struct hi6522_device_info *di = NULL;
 	unsigned char reg_value = 0;
 	int index = 0;
 
@@ -1877,7 +1878,9 @@ int scharger_flash_torch_timeout_config(unsigned int timeoutSec)
 **********************************************************/
 int hi6522_chip_init(struct chip_init_crit* init_crit)
 {
-	int ret = 0;
+	/* modify according to ret value */
+	int ret[14] = {0};
+	unsigned int i;
 	struct hi6522_device_info *di = g_hi6522_dev;
 	if (NULL == di || !init_crit) {
 		SCHARGER_ERR("%s hi6522_device_info or init_crit is NULL!\n", __func__);
@@ -1885,28 +1888,31 @@ int hi6522_chip_init(struct chip_init_crit* init_crit)
 	}
 	switch(init_crit->vbus) {
 		case ADAPTER_5V:
-			ret |= hi6522_set_fast_safe_timer(CHG_FAST_SAFE_TIMER_MAX);
-			ret |= hi6522_set_term_enable(CHG_TERM_DIS);
-			ret |= hi6522_set_input_current(IINLIM_500);
-			ret |= hi6522_set_charge_current(CHG_FAST_ICHG_VALUE(500));
-			ret |= hi6522_set_terminal_voltage(CHG_FAST_VCHG_VALUE(4350));
-			ret |= hi6522_set_terminal_current(CHG_TERM_ICHG_150MA);
-			ret |= hi6522_set_watchdog_timer(WATCHDOG_TIMER_40_S);
-			ret |= hi6522_set_precharge_current(CHG_PRG_ICHG_200MA);
-			ret |= hi6522_set_precharge_voltage(CHG_PRG_VCHG_2800);
-			ret |= hi6522_set_batfet_ctrl(CHG_BATFET_EN);
-			ret |= hi6522_set_dpm_voltage(VINDPM_4520);
+			ret[0] = hi6522_set_fast_safe_timer(CHG_FAST_SAFE_TIMER_MAX);
+			ret[1] = hi6522_set_term_enable(CHG_TERM_DIS);
+			ret[2] = hi6522_set_input_current(IINLIM_500);
+			ret[3] = hi6522_set_charge_current(CHG_FAST_ICHG_VALUE(500));
+			ret[4] = hi6522_set_terminal_voltage(CHG_FAST_VCHG_VALUE(4350));
+			ret[5] = hi6522_set_terminal_current(CHG_TERM_ICHG_150MA);
+			ret[6] = hi6522_set_watchdog_timer(WATCHDOG_TIMER_40_S);
+			ret[7] = hi6522_set_precharge_current(CHG_PRG_ICHG_200MA);
+			ret[8] = hi6522_set_precharge_voltage(CHG_PRG_VCHG_2800);
+			ret[9] = hi6522_set_batfet_ctrl(CHG_BATFET_EN);
+			ret[10] = hi6522_set_dpm_voltage(VINDPM_4520);
 			/*IR compensation voatge clamp ,IR compensation resistor setting */
-			ret |= hi6522_set_vclamp(di->param_dts.vclamp);
-			ret |= hi6522_set_otg_current(BOOST_LIM_MAX);
-			ret |= hi6522_set_otg_enable(CHG_OTG_FORCE_DIS);
+			ret[11] = hi6522_set_vclamp(di->param_dts.vclamp);
+			ret[12] = hi6522_set_otg_current(BOOST_LIM_MAX);
+			ret[13] = hi6522_set_otg_enable(CHG_OTG_FORCE_DIS);
 			break;
 		default:
 			SCHARGER_ERR("%s: init mode err\n", __func__);
 			return -EINVAL;
 	}
-
-	return ret;
+    for(i = 0; i < ARRAY_SIZE(ret); i++) {
+		if(ret[i])
+			return -1;
+    }
+	return 0;
 }
 /**********************************************************
 *  Function:        hi6522_get_ibus_ma
@@ -2049,14 +2055,13 @@ static int hi6522_device_check(void)
 int hi6522_get_charge_state(unsigned int *state)
 {
 	u8 reg1 = 0, reg2 = 0, reg3 = 0;
-	int ret = 0;
+	int ret0, ret1, ret2;
 
-	ret |= hi6522_read_byte(CHG_REG6, &reg1);
-	ret |= hi6522_read_byte(CHG_STATUS0, &reg2);
-	ret |= hi6522_read_byte(CHG_STATUS1, &reg3);
-	if (ret) {
-		SCHARGER_ERR("[%s]read charge status reg fail,ret:%d\n",
-			     __func__, ret);
+	ret0 = hi6522_read_byte(CHG_REG6, &reg1);
+	ret1 = hi6522_read_byte(CHG_STATUS0, &reg2);
+	ret2 = hi6522_read_byte(CHG_STATUS1, &reg3);
+	if (ret0 || ret1 || ret2) {
+		SCHARGER_ERR("[%s]read charge status reg fail\n", __func__);
 		return -1;
 	}
 
@@ -2076,7 +2081,7 @@ int hi6522_get_charge_state(unsigned int *state)
 	}
 	SCHARGER_INF("[%s],state:%d, reg1 = 0x%x, reg2 = 0x%x\n", __func__,
 		     *state, reg1, reg2);
-	return ret;
+	return 0;
 }
 
 /**********************************************************
@@ -2193,12 +2198,10 @@ static int hi6522_is_dpm_state_valid(void)
     }while(!(TRUE == hi6522_check_input_dpm_state()));
     if(dpm_valid_check_count < DPM_VALID_CHECK_COUNT)
     {
-        dpm_valid_check_count = 0;
         return TRUE;
     }
     else
     {
-        dpm_valid_check_count = 0;
         return FALSE;
     }
 }
@@ -2331,6 +2334,8 @@ static void hi6522_dpm_check_work(struct work_struct *work)
 {
 	int current_ma;
 	unsigned char chg_en_status = 0;
+	int ret[3] = {0};
+	unsigned int i;
 	struct hi6522_device_info *di = container_of(work,
 						     struct hi6522_device_info,
 						     hi6522_dpm_check_work.
@@ -2350,25 +2355,28 @@ static void hi6522_dpm_check_work(struct work_struct *work)
 			chg_en_status = di->chg_en;
 			di->chg_en = CHG_POWER_DIS;
 			hi6522_config_charger_nolock_enable(di);
-			hi6522_read_byte(BUCK_REG5_REG, &reg);
+			ret[0] = hi6522_read_byte(BUCK_REG5_REG, &reg);
 			reg = reg | 0x08;
-			hi6522_write_byte(BUCK_REG5_REG, reg);
+			ret[1] = hi6522_write_byte(BUCK_REG5_REG, reg);
 			msleep(dpm_switch_delay_time_ms);
 			reg = reg & (~0x08);
-			hi6522_write_byte(BUCK_REG5_REG, reg);
+			ret[2] = hi6522_write_byte(BUCK_REG5_REG, reg);
 			di->chg_en = chg_en_status;
 			hi6522_config_charger_nolock_enable(di);
 			up(&di->charger_data_busy_lock);
 		} else {
-			hi6522_read_byte(BUCK_REG5_REG, &reg);
+			ret[0] = hi6522_read_byte(BUCK_REG5_REG, &reg);
 			reg = reg | 0x08;
-			hi6522_write_byte(BUCK_REG5_REG, reg);
+			ret[1] = hi6522_write_byte(BUCK_REG5_REG, reg);
 			msleep(dpm_switch_delay_time_ms);
 			reg = reg & (~0x08);
-			hi6522_write_byte(BUCK_REG5_REG, reg);
+			ret[2] = hi6522_write_byte(BUCK_REG5_REG, reg);
 		}
 	}
-
+	for (i = 0; i < ARRAY_SIZE(ret); i++) {
+		if (ret[i])
+			SCHARGER_ERR("%s:ret[%d] fail!\n", __func__, ret[i]);
+	}
 	queue_delayed_work(system_power_efficient_wq, &di->hi6522_dpm_check_work,
 			      msecs_to_jiffies(dpm_check_delay_time_ms));
 }
@@ -2382,7 +2390,7 @@ static void hi6522_dpm_check_work(struct work_struct *work)
 int scharger_flash_bst_vo_config(int config_voltage)
 {
 	int ret = 0;
-	struct hi6522_device_info *di;
+	struct hi6522_device_info *di = NULL;
 	u8 Boost_vol = 0;
 
 	if (NULL == scharger_di) {
@@ -2416,18 +2424,19 @@ EXPORT_SYMBOL_GPL(scharger_flash_bst_vo_config);
 int hi6522_lcd_ldo_clear_int(void)
 {
 	u8 reg = 0;
-	struct hi6522_device_info *di;
+	int ret0, ret1;
+	struct hi6522_device_info *di = NULL;
 	di = g_hi6522_dev;
 	if (NULL == di) {
 		SCHARGER_ERR("%s hi6522_device_info is NULL!\n", __func__);
 		return -ENOMEM;
 	}
 
-	hi6522_read_byte(CHG_IRQ_REG3, &reg);
+	ret0 = hi6522_read_byte(CHG_IRQ_REG3, &reg);
 	reg = reg | HI6522_LCD_LDO_OCP_CLEAR_BIT;
-	hi6522_write_byte(CHG_IRQ_REG3, reg);
+	ret1 = hi6522_write_byte(CHG_IRQ_REG3, reg);
 	SCHARGER_INF("clear lcd ldo ocp reg is %d\n", reg);
-	return 0;
+	return (ret0 || ret1);
 }
 
 EXPORT_SYMBOL_GPL(hi6522_lcd_ldo_clear_int);
@@ -2481,6 +2490,15 @@ struct charge_device_ops hi6522_ops = {
 	.get_charge_current = NULL,
 };
 
+struct charger_otg_device_ops hi6522_otg_ops = {
+	.chip_name = "scharger_v200",
+	.otg_set_charger_enable = hi6522_set_charge_enable,
+	.otg_set_enable = hi6522_set_otg_enable,
+	.otg_set_current = hi6522_set_otg_current,
+	.otg_set_watchdog_timer = hi6522_set_watchdog_timer,
+	.otg_reset_watchdog_timer = hi6522_reset_watchdog_timer,
+};
+
 static irqreturn_t hi6522_irq_handle(int irq, void *data)
 {
 	struct hi6522_device_info *di = (struct hi6522_device_info *)data;
@@ -2532,11 +2550,11 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 	static int wled_uvp_count = 0;
 
 	/*save irq status */
-	hi6522_read_byte(CHG_IRQ_REG0, &irq_status[0]);
-	hi6522_read_byte(CHG_IRQ_REG1, &irq_status[1]);
-	hi6522_read_byte(CHG_IRQ_REG2, &irq_status[2]);
-	hi6522_read_byte(CHG_IRQ_REG3, &irq_status[3]);
-	hi6522_read_byte(CHG_IRQ_REG4, &irq_status[4]);
+	(void)hi6522_read_byte(CHG_IRQ_REG0, &irq_status[0]);
+	(void)hi6522_read_byte(CHG_IRQ_REG1, &irq_status[1]);
+	(void)hi6522_read_byte(CHG_IRQ_REG2, &irq_status[2]);
+	(void)hi6522_read_byte(CHG_IRQ_REG3, &irq_status[3]);
+	(void)hi6522_read_byte(CHG_IRQ_REG4, &irq_status[4]);
 
 	/*handle irq */
 	if (irq_status[0] & CHG_IRQ0_VBUS_FAST_CHG_FAULT) {
@@ -2772,7 +2790,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 	}
 
 	if (irq_status[3] & CHG_IRQ3_LCD_BST_SCP) {/*lint !e690*/
-		hi6522_read_byte(SOC_SCHARGER_LCD_BOOST_REG10_ADDR(0),
+		(void)hi6522_read_byte(SOC_SCHARGER_LCD_BOOST_REG10_ADDR(0),
 				 &reg_read);
 		if (0x55 == reg_read) {
 			hi6522_write_byte(SOC_SCHARGER_LCD_BOOST_REG10_ADDR(0),
@@ -2836,7 +2854,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 		hi6522_write_byte(CHG_IRQ_REG4,
 				  irq_status[4] & CHG_IRQ4_OTG_SCP);
 		msleep(600);
-		hi6522_read_byte(CHG_STATUS0, &reg_read);
+		(void)hi6522_read_byte(CHG_STATUS0, &reg_read);
 		if ((reg_read & CHG_STATUS0_OTG_ON) == CHG_STATUS0_OTG_ON) {
 			otg_scp_cnt = 0;
 		}
@@ -2857,7 +2875,7 @@ static void hi6522_irq_work_handle(struct work_struct *work)
 		hi6522_write_byte(CHG_IRQ_REG4,
 				  irq_status[4] & CHG_IRQ4_OTG_UVP);
 		msleep(600);
-		hi6522_read_byte(CHG_STATUS0, &reg_read);
+		(void)hi6522_read_byte(CHG_STATUS0, &reg_read);
 		if ((reg_read & CHG_STATUS0_OTG_ON) == CHG_STATUS0_OTG_ON) {
 			otg_uvp_cnt = 0;
 		}
@@ -2979,7 +2997,7 @@ static int hi6522_dpm_switch_notifier_call(struct notifier_block *usb_nb,
 static void parse_dts(struct device_node *np, struct hi6522_device_info *di)
 {
 	int ret = 0;
-	struct device_node *batt_node;
+	struct device_node *batt_node = NULL;
 	di->param_dts.vclamp = 80;
     di->ico_iin_lim_opt = IIN_LIMIT_OPTION_DEFAULT;
 
@@ -3033,14 +3051,14 @@ static void parse_dts(struct device_node *np, struct hi6522_device_info *di)
 static int hi6522_charger_probe(struct i2c_client *client,
 				const struct i2c_device_id *id)
 {
-	struct hi6522_device_info *di;
+	struct hi6522_device_info *di = NULL;
 	int ret = 0;
 	u8 read_reg = 0;
 	struct class *power_class = NULL;
-	struct device_node *np;
+	struct device_node *np = NULL;
 	enum hisi_charger_type type = hisi_get_charger_type();
 
-	di = kzalloc(sizeof(*di), GFP_KERNEL);
+	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
 	if (NULL == di) {
 		SCHARGER_ERR("hi6522_device_info is NULL!\n");
 		return -ENOMEM;
@@ -3154,6 +3172,13 @@ static int hi6522_charger_probe(struct i2c_client *client,
 		SCHARGER_ERR("register charge ops failed!\n");
 		goto err_sysfs;
 	}
+
+	ret = charger_otg_ops_register(&hi6522_otg_ops);
+	if (ret) {
+		SCHARGER_ERR("register charger_otg ops failed\n");
+		goto err_sysfs;
+	}
+
 /* scharger v200 need to do dpm check when usb/charger is plugged on startup*/
 	if (type < CHARGER_TYPE_NONE) {
         di->ico_en = 1;
@@ -3202,8 +3227,6 @@ err_irq_request:
 err_irq_gpio:
 err_io:
 err_kfree:
-	kfree(di);
-	di = NULL;
 	g_hi6522_dev = NULL;
 	scharger_di = NULL;
 	return ret;
@@ -3224,8 +3247,6 @@ static int hi6522_charger_remove(struct i2c_client *client)
 	if (!di->ovlo_flag) {
 		gpio_free(di->gpio_ovlo_en);
 	}
-	kfree(di);
-
 	return 0;
 }
 

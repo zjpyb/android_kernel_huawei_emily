@@ -151,8 +151,8 @@ static ssize_t ovr_hidraw_send_report(struct file *file,
 					unsigned char report_type)
 {
 	unsigned int minor = iminor(file_inode(file));
-	struct hid_device *dev;
-	__u8 *buf;
+	struct hid_device *dev = NULL;
+	__u8 *buf = NULL;
 	int ret = 0;
 
 	if (!ovr_hidraw_table[minor]) {
@@ -235,7 +235,7 @@ static ssize_t ovr_hidraw_get_report(struct file *file,
 {
 	unsigned int minor = iminor(file_inode(file));
 	struct hid_device *dev;
-	__u8 *buf;
+	__u8 *buf = NULL;
 	int ret = 0, len;
 	unsigned char report_number;
 
@@ -311,8 +311,8 @@ static unsigned int ovr_hidraw_poll(struct file *file, poll_table *wait)
 static int ovr_hidraw_open(struct inode *inode, struct file *file)
 {
 	unsigned int minor = iminor(inode);
-	struct hidraw *dev;
-	struct hidraw_list *list;
+	struct hidraw *dev = NULL;
+	struct hidraw_list *list = NULL;
 	struct hwvr_monitor *monitor = &hwvr_monitors[minor];
 	int err = 0;
 
@@ -462,7 +462,7 @@ static int ovr_hidraw_release(struct inode *inode, struct file *file)
 int ovr_report_event(struct hid_device *hid, u8 *data, int len)
 {
 	struct hidraw *dev = hid->hidvr;
-	struct hidraw_list *list;
+	struct hidraw_list *list = NULL;
 	int ret = 0;
 	unsigned long flags;
 
@@ -495,7 +495,7 @@ int ovr_report_event(struct hid_device *hid, u8 *data, int len)
 int ovr_connect(struct hid_device *hid)
 {
 	int minor, result;
-	struct hidraw *dev;
+	struct hidraw *dev = NULL;
 	char *device_name = "hwvr";
 	D("+\n");
 
@@ -587,7 +587,7 @@ static long ovr_hidraw_ioctl(struct file *file,
 	struct inode *inode = file->f_path.dentry->d_inode;
 	unsigned int minor = iminor(inode);
 	long ret = 0;
-	struct hidraw *dev;
+	struct hidraw *dev = NULL;
 	void __user *user_arg = (void __user *)arg;
 
 	mutex_lock(&minors_lock);

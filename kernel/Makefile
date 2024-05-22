@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the linux kernel.
 #
@@ -5,12 +6,13 @@
 obj-y     = fork.o exec_domain.o panic.o \
 	    cpu.o exit.o softirq.o resource.o \
 	    sysctl.o sysctl_binary.o capability.o ptrace.o user.o \
-	    signal.o sys.o kmod.o workqueue.o pid.o task_work.o \
+	    signal.o sys.o umh.o workqueue.o pid.o task_work.o \
 	    extable.o params.o \
 	    kthread.o sys_ni.o nsproxy.o \
 	    notifier.o ksysfs.o cred.o reboot.o \
 	    async.o range.o smpboot.o ucount.o
 
+obj-$(CONFIG_MODULES) += kmod.o
 obj-$(CONFIG_MULTIUSER) += groups.o
 
 ifdef CONFIG_FUNCTION_TRACER
@@ -62,17 +64,14 @@ obj-$(CONFIG_MODULES) += module.o
 obj-$(CONFIG_MODULE_SIG) += module_signing.o
 obj-$(CONFIG_KALLSYMS) += kallsyms.o
 obj-$(CONFIG_BSD_PROCESS_ACCT) += acct.o
+obj-$(CONFIG_CRASH_CORE) += crash_core.o
 obj-$(CONFIG_KEXEC_CORE) += kexec_core.o
 obj-$(CONFIG_KEXEC) += kexec.o
 obj-$(CONFIG_KEXEC_FILE) += kexec_file.o
 obj-$(CONFIG_BACKTRACE_SELF_TEST) += backtracetest.o
 obj-$(CONFIG_COMPAT) += compat.o
-obj-$(CONFIG_CGROUPS) += cgroup.o
-obj-$(CONFIG_CGROUP_FREEZER) += cgroup_freezer.o
-obj-$(CONFIG_CGROUP_PIDS) += cgroup_pids.o
+obj-$(CONFIG_CGROUPS) += cgroup/
 obj-$(CONFIG_HW_CGROUP_IONICE) += cgroup_ionice.o
-obj-$(CONFIG_CGROUP_IOLIMIT) += cgroup_io_limit.o
-obj-$(CONFIG_CPUSETS) += cpuset.o
 obj-$(CONFIG_UTS_NS) += utsname.o
 obj-$(CONFIG_USER_NS) += user_namespace.o
 obj-$(CONFIG_PID_NS) += pid_namespace.o
@@ -87,11 +86,11 @@ obj-$(CONFIG_GCOV_KERNEL) += gcov/
 obj-$(CONFIG_KCOV) += kcov.o
 obj-$(CONFIG_KPROBES) += kprobes.o
 obj-$(CONFIG_KGDB) += debug/
-obj-$(CONFIG_DETECT_HUAWEI_HUNG_TASK) += huawei_hung_task.o
-obj-$(CONFIG_DETECT_HUAWEI_HUNG_TASK) += huawei_init_watchdog.o
 obj-$(CONFIG_DETECT_HUNG_TASK) += hung_task.o
+obj-$(CONFIG_DETECT_HUAWEI_HUNG_TASK) += huawei_hung_task.o
+obj-$(CONFIG_HUAWEI_INIT_WATCHDOG) += huawei_init_watchdog.o
 obj-$(CONFIG_LOCKUP_DETECTOR) += watchdog.o
-obj-$(CONFIG_HARDLOCKUP_DETECTOR) += watchdog_hld.o
+obj-$(CONFIG_HARDLOCKUP_DETECTOR_PERF) += watchdog_hld.o
 obj-$(CONFIG_SECCOMP) += seccomp.o
 obj-$(CONFIG_RELAY) += relay.o
 obj-$(CONFIG_SYSCTL) += utsname_sysctl.o
@@ -118,23 +117,20 @@ obj-$(CONFIG_CRASH_DUMP) += crash_dump.o
 obj-$(CONFIG_JUMP_LABEL) += jump_label.o
 obj-$(CONFIG_CONTEXT_TRACKING) += context_tracking.o
 obj-$(CONFIG_TORTURE_TEST) += torture.o
-obj-$(CONFIG_MEMBARRIER) += membarrier.o
 obj-$(CONFIG_HW_CGROUP_PIDS) += cgroup_huawei/
-
 obj-$(CONFIG_HAS_IOMEM) += memremap.o
 obj-$(CONFIG_HW_VIP_THREAD) += hwcfs/
 obj-$(CONFIG_HW_QOS_THREAD) += hwqos/
 obj-$(CONFIG_HW_VIP_THREAD) += cpu_netlink/
-obj-$(CONFIG_HW_QOS_THREAD) += cpu_netlink/
 obj-$(CONFIG_HW_CPULOAD_NOTI) += cpu_netlink/
 obj-$(CONFIG_HW_IAWARE_THREAD_BOOST) += cpu_netlink/
+obj-$(CONFIG_HW_RTG_SCHED) += hwrtg/
+obj-$(CONFIG_HW_RTG_SCHED) += cpu_netlink/
 
 obj-$(CONFIG_HW_CGROUP_WORKINGSET) += cgroup_workingset.o
 
 $(obj)/configs.o: $(obj)/config_data.h
 
-# config_data.h contains the same information as ikconfig.h but gzipped.
-# Info from config_data can be extracted from /proc/config*
 targets += config_data.gz
 $(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE
 	$(call if_changed,gzip)

@@ -21,7 +21,7 @@
 #include <linux/cpu.h>
 #include <linux/security.h>
 #include <linux/cpuset.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include "../../../kernel/sched/sched.h"
 #include <trace/events/sched.h>
 
@@ -45,7 +45,7 @@ static struct task_struct *find_process_by_pid(pid_t pid)
 static int bind_cpu_cluster(unsigned int setmask, pid_t pid)
 {
 	cpumask_var_t cpus_allowed, new_mask;
-	struct task_struct *p;
+	struct task_struct *p = NULL;
 	int retval;
 	struct cpumask mask;
 	int i;
@@ -54,7 +54,7 @@ static int bind_cpu_cluster(unsigned int setmask, pid_t pid)
 
 	for(i = 0; i < CPU_TOTAL; i++)
 	{
-		if(setmask & (0x01 << i))
+		if(setmask & (0x01u << (unsigned int)i))
 			cpumask_set_cpu(i, &mask);
 	}
 
@@ -64,6 +64,7 @@ static int bind_cpu_cluster(unsigned int setmask, pid_t pid)
 
 	p = find_process_by_pid(pid);
 	if (!p) {
+		pr_err("process is NULL,pid is :%d\n", pid);
 		rcu_read_unlock();
 		put_online_cpus();
 		return -ESRCH;
@@ -75,20 +76,25 @@ static int bind_cpu_cluster(unsigned int setmask, pid_t pid)
 
 	if (p->flags & PF_NO_SETAFFINITY) {
 		retval = -EINVAL;
+		pr_err("flags is PF_NO_SETAFFINITY, pid is :%d\n", pid);
 		goto out_put_task;
 	}
 	if (!alloc_cpumask_var(&cpus_allowed, GFP_KERNEL)) {
 		retval = -ENOMEM;
+		pr_err("invalid cpus_allowed, pid is :%d\n", pid);
 		goto out_put_task;
 	}
 	if (!alloc_cpumask_var(&new_mask, GFP_KERNEL)) {
 		retval = -ENOMEM;
+		pr_err("invalid new_mask, pid is :%d\n", pid);
 		goto out_free_cpus_allowed;
 	}
 
 	retval = security_task_setscheduler(p);
-	if (retval)
+	if (retval) {
+		pr_err("security task setscheduler fail, pid is :%d, retval = %d\n", pid, retval);
 		goto out_unlock;
+	}
 
 	cpuset_cpus_allowed(p, cpus_allowed);
 	cpumask_and(new_mask, &mask, cpus_allowed);
@@ -99,15 +105,18 @@ static int bind_cpu_cluster(unsigned int setmask, pid_t pid)
 	 * tasks allowed to run on all the CPUs in the task's
 	 * root_domain.
 	 */
+#ifdef CONFIG_SMP
 	if (task_has_dl_policy(p) && dl_bandwidth_enabled()) {
 		rcu_read_lock();
 		if (!cpumask_subset(task_rq(p)->rd->span, new_mask)) {
 			retval = -EBUSY;
+			pr_err("cpumask subset is fail, pid is :%d\n", pid);
 			rcu_read_unlock();
 			goto out_unlock;
 		}
 		rcu_read_unlock();
 	}
+#endif
 
 again:
 	retval = set_cpus_allowed_ptr(p, new_mask);
@@ -124,7 +133,9 @@ again:
 			goto again;
 		}
 
+#ifdef CONFIG_HISI_EAS_SCHED
 		trace_sched_set_affinity(p, new_mask);
+#endif
 	}
 out_unlock:
 	free_cpumask_var(new_mask);
@@ -165,24 +176,37 @@ static ssize_t perfhub_store(struct kobject *kobj, struct kobj_attribute *attr, 
 		return -EINVAL;
 	}
 
-	strcpy_s(maskStr, sizeof(maskStr)-1, buf);
+	ret = strcpy_s(maskStr, sizeof(maskStr)-1, buf);
+	if (ret != EOK)
+	{
+		pr_err("%s(): invalid input buf: %s\n", __func__, buf);
+		return -EINVAL;
+	}
 
 	pstrmask = strtok_s(maskStr, delimiter, &next_p);
 	if(pstrmask)
 		pstrchr = strtok_s(NULL, delimiter, &next_p);
-	else
+	else {
+		pr_err("invalid maskStr.");
 		return -EINVAL;
+	}
 
-	if (NULL == pstrchr)
+	if (NULL == pstrchr) {
+		pr_err("pstrchr is NULL.");
 		return -EINVAL;
+	}
 
 	ret = strict_strtol(pstrmask, 16, &cpumask);
-	if (ret != 0)
+	if (ret != 0) {
+		pr_err("invalid pstrmask, ret = %d\n", ret);
 		return -EINVAL;
+	}
 
 	ret = strict_strtol(pstrchr, 10, &pid);
-	if (ret != 0)
+	if (ret != 0) {
+		pr_err("invalid pstrchr, pid is :%d, ret = %d\n", pid, ret);
 		return -EINVAL;
+	}
 
 	g_last_mask = cpumask;
 	g_last_pid = pid;

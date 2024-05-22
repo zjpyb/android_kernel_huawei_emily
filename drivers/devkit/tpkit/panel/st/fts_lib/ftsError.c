@@ -28,7 +28,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <linux/completion.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>

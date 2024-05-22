@@ -48,7 +48,7 @@ show_bd_utilization(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
-	struct devfreq_pm_qos_data *data;
+	struct devfreq_pm_qos_data *data = NULL;
 	int ret = 0;
 
 	mutex_lock(&devfreq->lock);
@@ -64,7 +64,7 @@ store_bd_utilization(struct device *dev, struct device_attribute *attr,
 			const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
-	struct devfreq_pm_qos_data *data;
+	struct devfreq_pm_qos_data *data = NULL;
 	unsigned int input;
 	int ret = 0;
 
@@ -90,7 +90,7 @@ static ssize_t
 show_ddr_bandwidth(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
-	struct devfreq_pm_qos_data *data;
+	struct devfreq_pm_qos_data *data = NULL;
 	unsigned long freq;
 	unsigned long bw;
 	int ret = 0;
@@ -224,7 +224,7 @@ devfreq_pm_qos_notifier(struct notifier_block *nb, unsigned long val, void *v)
 static int devfreq_pm_qos_gov_init(struct devfreq *df)
 {
 	int ret;
-	struct devfreq_pm_qos_notifier_block *pq_nb;
+	struct devfreq_pm_qos_notifier_block *pq_nb = NULL;
 	struct devfreq_pm_qos_data *data = df->data;
 
 	if (!data) {
@@ -274,8 +274,9 @@ static int devfreq_pm_qos_gov_init(struct devfreq *df)
 
 static void devfreq_pm_qos_gov_exit(struct devfreq *df)
 {
-	struct devfreq_pm_qos_notifier_block *pq_nb, *tmp;
-	struct devfreq_pm_qos_data *data;
+	struct devfreq_pm_qos_notifier_block *pq_nb = NULL;
+	struct devfreq_pm_qos_notifier_block *tmp = NULL;
+	struct devfreq_pm_qos_data *data = NULL;
 
 	sysfs_remove_files(&df->dev.kobj, governor_pm_qos_attrs);
 

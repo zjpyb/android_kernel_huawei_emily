@@ -17,14 +17,13 @@
 #include <linux/device.h>
 #include <linux/ctype.h>
 #include <linux/leds.h>
-/*lint -e* */
 
 static ssize_t led_delay_on_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
 
-	return sprintf(buf, "%lu\n", led_cdev->blink_delay_on);
+	return sprintf(buf, "%lu\n", led_cdev->blink_delay_on); //lint !e421
 }
 
 static ssize_t led_delay_on_store(struct device *dev,
@@ -49,7 +48,7 @@ static ssize_t led_delay_off_show(struct device *dev,
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
 
-	return sprintf(buf, "%lu\n", led_cdev->blink_delay_off);
+	return sprintf(buf, "%lu\n", led_cdev->blink_delay_off); //lint !e421
 }
 
 static ssize_t led_delay_off_store(struct device *dev,

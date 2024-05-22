@@ -167,12 +167,30 @@ static VOS_UINT32 g_ulVosRadomSeed = 0;
 
 VOS_UINT32        g_ulErrorNo = 0;                  /* 存放错误码 */
 
+#if (VOS_VXWORKS == VOS_OS_VER)
+extern int errnoSet(int errorValue);
+#endif
 
+#if ((VOS_WIN32 == VOS_OS_VER)||(VOS_NUCLEUS== VOS_OS_VER)||(VOS_LINUX == VOS_OS_VER)||(VOS_RTOSCK == VOS_OS_VER))
 int errnoSet(int errorValue)
 {
     return 0;
 }
+#endif
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+extern VOS_UINT32 CRYPT_randSeed(
+    VOS_UINT8                  *pucSeed,
+    VOS_UINT32                  ulLen);
+
+extern VOS_UINT32 CRYPT_addEntropy(
+    VOS_UINT8                  *pucEntropyBuf,
+    VOS_UINT32                  ulLen);
+
+extern VOS_UINT32 CRYPT_random(
+    VOS_UINT8                  *pucBuf,
+    VOS_UINT32                  ulLen);
+#endif
 
 /******************************************************************************
  Function    : V_SetErrorNo
@@ -388,6 +406,7 @@ VOS_VOID VOS_StrToLower( VOS_CHAR* Str )
     return;
 }
 
+#if (VOS_RTOSCK != VOS_OS_VER)
 /*****************************************************************************
  Function   : V_StrCpy
  Description: copy one string to another
@@ -412,6 +431,7 @@ VOS_CHAR *V_StrCpy( VOS_CHAR *Dest, VOS_CHAR *Src )
 
     return Dest;
 }
+#endif
 
 /*****************************************************************************
  Function   : VOS_StrCpy_s
@@ -424,12 +444,21 @@ VOS_CHAR *V_StrCpy( VOS_CHAR *Dest, VOS_CHAR *Src )
  *****************************************************************************/
 VOS_CHAR *VOS_StrCpy_s( VOS_CHAR *Dest, VOS_SIZE_T ulDestSize, VOS_CHAR *Src )
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+    if ( EOK != strcpy_s(Dest, ulDestSize, Src) )
+    {
+        return VOS_NULL_PTR;
+    }
+
+    return Dest;
+#else
     if ( ulDestSize > VOS_SECUREC_MEM_MAX_LEN )
     {
         return(VOS_NULL_PTR);
     }
 
     return V_StrCpy(Dest, Src);
+#endif
 }
 
 /*****************************************************************************
@@ -497,14 +526,19 @@ VOS_CHAR* VOS_StrRChr( VOS_CHAR * Str, VOS_CHAR Char )
  *****************************************************************************/
 VOS_INT VOS_MemCmp( const VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count )
 {
+#if (VOS_LINUX == VOS_OS_VER)
     const unsigned char *su1, *su2;
     int res = 0;
+#endif
 
+#if (VOS_YES == VOS_CHECK_PARA)
     if( ( VOS_NULL_PTR == Dest ) || ( VOS_NULL_PTR == Src ) )
     {
         return 0;
     }
+#endif
 
+#if (VOS_LINUX == VOS_OS_VER)
 
     for( su1 = Dest, su2 = Src; 0 < Count; ++su1, ++su2, Count--)
     {
@@ -515,6 +549,10 @@ VOS_INT VOS_MemCmp( const VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Coun
     }
 
     return res;
+#else
+
+    return memcmp( Dest, Src, Count );
+#endif
 }
 
 
@@ -563,6 +601,7 @@ VOS_CHAR * VOS_StrStr( VOS_CHAR * Str1, VOS_CHAR * Str2 )
     return VOS_NULL_PTR;
 }
 
+#if (VOS_RTOSCK != VOS_OS_VER)
 /*****************************************************************************
  Function   : V_StrNCpy
  Description: copy characters from one string to another
@@ -601,6 +640,7 @@ VOS_CHAR *V_StrNCpy( VOS_CHAR *Dest, VOS_CHAR *Src, VOS_SIZE_T Count )
 
     return (Dest);
 }
+#endif
 
 /*****************************************************************************
  Function   : VOS_StrNCpy_s
@@ -614,6 +654,14 @@ VOS_CHAR *V_StrNCpy( VOS_CHAR *Dest, VOS_CHAR *Src, VOS_SIZE_T Count )
  *****************************************************************************/
 VOS_CHAR *VOS_StrNCpy_s( VOS_CHAR *Dest, VOS_SIZE_T ulDestSize, VOS_CHAR *Src, VOS_SIZE_T Count )
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+    if ( EOK != strncpy_s(Dest, ulDestSize, Src, Count) )
+    {
+        return VOS_NULL_PTR;
+    }
+
+    return Dest;
+#else
     if ( ulDestSize > VOS_SECUREC_MEM_MAX_LEN )
     {
         return(VOS_NULL_PTR);
@@ -625,6 +673,7 @@ VOS_CHAR *VOS_StrNCpy_s( VOS_CHAR *Dest, VOS_SIZE_T ulDestSize, VOS_CHAR *Src, V
     }
 
     return V_StrNCpy(Dest, Src, Count);
+#endif
 }
 
 
@@ -683,6 +732,7 @@ VOS_UINT32 VOS_StrNLen( VOS_CHAR * Str, VOS_UINT32 Count )
     return (VOS_UINT32)(VOS_STOL( Temp ) - VOS_STOL( Str ));
 }
 
+#if (VOS_RTOSCK != VOS_OS_VER)
 /*****************************************************************************
  Function   : V_MemSet
  Description: Set a character to memory
@@ -697,12 +747,16 @@ VOS_VOID * V_MemSet( VOS_VOID * ToSet, VOS_CHAR Char, VOS_SIZE_T Count,
                      VOS_UINT32 ulFileID, VOS_INT32 usLineNo )
 {
     VOS_UINT32  ulSize;
+#if (VOS_LINUX == VOS_OS_VER)
     char *xs = (char *) ToSet;
+#endif
 
+#if (VOS_YES == VOS_CHECK_PARA)
     if( VOS_NULL_PTR == ToSet )
     {
         return(VOS_NULL_PTR);
     }
+#endif
 
     if ( 0 == Count )
     {
@@ -723,6 +777,7 @@ VOS_VOID * V_MemSet( VOS_VOID * ToSet, VOS_CHAR Char, VOS_SIZE_T Count,
         return(VOS_NULL_PTR);
     }
 
+#if (VOS_LINUX == VOS_OS_VER)
 
     while (Count--)
     {
@@ -730,7 +785,12 @@ VOS_VOID * V_MemSet( VOS_VOID * ToSet, VOS_CHAR Char, VOS_SIZE_T Count,
     }
 
     return ToSet;
+#else
+
+    return memset( ToSet, (VOS_UCHAR)Char, Count );/* [false alarm]:前边已有严谨的判断  */
+#endif
 }
+#endif
 
 /*****************************************************************************
  Function   : V_MemSet_s
@@ -745,6 +805,42 @@ VOS_VOID * V_MemSet( VOS_VOID * ToSet, VOS_CHAR Char, VOS_SIZE_T Count,
 VOS_VOID * V_MemSet_s( VOS_VOID * ToSet, VOS_SIZE_T ulDestSize, VOS_CHAR Char, VOS_SIZE_T Count,
                      VOS_UINT32 ulFileID, VOS_INT32 usLineNo )
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+    VOS_UINT32  ulSize;
+
+#if (VOS_YES == VOS_CHECK_PARA)
+    if( VOS_NULL_PTR == ToSet )
+    {
+        return(VOS_NULL_PTR);
+    }
+#endif
+
+    if ( 0 == Count )
+    {
+        return ToSet;
+    }
+
+    if ( VOS_OK != VOS_LocationMem( ToSet, &ulSize, ulFileID, usLineNo ) )
+    {
+        Print2("# WARING:V_MemSet destination error.file %d l %d.\r\n",
+            ulFileID, usLineNo);
+        return(VOS_NULL_PTR);
+    }
+
+    if ( Count > ulSize )
+    {
+        Print4("# WARNING:V_MemSet big.file %d l %d.count %d real size %d.\r\n",
+            ulFileID, usLineNo, Count, ulSize);
+        return(VOS_NULL_PTR);
+    }
+
+    if ( EOK != memset_s(ToSet, ulDestSize, (int)Char, Count) )
+    {
+        return(VOS_NULL_PTR);
+    }
+
+    return ToSet;
+#else
     if ( Count > ulDestSize )
     {
         return(VOS_NULL_PTR);
@@ -756,8 +852,10 @@ VOS_VOID * V_MemSet_s( VOS_VOID * ToSet, VOS_SIZE_T ulDestSize, VOS_CHAR Char, V
     }
 
     return V_MemSet(ToSet, Char, Count, ulFileID, usLineNo);
+#endif
 }
 
+#if (VOS_RTOSCK != VOS_OS_VER)
 /*****************************************************************************
  Function   : VOS_MemCpy
  Description: copy memory from one location to another
@@ -770,8 +868,11 @@ VOS_VOID * V_MemCpy( VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count,
                        VOS_UINT32 ulFileID, VOS_INT32 usLineNo )
 {
     VOS_UINT32  ulSize;
+#if ((VOS_LINUX == VOS_OS_VER) || (VOS_WIN32 == VOS_OS_VER))
     char *tmp = (char *) Dest, *s = (char *) Src;
+#endif
 
+#if (VOS_YES == VOS_CHECK_PARA)
     if( VOS_NULL_PTR == Dest )
     {
         return(VOS_NULL_PTR);
@@ -781,6 +882,7 @@ VOS_VOID * V_MemCpy( VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count,
     {
         return(VOS_NULL_PTR);
     }
+#endif
 
     if ( 0 == Count )
     {
@@ -803,13 +905,18 @@ VOS_VOID * V_MemCpy( VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count,
         return(VOS_NULL_PTR);
     }
 
+#if ((VOS_LINUX == VOS_OS_VER) || (VOS_WIN32 == VOS_OS_VER))
     while (Count--)
     {
         *tmp++ = *s++;
     }
 
     return Dest;
+#else
+    return memcpy_s (Dest, Count, Src, Count);/* [false alarm]:前边已有严谨的判断  */
+#endif
 }
+#endif
 
 /*****************************************************************************
  Function   : VOS_MemCpy
@@ -822,6 +929,49 @@ VOS_VOID * V_MemCpy( VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count,
 VOS_VOID * V_MemCpy_s( VOS_VOID * Dest, VOS_SIZE_T ulDestSize, const VOS_VOID * Src, VOS_SIZE_T Count,
                        VOS_UINT32 ulFileID, VOS_INT32 usLineNo )
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+    VOS_UINT32  ulSize;
+
+#if (VOS_YES == VOS_CHECK_PARA)
+    if( VOS_NULL_PTR == Dest )
+    {
+        return(VOS_NULL_PTR);
+    }
+
+    if( VOS_NULL_PTR == Src )
+    {
+        return(VOS_NULL_PTR);
+    }
+#endif
+
+    if ( 0 == Count )
+    {
+        return Dest;
+    }
+
+    if ( VOS_OK != VOS_LocationMem( Dest, &ulSize, ulFileID, usLineNo ) )
+    {
+        Print2("WARING:VOS_MemCpy destination error.file %d l %d.\r\n",
+            ulFileID, usLineNo);
+
+        return(VOS_NULL_PTR);
+    }
+
+    if ( Count > ulSize )
+    {
+        Print4("WARNING:VOS_MemCpy big.file %d l %d.Count %d real size %d.\r\n",
+            ulFileID, usLineNo, Count, ulSize);
+
+        return(VOS_NULL_PTR);
+    }
+
+    if ( EOK != memcpy_s(Dest, ulDestSize, Src, Count) )/* [false alarm]:前边已有严谨的判断  */
+    {
+        return(VOS_NULL_PTR);
+    }
+
+    return Dest;
+#else
     if ( Count > ulDestSize )
     {
         return(VOS_NULL_PTR);
@@ -843,8 +993,10 @@ VOS_VOID * V_MemCpy_s( VOS_VOID * Dest, VOS_SIZE_T ulDestSize, const VOS_VOID * 
     }
 
     return V_MemCpy(Dest, Src, Count, ulFileID, usLineNo);
+#endif
 }
 
+#if (VOS_RTOSCK != VOS_OS_VER)
 /*****************************************************************************
  Function   : V_MemMove
  Description: copy memory from one location to another
@@ -892,6 +1044,7 @@ VOS_VOID * V_MemMove( VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count,
 
     return memmove (Dest,Src,Count);/* [false alarm]:前边已有严谨的判断  */
 }
+#endif
 
 /*****************************************************************************
  Function   : V_MemMove
@@ -904,6 +1057,48 @@ VOS_VOID * V_MemMove( VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count,
  VOS_VOID * V_MemMove_s( VOS_VOID * Dest, VOS_SIZE_T ulDestSize, const VOS_VOID * Src, VOS_SIZE_T Count,
                         VOS_UINT32 ulFileID, VOS_INT32 usLineNo )
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+    VOS_UINT32  ulSize;
+
+    if (VOS_NULL_PTR == Dest)
+    {
+        return VOS_NULL_PTR;
+    }
+
+    /* 如果目的为空，直接返回NULL */
+    if (VOS_NULL_PTR == Src)
+    {
+        return VOS_NULL_PTR;
+    }
+
+    if ( 0 == Count )
+    {
+        return Dest;
+    }
+
+    if ( VOS_OK != VOS_LocationMem( Dest, &ulSize, ulFileID, usLineNo ) )
+    {
+        Print2("WARING:VOS_MemCpy destination error.file %d l %d.\r\n",
+            ulFileID, usLineNo);
+
+        return(VOS_NULL_PTR);
+    }
+
+    if ( Count > ulSize )
+    {
+        Print4("WARNING:VOS_MemCpy big.file %d l %d.Count %d real size %d.\r\n",
+            ulFileID, usLineNo, Count, ulSize);
+
+        return(VOS_NULL_PTR);
+    }
+
+    if ( EOK !=  memmove_s(Dest, ulDestSize, Src, Count) )/* [false alarm]:前边已有严谨的判断  */
+    {
+        return(VOS_NULL_PTR);
+    }
+
+    return Dest;
+#else
     if ( Count > ulDestSize )
     {
         return(VOS_NULL_PTR);
@@ -915,6 +1110,7 @@ VOS_VOID * V_MemMove( VOS_VOID * Dest, const VOS_VOID * Src, VOS_SIZE_T Count,
     }
 
     return V_MemMove(Dest, Src, Count, ulFileID, usLineNo);
+#endif
 }
 
 /*****************************************************************************
@@ -1252,6 +1448,105 @@ VOS_UINT32 VOS_64Div32( VOS_UINT32 ulDividendHigh,
     return VOS_OK;
 }
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+/*****************************************************************************
+ Function   : VOS_SetSeed
+ Description: This function initializes the array of random numbers generated
+              using with the seed value given
+ Input      : ulSeed -- Seed for Random Number Generation
+ Output     : None
+ Return     : None
+ Other      : None
+ *****************************************************************************/
+VOS_VOID VOS_SetSeed(VOS_UINT32 ulSeed)
+{
+    VOS_UINT32                          i;
+    VOS_UINT8                           aucSeed[VOS_RAND_SEED_AND_ENTROPY_LEN];
+    VOS_UINT8                           aucEntropy[VOS_RAND_SEED_AND_ENTROPY_LEN];
+
+    /* 低16bit用作seed 高16bit用作entropy */
+    for (i = 0; i < VOS_RAND_SEED_AND_ENTROPY_LEN; i++)
+    {
+        aucSeed[i]      = (VOS_UINT8)((ulSeed >> i) & 0x01);
+        aucEntropy[i]   = (VOS_UINT8)((ulSeed >> (i + 16)) & 0x01);
+    }
+
+    /* 设置seed */
+    (VOS_VOID)CRYPT_randSeed(aucSeed, VOS_RAND_SEED_AND_ENTROPY_LEN);
+
+    /* 设置entropy */
+    (VOS_VOID)CRYPT_addEntropy(aucEntropy, VOS_RAND_SEED_AND_ENTROPY_LEN);
+
+    return;
+}
+
+/*****************************************************************************
+ Function   : VOS_Rand
+ Description: This function returns random value within the range specified
+              0..n-1 where n is the range specified.
+ Input      : ulRange -- Range within which Random number is required
+ Output     : None
+ Return     : The random number generated
+ Other      : None
+ *****************************************************************************/
+VOS_UINT32 VOS_Rand(VOS_UINT32 ulRange)
+{
+    register VOS_UINT32                 ulGenTemp;
+    register VOS_UINT32                 ulGenTempHigh, ulRangeHigh, ulRangeLow;
+    register VOS_UINT32                 ulRandomNumber;
+    VOS_UINT8                           aucRand[VOS_RAND_NUM_LEN]   = {0};
+    VOS_UINT32                          i;
+
+    /* 获取4个随机数 */
+    if (VOS_OK == CRYPT_random(aucRand, VOS_RAND_NUM_LEN))
+    {
+        /* 组成1个U32的随机数 */
+        ulGenTemp       = 0;
+        for (i = 0; i < VOS_RAND_NUM_LEN; i++)
+        {
+             ulGenTemp |= (VOS_UINT32)aucRand[i] << (i * 8);
+        }
+    }
+    else
+    {
+        /* 网络搜索算法生成伪随机数 */
+        if (0 == g_ulVosRadomSeed )
+        {
+            ulGenTemp = VOS_GetSlice();
+        }
+        else
+        {
+            ulGenTemp = g_ulVosRadomSeed;
+        }
+        ulGenTemp = (ulGenTemp * 1664525L + 1013904223L);
+
+        g_ulVosRadomSeed = ulGenTemp;
+    }
+
+    /* 将随机数匹配到范围内 */
+    ulGenTempHigh   = ulGenTemp >> 16;
+    ulGenTemp      &= 0xffff;
+
+    ulRangeHigh     = (ulRange & 0xffffffff) >> 16;
+    ulRangeLow      = ulRange & 0xffff;
+
+    ulRandomNumber  = (ulGenTemp * ulRangeLow) >> 16;
+    ulRandomNumber += ulGenTempHigh * ulRangeLow;
+
+    if (ulRangeHigh == 0)
+    {
+        ulRandomNumber >>= 16;
+    }
+    else
+    {
+        ulRandomNumber  += ulGenTemp * ulRangeHigh;
+        ulRandomNumber   = (ulRandomNumber >> 16) + (ulGenTempHigh * ulRangeHigh);
+    }
+
+    return ulRandomNumber;
+}
+
+#else
 /*****************************************************************************
  Function   : VOS_SetSeed
  Description: This function initializes the array of random numbers generated
@@ -1327,6 +1622,7 @@ VOS_UINT32 VOS_Rand( VOS_UINT32 ulRange )
 
     return ulRandomNumber;
 }
+#endif
 
 /* Notes:
  * when inputs are big enough, the overflow maybe occur,
@@ -1500,6 +1796,7 @@ VOS_CHAR *VOS_StrPbrk(const VOS_CHAR *Str1, const VOS_CHAR *Str2)
     return VOS_NULL_PTR;
 }
 
+#if (VOS_RTOSCK != VOS_OS_VER)
 /*****************************************************************************
  Function   : VOS_StrTok
  Description: break down a string into tokens
@@ -1531,6 +1828,7 @@ VOS_CHAR *VOS_StrTok(VOS_CHAR *Str1, const VOS_CHAR *Str2)
 
     return (Str1);
 }
+#endif
 
 /*****************************************************************************
  Function   : VOS_StrTok_s
@@ -1544,6 +1842,9 @@ VOS_CHAR *VOS_StrTok(VOS_CHAR *Str1, const VOS_CHAR *Str2)
  *****************************************************************************/
 VOS_CHAR *VOS_StrTok_s(VOS_CHAR *Str1, const VOS_CHAR *Str2, VOS_CHAR** pPosition)
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+    return strtok_s(Str1, Str2, pPosition);
+#else
     static VOS_CHAR *pscLast = VOS_NULL_PTR;
 
     if (VOS_NULL_PTR == pPosition)
@@ -1567,6 +1868,7 @@ VOS_CHAR *VOS_StrTok_s(VOS_CHAR *Str1, const VOS_CHAR *Str2, VOS_CHAR** pPositio
     }
 
     return (Str1);
+#endif
 }
 
 

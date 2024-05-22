@@ -52,6 +52,12 @@ void slimbus_hi64xx_set_para_pr(
 			pr_table[track_type] = SLIMBUS_PR_192K;
 		} else if (params->rate == SLIMBUS_SAMPLE_RATE_768K) {
 			pr_table[track_type] = SLIMBUS_PR_768K;
+		} else if (params->rate == SLIMBUS_SAMPLE_RATE_44K1) {
+			pr_table[track_type] = SLIMBUS_PR_44100;
+		} else if (params->rate == SLIMBUS_SAMPLE_RATE_88K2) {
+			pr_table[track_type] = SLIMBUS_PR_88200;
+		} else if (params->rate == SLIMBUS_SAMPLE_RATE_176K4) {
+			pr_table[track_type] = SLIMBUS_PR_176400;
 		} else {
 			pr_err("[%s:%d] sample rate is invalid: %d\n", __FUNCTION__, __LINE__, params->rate);
 		}

@@ -56,8 +56,6 @@ extern struct dw_mci *host_from_sd_module;
 extern int sd_sim_detect_status_current;
 
 #define SLEEP_MS_TIME_FOR_DETECT_UNSTABLE   40
-/*if define this macro,4-pin gpio status detect is not used,only by cmd1 response to judge sd or sim*/
-#undef SDSIM_MUX_DETECT_SOLUTION_CMD1_ONLY
 
 #define DRIVER_STRENGTH_2MA_0  0x00
 #define DRIVER_STRENGTH_4MA_0  0x10
@@ -114,6 +112,12 @@ extern void notify_sim_while_sd_fail(struct mmc_host *mmc);
 #define GPIO_108 108
 #define GPIO_109 109
 
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+/* sim config here */
+#define GPIO_169 169
+#define GPIO_170 170
+#define GPIO_171 171
+#endif
 
 #define GPIO_DEFAULT_NUMBER_FOR_SD_CLK      GPIO_160
 #define GPIO_DEFAULT_NUMBER_FOR_SD_CMD      GPIO_161
@@ -122,16 +126,18 @@ extern void notify_sim_while_sd_fail(struct mmc_host *mmc);
 #define GPIO_DEFAULT_NUMBER_FOR_SD_DATA2    GPIO_164
 #define GPIO_DEFAULT_NUMBER_FOR_SD_DATA3    GPIO_165
 
-
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+#define GPIO_DEFAULT_NUMBER_FOR_SIM_CLK     GPIO_169
+#define GPIO_DEFAULT_NUMBER_FOR_SIM_RST     GPIO_170
+#define GPIO_DEFAULT_NUMBER_FOR_SIM_DATA    GPIO_171
+#endif
 
 extern void register_gpio_number_group(int start_gpio_number_for_SD_CLK);
-
 
 #define SWITCH_GPIO_DEFAULT_NUMBER  0xFFFF
 extern int switch_gpio_number_0;
 extern int switch_gpio_number_1;
 extern int switch_gpio_number_2;
 extern int switch_gpio_number_3;
-
 
 #endif

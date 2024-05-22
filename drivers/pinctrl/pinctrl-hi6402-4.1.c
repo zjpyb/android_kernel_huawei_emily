@@ -1113,7 +1113,6 @@ static void __exit hi6402_pinctrl_driver_exit(void)
 rootfs_initcall(hi6402_pinctrl_driver_init);
 module_exit(hi6402_pinctrl_driver_exit);
 
-MODULE_AUTHOR("w00221409 <hw.wangxiaoyin@hisilicon.com>");
 MODULE_DESCRIPTION("Hisilicon Hi6402 Codec Chip pinctrl driver");
 MODULE_LICENSE("GPL v2");
 

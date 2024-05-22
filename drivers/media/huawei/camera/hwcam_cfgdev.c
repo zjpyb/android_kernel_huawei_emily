@@ -1,4 +1,26 @@
-
+/*
+ *  Hisilicon K3 SOC camera driver source file
+ *
+ *  Copyright (C) Huawei Technology Co., Ltd.
+ *
+ * Author:
+ * Email:
+ * Date:	  2013-10-29
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 
 #include <linux/atomic.h>
@@ -18,7 +40,7 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-fh.h>
 #include <media/v4l2-ioctl.h>
-#include "securec.h"
+#include <securec.h>
 
 #include "hwcam_intf.h"
 #include "cam_log.h"
@@ -133,13 +155,26 @@ static ssize_t guard_thermal_store(struct device_driver *drv,
 												  const char *buf, size_t count)
 {
 	int ret = 0;
-	int len = ((count < sizeof(s_cfgdev.sbuf))? count : sizeof(s_cfgdev.sbuf));
-
 	cam_info("%s enter", __func__);
-	memset(s_cfgdev.sbuf, 0, sizeof(s_cfgdev.sbuf));
-	if(len > 1)
-		memcpy(s_cfgdev.sbuf, buf, len-1);
-	ret = hwcam_cfgdev_guard_thermal();
+	if (count > 1) {
+	    memset(s_cfgdev.sbuf, 0, sizeof(s_cfgdev.sbuf));
+		if (count <= sizeof(s_cfgdev.sbuf)) {
+			errno_t err = memcpy_s(s_cfgdev.sbuf, sizeof(s_cfgdev.sbuf) - 1, buf, count - 1);
+			if (err != EOK) {
+			    cam_warn("%s mcmcpy fail", __func__);
+			}
+		} else {
+			size_t sbuf_size = sizeof(s_cfgdev.sbuf);
+			errno_t err = memcpy_s(s_cfgdev.sbuf, sbuf_size - 1, buf, sbuf_size - 1);
+			if (err != EOK) {
+				cam_warn("%s mcmcpy fail", __func__);
+			}
+			s_cfgdev.sbuf[sbuf_size - 1] = '\0';
+			cam_warn("%s count[%zu] is beyond sbuf size[%zu]", __func__, count, sizeof(s_cfgdev.sbuf));
+		}
+		ret = hwcam_cfgdev_guard_thermal();
+	}
+	cam_debug("%s ret is %d", __func__, ret);
 	return count;
 }
 
@@ -438,9 +473,16 @@ int hw_is_binderized(void)
 char*
 gen_media_prefix(char* media_ent,hwcam_device_id_constants_t dev_const, size_t dst_size)
 {
-	snprintf_s(media_ent, dst_size, dst_size-1, "%d",dev_const);
-	strlcat(media_ent, "-" , dst_size);
-	return media_ent;
+    int rc = 0;
+    if (dst_size >= 1) {
+        rc = snprintf_s(media_ent, dst_size, dst_size-1, "%d",dev_const);
+        if (rc < 0) {
+            HWCAM_CFG_ERR("snprintf_s media_ent failed");
+        }
+        strlcat(media_ent, "-" , dst_size);
+    }
+
+    return media_ent;
 }
 
 int
@@ -610,6 +652,7 @@ hwcam_cfgdev_register_subdev(
         struct v4l2_subdev* sd,hwcam_device_id_constants_t dev_const)
 {
     int rc = 0;
+    int ret = 0;
     int name_len = 0;
     char media_prefix[10];
     struct video_device* vdev = NULL;
@@ -637,7 +680,10 @@ hwcam_cfgdev_register_subdev(
 
     video_set_drvdata(vdev, sd);
     gen_media_prefix(media_prefix, dev_const, sizeof(media_prefix));
-    snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    ret = snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    if (ret < 0) {
+        HWCAM_CFG_ERR("snprintf_s media_prefix failed");
+    }
     strlcpy(vdev->name + strlen(vdev->name), sd->name, sizeof(vdev->name) - strlen(vdev->name));
     name_len = strlen(vdev->name);
     vdev->v4l2_dev = v4l2;
@@ -647,8 +693,8 @@ hwcam_cfgdev_register_subdev(
     if (rc < 0) {
         goto video_register_fail;
     }
-    cam_debug("register video devices %s sucessful",sd->name);
-    cam_debug("video dev name %s %s",vdev->dev.kobj.name,vdev->name);
+	cam_debug("register video devices %s sucessful", sd->name);
+	cam_debug("video dev name %s %s", vdev->dev.kobj.name, vdev->name);
     sd->entity.info.dev.major = VIDEO_MAJOR;
     sd->entity.info.dev.minor = vdev->minor;
     rc = snprintf(vdev->name + strlen(vdev->name),sizeof(vdev->name) - strlen(vdev->name),"%s",video_device_node_name(vdev));
@@ -824,7 +870,7 @@ hwcam_cfgdev_vo_ioctl32(
 			rc = compat_get_v4l2_event_data(kp, up_p);
 			if (0 != rc)
 				return rc;
-			rc = hwcam_cfgdev_vo_ioctl(filep, cmd, (unsigned long)(kp));
+			rc = hwcam_cfgdev_vo_ioctl(filep, cmd, (unsigned long)(uintptr_t)(kp));
 			if (0 != rc)
 				return rc;
 			rc = compat_put_v4l2_event_data(kp, up_p);
@@ -905,9 +951,9 @@ exit_open:
 
 static int hwcam_cfgdev_get_dts(struct platform_device* pDev)
 {
-    struct device *pdev;
-    struct device_node *np;
-    int rc;
+    struct device *pdev = NULL;
+    struct device_node *np = NULL;
+    int rc = 0;
 
     if (NULL == pDev) {
         HWCAM_CFG_ERR("pDev NULL.");
@@ -966,6 +1012,7 @@ hwcam_cfgdev_vo_probe(
         struct platform_device* pdev)
 {
     int rc = 0;
+    int ret = 0;
     int name_len = 0;
     char media_prefix[10];
     struct video_device* vdev = NULL;
@@ -1011,7 +1058,10 @@ hwcam_cfgdev_vo_probe(
 
     vdev->v4l2_dev = v4l2;
     gen_media_prefix(media_prefix,HWCAM_VNODE_GROUP_ID, sizeof(media_prefix));
-    snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    ret = snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    if (ret < 0) {
+        HWCAM_CFG_ERR("snprintf_s media_prefix failed");
+    }
     strlcpy(vdev->name + strlen(vdev->name), "hwcam-cfgdev", sizeof(vdev->name) - strlen(vdev->name));
     name_len = strlen(vdev->name);
     vdev->entity.obj_type = MEDIA_ENTITY_TYPE_VIDEO_DEVICE;

@@ -1,11 +1,28 @@
+/*
+ * antenna_board_match.c
+ *
+ * Check the antenna board match status.
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
+#include <huawei_platform/antenna_board_match/antenna_board_match.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <huawei_platform/log/hw_log.h>
-#include <huawei_platform/antenna_board_match/antenna_board_match.h>
 
 #define HWLOG_TAG antenna_board_match
 HWLOG_REGIST();
@@ -14,11 +31,11 @@ struct antenna_device_ops *g_antenna_board_match_ops;
 
 #define ANTENNA_SYSFS_FIELD(_name, n, m, store) {	\
 	.attr = __ATTR(_name, m, antenna_show, store),	\
-	.name = ANTENNA_##n,				\
+	.name = ANTENNA_##n,	\
 }
 
-#define ANTENNA_SYSFS_FIELD_RO(_name, n)		\
-		ANTENNA_SYSFS_FIELD(_name, n, S_IRUGO, NULL)
+#define ANTENNA_SYSFS_FIELD_RO(_name, n)	\
+		ANTENNA_SYSFS_FIELD(_name, n, 0444, NULL)
 
 static ssize_t antenna_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
@@ -41,7 +58,7 @@ static const struct attribute_group antenna_sysfs_attr_group = {
 
 static void antenna_sysfs_init_attrs(void)
 {
-	int i = 0;
+	int i;
 	int limit = ARRAY_SIZE(antenna_tb);
 
 	for (i = 0; i < limit; i++)
@@ -51,7 +68,7 @@ static void antenna_sysfs_init_attrs(void)
 
 static struct antenna_sysfs_field_info *antenna_board_lookup(const char *name)
 {
-	int i = 0;
+	int i;
 	int limit = ARRAY_SIZE(antenna_tb);
 
 	for (i = 0; i < limit; i++) {
@@ -78,17 +95,19 @@ static inline void antenna_match_sysfs_remove_group(
 static ssize_t antenna_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	int adc_ret = 0;
+	int adc_ret;
 	struct antenna_sysfs_field_info *info = NULL;
 	struct antenna_device_info *di = dev_get_drvdata(dev);
 
 	if (di == NULL) {
-	hwlog_err("[%s]di is NULL!\n", __func__);
-	return -ENODEV;
+		hwlog_err("%s: di is NULL!\n", __func__);
+		return -ENODEV;
 	}
+
 	info = antenna_board_lookup(attr->attr.name);
 	if (!info)
 		return -EINVAL;
+
 	switch (info->name) {
 	case ANTENNA_BOARD_MATCH:
 		adc_ret = di->ops->get_antenna_match_status();
@@ -97,7 +116,7 @@ static ssize_t antenna_show(struct device *dev,
 		adc_ret = di->ops->get_antenna_board_voltage();
 		return snprintf(buf, PAGE_SIZE, "%d\n", adc_ret);
 	default:
-		hwlog_err("(%s)NODE ERR!!HAVE NO THIS NODE:(%d)\n",
+		hwlog_err("%s: NODE ERR, HAVE NO THIS NODE: %d\n",
 			__func__, info->name);
 		break;
 	}
@@ -108,25 +127,18 @@ static struct class *hw_antenna_class;
 static struct class *antenna_board_match_class;
 struct device *antenna_adc_dev;
 
-/* get new class */
 struct class *hw_antenna_get_class(void)
 {
 	if (hw_antenna_class == NULL) {
 		hw_antenna_class = class_create(THIS_MODULE, "hw_antenna");
 		if (hw_antenna_class == NULL) {
-			hwlog_err("hw_antenna_class create fail");
+			hwlog_err("hw_antenna_class create fail!");
 			return NULL;
 		}
 	}
 	return hw_antenna_class;
 }
 
-/*
- * Function:       antenna_ops_register
- * Discription:    register the handler ops for diffrent matchion method
- * Parameters:    ops:operations interface of diffrent matchion method
- * return value:  0-sucess or others-fail
- */
 int antenna_match_ops_register(struct antenna_device_ops *ops)
 {
 	int ret = 0;
@@ -142,18 +154,16 @@ int antenna_match_ops_register(struct antenna_device_ops *ops)
 
 static int antenna_board_match_probe(struct platform_device *pdev)
 {
-	int ret = 0;
-	struct antenna_device_info *di;
+	int ret;
+	struct antenna_device_info *di = NULL;
 
 	di = kzalloc(sizeof(*di), GFP_KERNEL);
-	if (!di) {
-		hwlog_err("alloc di failed\n");
+	if (!di)
 		return -ENOMEM;
-	}
+
 	di->dev = &pdev->dev;
 	di->ops = g_antenna_board_match_ops;
 
-	/* match ops */
 	if ((di->ops == NULL) || (di->ops->get_antenna_match_status == NULL) ||
 		(di->ops->get_antenna_board_voltage == NULL)) {
 		hwlog_err("antenna_board_match ops is NULL!\n");
@@ -181,11 +191,11 @@ static int antenna_board_match_probe(struct platform_device *pdev)
 		ret = sysfs_create_link(&antenna_adc_dev->kobj, &di->dev->kobj,
 			"antenna_board_data");
 		if (ret) {
-			hwlog_err("create link to board_match fail.\n");
+			hwlog_err("create link to board_match fail\n");
 			goto Antenna_board_failed_1;
 		}
 	} else {
-		hwlog_err("get antenna_match_class fail.\n");
+		hwlog_err("get antenna_match_class fail\n");
 		goto Antenna_board_failed_1;
 	}
 	hwlog_info("huawei antenna board match probe ok!\n");
@@ -201,12 +211,6 @@ Antenna_board_failed_0:
 	return -1;
 }
 
-/*
- * Function:       antenna_board_match_remove
- * Discription:    antenna_board_match module remove
- * Parameters:   pdev:platform_device
- * return value:  0-sucess or others-fail
- */
 static int antenna_board_match_remove(struct platform_device *pdev)
 {
 	struct antenna_device_info *di = platform_get_drvdata(pdev);
@@ -225,9 +229,7 @@ static int antenna_board_match_remove(struct platform_device *pdev)
 	return 0;
 }
 
-/*
- * probe match table
- */
+/* probe match table */
 static const struct of_device_id antenna_board_table[] = {
 	{
 		.compatible = "huawei,antenna_board_match",
@@ -236,9 +238,7 @@ static const struct of_device_id antenna_board_table[] = {
 	{},
 };
 
-/*
- * antenna board match driver
- */
+/* antenna board match driver */
 static struct platform_driver antenna_board_match_driver = {
 	.probe = antenna_board_match_probe,
 	.remove = antenna_board_match_remove,
@@ -249,23 +249,11 @@ static struct platform_driver antenna_board_match_driver = {
 	},
 };
 
-/*
- * Function: antenna_board_match_init
- * Description: antenna board match module initialization
- * Parameters:  Null
- * return value: 0-sucess or others-fail
- */
 static int __init antenna_board_match_init(void)
 {
 	return platform_driver_register(&antenna_board_match_driver);
 }
 
-/*
- * Function:       antenna_board_match_exit
- * Description:    antenna board match module exit
- * Parameters:   NULL
- * return value:  NULL
- */
 static void __exit antenna_board_match_exit(void)
 {
 	platform_driver_unregister(&antenna_board_match_driver);
@@ -273,7 +261,7 @@ static void __exit antenna_board_match_exit(void)
 
 device_initcall_sync(antenna_board_match_init);
 module_exit(antenna_board_match_exit);
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("huawei antenna board match driver");
-MODULE_AUTHOR("HUAWEI Inc");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
 

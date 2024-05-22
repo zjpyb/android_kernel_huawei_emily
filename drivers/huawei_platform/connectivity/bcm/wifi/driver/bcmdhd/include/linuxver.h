@@ -163,7 +163,9 @@ typedef irqreturn_t(*FN_ISR) (int irq, void *dev_id, struct pt_regs *ptregs);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32)
 #include <linux/sched.h>
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32) */
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
 #include <linux/sched/rt.h>
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0) */
@@ -689,7 +691,9 @@ if (tsk) send_sig(sig, tsk, 1); \
 #include <linux/wait.h>
 #else
 #include <linux/sched.h>
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 #define __wait_event_interruptible_timeout(wq, condition, ret)		\
 do {									\
 	wait_queue_t __wait;						\

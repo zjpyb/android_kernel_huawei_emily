@@ -27,7 +27,7 @@
 #include <linux/fb.h>
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #endif
 //#include <huawei_platform/touchscreen/hw_tp_common.h>
 #include <linux/platform_device.h>

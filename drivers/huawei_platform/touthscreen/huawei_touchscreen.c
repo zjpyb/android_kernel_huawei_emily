@@ -2287,6 +2287,8 @@ static ssize_t ts_tui_report_store(struct device *dev,
 	int value = 0;
 
 	ret = sscanf(buf, "%d", &value);
+	if (ret != 1)
+		TS_LOG_ERR("%s: sscanf error, ret = %d\n", __func__, ret);
 
 	g_ts_data.chip_data->report_tui_enable = value;
 
@@ -4547,7 +4549,7 @@ static irqreturn_t ts_irq_handler(int irq, void *dev_id)
 	int error = NO_ERR;
 	struct ts_cmd_node cmd;
 
-	wake_lock_timeout(&g_ts_data.ts_wake_lock, HZ);
+	__pm_wakeup_event(&g_ts_data.ts_wake_lock, jiffies_to_msecs(HZ));
 
 	if (g_ts_data.chip_data->ops->chip_irq_top_half)
 		error = g_ts_data.chip_data->ops->chip_irq_top_half(&cmd);
@@ -6804,7 +6806,7 @@ static int ts_init(void)
 	spin_lock_init(&g_ts_data.queue.spin_lock);
 	TS_LOG_DEBUG("ts init: cmd queue size : %d\n", TS_CMD_QUEUE_SIZE);
 
-	wake_lock_init(&g_ts_data.ts_wake_lock, WAKE_LOCK_SUSPEND,
+	wakeup_source_init(&g_ts_data.ts_wake_lock,
 		       "ts_wake_lock");
 
 	error = ts_parse_config();
@@ -7057,7 +7059,7 @@ err_put_platform_dev:
 	platform_device_put(g_ts_data.ts_dev);
 err_out:
 	atomic_set(&g_ts_data.state, TS_UNINIT);
-	wake_lock_destroy(&g_ts_data.ts_wake_lock);
+	wakeup_source_trash(&g_ts_data.ts_wake_lock);
 out:
 	TS_LOG_INFO("ts_init, g_ts_data.state : %d\n",
 		    atomic_read(&g_ts_data.state));

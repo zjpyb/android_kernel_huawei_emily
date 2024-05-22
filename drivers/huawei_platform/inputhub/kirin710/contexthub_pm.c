@@ -8,7 +8,7 @@
 #include <linux/of_device.h>
 #include <linux/suspend.h>
 #include <linux/fb.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif

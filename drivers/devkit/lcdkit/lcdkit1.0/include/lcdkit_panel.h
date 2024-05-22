@@ -75,6 +75,7 @@
 #define LCDKIT_CHECKSUM_PIC_NUM  (10)
 #define LCDKIT_CMD_NAME_MAX 100
 #define SENCE_ARRAY_SIZE 100
+#define LCDKIT_SNCODE_LEN 54
 
 #define CHECK_REG_MAX 5
 #define BITS(x)  (1<<(x))
@@ -164,6 +165,12 @@ enum
 #define BL_LEVEL_MAX_8_BIT 256
 #define BL_LEVEL_MAX_10_BIT 1024
 #define BL_LEVEL_MAX_11_BIT 2048
+
+#define SAMSUNG_8FC1_PANEL_VERSION_SV1 0
+#define SAMSUNG_8FC1_PANEL_VERSION_SV2 16
+#define SAMSUNG_8FC1_PANEL_VERSION_SV3_1 32
+#define SAMSUNG_8FC1_PANEL_VERSION_SV3_2 48
+#define SAMSUNG_8FC1_PANEL_VERSION_MP 64
 
 
 /*parse dirtyregion info node*/
@@ -582,7 +589,8 @@ struct lcdkit_panel_infos
 
     /*lcd on command*/
     struct lcdkit_dsi_panel_cmds display_on_cmds;
-     struct lcdkit_dsi_panel_cmds display_on_second_cmds;
+    struct lcdkit_dsi_panel_cmds display_on_second_cmds;
+    struct lcdkit_dsi_panel_cmds aod_exit_dis_on_cmds;
     /*for lcd initcode debug*/
     struct lcdkit_dsi_panel_cmds g_panel_cmds;
     /*display on in backlight*/
@@ -648,6 +656,36 @@ struct lcdkit_panel_infos
     u8 init_lm36923_after_panel_power_on_support;
     u8 hbm_support;
 
+    u8 fp_hbm_support;
+    u32 hbm_level_current;
+	u32 hbm_level_max;
+    u32 hbm_if_fp_is_using;
+
+	u32 mask_delay_time_before_fp_sv1;
+	u32 mask_delay_time_after_fp_sv1;
+	u32 mask_delay_time_before_fp_sv2;
+	u32 mask_delay_time_after_fp_sv2;
+	u32 mask_delay_time_before_fp_sv3;
+	u32 mask_delay_time_after_fp_sv3;
+
+    struct lcdkit_dsi_panel_cmds fp_enter_cmds;
+    struct lcdkit_dsi_panel_cmds hbm_prepare_cmds;
+    struct lcdkit_dsi_panel_cmds hbm_cmds;
+    struct lcdkit_dsi_panel_cmds hbm_post_cmds;
+    struct lcdkit_dsi_panel_cmds enter_cmds;
+    struct lcdkit_dsi_panel_cmds exit_cmds;
+    struct lcdkit_dsi_panel_cmds enter_dim_cmds;
+    struct lcdkit_dsi_panel_cmds exit_dim_cmds;
+    struct lcdkit_dsi_panel_cmds enter_no_dim_cmds;
+    struct mutex hbm_lock;
+
+	u8 panel_version_support;
+	struct lcdkit_dsi_panel_cmds panel_version_enter_cmds;
+	struct lcdkit_dsi_panel_cmds panel_version_exit_cmds;
+	struct lcdkit_dsi_panel_cmds panel_version_cmds;
+
+	u8 panel_sncode_support;
+	u8 panel_sncode[LCDKIT_SNCODE_LEN];
     /*mipi dsi upt command */
     u8 dsi_upt_snd_cmd_support;
     struct lcdkit_dsi_panel_cmds dsi_upt_snd_a_cmds;
@@ -832,6 +870,7 @@ struct lcdkit_panel_infos
     u8 se_support;
     u8 se_mode;
     u8 pt_ulps_support;
+	u8 enter_ulps_for_pt;
 
     struct lcdkit_dsi_panel_cmds se_off_cmds;
     struct lcdkit_dsi_panel_cmds se_hd_cmds;
@@ -860,6 +899,16 @@ struct lcdkit_panel_infos
     struct lcdkit_dsi_panel_cmds bl_maxnit_cmds;
     struct lcdkit_dsi_panel_cmds bl_befreadconfig_cmds;
     struct lcdkit_dsi_panel_cmds bl_aftreadconfig_cmds;
+
+    /* blmax improve func */
+    u8 blmax_improve_support;
+    u32 blmaxnit_otp_symbol;
+    u32 blmaxnit_improve_weight;
+    u32 blmax_level_normal;
+    u32 blmaxnit_improve;
+    struct lcdkit_dsi_panel_cmds blmaxnit_symbol_cmds;
+    struct lcdkit_dsi_panel_cmds blsymbol_bef_cmds;
+    struct lcdkit_dsi_panel_cmds blsymbol_after_cmds;
 
     /*for panel dimming*/
     u32 dis_pandimming_bf_sleepin_flag;
@@ -1028,7 +1077,6 @@ struct lcdkit_panel_infos
     uint32_t delay_af_tp_before_suspend;
     u8 rst_after_vbat_flag;
     u8 lcdph_delay_set_flag;
-    u8 tddi_tp_gesture_sequence_flag;
 
     uint32_t delay_af_vsn_off;
     uint32_t delay_af_vsp_off;
@@ -1215,10 +1263,10 @@ ssize_t lcdkit_set_bl_normal_mode_reg(void* pdata);
 ssize_t lcdkit_set_bl_enhance_mode_reg(void* pdata);
 void lcdkit_update_lcd_brightness_info(void);
 int lcdkit_check_mipi_fifo_empty(char __iomem *dsi_base);
-int lcdkit_parse_array_data(struct device_node* np,
-                                   char* name, struct lcdkit_array_data* out);
-int lcdkit_parse_dcs_cmds(struct device_node* np, char* cmd_key,
-                                 char* link_key, struct lcdkit_dsi_panel_cmds* pcmds);
+int lcdkit_parse_array_data(struct device_node *np,
+	const char *name, struct lcdkit_array_data *out);
+int lcdkit_parse_dcs_cmds(struct device_node *np, const char *cmd_key,
+	const char *link_key, struct lcdkit_dsi_panel_cmds *pcmds);
 
 
 static __maybe_unused inline int lcdkit_bias_is_gpio_ctrl_power(void)

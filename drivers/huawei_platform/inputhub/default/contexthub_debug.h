@@ -1,6 +1,24 @@
+/*
+ * drivers/inputhub/contexthub_debug.h
+ *
+ * sensors sysfs header
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #ifndef __SENSOR_DEBUG_H__
 #define __SENSOR_DEBUG_H__
 
+#include "contexthub_recovery.h"
 #define REGISTER_SENSORHUB_DEBUG_OPERATION(FUNC) \
 register_sensorhub_debug_operation(#FUNC, FUNC);
 
@@ -14,20 +32,20 @@ struct t_sensor_debug_operations_list {
 	struct mutex mlock;
 };
 
-/*to find operation by str*/
+/* to find operation by str */
 struct sensor_debug_cmd {
 	const char *str;
 	sensor_debug_pfunc operation;
 	struct list_head entry;
 };
 
-/*to find tag by str*/
+/* to find tag by str */
 struct sensor_debug_tag_map {
 	const char *str;
 	int tag;
 };
 
-/*to search info by tag*/
+/* to search info by tag */
 struct sensor_debug_search_info {
 	const char *sensor;
 	int tag;
@@ -35,7 +53,7 @@ struct sensor_debug_search_info {
 };
 
 #define AR_MAX_CONFIG_NUM 12
-#define MAX_CMD_BUF_ARGC (64)
+#define MAX_CMD_BUF_ARGC 64
 #define DEBUG_LEVEL 4
 
 #pragma pack(1)
@@ -46,16 +64,16 @@ typedef struct ar_activity_event {
 } ar_activity_event_t;
 
 typedef struct ar_config_event {
-    unsigned int   event_type;
-    unsigned int   activity;
-    unsigned int   len;
-    char   buf[];
+	unsigned int   event_type;
+	unsigned int   activity;
+	unsigned int   report_interval;
+	unsigned int   len;
+	char   buf[];
 } ar_config_event_t;
 
 typedef struct ar_config {
-    unsigned int report_interval;
-    unsigned int   num;
-    ar_config_event_t   activity_list[];
+	unsigned int   num;
+	ar_config_event_t   activity_list[];
 } ar_config_t;
 
 typedef struct {
@@ -63,26 +81,26 @@ typedef struct {
 	uint8_t	   rsv1;
 	uint8_t	   rsv2;
 	uint8_t	   sub_cmd;
-}core_subcmd_t;
+} core_subcmd_t;
 
-typedef struct ar_start_cmd{
-    core_subcmd_t core_cmd;
-    ar_config_t   start_param;
-}ar_start_cmd_t;
+typedef struct ar_start_cmd {
+	core_subcmd_t core_cmd;
+	ar_config_t   start_param;
+} ar_start_cmd_t;
 
-typedef struct ar_update_cmd{
-    core_subcmd_t core_cmd;
-    ar_config_t   update_param;
-}ar_update_cmd_t;
+typedef struct ar_update_cmd {
+	core_subcmd_t core_cmd;
+	ar_config_t   update_param;
+} ar_update_cmd_t;
 
-typedef struct ar_stop_cmd{
-    core_subcmd_t core_cmd;
-    unsigned int   para;
-}ar_stop_cmd_t;
+typedef struct ar_stop_cmd {
+	core_subcmd_t core_cmd;
+	unsigned int   para;
+} ar_stop_cmd_t;
 
-typedef struct ar_flush_cmd{
-    core_subcmd_t core_cmd;
-}ar_flush_cmd_t;
+typedef struct ar_flush_cmd {
+	core_subcmd_t core_cmd;
+} ar_flush_cmd_t;
 
 typedef struct ar_data {
 	ar_activity_event_t activity_list[48];
@@ -102,23 +120,23 @@ typedef enum {
 } EVENT_TYPE;
 
 typedef enum {
-    AR_ACTIVITY_VEHICLE = 0x00,
-    AR_ACTIVITY_RIDING = 0x01,
-    AR_ACTIVITY_WALK_SLOW = 0x02,
-    AR_ACTIVITY_RUN_FAST = 0x03,
-    AR_ACTIVITY_STATIONARY = 0x04,
-    AR_ACTIVITY_TILT = 0x05,
-    AR_ACTIVITY_END = 0x10,
-    AR_VE_BUS = 0x11,				/* 大巴 */
-    AR_VE_CAR = 0x12,				/* 小车 */
-    AR_VE_METRO = 0x13,				/* 地铁 */
-    AR_VE_HIGH_SPEED_RAIL = 0x14,	/* 高铁 */
-    AR_VE_AUTO = 0x15,				/* 公路交通 */
-    AR_VE_RAIL = 0x16,				/* 铁路交通 */
-    AR_CLIMBING_MOUNT = 0x17,          /*爬山*/
-    AR_FAST_WALK = 0x18,                   /*快走*/
-    AR_STOP_VEHICLE = 0x19, 		/*停车*/
-    AR_UNKNOWN = 0x3F,
+	AR_ACTIVITY_VEHICLE = 0x00,
+	AR_ACTIVITY_RIDING = 0x01,
+	AR_ACTIVITY_WALK_SLOW = 0x02,
+	AR_ACTIVITY_RUN_FAST = 0x03,
+	AR_ACTIVITY_STATIONARY = 0x04,
+	AR_ACTIVITY_TILT = 0x05,
+	AR_ACTIVITY_END = 0x10,
+	AR_VE_BUS = 0x11,					/* bus */
+	AR_VE_CAR = 0x12,					/* car */
+	AR_VE_METRO = 0x13,					/* metro */
+	AR_VE_HIGH_SPEED_RAIL = 0x14,		/* high-speed railway */
+	AR_VE_AUTO = 0x15,					/* road traffic */
+	AR_VE_RAIL = 0x16,					/* rail transport */
+	AR_CLIMBING_MOUNT = 0x17,			/* climb mountain */
+	AR_FAST_WALK = 0x18,				/* quick walk */
+	AR_STOP_VEHICLE = 0x19,				/* park */
+	AR_UNKNOWN = 0x3F,
 } AR_ACTIVITY_TYPE;
 
 //aod
@@ -160,12 +178,11 @@ enum {
 	AOD_DRV_PIXEL_FORMAT_VYUY_422_Pkg,
 };
 
-typedef struct
-{
-    uint8_t power_status;
-    uint8_t app_status[TAG_END];
-    uint32_t idle_time;
-    uint64_t active_app_during_suspend;
+typedef struct {
+	uint8_t power_status;
+	uint8_t app_status[TAG_END];
+	uint32_t idle_time;
+	uint64_t active_app_during_suspend;
 } iomcu_power_status;
 
 struct power_dbg {
@@ -177,13 +194,12 @@ typedef struct {
 	uint16_t sub_cmd;
 	uint16_t test_sarinfo;
 } rpc_test_ioctl_t;
-typedef enum
-{
-    AR_ENVIRONMENT_HOME,
-    AR_ENVIRONMENT_OFFICE,
-    AR_ENVIRONMENT_STATION,
-    AR_ENVIRONMENT_UNKNOWN	= 0x1f,
-    AR_ENVIRONMENT_END	= 0x20,
+typedef enum {
+	AR_ENVIRONMENT_HOME,
+	AR_ENVIRONMENT_OFFICE,
+	AR_ENVIRONMENT_STATION,
+	AR_ENVIRONMENT_UNKNOWN	= 0x1f,
+	AR_ENVIRONMENT_END	= 0x20,
 } AR_ENVIRONMENT_TYPE;
 
 #define SINGLE_STR_LENGTH_MAX 30
@@ -205,15 +221,15 @@ typedef enum
 #define MIN_SINGNED_SHORT (-32678)
 #define MAX_SINGNED_SHORT (32767)
 #define ALS_PARAM	25
-#define SET_ALS_TYPE_NUMB_MAX    (2) //permit type number is 0 or 1 or 2
-#define SET_PS_TYPE_NUMB_MAX     (1) //permit type number is 0 or 1
+#define SET_ALS_TYPE_NUMB_MAX    (2) // permit type number is 0 or 1 or 2
+#define SET_PS_TYPE_NUMB_MAX     (1) // permit type number is 0 or 1
 
-#define AOD_DRV_FB_PIXEL_ALIGN(val, al)    (((val) + ((al)-1)) & ~((al)-1))
-#define AOD_DRV_X_RES_PIXELS_ALIGN	(16)
+#define AOD_DRV_FB_PIXEL_ALIGN(val, al)    (((val) + ((al)-1)) & (~((al)-1)))
+#define AOD_DRV_X_RES_PIXELS_ALIGN (16)
 #define SINGLE_CLOCK_SPACES (4)
 #define DIGITS_COUNT (10)
 #define SINGLE_CLOCK_DIGITS_BITMAP_MAX_SIZE (AOD_SINGLE_CLOCK_DIGITS_RES_X * AOD_SINGLE_CLOCK_DIGITS_RES_Y * 2)
-#define FRAMEBUFFER_SIZE (AOD_DRV_FB_PIXEL_ALIGN(SCREEN_RES_X * 2, AOD_DRV_X_RES_PIXELS_ALIGN) * SCREEN_RES_Y )
+#define FRAMEBUFFER_SIZE (AOD_DRV_FB_PIXEL_ALIGN(SCREEN_RES_X * 2, AOD_DRV_X_RES_PIXELS_ALIGN) * SCREEN_RES_Y)
 #define SINGLE_CLOCK_DIGITS_BITMAPS_SIZE (DIGITS_COUNT * SINGLE_CLOCK_DIGITS_BITMAP_MAX_SIZE)
 #define DDR_MEMORY_SIZE (FRAMEBUFFER_SIZE + SINGLE_CLOCK_DIGITS_BITMAPS_SIZE + sizeof(uint32_t))
 #define DIGITS_BITMAPS_OFFSET (FRAMEBUFFER_SIZE + sizeof(uint32_t))
@@ -226,7 +242,17 @@ typedef enum
 #define SAR_DEBUG_MODE (1)
 #define SAR_NORMAL_MODE (0)
 
-#define ADI_SAR_INIT_REG_VAL_LENGTH (17)
-#define ADI_SAR_THRESHOLD_TO_MODEM_LENGTH (8)
+extern struct CONFIG_ON_DDR *pConfigOnDDr;
+extern struct class *sensors_class;
+extern int iom3_need_recovery(int modid, exp_source_t f);
+extern int iomcu_dubai_log_fetch(uint32_t event_type, void* data, uint32_t length);
+
+extern struct als_platform_data als_data;
+extern struct ps_platform_data ps_data;
+extern struct sar_platform_data sar_pdata;
+extern char sensor_chip_info[SENSOR_MAX][MAX_CHIP_INFO_LEN];
+
+extern int g_iom3_state;
+extern int iom3_power_state;
 
 #endif

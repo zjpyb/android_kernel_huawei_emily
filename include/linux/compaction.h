@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_COMPACTION_H
 #define _LINUX_COMPACTION_H
 
@@ -242,5 +243,9 @@ static inline void compaction_unregister_node(struct node *node)
 {
 }
 #endif /* CONFIG_COMPACTION && CONFIG_SYSFS && CONFIG_NUMA */
+
+#if defined(CONFIG_COMPACTION) && defined(CONFIG_ION_HISI_CPA)
+void cpa_compact_nodes(int compact_model);
+#endif
 
 #endif /* _LINUX_COMPACTION_H */

@@ -56,17 +56,30 @@ void test_pid_affinity(struct core_heating *current_core)
 
 void do_something_thermal_core(struct core_heating *current_core)
 {
+#ifdef BSP_CONFIG_PHONE_TYPE
     u64 math_calc = 0x10;
+#else
+    u32 math_calc = 0x10;
+#endif
 	int i;
     do{
         for(i=0;i<10000000;i++)
         {
+#ifdef BSP_CONFIG_PHONE_TYPE
             math_calc += (math_calc / 2);
             math_calc -= (u64)(unsigned int)(2 * i);
             math_calc += (math_calc * 7);
             math_calc += (u64)(unsigned int)(4 * i);
             math_calc += (math_calc / 5);
             math_calc -= (u64)(unsigned int)(2 * i);
+#else
+            math_calc += (math_calc / 2);
+            math_calc -= (u32)(2 * i);
+            math_calc += (math_calc * 7);
+            math_calc += (u32)(4 * i);
+            math_calc += (math_calc / 5);
+            math_calc -= (u32)(2 * i);
+#endif
         }
         g_calc_result += math_calc;		
     }while(current_core->thread_flag != SYSTEM_HEATING_END);

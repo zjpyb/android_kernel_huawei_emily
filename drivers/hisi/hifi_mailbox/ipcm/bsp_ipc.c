@@ -47,8 +47,10 @@ spinlock_t g_ipc_int_lock = __SPIN_LOCK_UNLOCKED("ipc");
 #define K3_IPC_MODE_AUTOACK                 (0)
 
 /*************************************hifi系统ipc******************************************/
+#if  defined(CONFIG_HIFI_IPC_3650) || defined(CONFIG_HIFI_IPC_6250) || defined(CONFIG_HIFI_IPC_3660)
 #define K3_SYS_IPC_BASE_ADDR_S      (unsigned long)(SOC_ACPU_IPC_BASE_ADDR)
 #define K3_SYS_IPC_BASE_ADDR_NS     (unsigned long)(SOC_ACPU_IPC_NS_BASE_ADDR)
+#endif
 #define K3_SYS_IPC_REG_SIZE     (0xA00)
 
 #define K3_IPC_LOCK(base)                          WORD_REF(base + 0xA00)
@@ -155,7 +157,9 @@ static int hisi_hifi_mbox_init(void)
 
 	rx_nb.next = NULL;
 	rx_nb.notifier_call = DRV_k3IpcIntHandler_ipc;
+#if  defined(CONFIG_HIFI_IPC_3650) || defined(CONFIG_HIFI_IPC_6250) || defined(CONFIG_HIFI_IPC_3660)
 	rproc_id = HISI_RPROC_HIFI_MBX2;
+#endif
     	/* register the rx notify callback */
 	ret = RPROC_MONITOR_REGISTER(rproc_id, &rx_nb);
 	if (ret)
@@ -164,13 +168,6 @@ static int hisi_hifi_mbox_init(void)
 	return ret;
 }
 
-/*
-static void hisi_hifi_mbox_exit(void)
-{
-    if (hifi_mbox)
-        hisi_mbox_put(&hifi_mbox);
-}
-*/
 #else
 static irqreturn_t DRV_k3IpcIntHandler_ack(int irq, void *dev_id)
 {
@@ -372,7 +369,7 @@ BSP_S32 IPC_IntDisable (IPC_INT_LEV_E ulLvl)
  *
  * 输入参数  : IPC_INT_CORE_E enCoreNum 要使能中断的core
                BSP_U32 ulLvl 要使能的中断号，取值范围0～31
-               VOIDFUNCPTR routine 中断服务程序
+               irq_handler routine 中断服务程序
  *             BSP_U32 parameter      中断服务程序参数
  * 输出参数  : 无
  *
@@ -380,7 +377,7 @@ BSP_S32 IPC_IntDisable (IPC_INT_LEV_E ulLvl)
  *
  * 修改记录  : 2011年4月11日 wangjing creat
  *****************************************************************************/
-BSP_S32 IPC_IntConnect  (IPC_INT_LEV_E ulLvl, VOIDFUNCPTR routine, BSP_U32 parameter)
+BSP_S32 IPC_IntConnect  (IPC_INT_LEV_E ulLvl, irq_handler routine, BSP_U32 parameter)
 {
 
 	unsigned long flag = 0;
@@ -403,7 +400,7 @@ BSP_S32 IPC_IntConnect  (IPC_INT_LEV_E ulLvl, VOIDFUNCPTR routine, BSP_U32 param
  *
  * 输入参数  :
  *              BSP_U32 ulLvl 要使能的中断号，取值范围0～31
- *              VOIDFUNCPTR routine 中断服务程序
+ *              irq_handler routine 中断服务程序
  *             BSP_U32 parameter      中断服务程序参数
  * 输出参数  : 无
  *
@@ -411,7 +408,7 @@ BSP_S32 IPC_IntConnect  (IPC_INT_LEV_E ulLvl, VOIDFUNCPTR routine, BSP_U32 param
  *
  * 修改记录  : 2011年4月11日 wangjing creat
  *****************************************************************************/
- BSP_S32 IPC_IntDisonnect  (IPC_INT_LEV_E ulLvl,VOIDFUNCPTR routine, BSP_U32 parameter)
+ BSP_S32 IPC_IntDisonnect  (IPC_INT_LEV_E ulLvl, irq_handler routine, BSP_U32 parameter)
  {
 	unsigned long flag = 0;
 
@@ -494,7 +491,9 @@ BSP_S32 IPC_IntSend(IPC_INT_CORE_E enDstCore, IPC_INT_LEV_E ulLvl)
 #ifdef USE_HISI_MAILBOX
 		ipcMsg[0] = (source << 24) | (ulLvl << 8);
 
+#if defined(CONFIG_HIFI_IPC_3650) || defined(CONFIG_HIFI_IPC_6250) || defined(CONFIG_HIFI_IPC_3660)
 	rproc_id = HISI_RPROC_HIFI_MBX18;
+#endif
 		ret = RPROC_ASYNC_SEND(rproc_id, (mbox_msg_t *)ipcMsg, 2);
 		if(ret)
 		  {

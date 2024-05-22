@@ -32,46 +32,40 @@
 #include <linux/platform_data/remoteproc-hisi.h>
 #include "remoteproc_internal.h"
 
-static int
-rproc_bin_sanity_check(struct rproc *rproc, const struct firmware *fw)
+static int rproc_bin_sanity_check(struct rproc *rproc, const struct firmware *fw)
 {
 	return 0;
 }
 
-static
-u32 rproc_bin_get_boot_addr(struct rproc *rproc, const struct firmware *fw)
+static u32 rproc_bin_get_boot_addr(struct rproc *rproc, const struct firmware *fw)
 {
-    return 0;
+	return 0;
 }
 
-static int
-rproc_bin_load_segments(struct rproc *rproc, const struct firmware *fw)
+static int rproc_bin_load_segments(struct rproc *rproc, const struct firmware *fw)
 {
-    if (use_sec_isp()) {
-        return 0;
-    }
+	if (use_sec_isp()) {
+		return 0;
+	}
 
-    return hisp_bin_load_segments(rproc);
+	return hisp_bin_load_segments(rproc);
 }
 
-static struct resource_table *
-rproc_bin_find_rsc_table(struct rproc *rproc, const struct firmware *fw,
-            int *tablesz)
+static struct resource_table *rproc_bin_find_rsc_table(struct rproc *rproc, const struct firmware *fw, int *tablesz)
 {
-    struct resource_table *table = NULL;
-    int tablesize;
+	struct resource_table *table = NULL;
+	int tablesize;
 
-    if ((table = (struct resource_table *)hisp_get_rsctable(&tablesize)) == NULL)
-        pr_err("[%s] Failed : get_rsctable.%pK\n", __func__, table);
+	if ((table = (struct resource_table *)hisp_get_rsctable(&tablesize)) == NULL)
+		pr_err("[%s] Failed : get_rsctable.%pK\n", __func__, table);
 
-    *tablesz = tablesize;
-    return table;
+	*tablesz = tablesize;
+	return table;
 }
 
-static struct resource_table *
-rproc_bin_find_loaded_rsc_table(struct rproc *rproc, const struct firmware *fw)
+static struct resource_table *rproc_bin_find_loaded_rsc_table(struct rproc *rproc, const struct firmware *fw)
 {
-    int tablez;
+	int tablez;
 	return rproc_bin_find_rsc_table(rproc, fw, &tablez);
 }
 

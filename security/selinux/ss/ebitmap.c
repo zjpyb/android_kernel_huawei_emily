@@ -1,7 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Implementation of the extensible bitmap type.
  *
- * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
+ * Author : Stephen Smalley, <sds@tycho.nsa.gov>
  */
 /*
  * Updated: Hewlett-Packard <paul@paul-moore.com>
@@ -23,6 +24,8 @@
 #include "policydb.h"
 
 #define BITS_PER_U64	(sizeof(u64) * 8)
+
+static struct kmem_cache *ebitmap_node_cachep;
 
 int ebitmap_cmp(struct ebitmap *e1, struct ebitmap *e2)
 {
@@ -61,7 +64,6 @@ static inline void try_free(bool protectable, struct ebitmap_node *n)
 	else
 		kfree(n);
 }
-
 int ebitmap_cpy(struct ebitmap *dst, struct ebitmap *src,
 		const bool protectable)
 {
@@ -179,7 +181,7 @@ int ebitmap_netlbl_import(struct ebitmap *ebmap,
 		if (e_iter == NULL ||
 		    offset >= e_iter->startbit + EBITMAP_SIZE) {
 			e_prev = e_iter;
-			e_iter = try_alloc(ebmap->protectable);
+			e_iter = try_alloc(ebmap->protectable, GFP_ATOMIC);
 			if (e_iter == NULL)
 				goto netlbl_import_failure;
 			e_iter->startbit = offset - (offset % EBITMAP_SIZE);
@@ -377,7 +379,7 @@ int ebitmap_read(struct ebitmap *e, void *fp, bool protectable)
 
 	if (mapunit != BITS_PER_U64) {
 		printk(KERN_ERR "SELinux: ebitmap: map size %u does not "
-		       "match my size %Zd (high bit was %d)\n",
+		       "match my size %zd (high bit was %d)\n",
 		       mapunit, BITS_PER_U64, e->highbit);
 		goto bad;
 	}
@@ -535,4 +537,16 @@ int ebitmap_write(struct ebitmap *e, void *fp)
 			return rc;
 	}
 	return 0;
+}
+
+void ebitmap_cache_init(void)
+{
+	ebitmap_node_cachep = kmem_cache_create("ebitmap_node",
+							sizeof(struct ebitmap_node),
+							0, SLAB_PANIC, NULL);
+}
+
+void ebitmap_cache_destroy(void)
+{
+	kmem_cache_destroy(ebitmap_node_cachep);
 }

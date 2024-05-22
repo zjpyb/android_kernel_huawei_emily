@@ -45,6 +45,10 @@
 #include "hisi_overlay_utils_dssv330.h"
 #endif
 
+#ifdef CONFIG_HISI_FB_V350
+#include "hisi_overlay_utils_dssv350.h"
+#endif
+
 #define CONFIG_HISI_DSS_CMDLIST_LAST_USED
 
 #define HISI_DSS_CMDLIST_DATA_MAX	  (3)
@@ -66,6 +70,7 @@ enum dpp_module_idx {
 	DPP_MODULE_DITHER,
 	DPP_MODULE_IFBC,
 	DPP_MODULE_HIACE,
+	DPP_MODULE_POST_XCC,
 	DPP_MODULE_MAX
 };
 

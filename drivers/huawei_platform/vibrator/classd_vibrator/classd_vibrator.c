@@ -1,3 +1,21 @@
+/*
+ * classd_vibrator.c
+ *
+ * classd_vibrator driver
+ *
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -19,7 +37,7 @@
 
 #define CLASSD_VIBRATOR "classd_vibrator"
 
-#define ON 1
+#define ON  1
 #define OFF 0
 
 struct classd_vibrator_data {
@@ -54,15 +72,19 @@ static void classd_vibrator_switch(int status)
 	if (status) {
 		error = regulator_enable(classd_vibrator_pdata->vout_ldo);
 		if (error < 0) {
-			pr_err("%s: failed to enable classd-vibrator regulator\n", __func__);
+			pr_err("%s: failed to enable regulator\n",
+				__func__);
 			goto unlock;
 		}
-		hisi_pmic_reg_write(classd_vibrator_pdata->classd_ctl_reg, classd_vibrator_pdata->classd_ctl_value);
+		hisi_pmic_reg_write(classd_vibrator_pdata->classd_ctl_reg,
+			classd_vibrator_pdata->classd_ctl_value);
 	} else {
-		hisi_pmic_reg_write(classd_vibrator_pdata->classd_ctl_reg, 0x00);
+		hisi_pmic_reg_write(classd_vibrator_pdata->classd_ctl_reg,
+			0x00); // disable
 		error = regulator_disable(classd_vibrator_pdata->vout_ldo);
 		if (error < 0) {
-			pr_err("%s: failed to disable classd-vibrator regulator\n", __func__);
+			pr_err("%s: failed to disable regulator\n",
+				__func__);
 			goto unlock;
 		}
 	}
@@ -71,12 +93,11 @@ static void classd_vibrator_switch(int status)
 
 unlock:
 	mutex_unlock(&classd_vibrator_pdata->lock);
-	return;
 }
 
 static enum hrtimer_restart classd_vibrator_timer_func(struct hrtimer *timer)
 {
-	pr_info("classd_vibrator_timer_func called\n");
+	pr_info("%s: called\n", __func__);
 	classd_vibrator_switch(OFF);
 
 	return HRTIMER_NORESTART;
@@ -84,24 +105,34 @@ static enum hrtimer_restart classd_vibrator_timer_func(struct hrtimer *timer)
 
 static int classd_vibrator_get_time(struct timed_output_dev *dev)
 {
-	struct classd_vibrator_data *pdata =
-			container_of(dev, struct classd_vibrator_data, dev);
+	struct classd_vibrator_data *pdata = NULL;
+
+	if (dev == NULL) {
+		pr_err("%s: null point\n", __func__);
+		return -1;
+	}
+	pdata = container_of(dev, struct classd_vibrator_data, dev);
+
 	if (hrtimer_active(&pdata->timer)) {
 		ktime_t r = hrtimer_get_remaining(&pdata->timer);
-		return ktime_to_ns(r) / NSEC_PER_MSEC; /* convert ktime to millisecond */
-	} else
+		/* convert ktime to millisecond */
+		return ktime_to_ns(r) / NSEC_PER_MSEC;
+	} else {
 		return 0;
+	}
 }
 
 static void classd_vibrator_enable(struct timed_output_dev *dev, int value)
 {
-	struct classd_vibrator_data *pdata = container_of(dev, struct classd_vibrator_data, dev);
+	struct classd_vibrator_data *pdata = NULL;
 
-	pr_info("classd_vibrator_enable, value=%d\n",value);
-	if (value < 0) {
+	if (dev == NULL || value < 0) {
 		pr_err("error:vibrator_enable value:%d is negative\n", value);
 		return;
 	}
+	pdata = container_of(dev, struct classd_vibrator_data, dev);
+
+	pr_info("%s, value=%d\n", __func__, value);
 	/* cancel previous timer */
 	if (hrtimer_active(&pdata->timer))
 		hrtimer_cancel(&pdata->timer);
@@ -111,7 +142,8 @@ static void classd_vibrator_enable(struct timed_output_dev *dev, int value)
 			value = TIMEOUT_MIN;
 		classd_vibrator_switch(ON);
 		hrtimer_start(&pdata->timer,
-			ns_to_ktime((u64)value * NSEC_PER_MSEC), /* use millisecond to construct ktime_t */
+			/* use millisecond to construct ktime_t */
+			ns_to_ktime((u64)value * NSEC_PER_MSEC),
 			HRTIMER_MODE_REL);
 	} else {
 		classd_vibrator_switch(OFF);
@@ -120,37 +152,46 @@ static void classd_vibrator_enable(struct timed_output_dev *dev, int value)
 
 #ifdef CONFIG_OF
 static const struct of_device_id classd_vibrator_match[] = {
-	{ .compatible = "huawei,classd-vibrator",},
+	{ .compatible = "huawei,classd-vibrator", },
 	{},
 };
 MODULE_DEVICE_TABLE(of, classd_vibrator_match);
 
-static int classd_vibrator_get_vout(struct platform_device *pdev, struct classd_vibrator_data *pdata){
-	int min_voltage=0;
-	int max_voltage=0;
-	int err = 0;
+static int classd_vibrator_get_vout(struct platform_device *pdev,
+	struct classd_vibrator_data *pdata)
+{
+	int min_voltage = 0;
+	int max_voltage = 0;
+	int err;
 
 	pdata->vout_ldo = devm_regulator_get(&pdev->dev, "vibrator-vdd");
 
-	if (IS_ERR_OR_NULL(pdata->vout_ldo)){
-		dev_err(&pdev->dev, "%s: classd_vibrator_vout_reg error\n", __func__);
+	if (IS_ERR_OR_NULL(pdata->vout_ldo)) {
+		dev_err(&pdev->dev, "%s: classd_vibrator_vout_reg error\n",
+			__func__);
 		return -ENODEV;
 	}
 
-	err = of_property_read_u32(pdev->dev.of_node, "vibrator_vout_min_voltage", (u32 *)&min_voltage);
-	if (err) {
-		dev_err(&pdev->dev, "%s: min_voltage read failed\n", __func__);
+	err = of_property_read_u32(pdev->dev.of_node,
+		"vibrator_vout_min_voltage", (u32 *)&min_voltage);
+	if (err != 0) {
+		dev_err(&pdev->dev, "%s: min_voltage read failed\n",
+			__func__);
 		return err;
 	}
 
-	err = of_property_read_u32(pdev->dev.of_node, "vibrator_vout_max_voltage", (u32 *)&max_voltage);
-	if (err) {
-		dev_err(&pdev->dev, "%s: max_voltage read failed\n", __func__);
+	err = of_property_read_u32(pdev->dev.of_node,
+		"vibrator_vout_max_voltage", (u32 *)&max_voltage);
+	if (err != 0) {
+		dev_err(&pdev->dev, "%s: max_voltage read failed\n",
+			__func__);
 		return err;
 	}
 
-	if (regulator_set_voltage(pdata->vout_ldo, min_voltage, max_voltage)){
-		dev_err(&pdev->dev, "%s: vibrator set voltage error\n", __func__);
+	err = regulator_set_voltage(pdata->vout_ldo, min_voltage, max_voltage);
+	if (err != 0) {
+		dev_err(&pdev->dev, "%s: vibrator set voltage error\n",
+			__func__);
 		return -EPERM;
 	}
 
@@ -159,8 +200,8 @@ static int classd_vibrator_get_vout(struct platform_device *pdev, struct classd_
 
 static int classd_vibrator_probe(struct platform_device *pdev)
 {
-	struct classd_vibrator_data *p_data;
-	int ret = 0;
+	struct classd_vibrator_data *p_data = NULL;
+	int ret;
 
 	if (!of_match_node(classd_vibrator_match, pdev->dev.of_node)) {
 		dev_err(&pdev->dev, "dev node no match. exiting.\n");
@@ -168,23 +209,23 @@ static int classd_vibrator_probe(struct platform_device *pdev)
 	}
 
 	p_data = kzalloc(sizeof(struct classd_vibrator_data), GFP_KERNEL);
-	if (p_data == NULL) {
-		dev_err(&pdev->dev, "failed to allocate vibrator_device\n");
+	if (p_data == NULL)
 		return -ENOMEM;
-	}
 
 	ret = classd_vibrator_get_vout(pdev, p_data);
-	if (ret) {
+	if (ret != 0) {
 		dev_err(&pdev->dev, "failed to get vib vout\n");
 		goto err;
 	}
-	ret = of_property_read_u32(pdev->dev.of_node, "classd-ctl-reg", (u32 *)&p_data->classd_ctl_reg);
-	if (ret) {
+	ret = of_property_read_u32(pdev->dev.of_node,
+		"classd-ctl-reg", (u32 *)&p_data->classd_ctl_reg);
+	if (ret != 0) {
 		dev_err(&pdev->dev, "failed to get classd-ctl-reg");
 		goto err;
 	}
-	ret = of_property_read_u32(pdev->dev.of_node, "classd-ctl-value", (u32 *)&p_data->classd_ctl_value);
-	if (ret) {
+	ret = of_property_read_u32(pdev->dev.of_node,
+		"classd-ctl-value", (u32 *)&p_data->classd_ctl_value);
+	if (ret != 0) {
 		dev_err(&pdev->dev, "failed to get classd-ctl-value");
 		goto err;
 	}
@@ -208,14 +249,14 @@ static int classd_vibrator_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, p_data);
 	classd_vibrator_pdata = p_data;
-	dev_info(&pdev->dev, "%s: successful!\n", __FUNCTION__);
+	dev_info(&pdev->dev, "%s: successful!\n", __func__);
 	return 0;
 
 err:
 	devm_regulator_put(p_data->vout_ldo);
 	p_data->vout_ldo = NULL;
 	kfree(p_data);
-	dev_err(&pdev->dev, "%s: failed!\n", __FUNCTION__);
+	dev_err(&pdev->dev, "%s: failed!\n", __func__);
 	return ret;
 }
 
@@ -245,6 +286,7 @@ static int classd_vibrator_remove(struct platform_device *pdev)
 static void classd_vibrator_shutdown(struct platform_device *pdev)
 {
 	struct classd_vibrator_data *pdata = platform_get_drvdata(pdev);
+
 	if (pdata == NULL) {
 		dev_err(&pdev->dev, "%s:pdata is NULL\n", __func__);
 		return;
@@ -254,14 +296,14 @@ static void classd_vibrator_shutdown(struct platform_device *pdev)
 		hrtimer_cancel(&pdata->timer);
 
 	classd_vibrator_switch(OFF);
-
-	return;
 }
 
 #ifdef CONFIG_PM
-static int classd_vibrator_suspend(struct platform_device *pdev, pm_message_t state)
+static int classd_vibrator_suspend(struct platform_device *pdev,
+	pm_message_t state)
 {
 	struct classd_vibrator_data *pdata = platform_get_drvdata(pdev);
+
 	if (pdata == NULL) {
 		dev_err(&pdev->dev, "%s:pdata is NULL\n", __func__);
 		return -ENODEV;
@@ -282,6 +324,7 @@ static int classd_vibrator_suspend(struct platform_device *pdev, pm_message_t st
 static int classd_vibrator_resume(struct platform_device *pdev)
 {
 	struct classd_vibrator_data *pdata = platform_get_drvdata(pdev);
+
 	if (pdata == NULL) {
 		dev_err(&pdev->dev, "%s:pdata is NULL\n", __func__);
 		return -ENODEV;
@@ -323,6 +366,6 @@ static void __exit classd_vibrator_exit(void)
 module_init(classd_vibrator_init);
 module_exit(classd_vibrator_exit);
 
-MODULE_AUTHOR("maintainer");
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("huawei classd-vibrator driver");
-MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

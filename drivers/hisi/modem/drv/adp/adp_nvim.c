@@ -59,6 +59,7 @@
 
 #define  NV_RESULT_CODE            0xffff
 
+#ifdef CONFIG_NVIM
 
 /*****************************************************************************
 * º¯ Êý Ãû  : mdrv_nv_get_nvid_num
@@ -473,6 +474,120 @@ unsigned int mdrv_nv_get_modem_num(void)
     return bsp_nvm_get_modem_num();
 }
 
+#else
+
+#include <osl_common.h>
+
+unsigned int mdrv_nv_get_nvid_num()
+{
+    return 0;
+}
+
+
+unsigned int mdrv_nv_get_nvid_list(NV_LIST_INFO_STRU *pstNvIdList)
+{
+    if(pstNvIdList == NULL)
+    {
+        return NV_ERROR;
+    }
+    return 0;
+}
+
+unsigned int mdrv_nv_readex(unsigned int modemid, unsigned int itemid, void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_writeex(unsigned int modemid, unsigned int itemid,void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_read_partex(unsigned int modemid, unsigned int itemid, unsigned int ulOffset, void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_write_partex(unsigned int modemid, unsigned int itemid, unsigned int ulOffset, void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_flush()
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_get_length(unsigned int itemid, unsigned int *pulLength)
+{
+    return 0;
+}
+
+
+unsigned int mdrv_nv_read(unsigned int itemid, void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_write(unsigned int itemid, void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+
+unsigned int mdrv_nv_readpart(unsigned int itemid, unsigned int ulOffset, void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+
+unsigned int mdrv_nv_writepart(unsigned int itemid, unsigned int ulOffset, void *pdata, unsigned int ulLength)
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_backup()
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_restore_result(void)
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_restore()
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_backup_factorynv()
+{
+    return 0;
+}
+
+unsigned int mdrv_nv_revert_factorynv()
+{
+    return 0;
+}
+
+u32 nv_readEx(u32 modem_id, u32 itemid, u32 offset, u8 * pdata, u32 datalen){return 0;}
+u32 nv_writeEx(u32 modem_id, u32 itemid, u32 offset, u8 * pdata, u32 datalen){return 0;}
+
+u32 bsp_nvm_dcread(u32 modem_id, u32 itemid, u8 * pdata, u32 datalen){return 0;}
+u32 bsp_nvm_dcwrite(u32 modem_id, u32 itemid, u8 * pdata, u32 datalen){return 0;}
+
+u32 bsp_nvm_dcreadpart(u32 modem_id, u32 itemid, u32 offset, u8 * pdata, u32 datalen){return 0;}
+u32 bsp_nvm_dcwritepart(u32 modem_id, u32 itemid, u32 offset, u8 * pdata, u32 datalen){return 0;}
+
+u32 bsp_nvm_dcread_direct(u32 modem_id, u32 itemid, u8 * pdata, u32 datalen){return 0;}
+u32 bsp_nvm_dcwrite_direct(u32 modem_id, u32 itemid, u8 * pdata, u32 datalen){return 0;}
+
+u32 bsp_nvm_auth_dcread(u32 modem_id, u32 itemid, u8 * pdata, u32 datalen){return 0;}
+u32 bsp_nvm_auth_dcwrite(u32 modem_id, u32 itemid, u8 * pdata, u32 datalen){return 0;}
+int  modem_nv_init(void){return 0;}
+
+#endif
 
 EXPORT_SYMBOL(mdrv_nv_restore);
 EXPORT_SYMBOL(mdrv_nv_flush);

@@ -136,6 +136,8 @@ VOS_UINT32 LUP_EnQue(LUP_QUEUE_STRU *pstQue, VOS_VOID *pNode)
 
     pstQue->pBuff[ulTail] = pNode;
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+#endif
 
     pstQue->ulTail = ulTail;
 
@@ -296,5 +298,96 @@ VOS_UINT32 LUP_EnQuetoHead(LUP_QUEUE_STRU *pstQue, VOS_VOID *pNode, VOS_VOID** p
     return PS_SUCC;
 }
 
+#if ((VOS_RTOSCK == VOS_OS_VER) || (VOS_WIN32 == VOS_OS_VER))
+/*lint -e715*/
+
+VOS_UINT32 LUP_CreateSafeQue(VOS_UINT32 ulPid, LUP_QUEUE_STRU **ppQue,
+                                VOS_UINT32 ulMaxNodeNum)
+{
+    LUP_QUEUE_STRU  *pstQue     = VOS_NULL_PTR;
+    VOS_UINT8       *pBuffer    = VOS_NULL_PTR;
+
+    if (0 == ulMaxNodeNum)
+    {
+        return PS_PARA_ERR;
+    }
+
+    if (VOS_NULL_PTR == ppQue)
+    {
+        return PS_PTR_NULL;
+    }
+
+    pBuffer = (VOS_UINT8*)PS_MEM_ALLOC(ulPid, (ulMaxNodeNum + 1)* sizeof(VOS_VOID*));
+    if (VOS_NULL_PTR == pBuffer)
+    {
+        return PS_MEM_ALLOC_FAIL;
+    }
+
+    pstQue = (LUP_QUEUE_STRU *)PS_MEM_ALLOC(ulPid, sizeof(LUP_QUEUE_STRU));
+    if (VOS_NULL_PTR == pstQue)
+    {
+        (VOS_VOID)PS_MEM_FREE(ulPid, pBuffer);
+        return PS_MEM_ALLOC_FAIL;
+    }
+
+    pstQue->ulHead      = ulMaxNodeNum;
+    pstQue->ulTail      = ulMaxNodeNum;
+    pstQue->ulMaxNum    = ulMaxNodeNum+1;
+    /*lint -e826*/
+    pstQue->pBuff       = (VOS_VOID **)pBuffer;
+    /*lint +e826*/
+    VOS_SpinLockInit(&(pstQue->stSpinLock));
+    *ppQue              = pstQue;
+
+    return PS_SUCC;
+}
+/*lint +e715*/
+
+
+VOS_UINT32 LUP_EnSafeQue(LUP_QUEUE_STRU *pstQue, VOS_VOID *pNode)
+{
+    VOS_UINT32          ulTail;
+    VOS_UINT32          ulLockLevel;
+
+    OSA_ASSERT_RTN (VOS_NULL_PTR != pstQue, PS_PTR_NULL);
+    OSA_ASSERT_RTN (VOS_NULL_PTR != pNode, PS_PTR_NULL);
+
+    VOS_SpinLockIntLock(&(pstQue->stSpinLock), ulLockLevel);
+    ulTail = TTF_MOD_ADD(pstQue->ulTail, 1, pstQue->ulMaxNum);
+    if (pstQue->ulHead == ulTail)
+    {
+        VOS_SpinUnlockIntUnlock(&(pstQue->stSpinLock), ulLockLevel);
+        return PS_QUE_FULL;
+    }
+
+    pstQue->pBuff[ulTail] = pNode;
+    pstQue->ulTail = ulTail;
+    VOS_SpinUnlockIntUnlock(&(pstQue->stSpinLock), ulLockLevel);
+
+    return PS_SUCC;
+}
+
+
+VOS_UINT32 LUP_DeSafeQue(LUP_QUEUE_STRU *pstQue, VOS_VOID **ppNode)
+{
+    VOS_UINT32          ulLockLevel;
+
+    OSA_ASSERT_RTN (VOS_NULL_PTR != pstQue, PS_PTR_NULL);
+    OSA_ASSERT_RTN(VOS_NULL_PTR != ppNode, PS_PTR_NULL);
+
+    VOS_SpinLockIntLock(&(pstQue->stSpinLock), ulLockLevel);
+    if (pstQue->ulHead == pstQue->ulTail)
+    {
+        VOS_SpinUnlockIntUnlock(&(pstQue->stSpinLock), ulLockLevel);
+        return  PS_QUE_EMPTY;
+    }
+
+    pstQue->ulHead  = TTF_MOD_ADD(pstQue->ulHead, 1, pstQue->ulMaxNum);
+    *ppNode         = pstQue->pBuff[pstQue->ulHead];
+    VOS_SpinUnlockIntUnlock(&(pstQue->stSpinLock), ulLockLevel);
+
+    return PS_SUCC;
+}
+#endif
 
 

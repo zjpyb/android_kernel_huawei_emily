@@ -29,7 +29,9 @@
 #include <linux/jiffies.h>
 #include <linux/workqueue.h>
 #include <linux/of.h>
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
+#endif
 
 #include "rt4801h.h"
 #include "../hisi_fb_def.h"
@@ -320,8 +322,10 @@ static int rt4801h_probe(struct i2c_client *client, const struct i2c_device_id *
 	pr_info("rt4801h inited succeed\n");
 
 
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
 	/* detect current device successful, set the flag as present */
 	set_hw_dev_flag(DEV_I2C_DC_DC);
+#endif
 
 	if (!fastboot_display_enable) {
 		rt4801h_finish_setting();
@@ -331,6 +335,7 @@ failed_1:
 failed:
 	if(rt4801h_client) {
 		kfree(rt4801h_client);
+		rt4801h_client = NULL;
 	}
 	return retval;
 }
@@ -374,6 +379,7 @@ static void __exit rt4801h_exit(void)
 {
 	if(rt4801h_client) {
 		kfree(rt4801h_client);
+		rt4801h_client = NULL;
 	}
 	i2c_del_driver(&rt4801h_driver);
 }

@@ -73,8 +73,6 @@ static void setup_sock_sync_delay_timer(struct sock *sk)
 	bsk->bastet_timeout = bsk->last_sock_active_time_point
 		+ bsk->delay_sync_time_section;
 
-	bastet_wakelock_acquire_timeout(bsk->delay_sync_time_section
-		+ BST_WAKELOCK_TIMEOUT);
 	sk_reset_timer(sk, &bsk->bastet_timer, bsk->bastet_timeout);
 }
 
@@ -540,10 +538,6 @@ static void bastet_sock_bastet_timeout(unsigned long data)
 
 	if (sock_owned_by_user(sk)) {
 		/* Try again later */
-		if (BST_TMR_DELAY_SOCK_SYNC == event)
-			bastet_wakelock_acquire_timeout(BST_SKIP_SOCK_OWNER_TIME
-				+ BST_WAKELOCK_TIMEOUT);
-
 		sk_reset_timer(sk, &bsk->bastet_timer,
 			jiffies + BST_SKIP_SOCK_OWNER_TIME);
 		goto out_unlock;
@@ -678,7 +672,7 @@ static int create_bastet_sock(struct sock *sk,
 {
 	struct bastet_sock *bsk;
 
-	bsk = kmalloc(sizeof(*bsk), GFP_KERNEL);
+	bsk = kmalloc(sizeof(*bsk), GFP_ATOMIC);
 	if (NULL == bsk) {
 		BASTET_LOGE("kmalloc failed");
 		return -ENOMEM;
@@ -711,6 +705,7 @@ static int create_bastet_sock(struct sock *sk,
 	atomic_set(&bsk->hbm.reply_filter_cnt, 0);
 	atomic_set(&bsk->hbm.reply_matched_cnt, 0);
 	atomic_set(&bsk->hbm.frozen, 0);
+	spin_lock_init(&bsk->hbm.hbm_lock);
 
 	sk->bastet = bsk;
 	return 0;
@@ -919,9 +914,9 @@ int set_tcp_sock_sync_prop(struct bst_set_sock_sync_prop *set_prop)
 
 	sk = get_sock_by_comm_prop(guide);
 	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: %pI4, rport: %d, rIp: %pI4",
-					guide->local_port, &guide->local_ip,
-					guide->remote_port, &guide->remote_ip);
+		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
+					guide->local_port,
+					guide->remote_port);
 		return -ENOENT;
 	}
 
@@ -985,9 +980,9 @@ int bastet_sync_prop_start(struct bst_set_sock_sync_prop *set_prop)
 
 	sk = get_sock_by_comm_prop(guide);
 	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: %pI4, rport: %d, rIp: %pI4",
-					guide->local_port, &guide->local_ip,
-					guide->remote_port, &guide->remote_ip);
+		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
+					guide->local_port,
+					guide->remote_port);
 		return -ENOENT;
 	}
 
@@ -1034,9 +1029,9 @@ int bastet_sync_prop_stop(struct bst_sock_comm_prop *comm_prop)
 
 	sk = get_sock_by_comm_prop(comm_prop);
 	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: %pI4, rport: %d, rIp: %pI4",
-			comm_prop->local_port, &comm_prop->local_ip,
-			comm_prop->remote_port, &comm_prop->remote_ip);
+		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
+			comm_prop->local_port,
+			comm_prop->remote_port);
 		return -ENOENT;
 	}
 
@@ -1108,9 +1103,9 @@ int set_tcp_sock_closed(struct bst_sock_comm_prop *guide)
 
 	sk = get_sock_by_comm_prop(guide);
 	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: %pI4, rport: %d, rIp: %pI4",
-					guide->local_port, &guide->local_ip,
-					guide->remote_port, &guide->remote_ip);
+		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
+					guide->local_port,
+					guide->remote_port);
 		return -ENOENT;
 	}
 

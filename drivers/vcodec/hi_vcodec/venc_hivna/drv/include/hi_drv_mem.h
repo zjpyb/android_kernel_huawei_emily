@@ -1,24 +1,9 @@
 /*
-* Copyright (C), 2001-2011, Hisilicon Tech. Co., Ltd.
-*
-* File Name     : hi_type.h
-* Version       : Initial Draft
-* Author        : Hisilicon multimedia software group
-* Created       : 2005/4/23
-*
-* Last Modified :
-* Description   : The common data type defination
-* Function List :
-*
-* History       :
-* 1.Date        : 2008/06/28
-* Author      : c42025
-* Modification: modified definition for HI_S8
-*
-* 2.Date        :   2008/10/31
-* Author      :   z44949
-* Modification:   Translate the chinese comment
-*/
+ * Copyright (c) Huawei Technologies Co., Ltd. 2008-2019. All rights reserved.
+ * Description: The common data type defination
+ * Author: z44949
+ * Create: 2008-10-31
+ */
 #ifndef __HI_DRV_MEM_H__
 #define __HI_DRV_MEM_H__
 
@@ -31,55 +16,45 @@
 #include "drv_venc_ioctl.h"
 
 #define MAX_MEM_NAME_LEN       (15)
-#define MAX_KMALLOC_MEM_NODE   (16)    /*1 channel need 2 node ,there is have max 8 channels*/
+#define MAX_KMALLOC_MEM_NODE   (16)    /* 1 channel need 2 node ,there is have max 8 channels */
 #define MAX_ION_MEM_NODE       (200)
 #define SMMU_RWERRADDR_SIZE    (128)
 
 typedef struct {
-	HI_U64 RdAddr;
-	HI_U64 WrAddr;
-} VENC_SMMU_ERR_ADDR;
+	HI_U64 read_addr;
+	HI_U64 write_addr;
+} venc_smmu_err_add_t;
 
 typedef struct {
-	HI_VOID  *pStartVirAddr;
-	HI_U64   u64StartPhyAddr;
-	HI_U32   u32Size;
-	HI_U8    u8IsMapped;
-	HI_U32   u32ShareFd;
-} MEM_BUFFER_S;
+	HI_VOID  *start_virt_addr;
+	HI_U64   start_phys_addr;
+	HI_U32   size;
+	HI_U8    is_mapped;
+	HI_S32   share_fd;
+} mem_buffer_t;
 
 typedef struct  {
 	HI_CHAR            node_name[MAX_MEM_NAME_LEN];
 	HI_CHAR            zone_name[MAX_MEM_NAME_LEN];
-	HI_VOID*           virt_addr;
+	HI_VOID           *virt_addr;
 	HI_U64             phys_addr;
 	HI_U32             size;
-	HI_S32             share_fd;
+	HI_S32             shared_fd;
 	struct ion_handle *handle;
-	struct dma_buf    *dmabuf;
-} venc_mem_buf;
+	struct dmabuf    *dmabuf;
+} venc_mem_buf_t;
 
-/***********************************************************************************
-    memory menage relative functions
-***********************************************************************************/
-HI_S32 HI_DRV_UserCopy(struct file *file, HI_U32 cmd, unsigned long arg, long (*func)(struct file *file, HI_U32 cmd, unsigned long uarg));
-
-/**************************************platform.h**************************************************/
-HI_S32 DRV_MEM_INIT(HI_VOID);
-HI_S32 DRV_MEM_EXIT(HI_VOID);
-HI_S32 DRV_MEM_KAlloc(const HI_CHAR* bufName, const HI_CHAR *zone_name, MEM_BUFFER_S *psMBuf);
-HI_S32 DRV_MEM_KFree(const MEM_BUFFER_S *psMBuf);
-HI_S32 DRV_MEM_MapKernel(HI_S32 share_fd, MEM_BUFFER_S *psMBuf);
-HI_S32 DRV_MEM_UnmapKernel(MEM_BUFFER_S *psMBuf);
-
-
-HI_S32 DRV_MEM_GetMapInfo(HI_S32 share_fd, MEM_BUFFER_S *psMBuf);
-HI_S32 DRV_MEM_PutMapInfo(MEM_BUFFER_S *psMBuf);
-HI_S32 DRV_MEM_IommuMap(VencBufferRecord *node, struct platform_device *pltdev);
-HI_S32 DRV_MEM_IommuUnmap(HI_S32 share_fd, HI_S32 phys_addr, struct platform_device *pltdev);
-
-/**************************************************************************************/
-
+HI_S32 drv_mem_copy_from_user(HI_U32 cmd, const void __user *user_arg, HI_VOID **kernel_arg);
+HI_S32 drv_mem_init(void);
+HI_S32 drv_mem_exit(void);
+HI_S32 drv_mem_kalloc(const HI_CHAR *bufname, const HI_CHAR *zone_name, mem_buffer_t *psmbuf);
+HI_S32 drv_mem_kfree(const mem_buffer_t *psmbuf);
+HI_S32 drv_mem_map_kernel(HI_S32 shared_fd, mem_buffer_t *psmbuf);
+HI_S32 drv_mem_unmap_kernel(mem_buffer_t *psmbuf);
+HI_S32 drv_mem_get_map_info(HI_S32 shared_fd, mem_buffer_t *psmbuf);
+HI_S32 drv_mem_put_map_info(mem_buffer_t *psmbuf);
+HI_S32 drv_mem_iommumap(venc_buffer_record_t *node, struct platform_device *pdev);
+HI_S32 drv_mem_iommuunmap(HI_S32 shared_fd, HI_S32 phys_addr, struct platform_device *pdev);
 
 #endif /* __HI_DRV_MEM_H__ */
 

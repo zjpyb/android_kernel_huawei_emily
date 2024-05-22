@@ -7,55 +7,137 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+/*
+ * hi6403_regs.h
+ *
+ * hi6403 regs define
+ *
+ * Copyright (c) 2015-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #ifndef __HI6403_REGS_H__
 #define __HI6403_REGS_H__
 #include "hi64xx_regs.h"
 
 /* offset of reg */
-#define BASE_OFFSET              0x20000000
+#define BASE_OFFSET 0x20000000
 
-/* page base addr def begin */
-#define BASE_ADDR_PAGE_ANA 0x7100
+#define BASE_ADDR_PAGE_EDMA     0x0000
+#define BASE_ADDR_PAGE_WDOG     0x2000
+#define BASE_ADDR_PAGE_SCTRL    0x3000
+#define BASE_ADDR_PAGE_UART     0x4000
+#define BASE_ADDR_PAGE_TIMER0   0x5000
+#define BASE_ADDR_PAGE_TIMER1   0x6000
+#define BASE_ADDR_PAGE_ANA      0x7100
+#define BASE_ADDR_PAGE_GPIO0    0x8000
+#define BASE_ADDR_PAGE_GPIO1    0x9000
+#define BASE_ADDR_PAGE_GPIO2    0xA000
+#define BASE_ADDR_PAGE_GPIO3    0xB000
+#define BASE_ADDR_PAGE_I2C_MST  0xC000
+#define BASE_ADDR_PAGE_DSPIF    0x10000
+
+#define BASE_ADDR_PAGE_OCRAM    0x10000000
+#define BASE_ADDR_PAGE_TCM      0x08000000
+
+#define HI6403_PAGE_IO_START 0x0
+#define HI6403_PAGE_IO_END 0x290
+#define HI6403_PAGE_CFG_START 0x0
+#define HI6403_PAGE_CFG_END 0xA5
+
+#define HI6403_PAGE_DIG_OFFSET_START    0x0
+#define HI6403_PAGE_DIG_OFFSET_END      0x3AA
+
+#define HI6403_PAGE_ANA_OFFSET_START    0x0
+#define HI6403_PAGE_ANA_OFFSET_END      0xFF
+
+#define HI6403_PAGE_EDMA_OFFSET_START 0x0
+#define HI6403_PAGE_EDMA_OFFSET_END 0xC1C
+#define HI6403_PAGE_WDOG_OFFSET_START 0x0
+#define HI6403_PAGE_WDOG_OFFSET_END 0xC00
+
+#define HI6403_PAGE_SCTRL_OFFSET_START 0x0
+#define HI6403_PAGE_SCTRL_OFFSET_END 0x128
+#define HI6403_PAGE_UART_OFFSET_START 0x0
+#define HI6403_PAGE_UART_OFFSET_END 0xFC
+
+#define HI6403_PAGE_TIMER0_OFFSET_START 0x0
+#define HI6403_PAGE_TIMER0_OFFSET_END 0x38
+#define HI6403_PAGE_TIMER1_OFFSET_START 0x0
+#define HI6403_PAGE_TIMER1_OFFSET_END 0x38
+
+#define HI6403_PAGE_GPIO0_OFFSET_START  0x0
+#define HI6403_PAGE_GPIO0_OFFSET_END    0x534
+#define HI6403_PAGE_GPIO1_OFFSET_START  0x0
+#define HI6403_PAGE_GPIO1_OFFSET_END    0x534
+#define HI6403_PAGE_GPIO2_OFFSET_START  0x0
+#define HI6403_PAGE_GPIO2_OFFSET_END    0x534
+#define HI6403_PAGE_GPIO3_OFFSET_START  0x0
+#define HI6403_PAGE_GPIO3_OFFSET_END    0x534
+
+#define HI6403_PAGE_I2C_MST_OFFSET_START  0x0
+#define HI6403_PAGE_I2C_MST_OFFSET_END    0xFC
+
+#define HI6403_PAGE_DSPIF_OFFSET_START 0x0
+#define HI6403_PAGE_DSPIF_OFFSET_END 0x8FFF
+
+#define HI6403_PAGE_OCRAM_START 0x0
+#define HI6403_PAGE_OCRAM_END 0x57fff
+
+#define HI6403_PAGE_TCM_START 0x0
+#define HI6403_PAGE_TCM_END 0x0002FFFF
+
+#define HI6403_PAGE_VIRTUAL_START 0x0
+#define HI6403_PAGE_VIRTUAL_END 0x6
+
 /* page base addr def end */
-
+#define HI6403_VERSION_REG   (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x0)
 #define HI6403_VERSION_VALUE 0x11
 
 /* vir mm reg begin */
 #define HI6403_VIRTUAL_REG (BASE_ADDR_PAGE_MM + 0x0)
-#define HI6403_S4_OL_SRC_EN_MM_BIT      (0)
-#define HI6403_S4_OR_SRC_EN_MM_BIT      (1)
-#define HI6403_AUDIOUP_BIT              (2)
-#define HI6403_VOICEUP_BIT              (3)
-#define HI6403_PLL48K_BIT               (4)
-#define HI6403_PLL44K1_BIT              (5)
-#define HI6403_PLLMAD_BIT               (6)
-#define HI6403_VOICE8K_BIT              (7)
-#define HI6403_VOICE16K_BIT             (8)
-#define HI6403_S3_OL_SRC_EN_MM_BIT      (9)
-#define HI6403_S3_OR_SRC_EN_MM_BIT      (10)
-#define HI6403_U3_OL_SRC_EN_MM_BIT      (11)
-#define HI6403_U4_OR_SRC_EN_MM_BIT      (12)
-#define HI6403_AUDIOUP_4MIC_BIT         (13)
-#define HI6403_S1_OL_SRC_EN_MM_BIT      (14)
-#define HI6403_S1_OR_SRC_EN_MM_BIT      (15)
-#define HI6403_HPCLASSH_BIT             (16)
-#define HI6403_VOICE32K_BIT             (17)
-#define HI6403_PLAY48K_BIT              (18)
-#define HI6403_PLAY96K_BIT              (19)
-#define HI6403_PLAY192K_BIT             (20)
-#define HI6403_LOWLANTENCY_BIT          (21)
+#define HI6403_S4_OL_SRC_EN_MM_BIT      0
+#define HI6403_S4_OR_SRC_EN_MM_BIT      1
+#define HI6403_AUDIOUP_BIT              2
+#define HI6403_VOICEUP_BIT              3
+#define HI6403_PLL48K_BIT               4
+#define HI6403_PLL44K1_BIT              5
+#define HI6403_PLLMAD_BIT               6
+#define HI6403_VOICE8K_BIT              7
+#define HI6403_VOICE16K_BIT             8
+#define HI6403_S3_OL_SRC_EN_MM_BIT      9
+#define HI6403_S3_OR_SRC_EN_MM_BIT      10
+#define HI6403_U3_OL_SRC_EN_MM_BIT      11
+#define HI6403_U4_OR_SRC_EN_MM_BIT      12
+#define HI6403_AUDIOUP_4MIC_BIT         13
+#define HI6403_S1_OL_SRC_EN_MM_BIT      14
+#define HI6403_S1_OR_SRC_EN_MM_BIT      15
+#define HI6403_HPCLASSH_BIT             16
+#define HI6403_VOICE32K_BIT             17
+#define HI6403_PLAY48K_BIT              18
+#define HI6403_PLAY96K_BIT              19
+#define HI6403_PLAY192K_BIT             20
+#define HI6403_LOWLANTENCY_BIT          21
 
 #ifdef CONFIG_BUCKBOOST
-#define HI6403_AUXMICPWMPOWER_BIT       (22)
+#define HI6403_AUXMICPWMPOWER_BIT       22
 #endif
 
-#define HI6403_IR_ENV_STUDY_BIT         (23)
-#define HI6403_I2S2_BLUETOOTH_LOOP_BIT  (24)
+#define HI6403_IR_ENV_STUDY_BIT         23
+#define HI6403_I2S2_BLUETOOTH_LOOP_BIT  24
 
-#define HI6403_SOUNDTRIGGER_ONE_MIC_EN_BIT    (25)
-#define HI6403_SOUNDTRIGGER_DUAL_MIC_EN_BIT    (26)
-#define HI6403_SOUNDTRIGGER_MULTI_MIC_EN_BIT    (27)
+#define HI6403_SOUNDTRIGGER_ONE_MIC_EN_BIT    25
+#define HI6403_SOUNDTRIGGER_DUAL_MIC_EN_BIT   26
+#define HI6403_SOUNDTRIGGER_MULTI_MIC_EN_BIT  27
 
 /* vir mm reg end */
 
@@ -210,10 +292,28 @@
 #define HI6403_PLL48K_LOCK_BIT             0
 
 /* hi_cdcctrl will use this addr,so it should be full addr */
-#define HI6403_REG_IRQM_4 (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x070)
-#define HI6403_REG_IRQ_4  (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x071)
-#define HI6403_REG_IRQM_5 (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x084)
-#define HI6403_REG_IRQ_5  (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x085)
+#define HI6403_IRQ_REG0_REG             (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x014)
+#define HI6403_IRQ_REG1_REG             (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x015)
+#define HI6403_IRQ_REG2_REG             (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x016)
+#define PLL48K_ULOCK_IRQ_BIT            4
+#define HI6403_IRQ_REG3_REG             (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x02D)
+#define HI6403_IRQ_REG4_REG             (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x071)
+#define PLLMAD_ULOCK_IRQ_BIT            4
+#define PLL44K1_ULOCK_IRQ_BIT           2
+#define HI6403_IRQ_REG5_REG             (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x085)
+#define CP2_SHORT_IRQ_BIT               5
+#define CP1_SHORT_IRQ_BIT               4
+#define BUNK2_SCP_IRQ_BIT               3
+#define BUNK2_OCP_IRQ_BIT               2
+#define BUNK1_SCP_IRQ_BIT               1
+#define BUNK1_OCP_IRQ_BIT               0
+#define HI6403_IRQM_REG0_REG            (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x017)
+#define HI6403_IRQM_REG1_REG            (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x018)
+#define HI6403_IRQM_REG2_REG            (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x019)
+#define HI6403_IRQM_REG3_REG            (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x02C)
+#define HI6403_IRQM_REG4_REG            (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x070)
+#define HI6403_IRQM_REG5_REG            (CODEC_BASE_ADDR + BASE_ADDR_PAGE_CFG + 0x084)
+
 /* cfg reg end */
 
 /* io reg begin */
@@ -1516,16 +1616,16 @@
 #define HI6403_MAD_BUFFER_CTRL1         (CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x124)
 #define HI6403_MAD_BUF_EN_BIT 5
 
-#define HI6403_MAD_ALPHA_EN1			(CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x125)
-#define HI6403_MAD_SRCDN_CTRL			(CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x236)
-#define HI6403_MIC1_SRCDN_CTRL			(CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x237)
-#define HI6403_MIC2_SRCDN_CTRL			(CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x238)
+#define HI6403_MAD_ALPHA_EN1            (CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x125)
+#define HI6403_MAD_SRCDN_CTRL           (CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x236)
+#define HI6403_MIC1_SRCDN_CTRL          (CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x237)
+#define HI6403_MIC2_SRCDN_CTRL          (CODEC_BASE_ADDR + BASE_ADDR_PAGE_DIG + 0x238)
 
 #define HI6403_MAD_RMS_TIME1            (BASE_ADDR_PAGE_DIG + 0x09d)
 #define HI6403_MAD_RMS_DIFF_THRE0       (BASE_ADDR_PAGE_DIG + 0x09e)
 #define HI6403_MAD_RMS_DIFF_THRE1       (BASE_ADDR_PAGE_DIG + 0x09f)
 #define HI6403_MAD_FILTER_ID            (BASE_ADDR_PAGE_DIG + 0x0AA)
-#define HI6403_MAD_FILTER_ID_BIT        (2)
+#define HI6403_MAD_FILTER_ID_BIT        2
 #define HI6403_MAD_FILTER_ID1           (BASE_ADDR_PAGE_DIG + 0x0AA)
 
 /* dig reg end */

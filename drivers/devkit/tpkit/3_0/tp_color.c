@@ -1,16 +1,23 @@
 /*
- * Copyright (C) huawei company
+ * Huawei Touchscreen Driver
  *
- * This	program	is free	software; you can redistribute it and/or modify
- * it under	the	terms of the GNU General Public	License	version	2 as
- * published by	the	Free Software Foundation.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/err.h>
-//#include <linux/mtd/hisi_nve_interface.h>
 #include <linux/module.h>
 #include "tpkit_platform_adapter.h"
 
@@ -18,57 +25,56 @@
 #define HWLOG_TAG tp_color
 HWLOG_REGIST();
 
-#define WHITE	0xE1
+#define WHITE 0xE1
 #define WHITE_OLD 0x02
-#define BLACK	0xD2
+#define BLACK 0xD2
 #define BLACK_OLD 0x01
-#define PINK	0xC3
-#define RED		0xB4
-#define YELLOW	0xA5
-#define BLUE	0x96
-#define GOLD  0x87
+#define PINK 0xC3
+#define RED 0xB4
+#define YELLOW 0xA5
+#define BLUE 0x96
+#define GOLD 0x87
 #define GOLD_OLD 0x04
-#define SILVER  0x3C
-#define GRAY  0x78
-#define CAFE  0x69
-#define CAFE2  0x5A
-#define BLACK2  0x4B
+#define SILVER 0x3C
+#define GRAY 0x78
+#define CAFE 0x69
+#define CAFE2 0x5A
+#define BLACK2 0x4B
 #define GREEN 0x2D
 #define PINKGOLD 0x1E
-#define TP_COLOR_BUF_SIZE		20
-#define TP_COLOR_SIZE   15
+#define TP_COLOR_BUF_SIZE 20
+#define TP_COLOR_SIZE 15
 
 char tp_color_buf[TP_COLOR_BUF_SIZE];
 
 u8 cypress_ts_kit_color[TP_COLOR_SIZE];
 #define NV_DATA_SIZE 104
 
-#define DEC_BASE_DATA   10
+#define DEC_BASE_DATA 10
 /******************************************************************************
 Function:	    read_tp_color
 ******************************************************************************/
 static int read_tp_color(void)
 {
 	int tp_color;
-	hwlog_info("tp color is %s\n", tp_color_buf);
 
+	hwlog_info("tp color is %s\n", tp_color_buf);
 	tp_color = (int)simple_strtol(tp_color_buf, NULL, 0);
 	return tp_color;
 }
 
 static int is_color_correct(u8 color)
 {
-	if ((color & 0x0f) == ((~(color >> 4)) & 0x0f)) {
+	if ((color & 0x0f) == ((~(color >> 4)) & 0x0f))
 		return true;
-	} else {
+	else
 		return false;
-	}
 }
 
 static int read_tp_color_from_nv(char *color_info)
 {
-	int ret = 0;
-	char nv_data[NV_DATA_SIZE] = { 0 };
+	int ret;
+	char nv_data[NV_DATA_SIZE] = {0};
 
 	ret = read_tp_color_adapter(nv_data, NV_DATA_SIZE);
 	if (ret < 0) {
@@ -93,22 +99,22 @@ static int read_tp_color_from_nv(char *color_info)
 		return 0;
 	} else {
 		hwlog_err("[%s]:read_tp_color_from_nv read unormal value!!\n",
-			  __func__);
+			__func__);
 		return -1;
 	}
 }
 
 static int write_tp_color_to_nv(void)
 {
-	int ret = 0;
-	u8 lcd_id = 0;
-	u8 phone_color = 0;
-	char nv_data[NV_DATA_SIZE] = { 0 };
+	int ret;
+	u8 lcd_id;
+	u8 phone_color;
+	char nv_data[NV_DATA_SIZE] = {0};
+	unsigned long len = sizeof(nv_data) - 1;
 
 	lcd_id = read_tp_color();
-	if (lcd_id != 0xff) {
+	if (lcd_id != 0xff)
 		hwlog_info("lcd id is %u from read tp color\n", lcd_id);
-	}
 	if (is_color_correct(cypress_ts_kit_color[0]))
 		phone_color = cypress_ts_kit_color[0];
 	else if (is_color_correct(lcd_id))
@@ -119,65 +125,64 @@ static int write_tp_color_to_nv(void)
 	}
 	switch (phone_color) {
 	case WHITE:
-		strncpy(nv_data, "white", sizeof(nv_data));
+		strncpy(nv_data, "white", len);
 		break;
 	case BLACK:
-		strncpy(nv_data, "black", sizeof(nv_data));
+		strncpy(nv_data, "black", len);
 		break;
 	case PINK:
 	case PINKGOLD:
-		strncpy(nv_data, "pink", sizeof(nv_data));
+		strncpy(nv_data, "pink", len);
 		break;
 	case RED:
-		strncpy(nv_data, "red", sizeof(nv_data));
+		strncpy(nv_data, "red", len);
 		break;
 	case YELLOW:
-		strncpy(nv_data, "yellow", sizeof(nv_data));
+		strncpy(nv_data, "yellow", len);
 		break;
 	case BLUE:
-		strncpy(nv_data, "blue", sizeof(nv_data));
+		strncpy(nv_data, "blue", len);
 		break;
 	case GOLD:
-		strncpy(nv_data, "gold", sizeof(nv_data));
+		strncpy(nv_data, "gold", len);
 		break;
 	case SILVER:
-		strncpy(nv_data, "silver", sizeof(nv_data));
+		strncpy(nv_data, "silver", len);
 		break;
 	case GRAY:
-		strncpy(nv_data, "gray", sizeof(nv_data));
+		strncpy(nv_data, "gray", len);
 		break;
 	case CAFE:
 	case CAFE2:
-		strncpy(nv_data, "cafe", sizeof(nv_data));
+		strncpy(nv_data, "cafe", len);
 		break;
 	case BLACK2:
-		strncpy(nv_data, "pdblack", sizeof(nv_data));
+		strncpy(nv_data, "pdblack", len);
 		break;
 	case GREEN:
-		strncpy(nv_data, "green", sizeof(nv_data));
+		strncpy(nv_data, "green", len);
 		break;
 	default:
-		strncpy(nv_data, "", sizeof(nv_data));
+		strncpy(nv_data, "", len);
 		break;
 	}
 	ret = write_tp_color_adapter(nv_data);
-	if (ret < 0) {
+	if (ret < 0)
 		return ret;
-	}
 	hwlog_info("[%s]:(%s)\n", __func__, nv_data);
 	return ret;
 }
 
 static ssize_t attr_get_tp_color_info(struct device *dev,
-				      struct device_attribute *attr, char *buf)
+			struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
-	u8 lcd_id = 0;
-	u8 phone_color = 0;
+	u8 lcd_id;
+	u8 phone_color;
+
 	lcd_id = read_tp_color();
-	if (lcd_id != 0xff) {
+	if (lcd_id != 0xff)
 		hwlog_info("lcd id is %u from read tp color\n", lcd_id);
-	}
 	hwlog_info("%s:tp id=%x   lcd id=%x.\n", __func__,
 		   cypress_ts_kit_color[0], lcd_id);
 	if (is_color_correct(cypress_ts_kit_color[0]))
@@ -241,14 +246,14 @@ static ssize_t attr_get_tp_color_info(struct device *dev,
 }
 
 static ssize_t attr_set_tp_color_info(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count)
+					struct device_attribute *attr,
+					const char *buf, size_t count)
 {
-	unsigned long val = simple_strtoul(buf, NULL, DEC_BASE_DATA);
+	unsigned long val = simple_strtol(buf, NULL, DEC_BASE_DATA);
+
 	hwlog_info("[%s] val=%lu\n", __func__, val);
-	if (val == 1) {
+	if (val == 1)
 		write_tp_color_to_nv();
-	}
 	return count;
 }
 
@@ -263,8 +268,8 @@ static struct platform_device huawei_ts_kit_color = {
 static int __init ts_color_info_init(void)
 {
 	int ret = 0;
-	hwlog_info("[%s] ++", __func__);
 
+	hwlog_info("[%s] ++", __func__);
 	ret = platform_device_register(&huawei_ts_kit_color);
 	if (ret) {
 		hwlog_err("%s: platform_device_register failed, ret:%d.\n",

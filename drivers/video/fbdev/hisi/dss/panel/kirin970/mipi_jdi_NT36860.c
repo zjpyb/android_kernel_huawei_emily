@@ -232,8 +232,6 @@ static char video_drop_disable[] = {
 	0x08,
 };*/
 
-/*lint +e569*/
-
 static struct dsi_cmd_desc lcd_display_init_cmds[] = {
 	{DTYPE_DCS_WRITE1, 0,10, WAIT_TYPE_US,
 		sizeof(page_select_1), page_select_1},
@@ -742,7 +740,6 @@ static int mipi_jdi_NT36860_panel_on(struct platform_device *pdev)
 		while (status & 0x10) {
 			udelay(50);
 			if (++try_times > 100) {
-				try_times = 0;
 				HISI_FB_ERR("fb%d, Read lcd power status timeout!\n", hisifd->index);
 				break;
 			}
@@ -921,7 +918,7 @@ static char lcd_disp_y[] = {
 	0x2B,
 	0x00, 0x00,0x09,0xFF
 };
-
+/*lint +e569*/
 static struct dsi_cmd_desc set_display_address[] = {
 	{DTYPE_DCS_LWRITE, 0, 5, WAIT_TYPE_US,
 		sizeof(lcd_disp_x), lcd_disp_x},
@@ -938,14 +935,14 @@ static int mipi_jdi_NT36860_panel_set_display_region(struct platform_device *pde
 	hisifd = platform_get_drvdata(pdev);
 	BUG_ON(hisifd == NULL);
 
-	lcd_disp_x[1] = (dirty->x >> 8) & 0xff;
-	lcd_disp_x[2] = dirty->x & 0xff;
-	lcd_disp_x[3] = ((dirty->x + dirty->w - 1) >> 8) & 0xff;
-	lcd_disp_x[4] = (dirty->x + dirty->w - 1) & 0xff;
-	lcd_disp_y[1] = (dirty->y >> 8) & 0xff;
-	lcd_disp_y[2] = dirty->y & 0xff;
-	lcd_disp_y[3] = ((dirty->y + dirty->h - 1) >> 8) & 0xff;
-	lcd_disp_y[4] = (dirty->y + dirty->h - 1) & 0xff;
+	lcd_disp_x[1] = ((unsigned)dirty->x >> 8) & 0xff;
+	lcd_disp_x[2] = (unsigned)dirty->x & 0xff;
+	lcd_disp_x[3] = ((unsigned)(dirty->x + dirty->w - 1) >> 8) & 0xff;
+	lcd_disp_x[4] = (unsigned)(dirty->x + dirty->w - 1) & 0xff;
+	lcd_disp_y[1] = ((unsigned)dirty->y >> 8) & 0xff;
+	lcd_disp_y[2] = (unsigned)dirty->y & 0xff;
+	lcd_disp_y[3] = ((unsigned)(dirty->y + dirty->h - 1) >> 8) & 0xff;
+	lcd_disp_y[4] = (unsigned)(dirty->y + dirty->h - 1) & 0xff;
 
 	HISI_FB_DEBUG("x[1] = 0x%2x, x[2] = 0x%2x, x[3] = 0x%2x, x[4] = 0x%2x.\n",
 		lcd_disp_x[1], lcd_disp_x[2], lcd_disp_x[3], lcd_disp_x[4]);
@@ -1486,7 +1483,7 @@ err_return:
 err_probe_defer:
 	return -EPROBE_DEFER;
 
-	return ret;
+	return ret; //lint !e527
 
 }
 /*lint +e30 +e84 +e514 +e516 +e572 +e732 +e747 +e778 +e845 +e846 +e866*/

@@ -598,10 +598,6 @@ typedef struct {
 	volatile bool sendingFinished;
 	CSMI_Callbacks basicCallbacks;
 	CSMI_MessageCallbacks messageCallbacks;
-
-	//CSMI_Channel *channels[CSMI_MAX_CHANNELS];
-	//uint16_t numChannels;
-
 } CSMI_Instance;
 
 extern int slimbus_irq_state;
@@ -1145,13 +1141,13 @@ static inline uint32_t CSMI_AssignLogicalAddress(CSMI_Instance *instance, CSMI_M
 static inline uint32_t CSMI_CheckInformationElement(CSMI_Instance *instance, CSMI_Message *message) {
 	uint16_t elementCode;
 	uint16_t ecByteAddress;
-	bool ecAccessByteBased; 		// 1 - Byte-based Access, 0 - Elemental Access
+	bool ecAccessByteBased = false; 		// 1 - Byte-based Access, 0 - Elemental Access
 	CSMI_SliceSize ecSliceSize;    // For Byte-based Access
 	uint8_t ecBitNumber = 0;			// For Elemental Access  //fixme: by lyq
 	CSMI_DeviceClass deviceClass;
 	CSMI_InformationElements ie;
 	uint8_t i;
-	uint8_t* informationSlice;
+	uint8_t* informationSlice = NULL;
 	uint8_t informationSliceLen;
 
 	if (message->messageCode != CSMI_MESSAGE_CODE_REPORT_INFORMATION) {
@@ -1483,7 +1479,7 @@ static uint32_t CSMI_Probe(const CSMI_Config* config, uint16_t* requiredMemory) 
 
 
 static uint32_t CSMI_Init(void* pD, const CSMI_Config* config, CSMI_Callbacks* callbacks) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_InitSanity(pD, config, callbacks);
@@ -1583,7 +1579,7 @@ static uint32_t CSMI_Init(void* pD, const CSMI_Config* config, CSMI_Callbacks* c
 }
 
 static uint32_t CSMI_Isr(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg, copy;
 	bool dataPortInterrupt = false;
 	uint8_t i, j;
@@ -1657,7 +1653,7 @@ static uint32_t CSMI_Isr(void* pD) {
 
 
 static uint32_t CSMI_Start(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 	uint32_t timeout_count = 0;
 
@@ -1705,7 +1701,7 @@ static uint32_t CSMI_Start(void* pD) {
 
 
 static uint32_t CSMI_Stop(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 	uint32_t result = CSMI_StopSanity(pD);
 	if (result) {
@@ -1748,7 +1744,7 @@ static uint32_t CSMI_Destroy(void* pD) {
 
 
 static uint32_t CSMI_SetInterrupts(void* pD, uint8_t interruptMask) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg = 0;
 
 	uint32_t result = CSMI_SetInterruptsSanity(pD, interruptMask);
@@ -1774,7 +1770,7 @@ static uint32_t CSMI_SetInterrupts(void* pD, uint8_t interruptMask) {
 
 
 static uint32_t CSMI_GetInterrupts(void* pD, uint8_t* interruptMask) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetInterruptsSanity(pD, interruptMask);
@@ -1793,7 +1789,7 @@ static uint32_t CSMI_GetInterrupts(void* pD, uint8_t* interruptMask) {
 
 
 static uint32_t CSMI_SetDataPortInterrupts(void* pD, uint8_t portNumber, uint8_t interruptMask)  {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint8_t portAddress;
 	uint32_t reg;
 
@@ -1853,7 +1849,7 @@ static uint32_t CSMI_SetDataPortInterrupts(void* pD, uint8_t portNumber, uint8_t
 
 
 static uint32_t CSMI_GetDataPortInterrupts(void* pD, uint8_t portNumber, uint8_t* interruptMask) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint8_t portAddress;
 	uint32_t reg;
 	CSMI_DataPortInterrupt output = 0;
@@ -1913,7 +1909,7 @@ static uint32_t CSMI_GetDataPortInterrupts(void* pD, uint8_t portNumber, uint8_t
 
 
 static uint32_t CSMI_ClearDataPortFifo(void* pD, uint8_t portNumber) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint8_t portAddress;
 	uint32_t reg;
 
@@ -1953,7 +1949,7 @@ static uint32_t CSMI_ClearDataPortFifo(void* pD, uint8_t portNumber) {
 
 
 static uint32_t CSMI_SetPresenceRateGeneration(void* pD, uint8_t portNumber, bool enable) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint8_t portAddress;
 	uint32_t reg;
 
@@ -1993,7 +1989,7 @@ static uint32_t CSMI_SetPresenceRateGeneration(void* pD, uint8_t portNumber, boo
 
 
 static uint32_t CSMI_GetPresenceRateGeneration(void* pD, uint8_t portNumber, bool* enable) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint8_t portAddress;
 	uint32_t reg;
 
@@ -2030,7 +2026,7 @@ static uint32_t CSMI_GetPresenceRateGeneration(void* pD, uint8_t portNumber, boo
 
 
 static uint32_t CSMI_AssignMessageCallbacks(void* pD, CSMI_MessageCallbacks* msgCallbacks) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 
 	uint32_t result = CSMI_AssignMessageCallbacksSanity(pD, msgCallbacks);
 	if (result) {
@@ -2047,7 +2043,7 @@ static uint32_t CSMI_AssignMessageCallbacks(void* pD, CSMI_MessageCallbacks* msg
 
 
 static uint32_t CSMI_SendRawMessage(void* pD, void* message, uint8_t messageLength) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 
 	uint32_t result = CSMI_SendRawMessageSanity(pD, message, messageLength);
 	if (result) {
@@ -2062,7 +2058,7 @@ static uint32_t CSMI_SendRawMessage(void* pD, void* message, uint8_t messageLeng
 
 
 static uint32_t CSMI_SendMessage(void* pD, CSMI_Message* message) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 
 	uint32_t result = CSMI_SendMessageSanity(pD, message);
 	if (result) {
@@ -2076,7 +2072,7 @@ static uint32_t CSMI_SendMessage(void* pD, CSMI_Message* message) {
 }
 
 static uint32_t CSMI_GetRegisterValue(void* pD, uint16_t regAddress, uint32_t* regContent) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 
 	uint32_t result = CSMI_GetRegisterValueSanity(pD, regAddress, regContent);
 	if (result) {
@@ -2098,7 +2094,7 @@ static uint32_t CSMI_GetRegisterValue(void* pD, uint16_t regAddress, uint32_t* r
 
 
 static uint32_t CSMI_SetRegisterValue(void* pD, uint16_t regAddress, uint32_t regContent) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 
 	uint32_t result = CSMI_SetRegisterValueSanity(pD, regAddress, regContent);
 	if (result) {
@@ -2120,7 +2116,7 @@ static uint32_t CSMI_SetRegisterValue(void* pD, uint16_t regAddress, uint32_t re
 
 
 static uint32_t CSMI_SetMessageChannelLapse(void* pD, uint8_t mchLapse) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_SetMessageChannelLapseSanity(pD, mchLapse);
@@ -2139,7 +2135,7 @@ static uint32_t CSMI_SetMessageChannelLapse(void* pD, uint8_t mchLapse) {
 }
 
 static uint32_t CSMI_GetMessageChannelLapse(void* pD, uint8_t* mchLapse) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetMessageChannelLapseSanity(pD, mchLapse);
@@ -2157,7 +2153,7 @@ static uint32_t CSMI_GetMessageChannelLapse(void* pD, uint8_t* mchLapse) {
 }
 
 static uint32_t CSMI_GetMessageChannelUsage(void* pD, uint16_t* mchUsage) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetMessageChannelUsageSanity(pD, mchUsage);
@@ -2176,7 +2172,7 @@ static uint32_t CSMI_GetMessageChannelUsage(void* pD, uint16_t* mchUsage) {
 }
 
 static uint32_t CSMI_GetMessageChannelCapacity(void* pD, uint16_t* mchCapacity) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result =CSMI_GetMessageChannelCapacitySanity(pD, mchCapacity);
@@ -2195,7 +2191,7 @@ static uint32_t CSMI_GetMessageChannelCapacity(void* pD, uint16_t* mchCapacity) 
 
 
 static uint32_t CSMI_SetSnifferMode(void* pD, bool state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_SetSnifferModeSanity(pD, state);
@@ -2222,7 +2218,7 @@ static uint32_t CSMI_SetSnifferMode(void* pD, bool state) {
 
 
 static uint32_t CSMI_GetSnifferMode(void* pD, bool* state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetSnifferModeSanity(pD, state);
@@ -2241,7 +2237,7 @@ static uint32_t CSMI_GetSnifferMode(void* pD, bool* state) {
 
 
 static uint32_t CSMI_SetFramerEnabled(void* pD, bool state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_SetFramerEnabledSanity(pD, state);
@@ -2268,7 +2264,7 @@ static uint32_t CSMI_SetFramerEnabled(void* pD, bool state) {
 
 
 static uint32_t CSMI_GetFramerEnabled(void* pD, bool* state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetFramerEnabledSanity(pD, state);
@@ -2287,7 +2283,7 @@ static uint32_t CSMI_GetFramerEnabled(void* pD, bool* state) {
 
 
 static uint32_t CSMI_SetDeviceEnabled(void* pD, bool state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_SetDeviceEnabledSanity(pD, state);
@@ -2314,7 +2310,7 @@ static uint32_t CSMI_SetDeviceEnabled(void* pD, bool state) {
 
 
 static uint32_t CSMI_GetDeviceEnabled(void* pD, bool* state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetDeviceEnabledSanity(pD, state);
@@ -2333,7 +2329,7 @@ static uint32_t CSMI_GetDeviceEnabled(void* pD, bool* state) {
 
 
 static uint32_t CSMI_SetGoAbsent(void* pD, bool state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_SetGoAbsentSanity(pD, state);
@@ -2360,7 +2356,7 @@ static uint32_t CSMI_SetGoAbsent(void* pD, bool state) {
 
 
 static uint32_t CSMI_GetGoAbsent(void* pD, bool* state) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetGoAbsentSanity(pD, state);
@@ -2379,7 +2375,7 @@ static uint32_t CSMI_GetGoAbsent(void* pD, bool* state) {
 
 
 static uint32_t CSMI_SetFramerConfig(void* pD, CSMI_FramerConfig* framerConfig) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_SetFramerConfigSanity(pD, framerConfig);
@@ -2416,7 +2412,7 @@ static uint32_t CSMI_SetFramerConfig(void* pD, CSMI_FramerConfig* framerConfig) 
 
 
 static uint32_t CSMI_GetFramerConfig(void* pD, CSMI_FramerConfig* framerConfig) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetFramerConfigSanity(pD, framerConfig);
@@ -2437,7 +2433,7 @@ static uint32_t CSMI_GetFramerConfig(void* pD, CSMI_FramerConfig* framerConfig) 
 
 
 static uint32_t CSMI_SetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* genericDeviceConfig) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 	uint8_t temp;
 
@@ -2482,8 +2478,8 @@ static uint32_t CSMI_SetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* 
 	reg = CSMI_ReadReg(CONFIGURATION.CONFIG_PR_TP);
 	CONFIGURATION__CONFIG_PR_TP__PR_SUPP__MODIFY(reg, genericDeviceConfig->presenceRatesSupported);
 	temp  = CSMI_TpField(ISOCHRONOUS, genericDeviceConfig->transportProtocolIsochronous);
-	temp |= CSMI_TpField(PUSHED, genericDeviceConfig->transportProtocolPushed);
-	temp |= CSMI_TpField(PULLED, genericDeviceConfig->transportProtocolPulled);
+	temp |= (uint32_t)CSMI_TpField(PUSHED, genericDeviceConfig->transportProtocolPushed);
+	temp |= (uint32_t)CSMI_TpField(PULLED, genericDeviceConfig->transportProtocolPulled);
 	CONFIGURATION__CONFIG_PR_TP__TP_SUPP__MODIFY(reg, temp);
 	CSMI_WriteReg(CONFIGURATION.CONFIG_PR_TP, reg);
 
@@ -2509,7 +2505,7 @@ static uint32_t CSMI_SetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* 
 
 
 static uint32_t CSMI_GetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* genericDeviceConfig) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 	uint8_t temp;
 
@@ -2544,7 +2540,7 @@ static uint32_t CSMI_GetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* 
 }
 
 static uint32_t CSMI_GetDataPortStatus(void* pD, uint8_t portNumber, CSMI_DataPortStatus* portStatus) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetDataPortStatusSanity(pD, portNumber, portStatus);
@@ -2578,7 +2574,7 @@ static uint32_t CSMI_GetDataPortStatus(void* pD, uint8_t portNumber, CSMI_DataPo
 }
 
 static uint32_t CSMI_Unfreeze(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 
 	uint32_t result = CSMI_UnfreezeSanity(pD);
 	if (result) {
@@ -2594,7 +2590,7 @@ static uint32_t CSMI_Unfreeze(void* pD) {
 
 
 static uint32_t CSMI_CancelConfiguration(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 
 	uint32_t result = CSMI_CancelConfigurationSanity(pD);
 	if (result) {
@@ -2610,7 +2606,7 @@ static uint32_t CSMI_CancelConfiguration(void* pD) {
 
 
 static uint32_t CSMI_GetStatusSynchronization(void* pD, bool* fSync, bool* sfSync, bool* mSync, bool* sfbSync, bool* phSync) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetStatusSynchronizationSanity(pD, fSync, sfSync, mSync, sfbSync, phSync);
@@ -2637,7 +2633,7 @@ static uint32_t CSMI_GetStatusSynchronization(void* pD, bool* fSync, bool* sfSyn
 }
 
 static uint32_t CSMI_GetStatusDetached(void* pD, bool* detached) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetStatusDetachedSanity(pD, detached);
@@ -2656,7 +2652,7 @@ static uint32_t CSMI_GetStatusDetached(void* pD, bool* detached) {
 
 static uint32_t CSMI_GetStatusSlimbus(void* pD, CSMI_SubframeMode* subframeMode, CSMI_ClockGear* clockGear, CSMI_RootFrequency* rootFr)
 {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	uint32_t reg;
 
 	uint32_t result = CSMI_GetStatusSlimbusSanity(pD, subframeMode, clockGear, rootFr);
@@ -2679,7 +2675,7 @@ static uint32_t CSMI_GetStatusSlimbus(void* pD, CSMI_SubframeMode* subframeMode,
 }
 
 static uint32_t CSMI_MsgAssignLogicalAddress(void* pD, uint64_t destinationEa, uint8_t newLa) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgAssignLogicalAddressSanity(pD, destinationEa, newLa);
@@ -2710,7 +2706,7 @@ static uint32_t CSMI_MsgAssignLogicalAddress(void* pD, uint64_t destinationEa, u
 
 
 static uint32_t CSMI_MsgResetDevice(void* pD, uint8_t destinationLa) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgResetDeviceSanity(pD, destinationLa);
@@ -2740,7 +2736,7 @@ static uint32_t CSMI_MsgResetDevice(void* pD, uint8_t destinationLa) {
 
 
 static uint32_t CSMI_MsgChangeLogicalAddress(void* pD, uint8_t destinationLa, uint8_t newLa) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgChangeLogicalAddressSanity(pD, destinationLa, newLa);
@@ -2771,7 +2767,7 @@ static uint32_t CSMI_MsgChangeLogicalAddress(void* pD, uint8_t destinationLa, ui
 
 
 static uint32_t CSMI_MsgChangeArbitrationPriority(void* pD, bool broadcast, uint8_t destinationLa, CSMI_ArbitrationPriority newArbitrationPriority) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgChangeArbitrationPrioritySanity(pD, broadcast, destinationLa, newArbitrationPriority);
@@ -2807,7 +2803,7 @@ static uint32_t CSMI_MsgChangeArbitrationPriority(void* pD, bool broadcast, uint
 
 
 static uint32_t CSMI_MsgRequestSelfAnnouncement(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgRequestSelfAnnouncementSanity(pD);
@@ -2837,7 +2833,7 @@ static uint32_t CSMI_MsgRequestSelfAnnouncement(void* pD) {
 
 
 static uint32_t CSMI_MsgConnectSource(void* pD, uint8_t destinationLa, uint8_t portNumber, uint8_t channelNumber) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgConnectSourceSanity(pD, destinationLa, portNumber, channelNumber);
@@ -2870,7 +2866,7 @@ static uint32_t CSMI_MsgConnectSource(void* pD, uint8_t destinationLa, uint8_t p
 
 
 static uint32_t CSMI_MsgConnectSink(void* pD, uint8_t destinationLa, uint8_t portNumber, uint8_t channelNumber) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgConnectSinkSanity(pD, destinationLa, portNumber, channelNumber);
@@ -2903,7 +2899,7 @@ static uint32_t CSMI_MsgConnectSink(void* pD, uint8_t destinationLa, uint8_t por
 
 
 static uint32_t CSMI_MsgDisconnectPort(void* pD, uint8_t destinationLa, uint8_t portNumber) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgDisconnectPortSanity(pD, destinationLa, portNumber);
@@ -2934,7 +2930,7 @@ static uint32_t CSMI_MsgDisconnectPort(void* pD, uint8_t destinationLa, uint8_t 
 
 
 static uint32_t CSMI_MsgChangeContent(void* pD, uint8_t channelNumber, bool frequencyLockedBit, CSMI_PresenceRate presenceRate, CSMI_AuxFieldFormat auxiliaryBitFormat, CSMI_DataType dataType, bool channelLink, uint8_t dataLength) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgChangeContentSanity(pD, channelNumber, frequencyLockedBit, presenceRate, auxiliaryBitFormat, dataType, channelLink, dataLength);
@@ -2961,9 +2957,9 @@ static uint32_t CSMI_MsgChangeContent(void* pD, uint8_t channelNumber, bool freq
 	 * 3	CL [5:5]	DL [4:0]
 	 */
 	txMsg.payload[0] = CSMI_MsgPayloadField(DATA_CHANNEL_NUMBER, channelNumber);
-	txMsg.payload[1] = CSMI_MsgPayloadField(PRESENCE_RATE, presenceRate) | CSMI_MsgPayloadField(FREQUENCY_LOCKED_BIT, frequencyLockedBit);
+	txMsg.payload[1] = CSMI_MsgPayloadField(PRESENCE_RATE, presenceRate) | CSMI_MsgPayloadField(FREQUENCY_LOCKED_BIT, (uint8_t)frequencyLockedBit);
 	txMsg.payload[2] = CSMI_MsgPayloadField(DATA_TYPE, dataType) | CSMI_MsgPayloadField(AUXILIARY_BIT_FORMAT, auxiliaryBitFormat);
-	txMsg.payload[3] = CSMI_MsgPayloadField(DATA_LENGTH, dataLength) | CSMI_MsgPayloadField(CHANNEL_LINK, channelLink);
+	txMsg.payload[3] = CSMI_MsgPayloadField(DATA_LENGTH, dataLength) | CSMI_MsgPayloadField(CHANNEL_LINK, (uint8_t)channelLink);
 	txMsg.payloadLength = 4;
 
 	return CSMI_TransmitMessage(instance, &txMsg);
@@ -2971,7 +2967,7 @@ static uint32_t CSMI_MsgChangeContent(void* pD, uint8_t channelNumber, bool freq
 
 
 static uint32_t CSMI_MsgRequestInformation(void* pD, bool broadcast, uint8_t destinationLa, uint8_t transactionId, uint16_t elementCode) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgRequestInformationSanity(pD, broadcast, destinationLa, transactionId, elementCode);
@@ -3011,7 +3007,7 @@ static uint32_t CSMI_MsgRequestInformation(void* pD, bool broadcast, uint8_t des
 
 
 static uint32_t CSMI_MsgRequestClearInformation(void* pD, bool broadcast, uint8_t destinationLa, uint8_t transactionId, uint16_t elementCode, uint8_t* clearMask, uint8_t clearMaskSize) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 	uint8_t i;
 	uint32_t result = CSMI_MsgRequestClearInformationSanity(pD, broadcast, destinationLa, transactionId, elementCode, clearMask, clearMaskSize);
@@ -3061,7 +3057,7 @@ static uint32_t CSMI_MsgRequestClearInformation(void* pD, bool broadcast, uint8_
 
 
 static uint32_t CSMI_MsgClearInformation(void* pD, bool broadcast, uint8_t destinationLa, uint16_t elementCode, uint8_t* clearMask, uint8_t clearMaskSize) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 	uint8_t i;
 	uint32_t result = CSMI_MsgClearInformationSanity(pD, broadcast, destinationLa, elementCode, clearMask, clearMaskSize);
@@ -3109,7 +3105,7 @@ static uint32_t CSMI_MsgClearInformation(void* pD, bool broadcast, uint8_t desti
 
 
 static uint32_t CSMI_MsgBeginReconfiguration(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgBeginReconfigurationSanity(pD);
@@ -3139,7 +3135,7 @@ static uint32_t CSMI_MsgBeginReconfiguration(void* pD) {
 
 
 static uint32_t CSMI_MsgNextActiveFramer(void* pD, uint8_t incomingFramerLa, uint16_t outgoingFramerClockCycles, uint16_t incomingFramerClockCycles) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextActiveFramerSanity(pD, incomingFramerLa, outgoingFramerClockCycles, incomingFramerClockCycles);
@@ -3177,7 +3173,7 @@ static uint32_t CSMI_MsgNextActiveFramer(void* pD, uint8_t incomingFramerLa, uin
 
 
 static uint32_t CSMI_MsgNextSubframeMode(void* pD, CSMI_SubframeMode newSubframeMode) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextSubframeModeSanity(pD, newSubframeMode);
@@ -3208,7 +3204,7 @@ static uint32_t CSMI_MsgNextSubframeMode(void* pD, CSMI_SubframeMode newSubframe
 
 
 static uint32_t CSMI_MsgNextClockGear(void* pD, CSMI_ClockGear newClockGear) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextClockGearSanity(pD, newClockGear);
@@ -3239,7 +3235,7 @@ static uint32_t CSMI_MsgNextClockGear(void* pD, CSMI_ClockGear newClockGear) {
 
 
 static uint32_t CSMI_MsgNextRootFrequency(void* pD, CSMI_RootFrequency newRootFrequency) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextRootFrequencySanity(pD, newRootFrequency);
@@ -3270,7 +3266,7 @@ static uint32_t CSMI_MsgNextRootFrequency(void* pD, CSMI_RootFrequency newRootFr
 
 
 static uint32_t CSMI_MsgNextPauseClock(void* pD, CSMI_RestartTime newRestartTime) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextPauseClockSanity(pD, newRestartTime);
@@ -3301,7 +3297,7 @@ static uint32_t CSMI_MsgNextPauseClock(void* pD, CSMI_RestartTime newRestartTime
 
 
 static uint32_t CSMI_MsgNextResetBus(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextResetBusSanity(pD);
@@ -3331,7 +3327,7 @@ static uint32_t CSMI_MsgNextResetBus(void* pD) {
 
 
 static uint32_t CSMI_MsgNextShutdownBus(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextShutdownBusSanity(pD);
@@ -3361,7 +3357,7 @@ static uint32_t CSMI_MsgNextShutdownBus(void* pD) {
 
 
 static uint32_t CSMI_MsgNextDefineChannel(void* pD, uint8_t channelNumber, CSMI_TransportProtocol transportProtocol, uint16_t segmentDistribution, uint8_t segmentLength) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextDefineChannelSanity(pD, channelNumber, transportProtocol, segmentDistribution, segmentLength);
@@ -3399,7 +3395,7 @@ static uint32_t CSMI_MsgNextDefineChannel(void* pD, uint8_t channelNumber, CSMI_
 
 
 static uint32_t CSMI_MsgNextDefineContent(void* pD, uint8_t channelNumber, bool frequencyLockedBit, CSMI_PresenceRate presenceRate, CSMI_AuxFieldFormat auxiliaryBitFormat, CSMI_DataType dataType, bool channelLink, uint8_t dataLength) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextDefineContentSanity(pD, channelNumber, frequencyLockedBit, presenceRate, auxiliaryBitFormat, dataType, channelLink, dataLength);
@@ -3426,11 +3422,11 @@ static uint32_t CSMI_MsgNextDefineContent(void* pD, uint8_t channelNumber, bool 
 	 * 3	CL [5:5]	DL [4:0]
 	 */
 	txMsg.payload[0] = CSMI_MsgPayloadField(DATA_CHANNEL_NUMBER, channelNumber);
-	txMsg.payload[1] = CSMI_MsgPayloadField(FREQUENCY_LOCKED_BIT, frequencyLockedBit)
+	txMsg.payload[1] = CSMI_MsgPayloadField(FREQUENCY_LOCKED_BIT, (uint8_t)frequencyLockedBit)
 					 | CSMI_MsgPayloadField(PRESENCE_RATE, presenceRate);
 	txMsg.payload[2] = CSMI_MsgPayloadField(AUXILIARY_BIT_FORMAT, auxiliaryBitFormat)
 					 | CSMI_MsgPayloadField(DATA_TYPE, dataType);
-	txMsg.payload[3] = CSMI_MsgPayloadField(CHANNEL_LINK, channelLink)
+	txMsg.payload[3] = CSMI_MsgPayloadField(CHANNEL_LINK, (uint8_t)channelLink)
 					 | CSMI_MsgPayloadField(DATA_LENGTH, dataLength);
 	txMsg.payloadLength = 4;
 
@@ -3439,7 +3435,7 @@ static uint32_t CSMI_MsgNextDefineContent(void* pD, uint8_t channelNumber, bool 
 
 
 static uint32_t CSMI_MsgNextActivateChannel(void* pD, uint8_t channelNumber) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 	uint32_t result = CSMI_MsgNextActivateChannelSanity(pD, channelNumber);
 
@@ -3470,7 +3466,7 @@ static uint32_t CSMI_MsgNextActivateChannel(void* pD, uint8_t channelNumber) {
 
 
 static uint32_t CSMI_MsgNextDeactivateChannel(void* pD, uint8_t channelNumber) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextDeactivateChannelSanity(pD, channelNumber);
@@ -3501,7 +3497,7 @@ static uint32_t CSMI_MsgNextDeactivateChannel(void* pD, uint8_t channelNumber) {
 
 
 static uint32_t CSMI_MsgNextRemoveChannel(void* pD, uint8_t channelNumber) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgNextRemoveChannelSanity(pD, channelNumber);
@@ -3532,7 +3528,7 @@ static uint32_t CSMI_MsgNextRemoveChannel(void* pD, uint8_t channelNumber) {
 
 
 static uint32_t CSMI_MsgReconfigureNow(void* pD) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgReconfigureNowSanity(pD);
@@ -3562,7 +3558,7 @@ static uint32_t CSMI_MsgReconfigureNow(void* pD) {
 
 
 static uint32_t CSMI_MsgRequestValue(void* pD, bool broadcast, uint8_t destinationLa, uint8_t transactionId, uint16_t elementCode) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 
 	uint32_t result = CSMI_MsgRequestValueSanity(pD, broadcast, destinationLa, transactionId, elementCode);
@@ -3602,7 +3598,7 @@ static uint32_t CSMI_MsgRequestValue(void* pD, bool broadcast, uint8_t destinati
 
 
 static uint32_t CSMI_MsgRequestChangeValue(void* pD, bool broadcast, uint8_t destinationLa, uint8_t transactionId, uint16_t elementCode, uint8_t* valueUpdate, uint8_t valueUpdateSize) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 	uint8_t i;
 
@@ -3652,7 +3648,7 @@ static uint32_t CSMI_MsgRequestChangeValue(void* pD, bool broadcast, uint8_t des
 
 
 static uint32_t CSMI_MsgChangeValue(void* pD, bool broadcast, uint8_t destinationLa, uint16_t elementCode, uint8_t* valueUpdate, uint8_t valueUpdateSize) {
-	CSMI_Instance* instance;
+	CSMI_Instance* instance = NULL;
 	CSMI_Message txMsg;
 	uint8_t i;
 

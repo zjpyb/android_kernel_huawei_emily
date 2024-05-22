@@ -3,7 +3,7 @@
  *
  * hishow driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -45,12 +45,6 @@ static struct device *hishow_device;
 
 struct hishow_info *g_hishow_di;
 
-static const char * const hishow_device_table[] = {
-	[HISHOW_UNKNOWN_DEVICE] = "unknown_hishow",
-	[HISHOW_USB_DEVICE] = "usb_hishow",
-	[HISHOW_HALL_DEVICE] = "hall_hishow",
-};
-
 static ssize_t hishow_dev_info_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -72,11 +66,9 @@ static ssize_t hishow_dev_info_show(struct device *dev,
 	case HISHOW_DEVICE_OFFLINE:
 		cur_state = dev_state[HISHOW_DISCONNECTED];
 		break;
-
 	case HISHOW_DEVICE_ONLINE:
 		cur_state = dev_state[HISHOW_CONNECTED];
 		break;
-
 	default:
 		cur_state = dev_state[HISHOW_UNKNOWN];
 		break;
@@ -86,7 +78,7 @@ static ssize_t hishow_dev_info_show(struct device *dev,
 		cur_state, g_hishow_di->dev_no);
 }
 
-static DEVICE_ATTR(dev, 0444, hishow_dev_info_show, NULL);
+static DEVICE_ATTR(dev, 0440, hishow_dev_info_show, NULL);
 
 static struct attribute *hishow_ctrl_attributes[] = {
 	&dev_attr_dev.attr,
@@ -116,7 +108,7 @@ void hishow_notify_android_uevent(int dev_state, int dev_no)
 
 	if ((dev_no <= HISHOW_DEVICE_BEGIN) ||
 		(dev_no >= HISHOW_DEVICE_END)) {
-		hwlog_err("invalid hishow_devno(%d)\n", dev_no);
+		hwlog_err("invalid hishow_devno=%d\n", dev_no);
 		return;
 	}
 
@@ -131,13 +123,11 @@ void hishow_notify_android_uevent(int dev_state, int dev_no)
 		kobject_uevent_env(&hishow_device->kobj, KOBJ_CHANGE, online);
 		hwlog_info("hishow_notify kobject_uevent_env connected\n");
 		break;
-
 	case HISHOW_DEVICE_OFFLINE:
 		offline[1] = device_data;
 		kobject_uevent_env(&hishow_device->kobj, KOBJ_CHANGE, offline);
 		hwlog_info("hishow_notify kobject_uevent_env disconnected\n");
 		break;
-
 	default:
 		unknown[1] = device_data;
 		kobject_uevent_env(&hishow_device->kobj, KOBJ_CHANGE, unknown);
@@ -149,9 +139,6 @@ EXPORT_SYMBOL_GPL(hishow_notify_android_uevent);
 
 static void hishow_destroy_monitor_device(struct platform_device *pdev)
 {
-	if (!pdev)
-		return;
-
 	if (!IS_ERR(hishow_device)) {
 		sysfs_remove_group(&hishow_device->kobj, &hishow_attr_group);
 		device_destroy(hishow_device->class, hishow_device->devt);
@@ -207,24 +194,22 @@ fail_create_class:
 static int hishow_probe(struct platform_device *pdev)
 {
 	struct hishow_info *di = NULL;
-	int ret = -1;
+	int ret;
 
 	hwlog_info("probe begin\n");
+
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
 
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
 	if (!di)
 		return -ENOMEM;
 
 	g_hishow_di = di;
-	g_hishow_di->dev_state = HISHOW_DEVICE_OFFLINE;
-	g_hishow_di->dev_no = HISHOW_UNKNOWN_DEVICE;
-
+	di->dev_state = HISHOW_DEVICE_OFFLINE;
+	di->dev_no = HISHOW_UNKNOWN_DEVICE;
 	di->pdev = pdev;
 	di->dev = &pdev->dev;
-	if (!di->pdev || !di->dev) {
-		hwlog_err("device_node is null\n");
-		goto fail_free_mem;
-	}
 
 	ret = hishow_init_monitor_device(pdev);
 	if (ret)
@@ -247,6 +232,9 @@ static int hishow_remove(struct platform_device *pdev)
 	struct hishow_info *di = platform_get_drvdata(pdev);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	hishow_destroy_monitor_device(pdev);
 

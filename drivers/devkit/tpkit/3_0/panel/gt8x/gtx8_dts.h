@@ -50,7 +50,18 @@
 #define GTX8_SLAVE_ADDR			"slave_address"
 
 #define GTX8_SUPPORT_TP_COLOR		"support_get_tp_color"
+#define GTX8_SUPPORT_READ_PROJECTID	"support_read_projectid"
 #define GTX8_PROVIDE_PANEL_ID_SUPPORT	"provide_panel_id_suppot"
+#define GTX8_FILENAME_CONTAIN_PROJECTID	"support_filename_contain_projectid"
+#define GTX8_CHECKED_ESD_RESET_CHIP "support_checked_esd_reset_chip"
+#define GTX8_DELETE_INSIGNIFICANT_INFO "support_deleted_insignificant_info"
+#define GTX8_WAKE_LOCK_SUSPEND		"support_wake_lock_suspend"
+#define GTX8_SUPPORT_PRIORITY_READ_SENSORID "support_priority_read_sensorid"
+#define GTX8_DOZE_FAILED_NOT_SEND_CFG "support_doze_failed_not_send_cfg"
+#define GTX8_SUPPORT_READ_MORE_DEUGMSG "support_read_more_debug_msg"
+#define GTX8_FILENAME_CONTAIN_LCD_MOUDULE "support_filename_contain_lcd_module"
+#define GTX8_SUPPORT_IC_USE_MAX_RESOLUTION "support_ic_use_max_resolution"
+#define GTX8_SUPPORT_READ_GESTURE_WITHOUT_CHECKSUM "support_read_gesture_without_checksum"
 #define GTP_BOOT_PROJ_CODE_ADDR2	0x20
 #define GTX8_DEFAULT_SLAVE_ADDR		0x5D
 

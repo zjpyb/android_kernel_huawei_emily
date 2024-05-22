@@ -118,7 +118,7 @@ int mstar_parse_dts(struct device_node *device, struct ts_kit_device_data *chip_
     if (retval) {
         TS_LOG_INFO("Not define need set Vddio value in Dts, use fault value\n");
         chip_data->regulator_ctr.need_set_vddio_value = 0;
-    }
+    } 
     if(chip_data->regulator_ctr.need_set_vddio_value) {
         retval = of_property_read_u32(device, MSTAR_VDDIO_LDO_VALUE, &chip_data->regulator_ctr.vddio_value);
         if (retval) {

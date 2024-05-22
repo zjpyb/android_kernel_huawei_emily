@@ -1,26 +1,37 @@
 /*
-* NoC. (NoC Mntn Module.)
-*
-* Copyright (c) 2016 Huawei Technologies CO., Ltd.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*/
+ * NoC. (NoC Mntn Module.)
+ *
+ * Copyright (c) 2016 Huawei Technologies CO., Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #ifndef __HISI_NOC_H
 #define __HISI_NOC_H
 
 #define MODULE_NAME	"HISI_NOC"
 #define MAX_NOC_NODE_NAME_LEN	20
-#define GET_NODE_FROM_ARRAY(node, idx) do {\
-	node = noc_nodes_array[idx];\
-} while (0)
-
+#define GET_NODE_FROM_ARRAY(node, idx)    { node = noc_nodes_array[idx]; }
 
 #define NOC_MAX_IRQ_NR        64
 #define MAX_NOC_NODES_NR      33
-#define HISI_NOC_CLOCK_MAX     5
+#define HISI_NOC_CLOCK_MAX     6
+#define HISI_NOC_CLOCK_REG_DEFAULT 0xFFFFFFFF
+#define MAX_BUSID_VALE         5
+#define MAX_FILTER_INITFLOW 10
+#define MAX_NAME_LEN 64
+#define MAX_DUMP_REG 32
+#define MAX_INITFLOW_ARRAY_SIZE         64
+#define MAX_TARGETFLOW_ARRAY_SIZE       64
+#define MAX_ROUTEID_TBL_SIZE 140
+#define NOC_ROUTEID_TBL_FLAG 0x1
+#define MAX_SEC_MODE 8
+#define MAX_MID_NUM 150
+#define MAX_NODE_NAME 256
+#define MAX_MODID_NUM 3
+#define NOC_MODID_MATCH 0x12345678
 
 #define NOC_PTYPE_UART 1
 #define NOC_PTYPE_PSTORE 0
@@ -28,7 +39,7 @@
 #define NOC_ACPU_INIT_FLOW_ARRY_SIZE 2
 
 #define MAX_NOC_LIST_TARGETS 0x20
-#define MAX_NOC_TARGET_NAME_LEN 0x10
+#define MAX_NOC_TARGET_NAME_LEN 0x20
 
 #define MASK_PMCTRL_POWER_IDLE 0x000000000000FFFF
 #define MASK_PMCTRL_POWER_IDLE1 0x00000000FFFF0000
@@ -39,6 +50,7 @@
 #define GET_PMCTRL_POWER_IDLE1 16
 #define GET_PMCTRL_POWER_IDLE2 32
 #define HIGH_ENABLE_MASK 16
+#define MAX_GIVEUP_IDLE_NUM 5
 
 /* NOTE: Must the same order with DTS.*/
 enum NOC_REG_DUMP_NAME {
@@ -147,6 +159,13 @@ struct hisi_noc_device {
 	struct hisi_noc_target_name_list *ptarget_list;
 };
 
+struct datapath_routid_addr {
+	int init_flow;
+	int targ_flow;
+	int targ_subrange;
+	u64 init_localaddr;
+};
+
 struct packet_configration {
 	unsigned int statperiod;
 	unsigned int statalarmmax;
@@ -235,6 +254,7 @@ struct noc_node {
 	struct packet_configration packet_cfg;
 	/* Currently 2 clock sources for each noc node */
 	struct noc_clk crg_clk[HISI_NOC_CLOCK_MAX];
+	u32 noc_modid;
 };
 
 void __iomem *get_errprobe_base(const char *name);
@@ -249,12 +269,12 @@ int is_noc_node_available(struct noc_node *node);
 struct platform_device *noc_get_pt_pdev(void);
 unsigned int is_noc_init(void);
 /*
-Function: noc_get_irq_status
-Description: noc part, get irq status
-input: void __iomem * pctrl_base: pctrl virtual base address
-output: none
-return: irq status
-*/
+ * Function: noc_get_irq_status
+ * Description: noc part, get irq status
+ * input: void __iomem * pctrl_base: pctrl virtual base address
+ * output: none
+ * return: irq status
+ */
 unsigned long long noc_get_irq_status(const void __iomem *pctrl_base);
 void enable_noc_transcation_probe(struct device *dev);
 void disable_noc_transcation_probe(struct device *dev);
@@ -264,4 +284,7 @@ void noc_record_log_pstorememory(void __iomem *base, int ptype);
 
 extern void mntn_print_to_ramconsole(const char *fmt, ...);
 extern void noc_err_probe_hanlder(void __iomem *base, struct noc_node *node);
+extern int hisi_noc_get_data_from_dts(const struct platform_device *pdev);
+extern void free_noc_bus_source(void);
+extern struct hisi_noc_property noc_property_dt;
 #endif

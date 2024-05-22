@@ -1,3 +1,21 @@
+/*
+ * cgroup_info.c
+ *
+ * Enumerate all nodes in the frozen process pid
+ *
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -23,7 +41,7 @@ static DEFINE_MUTEX(cgroup_info_mutex);
 #define TASK_PID_MAX_SIZE 8
 #define CHECK_STATUS(src, dst) strncmp(src, #dst, strlen(#dst))
 
-#define BUFFER_SIZE     1024
+#define BUFFER_SIZE 1024
 
 static char file_buf[FILE_BUFFER_SIZE];
 
@@ -76,7 +94,7 @@ static struct list_head cgroup_info_list;
 
 static void task_list_reset(struct list_head *src)
 {
-	if (NULL == src)
+	if (src == NULL)
 		return;
 	struct task_node *tcur = NULL;
 	struct task_node *ttmp = NULL;
@@ -89,7 +107,7 @@ static void task_list_reset(struct list_head *src)
 
 static void cgroup_info_list_reset(struct list_head *src)
 {
-	if (NULL == src)
+	if (src == NULL)
 		return;
 	struct cgroup_info_node *ccur = NULL;
 	struct cgroup_info_node *ctmp = NULL;
@@ -97,10 +115,9 @@ static void cgroup_info_list_reset(struct list_head *src)
 	cgroup_info_list_size = 0;
 
 	list_for_each_entry_safe(ccur, ctmp, src, list) {
-		printk("[cgroup info] visit one node.\n");
-		if (ccur == NULL) {
+		if (ccur == NULL)
 			return;
-		}
+
 		list_del(&ccur->list);
 		if (ccur->name != NULL)
 			kfree(ccur->name);
@@ -109,7 +126,6 @@ static void cgroup_info_list_reset(struct list_head *src)
 		task_list_reset(&ccur->task_list);
 		kfree(ccur);
 	}
-	return;
 }
 
 static struct file *file_open(const char *path, int flags, int rights)
@@ -132,10 +148,11 @@ static void file_close(struct file *file)
 		filp_close(file, NULL);
 }
 
-static int file_read(struct file *file, unsigned char *data, unsigned int size, unsigned long long pos)
+static int file_read(struct file *file, unsigned char *data, unsigned int size,
+		     unsigned long long pos)
 {
 	mm_segment_t oldfs;
-	int ret = 0;
+	int ret;
 
 	oldfs = get_fs();
 	set_fs(get_ds());
@@ -150,6 +167,7 @@ static char *file_fullname_generate(const char *path, const char *name)
 		return NULL;
 	size_t path_len = strlen(path);
 	size_t name_len = strlen(name);
+	/* 2: '/' and '\n' */
 	size_t fullname_len = path_len + name_len + 2;
 
 	if (fullname_len > PATH_MAX)
@@ -165,14 +183,15 @@ static char *file_fullname_generate(const char *path, const char *name)
 struct cgroup_info_readdir_callback {
 	struct dir_context ctx;
 	int result;
-	unsigned is_dir;
+	unsigned int is_dir;
 };
 
-static int cgroup_info_filldir(struct dir_context *ctx, const char *name, int namelen,
-			loff_t offset, u64 ino, unsigned d_type)
+static int cgroup_info_filldir(struct dir_context *ctx, const char *name,
+			       int namelen, loff_t offset, u64 ino,
+			       unsigned int d_type)
 {
-	struct cgroup_info_readdir_callback *buf =
-		container_of(ctx, struct cgroup_info_readdir_callback, ctx);
+	struct cgroup_info_readdir_callback *buf = container_of(ctx,
+		struct cgroup_info_readdir_callback, ctx);
 
 	if (buf->result)
 		return -EINVAL;
@@ -192,7 +211,7 @@ static int cgroup_info_filldir(struct dir_context *ctx, const char *name, int na
 
 static int file_read_dir(struct file *file, int *is_dir)
 {
-	int ret = 0;
+	int ret;
 
 	struct cgroup_info_readdir_callback buf = {
 		.ctx.actor = cgroup_info_filldir,
@@ -206,20 +225,21 @@ static int file_read_dir(struct file *file, int *is_dir)
 	return ret;
 }
 
-
-
-static ssize_t tasks_read_and_save(struct cgroup_info_node *n, struct file *file)
+static ssize_t tasks_read_and_save(struct cgroup_info_node *n,
+				   struct file *file)
 {
-	ssize_t ret = 0;
-	ssize_t total = 0;
+	ssize_t ret;
+	ssize_t total;
 	int i = 0;
 	int task_pid_index = 0;
-	char task_pid[TASK_PID_MAX_SIZE + 1];
-    char* buffer = (char *)kzalloc(BUFFER_SIZE, GFP_KERNEL);
-	struct task_node *ttmp;
-	if (NULL == buffer) {
-	  return -ENOMEM;
-	}
+	char task_pid[TASK_PID_MAX_SIZE + 1] = {0};
+	struct task_node *ttmp = NULL;
+	char *buffer = NULL;
+
+	buffer = kzalloc(BUFFER_SIZE, GFP_KERNEL);
+	if (buffer == NULL)
+		return -ENOMEM;
+
 	total = file_read(file, buffer, BUFFER_SIZE, 0);
 	if (total < 0) {
 		kfree(buffer);
@@ -228,18 +248,16 @@ static ssize_t tasks_read_and_save(struct cgroup_info_node *n, struct file *file
 
 	for (; i < total; i++) {
 		if (buffer[i] != '\n') {
-			//get each pid
-		  	task_pid[task_pid_index] = buffer[i];
+			task_pid[task_pid_index] = buffer[i];
 			task_pid_index++;
 			if (task_pid_index > TASK_PID_MAX_SIZE) {
 				kfree(buffer);
 				return -ENOMEM;
 			}
 		} else {
-			//push pid to task list
-			ttmp = (struct task_node *)kzalloc(sizeof(struct task_node), GFP_KERNEL);
+			ttmp = kzalloc(sizeof(*ttmp), GFP_KERNEL);
 			task_pid[task_pid_index] = '\0';
-			if (NULL == ttmp) {
+			if (ttmp == NULL) {
 				kfree(buffer);
 				return -ENOMEM;
 			}
@@ -250,9 +268,9 @@ static ssize_t tasks_read_and_save(struct cgroup_info_node *n, struct file *file
 				kfree(buffer);
 				return -ENOMEM;
 			}
-			
-		    list_add_tail(&ttmp->list, &n->task_list);
-		    n->task_count++;
+
+			list_add_tail(&ttmp->list, &n->task_list);
+			n->task_count++;
 			task_pid_index = 0;
 		}
 	}
@@ -260,9 +278,10 @@ static ssize_t tasks_read_and_save(struct cgroup_info_node *n, struct file *file
 	return total;
 }
 
-static ssize_t status_read_and_save(struct cgroup_info_node *n, struct file *file)
+static ssize_t status_read_and_save(struct cgroup_info_node *n,
+				    struct file *file)
 {
-	ssize_t ret = 0;
+	ssize_t ret;
 
 	ret = file_read(file, file_buf, STATUS_BUFFER_SIZE, ret);
 	if (ret > 0) {
@@ -278,9 +297,10 @@ static ssize_t status_read_and_save(struct cgroup_info_node *n, struct file *fil
 	return ret;
 }
 
-static ssize_t cgroup_info_read_and_save(struct cgroup_info_node *n, const char *file_name)
+static ssize_t cgroup_info_read_and_save(struct cgroup_info_node *n,
+					 const char *file_name)
 {
-	ssize_t ret = 0;
+	ssize_t ret;
 	char *fullname = NULL;
 	struct file *file = NULL;
 
@@ -312,23 +332,23 @@ static ssize_t cgroup_info_read_and_save(struct cgroup_info_node *n, const char 
 out:
 	if (file)
 		file_close(file);
-	if (fullname)
-		kfree(fullname);
-	if (ret < 0 && n)
+	kfree(fullname);
+	if ((ret < 0) && n)
 		task_list_reset(&n->task_list);
 	return ret;
 }
 
 static int cgroup_info_node_init(struct cgroup_info_node *n,
-			const char *path_buf, const char *name_buf)
+				 const char *path_buf, const char *name_buf)
 {
 	int ret = 0;
+	size_t name_buf_len;
 
 	if (!n || !path_buf || !name_buf) {
 		ret = -EINVAL;
 		goto out;
 	}
-	size_t name_buf_len = strlen(name_buf) + 1;
+	name_buf_len = strlen(name_buf) + 1;
 
 	n->name = kzalloc(name_buf_len, GFP_KERNEL);
 	if (!n->name) {
@@ -350,19 +370,18 @@ out:
 	return ret;
 }
 
-static void free_cgroup_info_node(struct cgroup_info_node* node) {
-	if (NULL == node) {
+static void free_cgroup_info_node(struct cgroup_info_node *node)
+{
+	if (node == NULL)
 		return;
-	}
 
-	if (NULL != node->path) {
+	if (node->path != NULL)
 		kfree(node->path);
-	}
 
-	if (NULL != node->name) {
+	if (node->name != NULL)
 		kfree(node->name);
-	}
-    task_list_reset(&node->task_list);
+
+	task_list_reset(&node->task_list);
 	kfree(node);
 }
 
@@ -370,107 +389,112 @@ static int cgroup_info_get(void)
 {
 	int ret = -1;
 	struct cgroup_subsys *ss = NULL;
+	char *path_buf = NULL;
+	char *file = NULL;
+	struct list_head cgroup_info_queue;
+	size_t cgroup_info_queue_size = 0;
+	unsigned int is_dir = 0;
+	struct cgroup_info_node *node = NULL;
 
 	INIT_LIST_HEAD(&cgroup_info_list);
-	if (cgroup_subsys_enabled(freezer_cgrp_subsys)) {
-		char *path_buf = NULL;
-		char *file = NULL;
-		struct list_head cgroup_info_queue;
-		size_t cgroup_info_queue_size = 0;
-		unsigned is_dir = 0;
-		struct cgroup_info_node *node = NULL;
+	if (!cgroup_subsys_enabled(freezer_cgrp_subsys))
+		return -ENODEV;
 
-		path_buf = kzalloc(PATH_MAX, GFP_KERNEL);
-		if (!path_buf) {
-			ret = -ENOMEM;
-			goto out;
-		}
-		strcpy(path_buf, FREEZER_PATH);
-		INIT_LIST_HEAD(&cgroup_info_queue);
-		file = file_open(path_buf, O_RDONLY, NULL);
-		if (!file) {
-			ret = -ENOENT;
-			goto out;
-		}
-		do {
-			if (cgroup_info_queue_size > 0) {
-				node = list_first_entry(&cgroup_info_queue, struct cgroup_info_node, queue_list);
-				strcpy(path_buf, node->path);
-				file_close(file);
-				file = file_open(path_buf, O_RDONLY, NULL);
-				if (!file) {
-					ret = -ENOENT;
-					goto out;
-				}
-				list_del(&node->queue_list);
-				cgroup_info_queue_size--;
-			}
-			while ((ret = file_read_dir(file, &is_dir)) > 0) {
-				if (is_dir == DT_DIR) {
-					if (!strcmp(file_buf, ".") || !strcmp(file_buf, ".."))
-						continue;
-					node = kzalloc(sizeof(struct cgroup_info_node), GFP_KERNEL);
-					if (!node) {
-						ret = -ENOMEM;
-						goto out;
-					}
-					ret = cgroup_info_node_init(node, path_buf, file_buf);
-					if (ret < 0) {
-						free_cgroup_info_node(node);
-						goto out;
-					}
-					ret = cgroup_info_read_and_save(node, STATUS_NAME);
-					if (ret < 0) {
-						free_cgroup_info_node(node);
-						goto out;
-					}
-					ret = cgroup_info_read_and_save(node, TASKS_NAME);
-					if (ret < 0) {
-						free_cgroup_info_node(node);
-						goto out;
-					}
-					list_add_tail(&node->queue_list, &cgroup_info_queue);
-					list_add_tail(&node->list, &cgroup_info_list);
-					cgroup_info_queue_size++;
-				}
-			}
-			if (ret < 0){
-				goto out;	
-			}
-		} while (cgroup_info_queue_size > 0);
-out:
-		file_close(file);
-		if (ret < 0)
-			cgroup_info_list_reset(&cgroup_info_list);
-		if (path_buf != NULL)
-			kfree(path_buf);
-	} else {
-		ret = -ENODEV;
+	path_buf = kzalloc(PATH_MAX, GFP_KERNEL);
+	if (!path_buf) {
+		ret = -ENOMEM;
+		goto out;
 	}
+	strcpy(path_buf, FREEZER_PATH);
+	INIT_LIST_HEAD(&cgroup_info_queue);
+	file = file_open(path_buf, O_RDONLY, NULL);
+	if (!file) {
+		ret = -ENOENT;
+		goto out;
+	}
+	do {
+		if (cgroup_info_queue_size > 0) {
+			node = list_first_entry(&cgroup_info_queue,
+						struct cgroup_info_node,
+						queue_list);
+			strcpy(path_buf, node->path);
+			file_close(file);
+			file = file_open(path_buf, O_RDONLY, NULL);
+			if (!file) {
+				ret = -ENOENT;
+				goto out;
+			}
+			list_del(&node->queue_list);
+			cgroup_info_queue_size--;
+		}
+		while ((ret = file_read_dir(file, &is_dir)) > 0) {
+			if (is_dir != DT_DIR)
+				break;
+			if (!strcmp(file_buf, ".") || (!strcmp(file_buf, "..")))
+				continue;
+			node = kzalloc(sizeof(*node), GFP_KERNEL);
+			if (!node) {
+				ret = -ENOMEM;
+				goto out;
+			}
+			ret = cgroup_info_node_init(node, path_buf, file_buf);
+			if (ret < 0) {
+				free_cgroup_info_node(node);
+				goto out;
+			}
+			ret = cgroup_info_read_and_save(node, STATUS_NAME);
+			if (ret < 0) {
+				free_cgroup_info_node(node);
+				goto out;
+			}
+			ret = cgroup_info_read_and_save(node, TASKS_NAME);
+			if (ret < 0) {
+				free_cgroup_info_node(node);
+				goto out;
+			}
+			list_add_tail(&node->queue_list, &cgroup_info_queue);
+			list_add_tail(&node->list, &cgroup_info_list);
+			cgroup_info_queue_size++;
+		}
+		if (ret < 0)
+			goto out;
+
+	} while (cgroup_info_queue_size > 0);
+out:
+	file_close(file);
+	if (ret < 0)
+		cgroup_info_list_reset(&cgroup_info_list);
+	if (path_buf != NULL)
+		kfree(path_buf);
+
 	return ret;
 }
 
 static int freezer_info_print_messages(int type, char **pbuf)
 {
-	int ret = 0;
+	int ret;
 
 	mutex_lock(&cgroup_info_mutex);
 	ret = cgroup_info_get();
 	if (ret < 0) {
-		info_print_wrapper(type, pbuf, "cgroup_info: can not get correct file information.\n");
+		info_print_wrapper(type, pbuf,
+			"cgroup_info: can not get correct file information\n");
 		goto out;
 	}
-	info_print_wrapper(type, pbuf, "cgroup_info: total group number %d\n", cgroup_info_list_size);
+	info_print_wrapper(type, pbuf, "cgroup_info: total group number %d\n",
+			   cgroup_info_list_size);
 	struct cgroup_info_node *ccur = NULL;
 
 	info_print_wrapper(type, pbuf, "cgroup_info: non-empty groups: ");
 	list_for_each_entry(ccur, &cgroup_info_list, list) {
 		if (ccur->task_count > 0) {
-			info_print_wrapper(type, pbuf, "%s[%d][ ", ccur->name, ccur->status);
+			info_print_wrapper(type, pbuf, "%s[%d][ ", ccur->name,
+					   ccur->status);
 			struct task_node *tcur = NULL;
 
 			list_for_each_entry(tcur, &ccur->task_list, list) {
-				info_print_wrapper(type, pbuf, "%d ", tcur->pid);
+				info_print_wrapper(type, pbuf, "%d ",
+						   tcur->pid);
 			}
 			info_print_wrapper(type, pbuf, "]");
 		}
@@ -479,33 +503,26 @@ static int freezer_info_print_messages(int type, char **pbuf)
 out:
 	cgroup_info_list_reset(&cgroup_info_list);
 	if (ret < 0)
-		info_print_wrapper(type, pbuf, "cgroup_info: failed.\n");
+		info_print_wrapper(type, pbuf, "cgroup_info: failed\n");
 	mutex_unlock(&cgroup_info_mutex);
 	return ret;
 }
 
-/* to hungtask */
-int freezer_info_show_messages(void)
-{
-	char *buf = NULL;
-
-	return freezer_info_print_messages(TO_MODULE, buf);
-}
-
 static ssize_t freezer_info_show(struct kobject *kobj,
-				struct kobj_attribute *attr, char *buf)
+				 struct kobj_attribute *attr, char *buf)
 {
 	const char *start = buf;
 
 	freezer_info_print_messages(TO_USER, &buf);
-	ssize_t size = (ssize_t) (buf - start);
+	ssize_t size = (ssize_t)(buf - start);
 
 	return size;
 }
 
 static ssize_t freezer_info_store(struct kobject *kobj,
-				 struct kobj_attribute *attr, const char *buf,
-				 size_t n)
+				  struct kobj_attribute *attr,
+				  const char *buf,
+				  size_t n)
 {
 	if (n < STORE_BUFFER_SIZE_MIN || n > STORE_BUFFER_SIZE_MAX)
 		return -EINVAL;
@@ -519,7 +536,7 @@ static struct kobj_attribute freezer_info = {
 	.attr = {
 		 .name = "freezer_info",
 		 .mode = 0640,
-		 },
+	},
 	.show = freezer_info_show,
 	.store = freezer_info_store,
 };
@@ -536,11 +553,11 @@ static struct attribute_group cgroup_info_attr_group = {
 struct kobject *cgroup_info_kobj;
 int create_sysfs_cgroup_info(void)
 {
-	int ret = 0;
+	int ret;
 
 	while (kernel_kobj == NULL)
-		msleep(1000);
-	/*Create kobject cgroup_info at /sys/kernel/cgroup_info */
+		msleep(1000); /* sleep 1000ms */
+	/* Create kobject cgroup_info at /sys/kernel/cgroup_info */
 	cgroup_info_kobj = kobject_create_and_add("cgroup_info", kernel_kobj);
 	if (!cgroup_info_kobj)
 		return -ENOMEM;
@@ -553,12 +570,12 @@ int create_sysfs_cgroup_info(void)
 
 static int __init cgroup_info_init(void)
 {
-	int ret = 0;
+	int ret;
 
 	INIT_LIST_HEAD(&cgroup_info_list);
 	ret = create_sysfs_cgroup_info();
 	if (ret)
-		pr_err("cgroup_info: create cgroup_info_init fail\n");
+		pr_err("cgroup_info: create %s fail\n", __func__);
 	return 0;
 }
 subsys_initcall(cgroup_info_init);

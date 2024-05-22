@@ -86,6 +86,7 @@ static int syna_tcm_hdl_get_state(void);
 #define PROJECT_ID_FW_LEN 9
 #define SYNAPTICS_TEST_TYPE "tp_test_type"
 #define FW_IMAGE_NAME_SD "ts/S3706.img"
+#define REFLASH_IMAGE_NAME "ts/S3618.img"
 #define SYNA_VENDOR_NAME "synaptics_tcm"
 
 #define SPI_MAX_SPEED_READ		10000000
@@ -100,6 +101,10 @@ static int syna_tcm_hdl_get_state(void);
 
 #define CHARGE_REPORT_DONE		  	0
 #define CHARGE_REPORT_NOT_REPORT	1
+
+#define SYNA_CHECKSUM_POLY 0xedb88320L
+#define SYNA_CHECKSUM_TABLE_SIZE 256
+#define SYNA_CHECKSUM_TABLE_ROWS 8
 
 static int syna_report_priority[BIT_MAX] = {0,3,8,7,12,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 static int syna_report_priority_limite[BIT_MAX] = {50,20,20,20,20,50,50,50,20,20,20,20,50,50,50,50};
@@ -153,37 +158,53 @@ static int syna_tcm_status_resume(void);
 extern int hostprocessing_get_project_id(char *out);
 static int synaptics_tcm_chip_get_info(struct ts_chip_info_param *info);
 static void synaptics_tcm_chip_touch_switch(void);
+static int syna_tcm_chip_detect_hwlock(struct ts_kit_platform_data *data);
+static int syna_tcm_init_chip_hwlock(void);
+static int syna_tcm_irq_bottom_half_hwlock(struct ts_cmd_node *in_cmd,
+					struct ts_cmd_node *out_cmd);
+static int syna_tcm_fw_update_boot_hwlock(char *file_name);
+static int syna_tcm_fw_update_sd_hwlock(void);
+static int syna_tcm_suspend_hwlock(void);
+static int syna_tcm_resume_hwlock(void);
+static int syna_tcm_after_resume_hwlock(void *feature_info);
+static int syna_tcm_mmi_test_hwlock(struct ts_rawdata_info *info,
+				 struct ts_cmd_node *out_cmd);
+static int syna_tcm_glove_switch_hwlock(struct ts_glove_info *info);
+static int syna_tcm_charger_switch_hwlock(struct ts_charger_info *info);
+static int syna_tcm_roi_switch_hwlock(struct ts_roi_info *info);
+
+static unsigned int checksum_table[SYNA_CHECKSUM_TABLE_SIZE];
 
 struct ts_device_ops ts_kit_syna_tcm_ops = {
-	.chip_detect = syna_tcm_chip_detect,
-	.chip_init = syna_tcm_init_chip,
+	.chip_detect = syna_tcm_chip_detect_hwlock,
+	.chip_init = syna_tcm_init_chip_hwlock,
 //	.chip_get_brightness_info = syna_tcm_get_brightness_info,
 	.chip_parse_config = syna_tcm_parse_dts,
 	.chip_input_config = syna_tcm_input_config,
 	.chip_irq_top_half = syna_tcm_irq_top_half,
-	.chip_irq_bottom_half = syna_tcm_irq_bottom_half,
-	.chip_fw_update_boot = syna_tcm_fw_update_boot,  // host download on boot
-	.chip_fw_update_sd = syna_tcm_fw_update_sd,   // host download by hand
+	.chip_irq_bottom_half = syna_tcm_irq_bottom_half_hwlock,
+	.chip_fw_update_boot = syna_tcm_fw_update_boot_hwlock,
+	.chip_fw_update_sd = syna_tcm_fw_update_sd_hwlock,
 //	.oem_info_switch = synaptics_oem_info_switch,
 	.chip_get_info = synaptics_tcm_chip_get_info,
 	.chip_get_capacitance_test_type =
 		synaptics_tcm_chip_get_capacitance_test_type,
 	.chip_set_info_flag = syna_tcm_set_info_flag,
 	.chip_before_suspend = syna_tcm_before_suspend,
-	.chip_suspend = syna_tcm_suspend,
-	.chip_resume = syna_tcm_resume,
-	.chip_after_resume = syna_tcm_after_resume,
+	.chip_suspend = syna_tcm_suspend_hwlock,
+	.chip_resume = syna_tcm_resume_hwlock,
+	.chip_after_resume = syna_tcm_after_resume_hwlock,
 //	.chip_wakeup_gesture_enable_switch =
 //		synaptics_wakeup_gesture_enable_switch,
-	.chip_get_rawdata = syna_tcm_mmi_test,
+	.chip_get_rawdata = syna_tcm_mmi_test_hwlock,
 //	.chip_get_calibration_data = synaptics_get_calibration_data,
 //	.chip_get_calibration_info = synaptics_get_calibration_info,
 //	.chip_get_debug_data = synaptics_get_debug_data,
-	.chip_glove_switch = syna_tcm_glove_switch,
+	.chip_glove_switch = syna_tcm_glove_switch_hwlock,
 //	.chip_shutdown = synaptics_shutdown,
-	.chip_charger_switch = syna_tcm_charger_switch,
+	.chip_charger_switch = syna_tcm_charger_switch_hwlock,
 //	.chip_holster_switch = synaptics_holster_switch,
-	.chip_roi_switch = syna_tcm_roi_switch,
+	.chip_roi_switch = syna_tcm_roi_switch_hwlock,
 	.chip_roi_rawdata = syna_tcm_roi_rawdata,
 //	.chip_palm_switch = synaptics_palm_switch,
 //	.chip_regs_operate = synaptics_regs_operate,
@@ -516,15 +537,9 @@ static int syna_tcm_i2c_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
 	return 0;
 }
 
-static int syna_tcm_i2c_rmi_read(struct syna_tcm_hcd *tcm_hcd,
-		unsigned short addr, unsigned char *data, unsigned int length)
+static int syna_tcm_get_hw_lock(void)
 {
-	int retval = NO_ERR;
-	unsigned char address = 0;
-	unsigned int attempt = 0;
-	struct i2c_msg msg[2] = { {0}, {0} };
-	struct i2c_client *i2c = tcm_hcd->syna_tcm_chip_data->ts_platform_data->client;
-	//const struct syna_tcm_board_data *bdata = tcm_hcd->hw_if->bdata;
+	int retval;
 
 	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
 		retval = tp_i2c_get_hwlock();
@@ -533,9 +548,27 @@ static int syna_tcm_i2c_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 			return -EAGAIN;
 		}
 	}
+	return 0;
+}
+
+static void syna_tcm_release_hw_lock(void)
+{
+	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag)
+		tp_i2c_release_hwlock();
+}
+
+static int syna_tcm_i2c_rmi_read(struct syna_tcm_hcd *tcm_hcd,
+		unsigned short addr, unsigned char *data, unsigned int length)
+{
+	int retval = 0;
+	unsigned char address;
+	unsigned int attempt;
+	/* msg size */
+	struct i2c_msg msg[2];
+	struct i2c_client *i2c = NULL;
 
 	address = (unsigned char)addr;
-
+	i2c = tcm_hcd->syna_tcm_chip_data->ts_platform_data->client;
 	//msg[0].addr = bdata->ubl_i2c_addr;
 	msg[0].addr =TEMP_I2C_ADDR;
 	msg[0].flags = 0;
@@ -565,9 +598,6 @@ static int syna_tcm_i2c_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 	}
 
 exit:
-	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
-		tp_i2c_release_hwlock();
-	}
 	return retval;
 }
 
@@ -581,14 +611,6 @@ static int syna_tcm_i2c_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 	struct i2c_client *i2c = tcm_hcd->syna_tcm_chip_data->ts_platform_data->client;
 	//const struct syna_tcm_board_data *bdata = tcm_hcd->hw_if->bdata;
 
-	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
-		retval = tp_i2c_get_hwlock();
-		if (retval) {
-			TS_LOG_ERR("i2c get hardware mutex failure\n");
-			return -EAGAIN;
-		}
-	}
-
 	byte_count = length + 1;
 
 	retval = syna_tcm_i2c_alloc_mem(tcm_hcd, byte_count);
@@ -599,16 +621,7 @@ static int syna_tcm_i2c_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 	}
 
 	buf[0] = (unsigned char)addr;
-	retval = secure_memcpy(&buf[1],
-			length,
-			data,
-			length,
-			length);
-	if (retval < 0) {
-		TS_LOG_ERR(
-				"Failed to copy write data\n");
-		goto exit;
-	}
+	memcpy(&buf[1], data, length);
 
 	//msg.addr = bdata->ubl_i2c_addr;
 	msg.addr = TEMP_I2C_ADDR;
@@ -634,9 +647,6 @@ static int syna_tcm_i2c_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 	}
 
 exit:
-	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
-		tp_i2c_release_hwlock();
-	}
 
 	return retval;
 }
@@ -648,14 +658,6 @@ static int syna_tcm_i2c_read_data(struct syna_tcm_hcd *tcm_hcd, unsigned char *d
 	unsigned int attempt = 0;
 	struct i2c_msg msg = {0};
 	struct i2c_client *i2c = tcm_hcd->syna_tcm_chip_data->ts_platform_data->client;
-
-	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
-		retval = tp_i2c_get_hwlock();
-		if (retval) {
-			TS_LOG_ERR("i2c get hardware mutex failure\n");
-			return -EAGAIN;
-		}
-	}
 
 	msg.addr = i2c->addr;
 	msg.flags = I2C_M_RD;
@@ -680,9 +682,6 @@ static int syna_tcm_i2c_read_data(struct syna_tcm_hcd *tcm_hcd, unsigned char *d
 	}
 
 exit:
-	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
-		tp_i2c_release_hwlock();
-	}
 	return retval;
 }
 
@@ -693,14 +692,6 @@ static int syna_tcm_i2c_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 	unsigned int attempt = 0;
 	struct i2c_msg msg = {0};
 	struct i2c_client *i2c = tcm_hcd->syna_tcm_chip_data->ts_platform_data->client;
-
-	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
-		retval = tp_i2c_get_hwlock();
-		if (retval) {
-			TS_LOG_ERR("i2c get hardware mutex failure\n");
-			return -EAGAIN;
-		}
-	}
 
 	msg.addr = i2c->addr;
 	msg.flags = 0;
@@ -726,9 +717,6 @@ static int syna_tcm_i2c_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 	}
 
 exit:
-	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
-		tp_i2c_release_hwlock();
-	}
 	return retval;
 }
 
@@ -834,21 +822,18 @@ static int syna_tcm_spi_rmi_write_transfer(struct syna_tcm_hcd *tcm_hcd,
 
 	buf[0] = (unsigned char)(addr >> 8) & ~0x80;
 	buf[1] = (unsigned char)addr;
-	retval = secure_memcpy(&buf[2],
-			buf_size - 2,
-			data,
-			length - 2,
-			length - 2);
-	if (retval < 0) {
+	if (length > buf_size) {
 		TS_LOG_ERR("Failed to copy write data\n");
+		retval = -EINVAL;
 		goto exit;
 	}
+	memcpy(&buf[2], data, length - 2);
 
 	if(tcm_hcd->use_dma_download_firmware) {
 		spi->max_speed_hz = tcm_hcd->spi_comnunicate_frequency;
 		spi->controller_data = &g_ts_kit_platform_data.spidev0_chip_info;
 	}else{
-		spi->max_speed_hz = SPI_MAX_SPEED_RMI_WRITE;
+		spi->max_speed_hz = tcm_hcd->spi_comnunicate_frequency;
 	}
 	retval = spi_setup(spi);
 	if (retval) {
@@ -913,7 +898,7 @@ static int syna_tcm_spi_read_transfer(struct syna_tcm_hcd *tcm_hcd, unsigned cha
 		spi->max_speed_hz = tcm_hcd->spi_comnunicate_frequency;
 		spi->controller_data = &g_ts_kit_platform_data.spidev0_chip_info;
 	}else{
-		spi->max_speed_hz = SPI_MAX_SPEED_READ;
+		spi->max_speed_hz = tcm_hcd->spi_comnunicate_frequency;
 	}
 	retval = spi_setup(spi);
 	if (retval) {
@@ -976,7 +961,7 @@ static int syna_tcm_spi_write_transfer(struct syna_tcm_hcd *tcm_hcd, unsigned ch
 		spi->max_speed_hz = tcm_hcd->spi_comnunicate_frequency;
 		spi->controller_data = &g_ts_kit_platform_data.spidev0_chip_info;
 	}else{
-		spi->max_speed_hz = SPI_MAX_SPEED_WRITE;
+		spi->max_speed_hz = tcm_hcd->spi_comnunicate_frequency;
 	}
 	retval = spi_setup(spi);
 	if (retval) {
@@ -1075,18 +1060,17 @@ static void syna_tcm_dispatch_response(struct syna_tcm_hcd *tcm_hcd)
 	}
 
 	LOCK_BUFFER(tcm_hcd->in);
-	retval = secure_memcpy(tcm_hcd->resp.buf,
-			tcm_hcd->resp.buf_size,
-			&tcm_hcd->in.buf[MESSAGE_HEADER_SIZE],
-			tcm_hcd->in.buf_size - MESSAGE_HEADER_SIZE,
-			tcm_hcd->payload_length);
-	if (retval < 0) {
+	if ((tcm_hcd->payload_length >
+		(tcm_hcd->in.buf_size - MESSAGE_HEADER_SIZE)) ||
+		(tcm_hcd->payload_length > tcm_hcd->resp.buf_size)) {
 		TS_LOG_ERR("Failed to copy payload\n");
 		UNLOCK_BUFFER(tcm_hcd->in);
 		UNLOCK_BUFFER(tcm_hcd->resp);
 		atomic_set(&tcm_hcd->command_status, CMD_ERROR);
 		goto exit;
 	}
+	memcpy(tcm_hcd->resp.buf, &tcm_hcd->in.buf[MESSAGE_HEADER_SIZE],
+		tcm_hcd->payload_length);
 
 	tcm_hcd->resp.data_length = tcm_hcd->payload_length;
 
@@ -1113,25 +1097,26 @@ exit:
 
 static void syna_tcm_dispatch_message(struct syna_tcm_hcd *tcm_hcd)
 {
-	int retval = NO_ERR;
 	unsigned char *build_id = NULL;
 	unsigned int payload_length = 0;
 	unsigned int max_write_size = 0;
+	unsigned long count;
 
 	if (tcm_hcd->status_report_code == REPORT_IDENTIFY) {
 		payload_length = tcm_hcd->payload_length;
 
 		LOCK_BUFFER(tcm_hcd->in);
-		retval = secure_memcpy((unsigned char *)&tcm_hcd->id_info,
-				sizeof(tcm_hcd->id_info),
-				&tcm_hcd->in.buf[MESSAGE_HEADER_SIZE],
-				tcm_hcd->in.buf_size - MESSAGE_HEADER_SIZE,
-				MIN(sizeof(tcm_hcd->id_info), payload_length));
-		if (retval < 0) {
+		count = MIN(sizeof(tcm_hcd->id_info), payload_length);
+		if ((count > tcm_hcd->in.buf_size - MESSAGE_HEADER_SIZE) ||
+			(count > sizeof(tcm_hcd->id_info))) {
 			TS_LOG_ERR("Failed to copy identification info\n");
 			UNLOCK_BUFFER(tcm_hcd->in);
 			return;
 		}
+		memcpy((unsigned char *)&tcm_hcd->id_info,
+			&tcm_hcd->in.buf[MESSAGE_HEADER_SIZE],
+			MIN(sizeof(tcm_hcd->id_info), payload_length));
+
 		UNLOCK_BUFFER(tcm_hcd->in);
 
 		build_id = tcm_hcd->id_info.build_id;
@@ -1287,17 +1272,17 @@ static int syna_tcm_continued_read(struct syna_tcm_hcd *tcm_hcd)
 			return -EIO;
 		}
 
-		retval = secure_memcpy(&tcm_hcd->in.buf[offset],
-				tcm_hcd->in.buf_size - offset,
-				&tcm_hcd->temp.buf[2],
-				tcm_hcd->temp.buf_size - 2,
-				xfer_length);
-		if (retval < 0) {
+		if ((xfer_length > tcm_hcd->in.buf_size - offset) ||
+			(xfer_length >
+			tcm_hcd->temp.buf_size - MSG_STATUS_SIZE)) {
 			TS_LOG_ERR("Failed to copy payload\n");
 			UNLOCK_BUFFER(tcm_hcd->temp);
 			UNLOCK_BUFFER(tcm_hcd->in);
-			return retval;
+			return -EINVAL;
 		}
+		memcpy(&tcm_hcd->in.buf[offset],
+			&tcm_hcd->temp.buf[MSG_STATUS_SIZE],
+			xfer_length);
 
 		offset += xfer_length;
 		remaining_length -= xfer_length;
@@ -1406,11 +1391,16 @@ int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
 		TS_LOG_DEBUG("temp buf:%x, %x, %x, %x, %x, %x\n", tcm_hcd->temp.buf[0], tcm_hcd->temp.buf[1],tcm_hcd->temp.buf[2], tcm_hcd->temp.buf[3],tcm_hcd->temp.buf[4], tcm_hcd->temp.buf[5]);
 
 		if (idx == 0) {
-			retval = secure_memcpy(&in_buf[0],
-					length,
-					&tcm_hcd->temp.buf[0],
-					tcm_hcd->temp.buf_size,
-					xfer_length + 2);
+			if (((xfer_length + MSG_STATUS_SIZE) > length) ||
+				((xfer_length + MSG_STATUS_SIZE) >
+				tcm_hcd->temp.buf_size)) {
+				TS_LOG_ERR("Failed to copy data\n");
+				UNLOCK_BUFFER(tcm_hcd->temp);
+				return -EINVAL;
+			}
+			memcpy(&in_buf[0],
+				&tcm_hcd->temp.buf[0],
+				xfer_length + MSG_STATUS_SIZE);
 			//remaiming length cust
 			TS_LOG_DEBUG("remaining length is  %d\n", remaining_length);
 			if ((length > ((tcm_hcd->temp.buf[3] << 8 | tcm_hcd->temp.buf[2]) + 5)) && (code != STATUS_CONTINUED_READ)) {
@@ -1427,11 +1417,16 @@ int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
 				return -EIO;
 			}
 
-			retval = secure_memcpy(&in_buf[offset],
-					length - offset,
-					&tcm_hcd->temp.buf[2],
-					tcm_hcd->temp.buf_size - 2,
-					xfer_length);
+			if ((xfer_length > (length - offset)) ||
+				(xfer_length >
+				(tcm_hcd->temp.buf_size - MSG_STATUS_SIZE))) {
+				TS_LOG_ERR("Failed to copy data\n");
+				UNLOCK_BUFFER(tcm_hcd->temp);
+				return -EINVAL;
+			}
+			memcpy(&in_buf[offset],
+				&tcm_hcd->temp.buf[MSG_STATUS_SIZE],
+				xfer_length);
 		}
 		if (retval < 0) {
 			TS_LOG_ERR(
@@ -1534,11 +1529,16 @@ static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
 		code = tcm_hcd->temp.buf[1];
 
 		if (idx == 0) {
-			retval = secure_memcpy(&in_buf[0],
-					length,
-					&tcm_hcd->temp.buf[0],
-					tcm_hcd->temp.buf_size,
-					xfer_length + 2);
+			if (((xfer_length + MSG_STATUS_SIZE) > length) ||
+				((xfer_length + MSG_STATUS_SIZE) >
+				tcm_hcd->temp.buf_size)) {
+				TS_LOG_ERR("Failed to copy data\n");
+				UNLOCK_BUFFER(tcm_hcd->temp);
+				return -EINVAL;
+			}
+			memcpy(&in_buf[0],
+				&tcm_hcd->temp.buf[0],
+				xfer_length + MSG_STATUS_SIZE);
 		} else {
 			if (code != STATUS_CONTINUED_READ) {
 				TS_LOG_ERR("Incorrect header code (0x%02x)\n", code);
@@ -1546,11 +1546,16 @@ static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
 				return -EIO;
 			}
 
-			retval = secure_memcpy(&in_buf[offset],
-					length - offset,
-					&tcm_hcd->temp.buf[2],
-					tcm_hcd->temp.buf_size - 2,
-					xfer_length);
+			if (((xfer_length + MSG_STATUS_SIZE) > length) ||
+				((xfer_length + MSG_STATUS_SIZE) >
+				tcm_hcd->temp.buf_size)) {
+				TS_LOG_ERR("Failed to copy data\n");
+				UNLOCK_BUFFER(tcm_hcd->temp);
+				return -EINVAL;
+			}
+			memcpy(&in_buf[offset],
+				&tcm_hcd->temp.buf[MSG_STATUS_SIZE],
+				xfer_length);
 		}
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to copy data\n");
@@ -1626,16 +1631,15 @@ static int syna_tcm_raw_write(struct syna_tcm_hcd *tcm_hcd,
 			tcm_hcd->out.buf[0] = CMD_CONTINUE_WRITE;
 
 		if (xfer_length) {
-			retval = secure_memcpy(&tcm_hcd->out.buf[1],
-					tcm_hcd->out.buf_size - 1,
-					&data[idx * chunk_space],
-					remaining_length,
-					xfer_length);
-			if (retval < 0) {
-				TS_LOG_ERR("Failed to copy data\n");
+			if ((xfer_length > (tcm_hcd->out.buf_size - 1)) ||
+				xfer_length > remaining_length) {
+				TS_LOG_ERR("xfer length is too large\n");
 				UNLOCK_BUFFER(tcm_hcd->out);
-				return retval;
+				return -EINVAL;
 			}
+			memcpy(&tcm_hcd->out.buf[1],
+				&data[idx * chunk_space],
+				xfer_length);
 		}
 
 		retval = syna_tcm_write(tcm_hcd,
@@ -1899,30 +1903,32 @@ static int syna_tcm_write_message(struct syna_tcm_hcd *tcm_hcd,
 			tcm_hcd->out.buf[2] = (unsigned char)(length >> 8);
 
 			if (xfer_length > 2) {
-				retval = secure_memcpy(&tcm_hcd->out.buf[3],
-						tcm_hcd->out.buf_size - 3,
-						payload,
-						remaining_length - 2,
-						xfer_length - 2);
-				if (retval < 0) {
+				if (((xfer_length - MSG_STATUS_SIZE) >
+					(tcm_hcd->out.buf_size - 3)) ||
+					((xfer_length - MSG_STATUS_SIZE) >
+					(remaining_length - MSG_STATUS_SIZE))) {
+					retval = -EINVAL;
 					TS_LOG_ERR("Failed to copy payload\n");
 					UNLOCK_BUFFER(tcm_hcd->out);
 					goto exit;
 				}
+				memcpy(&tcm_hcd->out.buf[3],
+					payload,
+					xfer_length - MSG_STATUS_SIZE);
 			}
 		} else {
 			tcm_hcd->out.buf[0] = CMD_CONTINUE_WRITE;
 
-			retval = secure_memcpy(&tcm_hcd->out.buf[1],
-					tcm_hcd->out.buf_size - 1,
-					&payload[idx * chunk_space - 2],
-					remaining_length,
-					xfer_length);
-			if (retval < 0) {
+			if ((xfer_length > (tcm_hcd->out.buf_size - 1)) ||
+				(xfer_length > remaining_length)) {
+				retval = -EINVAL;
 				TS_LOG_ERR("Failed to copy payload\n");
 				UNLOCK_BUFFER(tcm_hcd->out);
 				goto exit;
 			}
+			memcpy(&tcm_hcd->out.buf[1],
+				&payload[idx * chunk_space - MSG_STATUS_SIZE],
+				xfer_length);
 		}
 
 		retval = syna_tcm_write(tcm_hcd,
@@ -2220,6 +2226,7 @@ static int syna_tcm_get_app_info(struct syna_tcm_hcd *tcm_hcd)
 	unsigned int resp_buf_size = 0;
 	unsigned int resp_length = 0;
 	unsigned int timeout = 0;
+	unsigned long count;
 
 	timeout = APP_STATUS_POLL_TIMEOUT_MS;
 	resp_buf = NULL;
@@ -2241,15 +2248,16 @@ get_app_info:
 		goto exit;
 	}
 
-	retval = secure_memcpy((unsigned char *)&tcm_hcd->app_info,
-			sizeof(tcm_hcd->app_info),
-			resp_buf,
-			resp_buf_size,
-			MIN(sizeof(tcm_hcd->app_info), resp_length));
-	if (retval < 0) {
+	count = MIN(sizeof(tcm_hcd->app_info), resp_length);
+	if ((count > sizeof(tcm_hcd->app_info)) ||
+		(count > resp_buf_size)) {
 		TS_LOG_ERR("Failed to copy application info\n");
+		retval = -EINVAL;
 		goto exit;
 	}
+	memcpy((unsigned char *)&tcm_hcd->app_info,
+		resp_buf,
+		MIN(sizeof(tcm_hcd->app_info), resp_length));
 
 	tcm_hcd->app_status = le2_to_uint(tcm_hcd->app_info.status);
 
@@ -2275,6 +2283,7 @@ static int syna_tcm_get_boot_info(struct syna_tcm_hcd *tcm_hcd)
 	unsigned char *resp_buf = NULL;
 	unsigned int resp_buf_size = 0;
 	unsigned int resp_length = 0;
+	unsigned long count;
 
 	resp_buf = NULL;
 	resp_buf_size = 0;
@@ -2292,16 +2301,16 @@ static int syna_tcm_get_boot_info(struct syna_tcm_hcd *tcm_hcd)
 		TS_LOG_ERR("Failed to write command %s\n", STR(CMD_GET_BOOT_INFO));
 		goto exit;
 	}
-
-	retval = secure_memcpy((unsigned char *)&tcm_hcd->boot_info,
-			sizeof(tcm_hcd->boot_info),
-			resp_buf,
-			resp_buf_size,
-			MIN(sizeof(tcm_hcd->boot_info), resp_length));
-	if (retval < 0) {
+	count = MIN(sizeof(tcm_hcd->boot_info), resp_length);
+	if ((count > sizeof(tcm_hcd->boot_info)) ||
+		(count > resp_buf_size)) {
 		TS_LOG_ERR("Failed to copy boot info\n");
+		retval = -EINVAL;
 		goto exit;
 	}
+	memcpy((unsigned char *)&tcm_hcd->boot_info,
+		resp_buf,
+		MIN(sizeof(tcm_hcd->boot_info), resp_length));
 
 	retval = 0;
 
@@ -2317,6 +2326,7 @@ static int syna_tcm_identify(struct syna_tcm_hcd *tcm_hcd, bool id)
 	unsigned int resp_buf_size = 0;
 	unsigned int resp_length = 0;
 	unsigned int max_write_size = 0;
+	unsigned long count;
 
 	resp_buf = NULL;
 	resp_buf_size = 0;
@@ -2338,15 +2348,16 @@ static int syna_tcm_identify(struct syna_tcm_hcd *tcm_hcd, bool id)
 		goto exit;
 	}
 
-	retval = secure_memcpy((unsigned char *)&tcm_hcd->id_info,
-			sizeof(tcm_hcd->id_info),
-			resp_buf,
-			resp_buf_size,
-			MIN(sizeof(tcm_hcd->id_info), resp_length));
-	if (retval < 0) {
+	count = MIN(sizeof(tcm_hcd->id_info), resp_length);
+	if ((count > sizeof(tcm_hcd->id_info) ||
+		(count > resp_buf_size))) {
 		TS_LOG_ERR("Failed to copy identification info\n");
+		retval = -EINVAL;
 		goto exit;
 	}
+	memcpy((unsigned char *)&tcm_hcd->id_info,
+		resp_buf,
+		MIN(sizeof(tcm_hcd->id_info), resp_length));
 
 	tcm_hcd->packrat_number = le4_to_uint(tcm_hcd->id_info.build_id);
 
@@ -2628,6 +2639,59 @@ exit:
 	return retval;
 }
 
+static int syna_tcm_ap_set_dynamic_cmd(struct syna_tcm_hcd *s_tcm_hcd,
+		enum dynamic_ap_config_id id, unsigned short value)
+{
+	int retval = NO_ERR;
+	/* buf size */
+	unsigned char out_buf[3];
+	unsigned char resp_buf[10] = {0};
+	unsigned int resp_buf_size;
+	unsigned int resp_length = 0;
+	int retry = 5;
+
+	resp_buf_size = 0;
+	/* calc result */
+	out_buf[0] = (unsigned char)id;
+	out_buf[1] = (unsigned char)value;
+	out_buf[2] = (unsigned char)(value >> 8);
+
+	TS_LOG_INFO("%s buf[0] = %d, out_buf[1] = %d, out_buf[2] = %d\n",
+		__func__, out_buf[0], out_buf[1], out_buf[2]);
+
+	while (retry) {
+		retval = syna_tcm_write_hdl_message(s_tcm_hcd,
+				CMD_AP_SET_DYNAMIC_CMD, out_buf,
+				sizeof(out_buf), (unsigned char **)resp_buf,
+				&resp_buf_size, &resp_length, NULL, 0);
+		if (retval < 0) {
+			TS_LOG_ERR("Failed to write command %s\n",
+				STR(CMD_AP_SET_DYNAMIC_CMD));
+			goto exit;
+		}
+		/* sequential */
+		udelay(500);
+		retval = syna_tcm_read(s_tcm_hcd, resp_buf, sizeof(resp_buf));
+		if ((retval < 0) || (resp_buf[0] != MESSAGE_MARKER)) {
+			TS_LOG_ERR("Failed to read response %s\n",
+				STR(CMD_AP_SET_DYNAMIC_CMD));
+			goto exit;
+		}
+		if (resp_buf[1] != STATUS_OK)
+			TS_LOG_ERR("resp_buf: 0x%02x 0x%02x 0x%02x 0x%02x ",
+				resp_buf[0], resp_buf[1], resp_buf[2],
+				resp_buf[3]);
+		else
+			break;
+		retry--;
+	}
+	retval = 0;
+
+exit:
+	return retval;
+}
+
+
 static int syna_tcm_get_data_location(struct syna_tcm_hcd *tcm_hcd,
 		enum flash_area area, unsigned int *addr, unsigned int *length)
 {
@@ -2826,6 +2890,8 @@ static int syna_tcm_comm_check(void)
 {
 	int retval = NO_ERR;
 	unsigned char uboot[6] = {0};
+	/* read all package 30byte */
+	unsigned char identify_info[30] = {0};
 	unsigned char marker = 0;
 
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
@@ -2833,18 +2899,27 @@ static int syna_tcm_comm_check(void)
 		TS_LOG_ERR("detect synaptics uboot[0] = %x.uboot[1] = %xuboot[2] = %x.uboot[3] = %xuboot[4] = %x.uboot[5] = %x\n",
 			uboot[0],uboot[1], uboot[2], uboot[3], uboot[4],uboot[5]);
 
-		if (uboot[5] == UBL_FN_NUMBER)
+		if (uboot[5] == UBL_FN_NUMBER) {
+			tcm_hcd->htd = true;
 			return 0;
-		else {
-			TS_LOG_ERR("failed to detect F$35!");
-			return -ENODEV;
+		} else {
+			retval = syna_tcm_read(tcm_hcd, identify_info,
+						sizeof(identify_info));
+			if ((retval < 0) || (identify_info[0] != MESSAGE_MARKER)) {
+				TS_LOG_ERR("failed detect tcm prl device\n");
+				return -ENODEV;
+			}
+			tcm_hcd->htd = false;
+			TS_LOG_INFO("identify[0] = %x identify[1] = %x",
+				identify_info[0], identify_info[1]);
+			return 0;
 		}
 	}else{
 		retval = syna_tcm_read(tcm_hcd,
 			&marker,
 			1);
 		TS_LOG_ERR("check result:%d\n", retval);
-
+		tcm_hcd->htd = false;
 		if (retval < 0 || marker != MESSAGE_MARKER) {
 			TS_LOG_ERR(
 					"Failed to read from device\n");
@@ -2946,7 +3021,7 @@ retry:
 		}
 	}
 
-	if (tcm_hcd->status_report_code >= REPORT_IDENTIFY) {
+	if (tcm_hcd->status_report_code > REPORT_IDENTIFY) {
 		LOCK_BUFFER(tcm_hcd->report.buffer);
 
 		tcm_hcd->report.buffer.buf = &buffer[MESSAGE_HEADER_SIZE];
@@ -3008,10 +3083,15 @@ static int syna_tcm_suspend(void)
 
 	TS_LOG_INFO("%s +\n", __func__);
 
-	if(g_ts_kit_platform_data.udfp_enable_flag) {
-		TS_LOG_INFO("%s ud do nothing \n", __func__);
-		tcm_hcd->ud_sleep_status = true;
-		enable_irq(g_ts_kit_platform_data.irq_id);
+	if (g_ts_kit_platform_data.udfp_enable_flag) {
+		TS_LOG_INFO("%s ud function enable loze\n", __func__);
+		retval = syna_tcm_ap_set_dynamic_cmd(tcm_hcd,
+			DC_AP_SET_ENABLE_LOZE, 1);
+
+		if (retval < 0)
+			TS_LOG_ERR("%s, synaptics_set_loze_mode failed\n",
+				__func__);
+		tcm_hcd->in_suspend = true;
 		return 0;
 	}
 
@@ -3051,10 +3131,15 @@ static int syna_tcm_resume(void)
 
 	if (!tcm_hcd->in_suspend)
 			return 0;
-
-	TS_LOG_INFO("%s +\n", __func__);
-	if(tcm_hcd->ud_sleep_status == true) {
-		TS_LOG_INFO("%s udfp_return \n", __func__);
+	if (g_ts_kit_platform_data.udfp_enable_flag) {
+		TS_LOG_INFO("%s reset\n", __func__);
+		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+			GPIO_OUTPUT_LOW);
+		/* sequential */
+		mdelay(5);
+		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+			GPIO_OUTPUT_HIGH);
+		tcm_hcd->in_suspend = false;
 		return 0;
 	}
 
@@ -3093,11 +3178,23 @@ static int syna_tcm_after_resume(void *feature_info)
 {
 	int retval = NO_ERR;
 	int retry = 3;
+	/* size */
+	static unsigned char tmp_buffer[64];
+
 	TS_LOG_INFO("%s +\n", __func__);
 
-	if(tcm_hcd->ud_sleep_status == true) {
-		TS_LOG_INFO("%s do nothing\n", __func__);
-		tcm_hcd->ud_sleep_status = false;
+	if (g_ts_kit_platform_data.udfp_enable_flag) {
+		/* sequential */
+		msleep(120);
+		TS_LOG_INFO("%s delay 120ms\n", __func__);
+		retval = syna_tcm_read(tcm_hcd, tmp_buffer, sizeof(tmp_buffer));
+		if (retval < 0)
+			TS_LOG_INFO("%s tcm_hcd read error\n", __func__);
+		else
+			retval = NO_ERR;
+
+		syna_tcm_status_resume();
+		enable_irq(g_ts_kit_platform_data.irq_id);
 		goto exit;
 	}
 	if (tcm_hcd->init_okay) {
@@ -3220,49 +3317,70 @@ static int syna_tcm_fw_update_boot(char *file_name)
 			projectid_lenth = PROJECT_ID_FW_LEN;
 		}
 
-		TS_LOG_INFO("syna_tcm_fw_update_boot called\n");
+		TS_LOG_INFO("syna_tcm_fw_update_boot called \n");
+		if (tcm_hcd->htd == true) {
+			retval = zeroflash_init(tcm_hcd);
+			if (retval) {
+				TS_LOG_ERR("zeroflash_init failed\n");
+				goto data_release;
+			}
 
-		retval = zeroflash_init(tcm_hcd);
-		if (retval) {
-			TS_LOG_ERR("zeroflash_init failed\n");
-			goto data_release;
-		}
-
-		retval = zeroflash_get_fw_image(file_name);
-		if (retval) {
-			retval = 0;
-			TS_LOG_ERR("load fw data from bootimage error\n");
-			goto data_release;
-		}
+			retval = zeroflash_get_fw_image(file_name);
+			if (retval) {
+				retval = 0;
+				TS_LOG_ERR("load fw data from bootimage err\n");
+				goto data_release;
+			}
 
 retry:
-	retval = zeroflash_download(file_name, tcm_hcd);
-	if (retval) {
-		TS_LOG_ERR("failed to download fw retry\n");
-		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio, GPIO_OUTPUT_HIGH);
-		mdelay(1);
-		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio, GPIO_OUTPUT_LOW);
-		udelay(300);
-		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio, GPIO_OUTPUT_HIGH);
-		mdelay(21);
-		if(retry --) {
-			TS_LOG_ERR("retry to HDL\n");
-			goto retry;
-		}
-		goto data_release;
-	} else {
-		TS_LOG_INFO("downloaded firmware successfully\n");
-		retval = touch_init(tcm_hcd);
-			if (retval)
-				TS_LOG_ERR("failed to touch_init\n");
-	}
-	tcm_hcd->host_download_mode = true;
-	tcm_hcd->init_okay = true;
-	syna_tcm_status_resume();
-	return retval;
+			retval = zeroflash_download(file_name, tcm_hcd);
+			if (retval) {
+				TS_LOG_ERR("failed to download fw retry\n");
+				gpio_direction_output(
+					tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+					GPIO_OUTPUT_HIGH);
+				mdelay(1);
+				gpio_direction_output(
+					tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+					GPIO_OUTPUT_LOW);
+				udelay(300);
+				gpio_direction_output(
+					tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+					GPIO_OUTPUT_HIGH);
+				mdelay(21);
+				if(retry --) {
+					TS_LOG_ERR("retry to HDL\n");
+					goto retry;
+				}
+				goto data_release;
+			} else {
+				TS_LOG_INFO("downloaded firmware successfully\n");
+				retval = touch_init(tcm_hcd);
+					if (retval)
+						TS_LOG_ERR("failed to touch_init\n");
+			}
+			tcm_hcd->host_download_mode = true;
+			tcm_hcd->init_okay = true;
+			syna_tcm_status_resume();
+			return retval;
 
 data_release:
-	zeroflash_remove(tcm_hcd);
+			zeroflash_remove(tcm_hcd);
+		} else {
+			char *reflash_file_name = REFLASH_IMAGE_NAME;
+			retval = reflash_do_reflash(reflash_file_name);
+			if (retval < 0) {
+				TS_LOG_ERR("Failed to do reflash\n");
+			} else {
+				TS_LOG_ERR("do reflash success\n");
+				if (touch_init_status == false) {
+					retval = touch_init(tcm_hcd);
+					if (retval < 0)
+						TS_LOG_ERR("%s touch_init err",
+								__func__);
+				}
+			}
+		}
 	} else {
 		char *tmp_file_name = FW_IMAGE_NAME_SD;
 
@@ -3683,6 +3801,37 @@ static int syna_tcm_parse_dts(struct device_node *np, struct ts_kit_device_data 
 	return 0;
 }
 
+static void syna_init_checksum_table(void)
+{
+	unsigned int c;
+	unsigned int i;
+	unsigned int j;
+
+	for (i = 0; i < SYNA_CHECKSUM_TABLE_SIZE; i++) {
+		c = i;
+		for (j = 0; j < SYNA_CHECKSUM_TABLE_ROWS; j++) {
+			if (c & 1)
+				c = SYNA_CHECKSUM_POLY ^ (c >> 1);
+			else
+				c = c >> 1;
+		}
+		checksum_table[i] = c;
+	}
+}
+
+unsigned int syna_checksum_cal(unsigned int checksum,
+		unsigned char const *buffer,
+		unsigned int size)
+{
+	unsigned int i;
+
+	for (i = 0; i < size; i++)
+		checksum = checksum_table[(checksum ^ buffer[i]) & 0xff] ^
+				(checksum >> 8);
+
+	return checksum;
+}
+
 static int syna_tcm_init_chip(void)
 {
 	int retval = NO_ERR;
@@ -3691,6 +3840,8 @@ static int syna_tcm_init_chip(void)
 
 	if (!tcm_hcd)
 		return -EINVAL;
+
+	syna_init_checksum_table();
 
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		if (tcm_hcd->syna_tcm_chip_data->projectid_len) {
@@ -3710,7 +3861,13 @@ static int syna_tcm_init_chip(void)
 		strncpy(tcm_hcd->syna_tcm_chip_data->module_name,buf_proj_id,projectid_lenth);
 		memcpy(tcm_hcd->tcm_mod_info.project_id_string, buf_proj_id, projectid_lenth);
 		syna_tcm_get_fw_prefix();
-	}else{
+		if (tcm_hcd->htd == false) {
+			retval = touch_init(tcm_hcd);
+			if (retval)
+				touch_init_status = false;
+			reflash_init(tcm_hcd);
+		}
+	} else {
 		retval = touch_init(tcm_hcd);
 		if (retval) {
 			touch_init_status = false;
@@ -3722,6 +3879,7 @@ static int syna_tcm_init_chip(void)
 		tee_tui_data.device_name[strlen("syna_tcm")] = '\0';
 	#endif
 	retval = debug_device_init(tcm_hcd);
+	syna_tcm_pinctrl_select_normal();
 	return retval;
 }
 
@@ -3768,7 +3926,7 @@ static int syna_tcm_chip_detect(struct ts_kit_platform_data* data)
 
 	tcm_hcd->watchdog.run = RUN_WATCHDOG;
 	tcm_hcd->update_watchdog = syna_tcm_update_watchdog;
-
+	tcm_hcd->spi_comnunicate_frequency = data->spi_max_frequency;
 	INIT_BUFFER(tcm_hcd->in, false);
 	INIT_BUFFER(tcm_hcd->out, false);
 	INIT_BUFFER(tcm_hcd->resp, true);
@@ -3814,8 +3972,10 @@ static int syna_tcm_chip_detect(struct ts_kit_platform_data* data)
 	syna_tcm_power_on();
 	/*reset the chip */
 	syna_tcm_gpio_reset();
+	mdelay(200);
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		tmp_spi_mode = data->spi->mode;
+		TS_LOG_INFO("spi_mode = %d\n", bdata->spi_mode);
 		retval = ts_change_spi_mode(data->spi, bdata->spi_mode);
 		if (retval) {
 			goto check_err;
@@ -3926,8 +4086,7 @@ static int syna_tcm_charger_switch(struct ts_charger_info *info)
 	int retval = NO_ERR;
 	u16 buf = 0;
 
-	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype
-			&& tcm_hcd->host_download_mode == false) {
+	if (tcm_hcd->htd == true && tcm_hcd->host_download_mode == false) {
 		TS_LOG_INFO("Bypass set charger command\n");
 		return retval;
 	}
@@ -4042,26 +4201,95 @@ static int syna_tcm_glove_switch(struct ts_glove_info *info)
 }
 
 #define SYNA_SWITCH_MAX_INPUT_SEPARATE_NUM 2
-static void synaptics_tcm_chip_touch_switch(void)
+
+static int synaptics_tcm_check_scene_type(unsigned int stype)
+{
+	unsigned int i;
+	int error = -EINVAL;
+
+	if (!tcm_hcd->syna_tcm_chip_data->scene_type_num) {
+		TS_LOG_INFO("%s, not need check_scene type\n", __func__);
+		return NO_ERR;
+	}
+	for (i = 0; i < tcm_hcd->syna_tcm_chip_data->scene_type_num; i++) {
+		if (stype == tcm_hcd->syna_tcm_chip_data->scene_support_array[i])
+			error = NO_ERR;
+	}
+	return error;
+}
+
+static void synaptics_tcm_scene_switch(unsigned char stype, unsigned char soper)
 {
 	int retval = 0;
-	char in_data[MAX_STR_LEN] = {0};
-	unsigned int stype = 0, soper = 0, para = 0;
-	int error = 0;
-	unsigned int i = 0, cnt = 0;
-	u16 buf = 0;
-	struct ts_kit_device_data *syna_tcm_dev_data = NULL;
+	unsigned char buf = 0;
 
-	TS_LOG_INFO("%s enter\n", __func__);
-
-	if(tcm_hcd->ud_sleep_status == true) {
-		TS_LOG_INFO("ud enable when chip touch switch return\n");
+	if ((tcm_hcd->syna_tcm_chip_data->touch_switch_flag &
+		TS_SWITCH_TYPE_SCENE) != TS_SWITCH_TYPE_SCENE) {
+		TS_LOG_ERR("%s, scene switch is not support by this chip\n",
+			__func__);
 		return;
 	}
+	switch (soper) {
+	case TS_SWITCH_SCENE_ENTER:
+		buf = stype;
+		retval = syna_tcm_set_dynamic_config(tcm_hcd,
+			tcm_hcd->syna_tcm_chip_data->touch_scene_reg,
+			(unsigned short)buf);
+		if (retval < 0)
+			TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n",
+			__func__);
 
-	if (NULL == tcm_hcd || NULL == tcm_hcd->syna_tcm_chip_data){
+		TS_LOG_INFO("%s: enter scene %d\n", __func__, stype);
+		break;
+	case TS_SWITCH_SCENE_EXIT:
+		buf = 0;
+		retval = syna_tcm_set_dynamic_config(tcm_hcd,
+			tcm_hcd->syna_tcm_chip_data->touch_scene_reg,
+			(unsigned short)buf);
+		if (retval < 0)
+			TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n",
+				__func__);
+
+		TS_LOG_INFO("%s: enter default scene\n", __func__);
+		break;
+	default:
+		TS_LOG_ERR("%s: soper unknown: %d, invalid\n",
+			__func__, soper);
+		break;
+	}
+}
+
+static void synaptics_tcm_chip_touch_powergenius(unsigned char stype,
+	unsigned char soper, unsigned char param)
+{
+	int error;
+
+	error = synaptics_tcm_check_scene_type(stype);
+	if (error) {
+		TS_LOG_INFO("touch switch type %d not supported\n", stype);
+		return;
+	}
+	if ((stype >= TS_SWITCH_SCENE_3) && (stype <= TS_SWITCH_SCENE_20))
+		synaptics_tcm_scene_switch(stype, soper);
+}
+
+static int synaptics_tcm_chip_get_touch_switch_data(unsigned int *stype,
+	unsigned int *soper, unsigned int *para)
+{
+	char in_data[MAX_STR_LEN] = {0};
+	int error = 0;
+	unsigned int i;
+	unsigned int cnt = 0;
+	struct ts_kit_device_data *syna_tcm_dev_data = NULL;
+
+	if (tcm_hcd->ud_sleep_status == true) {
+		TS_LOG_INFO("ud enable when chip touch switch return\n");
+		return error;
+	}
+
+	if ((tcm_hcd == NULL) || (tcm_hcd->syna_tcm_chip_data == NULL)) {
 		TS_LOG_ERR("%s, error chip data or hcd data\n",__func__);
-		goto out;
+		return error;
 	}
 
 	syna_tcm_dev_data = tcm_hcd->syna_tcm_chip_data;
@@ -4069,64 +4297,61 @@ static void synaptics_tcm_chip_touch_switch(void)
 	/* SWITCH_OPER,ENABLE_DISABLE,PARAM */
 	memcpy(in_data, syna_tcm_dev_data->touch_switch_info, MAX_STR_LEN -1);
 	TS_LOG_INFO("%s, in_data:%s\n",__func__, in_data);
-	for(i = 0; i < strlen(in_data) && (in_data[i] != '\n'); i++){
-		if(in_data[i] == ','){
+	for (i = 0; i < strlen(in_data) && (in_data[i] != '\n'); i++) {
+		if (in_data[i] == ',') {
 			cnt++;
-		}else if(!isdigit(in_data[i])){
+		} else if (!isdigit(in_data[i])) {
 			TS_LOG_ERR("%s: input format error!!\n", __func__);
-			goto out;
+			return error;
 		}
 	}
-	if(cnt != SYNA_SWITCH_MAX_INPUT_SEPARATE_NUM){
-		TS_LOG_ERR("%s: input format error[separation_cnt=%d]!!\n", __func__, cnt);
-		goto out;
+	if (cnt != SYNA_SWITCH_MAX_INPUT_SEPARATE_NUM) {
+		TS_LOG_ERR("%s: input format error[separation_cnt=%d]!!\n",
+			__func__, cnt);
+		return error;
 	}
 
-	error = sscanf(in_data, "%u,%u,%u", &stype, &soper, &para);
-	if(error <= 0){
+	error = sscanf(in_data, "%u,%u,%u", stype, soper, para);
+	if (error <= 0)
 		TS_LOG_ERR("%s: sscanf error\n", __func__);
+	return error;
+}
+
+static void synaptics_tcm_chip_touch_switch(void)
+{
+	unsigned int stype = 0;
+	unsigned int soper = 0;
+	unsigned int para = 0;
+	int error;
+
+	TS_LOG_INFO("%s enter\n", __func__);
+
+	error = synaptics_tcm_chip_get_touch_switch_data(&stype, &soper, &para);
+	if (error <= NO_ERR)
+		goto out;
+
+	TS_LOG_INFO("stype = %u, soper = %u, para = %u\n", stype, soper, para);
+	if (tcm_hcd->syna_tcm_chip_data->scene_type_mode ==
+		SCENE_MODE_ITOUCH) {
+		/* itouch */
+		TS_LOG_INFO("itouch called\n");
+		goto out;
+	} else if (tcm_hcd->syna_tcm_chip_data->scene_type_mode ==
+		SCENC_MODE_POWERGENIUS) {
+		TS_LOG_INFO("powergenius called\n");
+		synaptics_tcm_chip_touch_powergenius(stype, soper, para);
 		goto out;
 	}
-	TS_LOG_DEBUG("stype=%u,soper=%u,param=%u\n", stype, soper, para);
+	if ((stype >= TS_SWITCH_SCENE_3) && (stype <= TS_SWITCH_SCENE_20))
+		synaptics_tcm_scene_switch(stype, soper);
+	else
+		TS_LOG_INFO("touch switch type %d not supported\n", stype);
 
 	/**
 	 * enter DOZE again after a period of time. the min unit of the time is 100ms,
 	 * for example, we set 30, the final time is 30 * 100 ms = 3s
 	 * The min unit to enter doze_mode is second for focaltech
 	**/
-	if (stype >= TS_SWITCH_SCENE_3 && stype <= TS_SWITCH_SCENE_20) {
-		if (TS_SWITCH_TYPE_SCENE != (syna_tcm_dev_data->touch_switch_flag & TS_SWITCH_TYPE_SCENE)) {
-			TS_LOG_ERR("%s, scene switch does not suppored by this chip\n",__func__);
-			goto out;
-		}
-
-		switch (soper) {
-			case TS_SWITCH_SCENE_ENTER:
-				buf = stype;
-				retval = syna_tcm_set_dynamic_config(tcm_hcd,
-						syna_tcm_dev_data->touch_scene_reg, buf);
-				if (retval < 0) {
-					TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n",
-							__func__);
-				}
-				TS_LOG_INFO("%s: enter scene %d\n", __func__, stype);
-				break;
-			case TS_SWITCH_SCENE_EXIT:
-				buf = 0;
-				retval = syna_tcm_set_dynamic_config(tcm_hcd,
-						syna_tcm_dev_data->touch_scene_reg, buf);
-				if (retval < 0) {
-					TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n",
-							__func__);
-				}
-				TS_LOG_INFO("%s: enter default scene\n", __func__);
-				break;
-			default:
-				TS_LOG_ERR("%s: soper unknown:%d, invalid\n", __func__, soper);
-				break;
-		}
-	}
-
 out:
 	return;
 }
@@ -4165,6 +4390,164 @@ static int syna_tcm_status_resume(void)
 	}
 	TS_LOG_INFO(" glove_switch (%d), roi_switch(%d), charger_switch(%d)\n",
 				info->glove_info.glove_switch,info->roi_info.roi_switch, info->charger_info.charger_switch);
+	return retval;
+}
+
+static int syna_tcm_chip_detect_hwlock(struct ts_kit_platform_data *data)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_chip_detect(data);
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_init_chip_hwlock(void)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_init_chip();
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_irq_bottom_half_hwlock(struct ts_cmd_node *in_cmd,
+					struct ts_cmd_node *out_cmd)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_irq_bottom_half(in_cmd, out_cmd);
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_fw_update_boot_hwlock(char *file_name)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_fw_update_boot(file_name);
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_fw_update_sd_hwlock(void)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_fw_update_sd();
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_suspend_hwlock(void)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_suspend();
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_resume_hwlock(void)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_resume();
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_after_resume_hwlock(void *feature_info)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_after_resume(feature_info);
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_mmi_test_hwlock(struct ts_rawdata_info *info,
+				 struct ts_cmd_node *out_cmd)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_mmi_test(info, out_cmd);
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_glove_switch_hwlock(struct ts_glove_info *info)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_glove_switch(info);
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_charger_switch_hwlock(struct ts_charger_info *info)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_charger_switch(info);
+	syna_tcm_release_hw_lock();
+	return retval;
+}
+
+static int syna_tcm_roi_switch_hwlock(struct ts_roi_info *info)
+{
+	int retval;
+
+	if (syna_tcm_get_hw_lock()) {
+		TS_LOG_ERR("ap i2c hw lock error\n");
+		return RESULT_ERR;
+	}
+	retval = syna_tcm_roi_switch(info);
+	syna_tcm_release_hw_lock();
 	return retval;
 }
 

@@ -8,7 +8,7 @@
 #define ID_MAXID		20000000/* the max download id  */
 #define MAX_THREAD		2
 #define WAIT_DELAY		10
-#define MAX_WAIT		12000
+#define MAX_WAIT 6000
 
 #define DLST_NOT	0
 #define DLST_WAIT	1

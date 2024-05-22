@@ -3,7 +3,7 @@
  *
  * dual charger driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,13 +24,13 @@
 #include <linux/slab.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/huawei_charger.h>
-#include <dual_charger.h>
 #ifdef CONFIG_HISI_COUL
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
 #endif
 #ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
 #endif
+#include "dual_charger.h"
 
 #define HWLOG_TAG dual_charger
 HWLOG_REGIST();
@@ -286,7 +286,7 @@ static int dual_charger_get_ichg_reg(int flag)
 	else if (flag == AUX_CHARGER)
 		return bq25892_aux_get_ichg_reg();
 
-	hwlog_err("get_ichg_reg para error");
+	hwlog_err("get_ichg_reg para error\n");
 	return 0;
 }
 
@@ -297,7 +297,7 @@ static int dual_charger_get_ichg_adc(int flag)
 	else if (flag == AUX_CHARGER)
 		return bq25892_aux_get_ichg_adc();
 
-	hwlog_err("get_ichg_adc para error");
+	hwlog_err("get_ichg_adc para error\n");
 	return 0;
 }
 
@@ -399,7 +399,7 @@ static int dual_charger_get_charge_state(unsigned int *state)
 {
 	int ret = 0;
 
-	if (!dci) {
+	if (!dci || !state) {
 		hwlog_err("dci is null\n");
 		return -1;
 	}
@@ -433,28 +433,28 @@ static int dual_charger_reset_watchdog_timer(void)
 	return ret;
 }
 
-static int dual_charger_dump_register(char *reg_value)
+static int dual_charger_dump_register(char *reg_value, int size)
 {
 	int ret = 0;
 
 	if (g_main_ops && g_main_ops->dump_register)
-		ret |= g_main_ops->dump_register(reg_value);
+		ret |= g_main_ops->dump_register(reg_value, size);
 
 	if (g_aux_ops && g_aux_ops->dump_register)
-		ret |= g_aux_ops->dump_register(reg_value);
+		ret |= g_aux_ops->dump_register(reg_value, size);
 
 	return ret;
 }
 
-static int dual_charger_get_register_head(char *reg_head)
+static int dual_charger_get_register_head(char *reg_head, int size)
 {
 	int ret = 0;
 
 	if (g_main_ops && g_main_ops->get_register_head)
-		ret |= g_main_ops->get_register_head(reg_head);
+		ret |= g_main_ops->get_register_head(reg_head, size);
 
 	if (g_aux_ops && g_aux_ops->get_register_head)
-		ret |= g_aux_ops->get_register_head(reg_head);
+		ret |= g_aux_ops->get_register_head(reg_head, size);
 
 	return ret;
 }
@@ -621,6 +621,15 @@ struct charge_device_ops dual_charger_ops = {
 	.stop_charge_config = dual_charger_stop_charge_config,
 };
 
+struct charger_otg_device_ops dual_charger_otg_ops = {
+	.chip_name = "dual_charger",
+	.otg_set_charger_enable = dual_charger_set_charge_enable,
+	.otg_set_enable = dual_charger_set_otg_enable,
+	.otg_set_current = dual_charger_set_otg_current,
+	.otg_set_watchdog_timer = dual_charger_set_watchdog_timer,
+	.otg_reset_watchdog_timer = dual_charger_reset_watchdog_timer,
+};
+
 #ifdef CONFIG_SYSFS
 #define DUAL_CHARGER_SYSFS_FIELD(_name, n, m, store) \
 { \
@@ -629,10 +638,10 @@ struct charge_device_ops dual_charger_ops = {
 }
 
 #define DUAL_CHARGER_SYSFS_FIELD_RW(_name, n) \
-	DUAL_CHARGER_SYSFS_FIELD(_name, n, 0644, dual_charger_sysfs_store)
+	DUAL_CHARGER_SYSFS_FIELD(_name, n, 0640, dual_charger_sysfs_store)
 
 #define DUAL_CHARGER_SYSFS_FIELD_RO(_name, n) \
-	DUAL_CHARGER_SYSFS_FIELD(_name, n, 0444, NULL)
+	DUAL_CHARGER_SYSFS_FIELD(_name, n, 0440, NULL)
 
 static ssize_t dual_charger_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
@@ -658,7 +667,8 @@ static const struct attribute_group dual_charger_sysfs_attr_group = {
 
 static void dual_charger_sysfs_init_attrs(void)
 {
-	int i, limit = ARRAY_SIZE(dual_charger_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(dual_charger_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++)
 		dual_charger_sysfs_attrs[i] =
@@ -670,7 +680,8 @@ static void dual_charger_sysfs_init_attrs(void)
 static struct dual_charger_sysfs_field_info *dual_charger_sysfs_field_lookup(
 	const char *name)
 {
-	int i, limit = ARRAY_SIZE(dual_charger_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(dual_charger_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++) {
 		if (!strncmp(name,
@@ -703,15 +714,13 @@ static ssize_t dual_charger_sysfs_show(struct device *dev,
 				dci->charge_enable_main &
 				dci->charge_enable_sysfs_main);
 		break;
-
 	case DUAL_CHARGER_SYSFS_ENABLE_CHARGER_AUX:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 				dci->charge_enable_aux &
 				dci->charge_enable_sysfs_aux);
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -745,7 +754,6 @@ static ssize_t dual_charger_sysfs_store(struct device *dev,
 				dci->charge_enable_main &
 				dci->charge_enable_sysfs_main);
 		break;
-
 	case DUAL_CHARGER_SYSFS_ENABLE_CHARGER_AUX:
 		if ((kstrtol(buf, 10, &val) < 0) ||
 			(val < 0) || (val > 1))
@@ -760,9 +768,8 @@ static ssize_t dual_charger_sysfs_store(struct device *dev,
 				dci->charge_enable_main &
 				dci->charge_enable_sysfs_main);
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -772,7 +779,6 @@ static ssize_t dual_charger_sysfs_store(struct device *dev,
 static int dual_charger_sysfs_create_group(void)
 {
 	dual_charger_sysfs_init_attrs();
-
 	return sysfs_create_group(&dci->dev->kobj,
 		&dual_charger_sysfs_attr_group);
 }
@@ -781,9 +787,7 @@ static void dual_charger_sysfs_remove_group(void)
 {
 	sysfs_remove_group(&dci->dev->kobj, &dual_charger_sysfs_attr_group);
 }
-
 #else
-
 static inline int charge_sysfs_create_group(void)
 {
 	return 0;
@@ -792,41 +796,86 @@ static inline int charge_sysfs_create_group(void)
 static inline void charge_sysfs_remove_group(void)
 {
 }
-
 #endif /* CONFIG_SYSFS */
 
-static int dual_charger_parse_dts(void)
+static int dual_charger_main_ops_is_valid(void)
 {
-	int ret;
-
-	ret = of_property_read_u32(
-		of_find_compatible_node(NULL, NULL, "huawei,dual_charger"),
-		"iin_max_each_charger", &dci->iin_max_each_charger);
-	if (ret) {
-		hwlog_err("iin_max_each_charger dts read failed\n");
-		dci->iin_max_each_charger = DEFAULT_IIN_MAX_EACH_CHARGER;
+	if (!g_main_ops ||
+		!g_main_ops->chip_init ||
+		!g_main_ops->dev_check ||
+		!g_main_ops->set_input_current ||
+		!g_main_ops->set_charge_current ||
+		!g_main_ops->set_terminal_voltage ||
+		!g_main_ops->set_dpm_voltage ||
+		!g_main_ops->set_terminal_current ||
+		!g_main_ops->set_charge_enable ||
+		!g_main_ops->set_otg_enable ||
+		!g_main_ops->set_term_enable ||
+		!g_main_ops->get_charge_state ||
+		!g_main_ops->reset_watchdog_timer ||
+		!g_main_ops->dump_register ||
+		!g_main_ops->get_register_head ||
+		!g_main_ops->set_watchdog_timer ||
+		!g_main_ops->set_batfet_disable ||
+		!g_main_ops->get_ibus ||
+		!g_main_ops->get_vbus ||
+		!g_main_ops->get_vbat_sys ||
+		!g_main_ops->set_covn_start ||
+		!g_main_ops->set_charger_hiz ||
+		!g_main_ops->check_input_dpm_state ||
+		!g_main_ops->set_otg_current ||
+		!g_main_ops->stop_charge_config) {
+		hwlog_err("main_ops is null\n");
+		return -1;
 	}
-	hwlog_info("iin_max_each_charger=%d\n", dci->iin_max_each_charger);
 
-	ret = of_property_read_u32(
-		of_find_compatible_node(NULL, NULL, "huawei,dual_charger"),
-		"ichg_need_aux_charger", &dci->ichg_need_aux_charger);
-	if (ret) {
-		hwlog_err("ichg_need_aux_charger dts read failed\n");
-		dci->ichg_need_aux_charger = DEFAULT_ICHG_NEED_AUX_CHARGER;
+	return 0;
+}
+
+static int dual_charger_aux_ops_is_valid(void)
+{
+	if (!g_aux_ops ||
+		!g_aux_ops->chip_init ||
+		!g_aux_ops->dev_check ||
+		!g_aux_ops->set_input_current ||
+		!g_aux_ops->set_charge_current ||
+		!g_aux_ops->set_terminal_voltage ||
+		!g_aux_ops->set_dpm_voltage ||
+		!g_aux_ops->set_terminal_current ||
+		!g_aux_ops->set_charge_enable ||
+		!g_aux_ops->set_otg_enable ||
+		!g_aux_ops->set_term_enable ||
+		!g_aux_ops->get_charge_state ||
+		!g_aux_ops->reset_watchdog_timer ||
+		!g_aux_ops->dump_register ||
+		!g_aux_ops->get_register_head ||
+		!g_aux_ops->set_watchdog_timer ||
+		!g_aux_ops->set_batfet_disable ||
+		!g_aux_ops->get_ibus ||
+		!g_aux_ops->set_covn_start ||
+		!g_aux_ops->set_charger_hiz ||
+		!g_aux_ops->check_input_dpm_state ||
+		!g_aux_ops->stop_charge_config) {
+		hwlog_err("aux_ops is null\n");
+		return -1;
 	}
-	hwlog_info("ichg_need_aux_charger=%d\n", dci->ichg_need_aux_charger);
 
-	ret = of_property_read_u32(
-		of_find_compatible_node(NULL, NULL, "huawei,charging_core"),
-		"ichg_fcp", &dci->ichg_max);
-	if (ret) {
-		hwlog_err("ichg_fcp dts read failed\n");
-		dci->ichg_max = DEFAULT_ICHG_MAX;
-	}
-	hwlog_info("ichg_fcp=%d\n", dci->ichg_max);
+	return 0;
+}
 
-	return ret;
+static void dual_charger_parse_dts(void)
+{
+	(void)power_dts_read_u32_compatible("huawei,dual_charger",
+		"iin_max_each_charger",
+		(u32 *)&dci->iin_max_each_charger,
+		DEFAULT_IIN_MAX_EACH_CHARGER);
+	(void)power_dts_read_u32_compatible("huawei,dual_charger",
+		"ichg_need_aux_charger",
+		(u32 *)&dci->ichg_need_aux_charger,
+		DEFAULT_ICHG_NEED_AUX_CHARGER);
+	(void)power_dts_read_u32_compatible("huawei,charging_core",
+		"ichg_fcp",
+		(u32 *)&dci->ichg_max, DEFAULT_ICHG_MAX);
 }
 
 static int dual_charger_probe(struct platform_device *pdev)
@@ -835,6 +884,9 @@ static int dual_charger_probe(struct platform_device *pdev)
 	struct class *power_class = NULL;
 
 	hwlog_info("probe begin\n");
+
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
 
 	dci = kzalloc(sizeof(*dci), GFP_KERNEL);
 	if (dci)
@@ -858,66 +910,23 @@ static int dual_charger_probe(struct platform_device *pdev)
 
 	ret = charge_ops_register(&dual_charger_ops);
 	if (ret) {
-		hwlog_err("register dual charge ops failed\n");
+		hwlog_err("register dual_charge ops failed\n");
 		goto dual_charger_fail_0;
 	}
 
-	if ((!g_main_ops) ||
-		(!g_main_ops->chip_init) ||
-		(!g_main_ops->dev_check) ||
-		(!g_main_ops->set_input_current) ||
-		(!g_main_ops->set_charge_current) ||
-		(!g_main_ops->set_terminal_voltage) ||
-		(!g_main_ops->set_dpm_voltage) ||
-		(!g_main_ops->set_terminal_current) ||
-		(!g_main_ops->set_charge_enable) ||
-		(!g_main_ops->set_otg_enable) ||
-		(!g_main_ops->set_term_enable) ||
-		(!g_main_ops->get_charge_state) ||
-		(!g_main_ops->reset_watchdog_timer) ||
-		(!g_main_ops->dump_register) ||
-		(!g_main_ops->get_register_head) ||
-		(!g_main_ops->set_watchdog_timer) ||
-		(!g_main_ops->set_batfet_disable) ||
-		(!g_main_ops->get_ibus) ||
-		(!g_main_ops->get_vbus) ||
-		(!g_main_ops->get_vbat_sys) ||
-		(!g_main_ops->set_covn_start) ||
-		(!g_main_ops->set_charger_hiz) ||
-		(!g_main_ops->check_input_dpm_state) ||
-		(!g_main_ops->set_otg_current) ||
-		(!g_main_ops->stop_charge_config)) {
-		hwlog_err("main charge ops is null\n");
-		ret = -EINVAL;
-		goto dual_charger_fail_1;
+	ret = charger_otg_ops_register(&dual_charger_otg_ops);
+	if (ret) {
+		hwlog_err("register dual_charge_otg ops failed\n");
+		goto dual_charger_fail_0;
 	}
 
-	if ((!g_aux_ops) ||
-		(!g_aux_ops->chip_init) ||
-		(!g_aux_ops->dev_check) ||
-		(!g_aux_ops->set_input_current) ||
-		(!g_aux_ops->set_charge_current) ||
-		(!g_aux_ops->set_terminal_voltage) ||
-		(!g_aux_ops->set_dpm_voltage) ||
-		(!g_aux_ops->set_terminal_current) ||
-		(!g_aux_ops->set_charge_enable) ||
-		(!g_aux_ops->set_otg_enable) ||
-		(!g_aux_ops->set_term_enable) ||
-		(!g_aux_ops->get_charge_state) ||
-		(!g_aux_ops->reset_watchdog_timer) ||
-		(!g_aux_ops->dump_register) ||
-		(!g_aux_ops->get_register_head) ||
-		(!g_aux_ops->set_watchdog_timer) ||
-		(!g_aux_ops->set_batfet_disable) ||
-		(!g_aux_ops->get_ibus) ||
-		(!g_aux_ops->set_covn_start) ||
-		(!g_aux_ops->set_charger_hiz) ||
-		(!g_aux_ops->check_input_dpm_state) ||
-		(!g_aux_ops->stop_charge_config)) {
-		hwlog_err("aux charge ops is null\n");
-		ret = -EINVAL;
+	ret = dual_charger_main_ops_is_valid();
+	if (ret)
+		goto dual_charger_fail_1;
+
+	ret = dual_charger_aux_ops_is_valid();
+	if (ret)
 		goto dual_charger_fail_2;
-	}
 
 	ret = dual_charger_sysfs_create_group();
 	if (ret)
@@ -949,12 +958,16 @@ dual_charger_fail_1:
 dual_charger_fail_0:
 	kfree(dci);
 	dci = NULL;
+
 	return ret;
 }
 
 static int dual_charger_remove(struct platform_device *pdev)
 {
 	hwlog_info("remove begin\n");
+
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
 
 	dual_charger_sysfs_remove_group();
 

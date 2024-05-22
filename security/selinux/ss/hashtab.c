@@ -1,7 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Implementation of the hash table type.
  *
- * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
+ * Author : Stephen Smalley, <sds@tycho.nsa.gov>
  */
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -20,7 +21,7 @@ struct hashtab *hashtab_create(u32 (*hash_value)(struct hashtab *h, const void *
 	u32 i;
 
 	p = pzalloc(selinux_pool, sizeof(*p), GFP_KERNEL);
-	if (p == NULL)
+	if (!p)
 		return p;
 
 	p->size = size;
@@ -29,7 +30,7 @@ struct hashtab *hashtab_create(u32 (*hash_value)(struct hashtab *h, const void *
 	p->keycmp = keycmp;
 	p->htable = pmalloc(selinux_pool, sizeof(*(p->htable)) * size,
 			    GFP_KERNEL);
-	if (p->htable == NULL) {
+	if (!p->htable) {
 		pfree(selinux_pool, p);
 		return NULL;
 	}
@@ -62,7 +63,7 @@ int hashtab_insert(struct hashtab *h, void *key, void *datum)
 		return -EEXIST;
 
 	newnode = pzalloc(selinux_pool, sizeof(*newnode), GFP_KERNEL);
-	if (newnode == NULL)
+	if (!newnode)
 		return -ENOMEM;
 	newnode->key = key;
 	newnode->datum = datum;
@@ -91,7 +92,7 @@ void *hashtab_search(struct hashtab *h, const void *key)
 	while (cur && h->keycmp(h, key, cur->key) > 0)
 		cur = cur->next;
 
-	if (cur == NULL || (h->keycmp(h, key, cur->key) != 0))
+	if (!cur || (h->keycmp(h, key, cur->key) != 0))
 		return NULL;
 
 	return cur->datum;

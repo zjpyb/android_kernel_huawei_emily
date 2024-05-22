@@ -31,10 +31,8 @@ enum battery_temp_id {
 
 #ifdef CONFIG_HUAWEI_BATTERY_TEMP
 int huawei_battery_temp(enum battery_temp_id id, int *temp);
-int huawei_battery_temp_with_comp(enum battery_temp_id id, int *temp);
-
+int huawei_battery_temp_now(enum battery_temp_id id, int *temp);
 #else
-
 static inline int huawei_battery_temp(enum battery_temp_id id, int *temp)
 {
 	if (!temp)
@@ -44,8 +42,7 @@ static inline int huawei_battery_temp(enum battery_temp_id id, int *temp)
 	return 0;
 }
 
-static inline int huawei_battery_temp_with_comp(enum battery_temp_id id,
-	int *temp)
+static inline int huawei_battery_temp_now(enum battery_temp_id id, int *temp)
 {
 	if (!temp)
 		return -1;

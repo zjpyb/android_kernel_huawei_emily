@@ -39,7 +39,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * Given a floating point value f it's .16 bit point is (int)(f*(1<<16))
  */
-typedef unsigned int FixPoint1616_t;
 
 #if !defined(STDINT_H) &&  !defined(_GCC_STDINT_H) \
 	&& !defined(_STDINT_H) && !defined(_LINUX_TYPES_H)

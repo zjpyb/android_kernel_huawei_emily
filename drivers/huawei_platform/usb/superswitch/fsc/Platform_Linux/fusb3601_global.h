@@ -7,7 +7,8 @@
 
 #include <linux/i2c.h>                      /* i2c_client, spinlock_t */
 #include <linux/hrtimer.h>                  /* hrtimer */
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/workqueue.h>
 #include <linux/semaphore.h>
 #include "FSCTypes.h"                       /* FUSB3601 custom types */
@@ -22,7 +23,7 @@
 struct fusb3601_chip
 {
     struct mutex lock;                      /* Synchronization lock */
-    struct wake_lock fusb3601_wakelock;      /* Wake lock */
+    struct wakeup_source fusb3601_wakelock;      /* Wake lock */
     struct semaphore suspend_lock;
 
 #ifdef FSC_DEBUG

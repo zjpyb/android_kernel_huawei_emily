@@ -126,7 +126,7 @@ bool list_lru_add(struct list_lru *lru, struct list_head *item)
 }
 EXPORT_SYMBOL_GPL(list_lru_add);
 
-#ifdef CONFIG_TASK_PROTECT_LRU
+#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
 void list_lru_move(struct list_lru *lru, struct list_head *item)
 {
 	/*lint -save -e648 -e730 -e834*/
@@ -144,8 +144,6 @@ void list_lru_move(struct list_lru *lru, struct list_head *item)
 		list_move_tail(item, &l->list);
 	/*lint -restore*/
 	spin_unlock(&nlru->lock);
-
-	return;
 }
 EXPORT_SYMBOL_GPL(list_lru_move);
 #endif
@@ -348,12 +346,12 @@ static int memcg_init_list_lru_node(struct list_lru_node *nlru)
 {
 	int size = memcg_nr_cache_ids;
 
-	nlru->memcg_lrus = kmalloc(size * sizeof(void *), GFP_KERNEL);
+	nlru->memcg_lrus = kvmalloc(size * sizeof(void *), GFP_KERNEL);
 	if (!nlru->memcg_lrus)
 		return -ENOMEM;
 
 	if (__memcg_init_list_lru_node(nlru->memcg_lrus, 0, size)) {
-		kfree(nlru->memcg_lrus);
+		kvfree(nlru->memcg_lrus);
 		return -ENOMEM;
 	}
 
@@ -363,7 +361,7 @@ static int memcg_init_list_lru_node(struct list_lru_node *nlru)
 static void memcg_destroy_list_lru_node(struct list_lru_node *nlru)
 {
 	__memcg_destroy_list_lru_node(nlru->memcg_lrus, 0, memcg_nr_cache_ids);
-	kfree(nlru->memcg_lrus);
+	kvfree(nlru->memcg_lrus);
 }
 
 static int memcg_update_list_lru_node(struct list_lru_node *nlru,
@@ -374,12 +372,12 @@ static int memcg_update_list_lru_node(struct list_lru_node *nlru,
 	BUG_ON(old_size > new_size);
 
 	old = nlru->memcg_lrus;
-	new = kmalloc(new_size * sizeof(void *), GFP_KERNEL);
+	new = kvmalloc(new_size * sizeof(void *), GFP_KERNEL);
 	if (!new)
 		return -ENOMEM;
 
 	if (__memcg_init_list_lru_node(new, old_size, new_size)) {
-		kfree(new);
+		kvfree(new);
 		return -ENOMEM;
 	}
 
@@ -396,7 +394,7 @@ static int memcg_update_list_lru_node(struct list_lru_node *nlru,
 	nlru->memcg_lrus = new;
 	spin_unlock_irq(&nlru->lock);
 
-	kfree(old);
+	kvfree(old);
 	return 0;
 }
 

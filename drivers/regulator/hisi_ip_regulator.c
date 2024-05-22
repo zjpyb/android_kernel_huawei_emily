@@ -37,6 +37,7 @@
 #include <linux/clk.h>
 #include <linux/regulator/consumer.h>
 #include <linux/version.h>
+#include <securec.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0))
 #include <linux/clk-private.h>
 #endif
@@ -44,14 +45,12 @@
 #include <linux/hwspinlock.h>
 #include <linux/hisi/hisi_rproc.h>
 #include <linux/clk-provider.h>
-
 #include <soc_crgperiph_interface.h>
 #ifdef CONFIG_HISI_PMIC_DEBUG
 #include <linux/debugfs.h>
 #endif
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
-
 #if CONFIG_DEBUG_FS
 #define IP_REGULATOR_DEBUG(args...) pr_debug(args);
 #else
@@ -82,7 +81,7 @@ enum ip_regulator_id {
 };
 #elif defined CONFIG_BOST_IP_PLATFORM
 enum ip_regulator_id {
-	MEDIA_SUBSYS_ID = 0,
+	MEDIA1_SUBSYS_ID = 0,
 	VIVOBUS_ID,
 	VCODECSUBSYS_ID,
 	IVP_ID,
@@ -144,9 +143,15 @@ enum ip_regulator_id {
 	ISP_R8_ID,
 	ASP_ID,
 	G3D_ID,
+#ifndef CONFIG_BALT_IP_PLATFORM
 	ICS_ID,
 	ICS2_ID,
+#endif
 	NPU_ID,
+	IVP1_ID,
+	HIFACE_ID,
+	ARPP_ID,
+	IPP_ID,
 };
 #else
 enum ip_regulator_id {
@@ -165,6 +170,26 @@ enum ip_regulator_id {
 enum {
 	REGULATOR_DISABLE = 0,
 	REGULATOR_ENABLE
+};
+
+/*
+ * sctrl 0x438 : power state vote
+ * bit[0]: AP		media1 vote
+ * bit[1]: Sensorhub	media1 vote
+ * bit[2]: AP		vivobus vote
+ * bit[3]: Sensorhub	vivobus vote
+ * bit[30]: TEEOS 		media1 vote
+ * bit[31]: TEEOS 		vivobus vote
+*/
+enum {
+	AP_MEDIA1_VOTE = 0,
+	IOMCU_MEDIA1_VOTE = 1,
+	AP_VIVOBUS_VOTE = 2,
+	IOMCU_VIVOBUS_VOTE = 3,
+	AP_DSS_VOTE = 4,
+	IOMCU_DSS_VOTE = 5,
+	TEEOS_MEDIA1_VOTE = 30,
+	TEEOS_VIVOBUS_VOTE = 31
 };
 
 #define AP_TO_LPM_MSG_NUM           2
@@ -251,6 +276,11 @@ int hisi_regulator_freq_autodown_clk(int regulator_id, u32 flag)
 		ret = hisi_freq_autodown_clk_set("venc2bus", flag);
 		break;
 #endif
+#if defined CONFIG_BALT_IP_PLATFORM
+	case IVP1_ID:
+		ret = hisi_freq_autodown_clk_set("ivp1bus", flag);
+		break;
+#endif
 	default:
 		pr_err("[%s]:Input regulator ID is not exist.", __func__);
 		return -1;
@@ -260,11 +290,44 @@ int hisi_regulator_freq_autodown_clk(int regulator_id, u32 flag)
 }
 #endif
 
+static int aod_check_bus_pwstat_vote(struct hisi_regulator_ip *sreg)
+{
+	int ret = 0;
+	unsigned int val = 0;
+	val = readl(sreg->sctrl_reg + sreg->aod_sc_offset);
+	switch(sreg->regulator_id) {
+	case VIVOBUS_ID:
+		if((0 == (val & BIT(TEEOS_VIVOBUS_VOTE))) && \
+			(0 == (val & BIT(IOMCU_VIVOBUS_VOTE))))
+			ret = 0;
+		else
+			ret = 1;
+		break;
+	case MEDIA1_SUBSYS_ID:
+		if((0 == (val & BIT(TEEOS_MEDIA1_VOTE))) && \
+			(0 == (val & BIT(IOMCU_MEDIA1_VOTE))) )
+			ret = 0;
+		else
+			ret = 1;
+		break;
+	case DSSSUBSYS_ID:
+		if(0 == (val & BIT(IOMCU_DSS_VOTE)))
+			ret = 0;
+		else
+			ret = 1;
+		break;
+	default:
+		break;
+	}
+	return ret;
+
+}
+
 /*Always on display need to vote media1,vivobus power on/off in sctrl*/
 static int aod_set_and_get_poweron_state(struct hisi_regulator_ip *sreg, u32 control_flag)
 {
 	int ret = 0;
-	int bit_mask = 0;
+	unsigned int bit_mask = 0;
 	unsigned int val = 0;
 	/*sctrl 0x438 : power state vote
 	*bit[0]:AP			media1 vote
@@ -273,6 +336,9 @@ static int aod_set_and_get_poweron_state(struct hisi_regulator_ip *sreg, u32 con
 	*bit[3]:Sensorhub	vivobus vote
 	*bit[4]:AP			dss vote
 	*bit[5]:Sensorhub	dss vote
+	* since phoenix, add bit30\bit31
+	*bit[30]: TEEOS	media1 vote
+	*bit[31]: TEEOS	vivobus vote
 	*/
 	if (VIVOBUS_ID == sreg->regulator_id) {
 		bit_mask = 2;
@@ -281,10 +347,9 @@ static int aod_set_and_get_poweron_state(struct hisi_regulator_ip *sreg, u32 con
 	}
 
 	val = readl(sreg->sctrl_reg + sreg->aod_sc_offset);
-	if (0 == (val & (BIT(SENSORHUB_AOD_EN)<<bit_mask)))
-		ret = 0;
-	else
-		ret = 1;
+
+	ret = aod_check_bus_pwstat_vote(sreg);
+
 	if (REGULATOR_ENABLE == control_flag) {
 		/* vote AP media/vivobus power up */
 		val |= (BIT(AP_AOD_EN)<<bit_mask);
@@ -297,20 +362,28 @@ static int aod_set_and_get_poweron_state(struct hisi_regulator_ip *sreg, u32 con
 	return ret;
 }
 
-static inline struct hisi_regulator_ip_core *rdev_to_ip_core(struct regulator_dev *dev)
+static inline struct hisi_regulator_ip_core *rdev_to_ip_core(struct regulator_dev *rdev)
 {
 	/* regulator_dev parent to->
 	 * hisi ip regulator platform device_dev parent to->
 	 * hisi ip pmic platform device_dev
 	 */
-	return dev_get_drvdata(rdev_get_dev(dev)->parent->parent);
+	struct device *dev = NULL;
+	if (!rdev) {
+		return NULL;
+	}
+	dev = rdev_get_dev(rdev);
+	if (!dev) {
+		return NULL;
+	}
+	return dev_get_drvdata(dev->parent->parent);
 }
 
 extern bool __clk_is_enabled(struct clk *clk);
 static struct clk *of_regulator_clk_get(struct device_node *node, int index)
 {
-	struct clk *clk;
-	const char *clk_name;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL;
 	int ret = 0;
 	IP_REGULATOR_DEBUG("<[%s]: begin>\n", __func__);
 	ret = of_property_read_string_index(node, "clock-names", index, &clk_name);
@@ -329,14 +402,13 @@ static struct clk *of_regulator_clk_get(struct device_node *node, int index)
 
 static int hisi_clock_state_check(struct hisi_regulator_ip *sreg)
 {
-	struct clk *temp_clock;
+	struct clk *temp_clock = NULL;
 	int i;
-	bool clock_flag;
+	bool clock_flag = false;
 	IP_REGULATOR_DEBUG("<[%s]: begin regulator_id=%d>\n", __func__, sreg->regulator_id);
 	for (i = 0; i < sreg->clock_num; i++) {
 		temp_clock = of_regulator_clk_get(sreg->np, i);
 		if (IS_ERR(temp_clock)) {
-			temp_clock = NULL;
 			return -EINVAL;
 		}
 		IP_REGULATOR_DEBUG("<[%s]: clock_name=%s>\n", __func__, __clk_get_name(temp_clock));
@@ -370,7 +442,7 @@ static int get_softreset_state(struct hisi_regulator_ip_core *pmic, struct hisi_
 	IP_REGULATOR_DEBUG("<[%s]: sreg->dss_boot_check[0]=0x%x>\n", __func__, sreg->dss_boot_check[0]);
 	IP_REGULATOR_DEBUG("<[%s]: regulator_id[%d] softreset_value=0x%x softreset_state3 = 0x%x>\n", __func__,
 					sreg->regulator_id, sreg->dss_boot_check[1], readl((sreg->dss_boot_check[0]+ pmic->regs)));
-	if (((sreg->dss_boot_check[1]) & (readl(sreg->dss_boot_check[0]+ pmic->regs))))
+	if (((sreg->dss_boot_check[1]) & ((unsigned int)readl(sreg->dss_boot_check[0]+ pmic->regs))))
 		ret = 0;/*softreset*/
 	else
 		ret = 1;/*unreset*/
@@ -398,14 +470,13 @@ static int get_softreset_state(struct hisi_regulator_ip_core *pmic, struct hisi_
 #endif
 static int hisi_ppll0_clock_rate_set(struct hisi_regulator_ip *sreg)
 {
-	struct clk *temp_clock;
+	struct clk *temp_clock = NULL;
 	int ret;
 
 	IP_REGULATOR_DEBUG("<[%s]: begin regulator_id=%d clock_num=%d>\n", __func__, sreg->regulator_id, sreg->clock_num);
 	/*0:get current clock*/
 	temp_clock = of_regulator_clk_get(sreg->np, 0);
 	if (IS_ERR(temp_clock)) {
-		temp_clock = NULL;
 		return -EINVAL;
 	}
 	IP_REGULATOR_DEBUG("<[%s]: clock_name=%s, clock_rate=0x%x>\n", __func__, __clk_get_name(temp_clock), sreg->ppll0_clock_rate_value);
@@ -417,13 +488,12 @@ static int hisi_ppll0_clock_rate_set(struct hisi_regulator_ip *sreg)
 	}
 	IP_REGULATOR_DEBUG("<[%s]: end regulator_id=%d>\n", __func__, sreg->regulator_id);
 	clk_put(temp_clock);
-	temp_clock = NULL;
 	return ret;
 }
 
 static int hisi_clock_rate_set(struct hisi_regulator_ip *sreg, int flag)
 {
-	struct clk *temp_clock;
+	struct clk *temp_clock = NULL;
 	int i;
 	int ret;
 
@@ -435,7 +505,6 @@ static int hisi_clock_rate_set(struct hisi_regulator_ip *sreg, int flag)
 			/*0:get current clock*/
 			temp_clock = of_regulator_clk_get(sreg->np, i);
 			if (IS_ERR(temp_clock)) {
-				temp_clock = NULL;
 				return -EINVAL;
 			}
 			IP_REGULATOR_DEBUG("<[%s]: clock_name=%s>\n", __func__, __clk_get_name(temp_clock));
@@ -461,7 +530,6 @@ static int hisi_clock_rate_set(struct hisi_regulator_ip *sreg, int flag)
 			/*0:get current clock*/
 			temp_clock = of_regulator_clk_get(sreg->np, i);
 			if (IS_ERR(temp_clock)) {
-				temp_clock = NULL;
 				return -EINVAL;
 			}
 			/*1:resume org clock rate*/
@@ -482,19 +550,17 @@ static int hisi_clock_rate_set(struct hisi_regulator_ip *sreg, int flag)
 	return 0;
 clk_err_put:
 	clk_put(temp_clock);
-	temp_clock = NULL;
 	return -EINVAL;
 }
 
 static int hisi_ip_clock_work(struct hisi_regulator_ip *sreg, int flag)
 {
-	struct clk *temp_clock;
+	struct clk *temp_clock = NULL;
 	int i, ret = 0;
 	IP_REGULATOR_DEBUG("<[%s]: begin regulator_id=%d, clock_num = %d>\n", __func__, sreg->regulator_id, sreg->clock_num);
 	for (i = 0; i < sreg->clock_num; i++) {
 		temp_clock = of_regulator_clk_get(sreg->np, i);
 		if (IS_ERR(temp_clock)) {
-			temp_clock = NULL;
 			return -EINVAL;
 		}
 		IP_REGULATOR_DEBUG("<[%s]: clock_name = %s>\n", __func__, __clk_get_name(temp_clock));
@@ -504,7 +570,6 @@ static int hisi_ip_clock_work(struct hisi_regulator_ip *sreg, int flag)
 			if (ret) {
 				pr_err("Regulator hi3630:regulator_id[%d],clock_id[%d] enable failed\r\n", sreg->regulator_id, i);
 				clk_put(temp_clock);
-				temp_clock = NULL;
 				return ret;
 			}
 			IP_REGULATOR_DEBUG("<[%s]: clock_name = %s enable>\n", __func__, __clk_get_name(temp_clock));
@@ -615,7 +680,6 @@ static int hisi_ip_to_atf_enabled(struct regulator_dev *dev)
 	struct hisi_regulator_ip_core *pmic = rdev_to_ip_core(dev);
 	int ret = 0;
 	int softreset_value;
-	int dss_poweron_flag = 0;
 
 	if (sreg == NULL || pmic == NULL) {
 		pr_err("[%s]regulator get  para is err!\n", __func__);
@@ -634,13 +698,12 @@ static int hisi_ip_to_atf_enabled(struct regulator_dev *dev)
 		IP_REGULATOR_DEBUG("<[%s]: regulator_id[%d] softreset_bit=%d>\n", __func__, sreg->regulator_id, softreset_value);
 		if (softreset_value) {
 			IP_REGULATOR_DEBUG("<[%s]: regulator_id[%d] was poweron in fastboot phase>\n", __func__, sreg->regulator_id);
-			dss_poweron_flag = 1;
 			sreg->regulator_enalbe_flag = 1;
 			return 0;
 		}
 	}
 
-	if ((1 == sreg->clock_set_rate_flag) && (dss_poweron_flag == 0)) {
+	if (1 == sreg->clock_set_rate_flag) {
 		ret  = hisi_clock_rate_set(sreg, 0);
 		if (ret)
 			pr_err("%s:hisi clock rate set fail!\n", __func__);
@@ -689,7 +752,7 @@ static int hisi_ip_to_atf_enabled(struct regulator_dev *dev)
 		enable_err_probe_by_name(sreg->noc_node_name);
 #endif
 
-	if ((1 == sreg->clock_set_rate_flag) && (dss_poweron_flag == 0)) {
+	if (1 == sreg->clock_set_rate_flag) {
 		ret = hisi_clock_rate_set(sreg, 1);
 		if (ret)
 			pr_err("%s:hisi clock rate set fail!\n", __func__);
@@ -760,7 +823,7 @@ static int hisi_ip_to_atf_disabled(struct regulator_dev *dev)
 static int hisi_ip_regulator_cmd_send(struct regulator_dev *dev, int cmd)
 {
 	struct hisi_regulator_ip *sreg = rdev_get_drvdata(dev);
-	rproc_msg_t ack_buffer[2] = {0};
+	rproc_msg_t ack_buffer[MBOX_CHAN_DATA_SIZE] = {0};
 	rproc_msg_t *tx_buffer = NULL;
 	int err = 0;
 
@@ -803,8 +866,17 @@ static int hisi_ip_to_lpm_is_enabled(struct regulator_dev *dev)
 
 static int hisi_ip_to_lpm_enabled(struct regulator_dev *dev)
 {
-	struct hisi_regulator_ip *sreg = rdev_get_drvdata(dev);
-	int ret = 0;
+	struct hisi_regulator_ip *sreg;
+	int ret;
+
+	if (!dev) {
+		return -ENODEV;
+	}
+	sreg = rdev_get_drvdata(dev);
+
+	if (!sreg) {
+		return -EINVAL;
+	}
 	IP_REGULATOR_DEBUG("\n<[%s]: begin regulator_id=%d>\n", __func__, sreg->regulator_id);
 
 	if (sreg->regulator_fake) {
@@ -829,9 +901,17 @@ static int hisi_ip_to_lpm_enabled(struct regulator_dev *dev)
 
 static int hisi_ip_to_lpm_disabled(struct regulator_dev *dev)
 {
-	struct hisi_regulator_ip *sreg = rdev_get_drvdata(dev);
-	int ret = 0;
+	struct hisi_regulator_ip *sreg;
+	int ret;
 
+	if (!dev) {
+		return -ENODEV;
+	}
+	sreg = rdev_get_drvdata(dev);
+
+	if (!sreg) {
+		return -EINVAL;
+	}
 	IP_REGULATOR_DEBUG("\n<[%s]: begin regulator_id=%d>\n", __func__, sreg->regulator_id);
 
 	if (sreg->regulator_fake) {
@@ -1185,7 +1265,8 @@ static ssize_t dbg_control_vcc_set_value(struct file *filp, const char __user *b
 		return -EFAULT;
 	}
 
-	if (sscanf(tmp, "%d", &index)) {
+	tmp[127] = '\0';
+	if (sscanf_s(tmp, "%d", &index)) {
 		if (index == 0) {
 
 		} else if (index == 1) {
@@ -1221,18 +1302,18 @@ static int hisi_regulator_ip_probe(struct platform_device *pdev)
 {
 	struct device *dev = NULL;
 	struct device_node *np = NULL;
-	struct regulator_desc *rdesc;
-	struct regulator_dev *rdev;
+	struct regulator_desc *rdesc = NULL;
+	struct regulator_dev *rdev = NULL;
 	struct hisi_regulator_ip *sreg = NULL;
-	struct regulator_init_data *initdata;
+	struct regulator_init_data *initdata = NULL;
 	struct regulator_config config = { };
-	const struct of_device_id *match;
+	const struct of_device_id *match = NULL;
 	const struct hisi_regulator_ip *temp = NULL;
 	int ret = 0;
 	static int regulator_flag;
 	const char *supplyname = NULL;
 #ifdef CONFIG_HISI_PMIC_DEBUG
-	struct dentry *d;
+	struct dentry *d = NULL;
 #endif
 
 	if (pdev == NULL) {
@@ -1333,11 +1414,23 @@ hisi_ip_probe_end:
 
 static int hisi_regulator_ip_remove(struct platform_device *pdev)
 {
-	struct regulator_dev *rdev = platform_get_drvdata(pdev);
-	struct hisi_regulator_ip *sreg = rdev_get_drvdata(rdev);
+	struct regulator_dev *rdev = NULL;
+	struct hisi_regulator_ip *sreg = NULL;
 
+	if (!pdev) {
+		return -ENODEV;
+	}
+	rdev = platform_get_drvdata(pdev);
+
+	if (!rdev) {
+		return -ENODEV;
+	}
+	sreg = rdev_get_drvdata(rdev);
 
 	regulator_unregister(rdev);
+	if (!sreg) {
+		return -EINVAL;
+	}
 	/* TODO: should i worry about that? devm_kzalloc */
 	if (sreg->rdesc.volt_table)
 		devm_kfree(&pdev->dev, (unsigned int *)sreg->rdesc.volt_table);

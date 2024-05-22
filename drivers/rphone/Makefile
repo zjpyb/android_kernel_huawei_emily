@@ -25,7 +25,12 @@ rF2fs-objs := rf2fs/rasf2fs.o rasbase/rasbase.o  rasbase/rasprobe.o rasbase/rasp
 obj-m += rmissile.o
 rmissile-objs := rmissile/rasmissile.o rasbase/rasbase.o  rasbase/rasproc.o
 
-ifneq ($(findstring $(CONFIG_ARCH_HISI)$(CONFIG_ARCH_QCOM), y y),)
+ifeq ($(CONFIG_HW_XCOLLIE), y)
+obj-m += rxcollie.o
+rxcollie-objs := rxcollie/rasxcollie.o rasbase/rasbase.o rasbase/rasprobe.o rasbase/rasproc.o
+endif
+
+ifeq ($(CONFIG_ARCH_HISI), y)
 obj-m += rFb.o
 rFb-objs := rfb/rasfb.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
 endif

@@ -35,6 +35,7 @@
 #include <linux/mmc/card.h>
 #include <soc_pmctrl_interface.h>
 #include <linux/regulator/consumer.h>
+#include <linux/hisi/rpmb.h>
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sdio.h>
@@ -204,7 +205,7 @@ static void sdhci_of_arasan_hardware_reset(struct sdhci_host *host, unsigned cha
 		writel(emmc0_rst, pericrg_base + PERI_CRG_RSTDIS4);
 		loop_count = 0xF;
 		do {
-			if (!(emmc0_rst & (unsigned)readl(pericrg_base + PERI_CRG_RSTSTAT4))) {
+			if (!(emmc0_rst & readl(pericrg_base + PERI_CRG_RSTSTAT4))) {
 				break;
 			}
 			loop_count--;
@@ -577,7 +578,7 @@ static void sdhci_tuning_clear_flags(struct sdhci_host *host)
 	sdhci_arasan->tuning_sample_flag = (unsigned long)0;
 }
 
-static void sdhci_tuning_set_flags(struct sdhci_host *host, unsigned int sample, int ok)
+static void sdhci_tuning_set_flags(struct sdhci_host *host, int sample, int ok)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_arasan_data *sdhci_arasan = pltfm_host->priv;
@@ -964,7 +965,7 @@ static int sdhci_arasan_select_drive_strength(struct sdhci_host *host,
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_arasan_data *sdhci_arasan = pltfm_host->priv;
 
-	unsigned int drive_strength = sdhci_arasan->dev_drv_strength;
+	int drive_strength = sdhci_arasan->dev_drv_strength;
 
 	if ((mmc_driver_type_mask(drive_strength) & card_drv) == 0)
 		drive_strength = EXT_CSD_DRVIER_STRENGTH_50; /* drivers use Default 50-ohm */
@@ -1234,7 +1235,7 @@ void sdhci_cmdq_dsm_set_host_status(struct sdhci_host *host, u32 error_bits)
 
 void sdhci_cmdq_dsm_work(struct cmdq_host *cq_host, bool dsm)
 {
-	struct mmc_card *card;
+	struct mmc_card *card = NULL;
 	struct sdhci_host *host = mmc_priv(cq_host->mmc);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_arasan_data *sdhci_arasan = pltfm_host->priv;
@@ -1261,7 +1262,7 @@ void sdhci_cmdq_dsm_work(struct cmdq_host *cq_host, bool dsm)
 
 static void sdhci_dsm_work(struct work_struct *work)
 {
-	struct mmc_card *card;
+	struct mmc_card *card = NULL;
 	struct sdhci_arasan_data *sdhci_arasan = container_of(work, struct sdhci_arasan_data, dsm_work);
 	struct sdhci_host *host = (struct sdhci_host *)sdhci_arasan->data;
 	u32 error_bits, opcode;
@@ -1348,8 +1349,8 @@ static int sdhci_arasan_probe(struct platform_device *pdev)
 /*lint -save -e593*/
 	int ret;
 	struct sdhci_host *host = NULL;
-	struct sdhci_pltfm_host *pltfm_host;
-	struct sdhci_arasan_data *sdhci_arasan;
+	struct sdhci_pltfm_host *pltfm_host = NULL;
+	struct sdhci_arasan_data *sdhci_arasan = NULL;
 	struct device_node *np = pdev->dev.of_node;
 	static const char *const hi_mci0 = "hi_mci.0";
 	u32 emmc0_rst_bit = 0;
@@ -1529,6 +1530,10 @@ static int sdhci_arasan_probe(struct platform_device *pdev)
 #ifdef CONFIG_HISI_BOOTDEVICE
 	if (get_bootdevice_type() == BOOT_DEVICE_EMMC)
 		set_bootdevice_name(&pdev->dev);
+#endif
+
+#ifdef CONFIG_HISI_RPMB_MMC
+	(void)rpmb_mmc_init();
 #endif
 
 #ifdef CONFIG_HUAWEI_EMMC_DSM

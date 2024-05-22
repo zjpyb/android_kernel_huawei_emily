@@ -51,8 +51,8 @@ static ssize_t fg_uids_write(struct file *file, const char __user *buf,
                         size_t count, loff_t *ppos)
 {
     char buffer[MAX_ARRAY_LENGTH];
-    char* cur;
-    char* p;
+    char* cur = NULL;
+    char* pos = NULL;
     int err = 0;
     int i = 0;
 
@@ -66,13 +66,13 @@ static ssize_t fg_uids_write(struct file *file, const char __user *buf,
     cur = buffer;
 
     spin_lock(&(netinfo.fg_lock));
-    p = strsep(&cur, ";");
+    pos = strsep(&cur, ";");
     for (i = 0; i < MAX_UID_NUM; i++) {
-        if (p == NULL) {
+        if (pos == NULL) {
             break;
         }
-        netinfo.fg_uids[i] = simple_strtol(p, NULL, 0);
-        p = strsep(&cur, ";");
+        netinfo.fg_uids[i] = simple_strtol(pos, NULL, 0);
+        pos = strsep(&cur, ";");
     }
     netinfo.fg_num = i;
     for (i = 0; i < MAX_FG_NET_STAT; i++) {
@@ -108,8 +108,8 @@ static ssize_t bg_uids_write(struct file *file, const char __user *buf,
                         size_t count, loff_t *ppos)
 {
     char buffer[MAX_ARRAY_LENGTH];
-    char* cur;
-    char* p;
+    char* cur = NULL;
+    char* pos = NULL;
 
     int err = 0;
     int i = 0;
@@ -124,13 +124,13 @@ static ssize_t bg_uids_write(struct file *file, const char __user *buf,
     cur = buffer;
 
     spin_lock(&(netinfo.bg_lock));
-    p = strsep(&cur, ";");
+    pos = strsep(&cur, ";");
     for (i = 0; i < MAX_UID_NUM; i++) {
-        if (p == NULL) {
+        if (pos == NULL) {
             break;
         }
-        netinfo.bg_uids[i] = simple_strtol(p, NULL, 0);
-        p = strsep(&cur, ";");
+        netinfo.bg_uids[i] = simple_strtol(pos, NULL, 0);
+        pos = strsep(&cur, ";");
     }
     netinfo.bg_num = i;
 
@@ -149,8 +149,8 @@ static ssize_t aware_ctrl_write(struct file *file, const char __user *buf,
                         size_t count, loff_t *ppos)
 {
     int err = 0;
-    char* cur;
-    char* pos;
+    char* cur = NULL;
+    char* pos = NULL;
     char buffer[MAX_ARRAY_LENGTH];
     int new_limit_ratio = 100;
     int new_package_ratio = 100;

@@ -12,8 +12,10 @@
 */
 
 #include "hisi_fb.h"
+#if defined(CONFIG_LCDKIT_DRIVER)
 #include "lcdkit_fb_util.h"
 #include "lcdkit_panel.h"
+#endif
 /*
 ** for debug, S_IRUGO
 ** /sys/module/hisifb/parameters
@@ -22,6 +24,8 @@
 unsigned hisi_fb_msg_level = 7;
 
 int g_debug_mmu_error = 0;
+
+int g_debug_underflow_error = 1;
 
 int g_debug_ldi_underflow = 0;
 
@@ -41,7 +45,7 @@ int g_debug_ovl_online_composer_hold = 0;
 
 int g_debug_ovl_online_composer_return = 0;
 
-int g_debug_ovl_online_composer_timediff = 0x0;
+uint32_t g_debug_ovl_online_composer_timediff = 0x0;
 
 int g_debug_ovl_online_composer_time_threshold = 60000;  //us
 
@@ -51,7 +55,7 @@ int g_debug_ovl_block_composer = 0;
 
 int g_debug_ovl_offline_composer_hold = 0;
 
-int g_debug_ovl_offline_composer_timediff = 0;
+uint32_t g_debug_ovl_offline_composer_timediff = 0;
 
 int g_debug_ovl_offline_composer_time_threshold = 12000;  //us
 
@@ -89,7 +93,11 @@ int g_debug_dirty_region_updt = 0;
 
 int g_enable_mmbuf_debug = 0;
 
+#if defined(CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V330) || defined(CONFIG_HISI_FB_V510)
 int g_ldi_data_gate_en = 1;
+#else
+int g_ldi_data_gate_en = 0;
+#endif
 
 int g_debug_ovl_credit_step = 0;
 
@@ -121,8 +129,11 @@ int g_dss_effect_sharpness2D_en = 0;
 
 int g_dss_effect_acm_ce_en = 1;
 
+int g_debug_online_play_bypass = 0;
+
 //lint +e305, +e514, +e84, +e21, +e846, +e778, +e866, +e708
 
+#if defined (CONFIG_HUAWEI_DSM)
 
 static struct dsm_dev dsm_lcd = {
 	.name = "dsm_lcd",
@@ -209,10 +220,36 @@ void dss_underflow_debug_func(struct work_struct *work)
 		}
 	}
 }
+#endif
+
+void hisi_dss_underflow_dump_cmdlist(struct hisi_fb_data_type *hisifd,
+	dss_overlay_t *pov_req_prev, dss_overlay_t *pov_req_prev_prev)
+{
+	uint32_t cmdlist_idxs_prev = 0;
+	uint32_t cmdlist_idxs_prev_prev = 0;
+
+	if ((g_debug_underflow_error) && (g_underflow_count < DSS_UNDERFLOW_COUNT)) {
+		if (pov_req_prev_prev != NULL) {
+			(void)hisi_cmdlist_get_cmdlist_idxs(pov_req_prev_prev, &cmdlist_idxs_prev_prev, NULL);
+			dumpDssOverlay(hisifd, pov_req_prev_prev);
+			hisi_cmdlist_dump_all_node(hisifd, NULL, cmdlist_idxs_prev_prev);
+		}
+
+		if (pov_req_prev != NULL) {
+			(void)hisi_cmdlist_get_cmdlist_idxs(pov_req_prev, &cmdlist_idxs_prev, NULL);
+			dumpDssOverlay(hisifd, pov_req_prev);
+			hisi_cmdlist_dump_all_node(hisifd, NULL, cmdlist_idxs_prev);
+		}
+		g_underflow_count++;
+	}
+}
 
 void hisifb_debug_register(struct platform_device *pdev)
 {
+#if defined (CONFIG_HUAWEI_DSM)
+#if defined(CONFIG_LCDKIT_DRIVER)
 	struct lcdkit_panel_data *panel;
+#endif
 	struct hisi_fb_data_type *hisifd = NULL;
 
 	if (NULL == pdev) {
@@ -227,6 +264,7 @@ void hisifb_debug_register(struct platform_device *pdev)
 
 	// dsm lcd
 	if(!lcd_dclient) {
+#if defined(CONFIG_LCDKIT_DRIVER)
         if (get_lcdkit_support() && PRIMARY_PANEL_IDX == hisifd->index) {
             panel = lcdkit_get_panel_info();
             if (panel && panel->panel_infos.panel_model) {
@@ -235,6 +273,7 @@ void hisifb_debug_register(struct platform_device *pdev)
                 dsm_lcd.module_name = panel->panel_infos.panel_name;
             }
         }
+#endif
 
 		lcd_dclient = dsm_register_client(&dsm_lcd);
 	}
@@ -246,10 +285,12 @@ void hisifb_debug_register(struct platform_device *pdev)
 	} else {
 		INIT_WORK(&hisifd->dss_underflow_debug_work, dss_underflow_debug_func);
 	}
+#endif
 }
 
 void hisifb_debug_unregister(struct platform_device *pdev)
 {
+#if defined (CONFIG_HUAWEI_DSM)
 	struct hisi_fb_data_type *hisifd = NULL;
 
 	if (NULL == pdev) {
@@ -261,4 +302,5 @@ void hisifb_debug_unregister(struct platform_device *pdev)
 		dev_err(&pdev->dev, "hisifd is NULL");
 		return;
 	}
+#endif
 }

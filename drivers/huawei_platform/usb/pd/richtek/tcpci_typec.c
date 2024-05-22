@@ -23,7 +23,6 @@
 #include <huawei_platform/usb/pd/richtek/tcpci_timer.h>
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
 #include <huawei_platform/usb/pd/richtek/pd_dpm_core.h>
-#include <huawei_platform/usb/hw_pd_dev.h>
 #endif
 #include <huawei_platform/usb/pd/richtek/tcpm.h>
 #include <huawei_platform/power/huawei_charger.h>
@@ -31,7 +30,7 @@
 #include <huawei_platform/usb/hw_usb.h>
 
 #ifdef CONFIG_POGO_PIN
-#include <huawei_platform/usb/huawei_pogopin.h>
+#include <huawei_platform/usb/hw_pogopin.h>
 #endif
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
 extern int support_smart_holder;
@@ -51,6 +50,10 @@ extern int support_smart_holder;
 #define RICHTEK_PD_COMPLIANCE_DIRECT_CHARGE	/* For Direct Charge */
 
 static struct tcpc_device *g_tcpc = NULL;
+
+#ifdef CONFIG_POGO_PIN
+static bool typec_is_cc_open_state(struct tcpc_device *tcpc_dev);
+#endif /* CONFIG_POGO_PIN */
 
 enum TYPEC_WAIT_PS_STATE {
 	TYPEC_WAIT_PS_DISABLE = 0,
@@ -307,8 +310,7 @@ static const char *const typec_attach_name[] = {
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC
 	"CUSTOM_SRC",
 #endif	/* CONFIG_TYPEC_CAP_CUSTOM_SRC */
-	"ATTACHED_VBUS_ONLY",
-	"UNATTACHED_VBUS_ONLY",
+
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
 	"CUSTOM_SRC2",
 #endif  /* CONFIG_TYPEC_CAP_CUSTOM_SRC2 */
@@ -543,6 +545,9 @@ static inline void typec_unattached_cc_entry(struct tcpc_device *tcpc_dev)
 		TYPEC_NEW_STATE(typec_unattached_snk);
 		tcpci_set_cc(tcpc_dev, TYPEC_CC_RD);
 		typec_enable_low_power_mode(tcpc_dev, TYPEC_CC_RD);
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+		tcpc_dev->no_rpsrc_state = 0;
+#endif /* CONFIG_TYPEC_CAP_NORP_SRC */
 		break;
 	case TYPEC_ROLE_SRC:
 		TYPEC_NEW_STATE(typec_unattached_src);
@@ -561,6 +566,9 @@ static inline void typec_unattached_cc_entry(struct tcpc_device *tcpc_dev)
 			TYPEC_NEW_STATE(typec_unattached_snk);
 			tcpci_set_cc(tcpc_dev, TYPEC_CC_DRP);
 			typec_enable_low_power_mode(tcpc_dev, TYPEC_CC_DRP);
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+			tcpc_dev->no_rpsrc_state = 0;
+#endif /* CONFIG_TYPEC_CAP_NORP_SRC */
 			break;
 		}
 		break;
@@ -707,7 +715,7 @@ static inline int cust2_src_polling_rx(struct tcpc_device *tcpc_dev)
 		mdelay(2);
 		tcpci_get_alert_status(tcpc_dev, &alert);
 		if(alert & TCPC_REG_ALERT_RX_STATUS) {
-			pd_msg_t *pd_msg;
+			pd_msg_t *pd_msg = NULL;
 			enum tcpm_transmit_type type;
 			pd_event_t pd_event;
 
@@ -763,17 +771,6 @@ static inline void typec_custom_src_attached_entry(
 
 			TYPEC_DBG("Rp 1.5A or 3A\r\n");
 
-			if (pd_dpm_smart_holder_without_emark()) {
-				TYPEC_NEW_STATE(typec_attached_custom_src2);
-				tcpc_dev->typec_attach_new =
-				TYPEC_ATTACHED_CUSTOM_SRC2;
-				typec_state.new_state =
-				TYPEC_ATTACHED_CUSTOM_SRC2;
-				pd_dpm_handle_pe_event(
-				PD_DPM_PE_EVT_TYPEC_STATE, &typec_state);
-				TYPEC_DBG("without emark\n");
-				return;
-			}
 			/* 1. treat cc1 as cc */
 			tcpci_set_polarity(tcpc_dev, 1);
 			/* 2. configure tx/rx cap for sop' message */
@@ -823,7 +820,7 @@ static inline uint8_t typec_get_sink_dbg_acc_rp_level(
 static inline void typec_sink_dbg_acc_attached_entry(
 	struct tcpc_device *tcpc_dev)
 {
-	bool polarity;
+	bool polarity = false;
 	uint8_t rp_level;
 
 	int cc1 = typec_get_cc1();
@@ -1439,7 +1436,7 @@ static inline bool typec_handle_cc_changed_entry(struct tcpc_device *tcpc_dev)
 
 static inline void typec_attach_wait_entry(struct tcpc_device *tcpc_dev)
 {
-	bool as_sink;
+	bool as_sink = false;
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	bool pd_en = tcpc_dev->pd_port.pd_prev_connected;
@@ -1707,14 +1704,16 @@ int tcpc_typec_handle_cc_change(struct tcpc_device *tcpc_dev)
 
 	TYPEC_INFO("[CC_Alert] %d/%d\r\n", typec_get_cc1(), typec_get_cc2());
 
+	pd_dpm_cc_dynamic_protect();
+
 	typec_disable_low_power_mode(tcpc_dev);
 
 #ifdef CONFIG_POGO_PIN
-	if (is_pogopin_support()){
+	if (pogopin_is_support()) {
 		if (typec_is_cc_open_state(tcpc_dev))
 			return 0;
 	}
-#endif
+#endif /* CONFIG_POGO_PIN */
 
 #ifdef CONFIG_TYPEC_CAP_A2C_C2C
 	if ((rp_present == 0) &&
@@ -1963,7 +1962,7 @@ int tcpc_typec_handle_timeout(struct tcpc_device *tcpc_dev, uint32_t timer_id)
 		tcpc_disable_timer(tcpc_dev, timer_id);
 
 #ifdef CONFIG_POGO_PIN
-	if (is_pogopin_support()) {
+	if (pogopin_is_support()) {
 		if (timer_id == TYPEC_TIMER_ERROR_RECOVERY)
 			return typec_handle_error_recovery_timeout(tcpc_dev);
 		else if (timer_id == TYPEC_RT_TIMER_LEGACY)
@@ -1973,7 +1972,7 @@ int tcpc_typec_handle_timeout(struct tcpc_device *tcpc_dev, uint32_t timer_id)
 			return 0;
 		}
 	}
-#endif
+#endif /* CONFIG_POGO_PIN */
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	if (tcpc_dev->pd_wait_pr_swap_complete) {
@@ -2444,6 +2443,24 @@ static int typec_init_power_off_charge(struct tcpc_device *tcpc_dev)
 	return 1;
 }
 #endif	/* CONFIG_TYPEC_CAP_POWER_OFF_CHARGE */
+
+static void tcpc_pd_dpm_reinit_chip(void *client)
+{
+	g_tcpc = (struct tcpc_device*)client;
+	if (!g_tcpc) {
+		hwlog_err("%s invalid g_tcpc\n", __func__);
+		return;
+	}
+
+	if (tcpci_is_reg_default(g_tcpc)) {
+		hwlog_info("%s set default\n", __func__);
+		tcpci_init(g_tcpc, false);
+		tcpci_lock_typec(g_tcpc);
+		tcpc_typec_init(g_tcpc, g_tcpc->desc.role_def + 1);
+		tcpci_unlock_typec(g_tcpc);
+	}
+}
+
 static void tcpc_pd_dpm_hard_reset(void* client)
 {
 	int ret;
@@ -2469,7 +2486,7 @@ static bool tcpc_pd_dpm_get_hw_dock_svid_exist(void* client)
 
 static void tcpc_pd_dpm_set_voltage(void* client, int set_voltage)
 {
-	bool overload;
+	bool overload = false;
 	int vol_mv = 0;
 	int cur_ma = 0;
 	int max_uw = 0;
@@ -2544,6 +2561,8 @@ static void tcpc_pd_dpm_detect_emark_cable(void *client)
 	tcpc_dev->pd_port.vswap_ret = 0;
 #endif /* CONFIG_USB_PD_RESET_CABLE */
 	tcpm_data_role_swap(tcpc_dev);
+	tcpc_dev->pd_port.dpm_flags |= DPM_FLAGS_CHECK_CABLE_ID_DFP;
+
 	return;
 }
 
@@ -2556,6 +2575,7 @@ static struct pd_dpm_ops tcpc_device_pd_dpm_ops = {
 	.pd_dpm_get_cc_state = rt1711h_get_cc_state,
 	.pd_dpm_disable_pd = tcpc_pd_dpm_disable_pd,
 	.pd_dpm_detect_emark_cable = tcpc_pd_dpm_detect_emark_cable,
+	.pd_dpm_reinit_chip = tcpc_pd_dpm_reinit_chip,
 };
 int tcpc_typec_init(struct tcpc_device *tcpc_dev, uint8_t typec_role)
 {
@@ -2649,7 +2669,7 @@ int tcpc_typec_enable(struct tcpc_device *tcpc_dev)
 
 	return 0;
 }
-#endif
+#endif /* CONFIG_POGO_PIN */
 
 void  tcpc_typec_deinit(struct tcpc_device *tcpc_dev)
 {

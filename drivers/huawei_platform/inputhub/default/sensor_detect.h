@@ -1,81 +1,105 @@
 /*
- * Copyright (C) huawei company
+ * drivers/inputhub/sensor_detect.h
  *
- * This	program	is free	software; you can redistribute it and/or modify
- * it under	the	terms of the GNU General Public	License	version	2 as
- * published by	the	Free Software Foundation.
-
-  * Filename:  sensor_detect.h
+ * sensors detection header file
  *
- * Discription: some functions of sensorhub power
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
- * Owner:DIVS_SENSORHUB
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
 #ifndef __SENSOR_DETECT_H
 #define __SENSOR_DETECT_H
 
 #include "protocol.h"
 
-#define MAX_CHIP_INFO_LEN (50)
-#define PDC_SIZE		27
-#define MAX_STR_SIZE	1024
-#define MAX_PHONE_COLOR_NUM  15
-#define CYPRESS_CHIPS		2
-#define SENSOR_PLATFORM_EXTEND_DATA_SIZE    50
-#define SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE    66
-#define BH1745_MAX_ThRESHOLD_NUM    23
-#define BH1745_MIN_ThRESHOLD_NUM    24
+#define AOD_FEATURE_NUM 2
 
-#define APDS9251_MAX_ThRESHOLD_NUM    17
-#define APDS9251_MIN_ThRESHOLD_NUM    18
+#define MAX_CHIP_INFO_LEN 50
+#define PDC_SIZE 27
+#define MAX_STR_SIZE 1024
+#define MAX_PHONE_COLOR_NUM 15
+#define CYPRESS_CHIPS 2
+#define SENSOR_PLATFORM_EXTEND_DATA_SIZE 50
+#define SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE 68
+#define BH1745_MAX_ThRESHOLD_NUM 23
+#define BH1745_MIN_ThRESHOLD_NUM 24
 
-#define TMD3725_MAX_ThRESHOLD_NUM    27
-#define TMD3725_MIN_ThRESHOLD_NUM    28
+#define APDS9251_MAX_ThRESHOLD_NUM 17
+#define APDS9251_MIN_ThRESHOLD_NUM 18
 
-#define LTR582_MAX_ThRESHOLD_NUM    24
-#define LTR582_MIN_ThRESHOLD_NUM    25
+#define TMD3725_MAX_ThRESHOLD_NUM 27
+#define TMD3725_MIN_ThRESHOLD_NUM 28
 
-#define LTR578_APDS9922_MAX_ThRESHOLD_NUM    8
-#define LTR578_APDS9922_MIN_ThRESHOLD_NUM    9
+#define LTR582_MAX_ThRESHOLD_NUM 24
+#define LTR582_MIN_ThRESHOLD_NUM 25
 
-#define RPR531_MAX_ThRESHOLD_NUM    14
-#define RPR531_MIN_ThRESHOLD_NUM    15
+#define LTR578_APDS9922_MAX_ThRESHOLD_NUM 8
+#define LTR578_APDS9922_MIN_ThRESHOLD_NUM 9
 
-#define TMD2745_MAX_ThRESHOLD_NUM    8
-#define TMD2745_MIN_ThRESHOLD_NUM    9
+#define RPR531_MAX_ThRESHOLD_NUM 14
+#define RPR531_MIN_ThRESHOLD_NUM 15
 
-#define APDS9999_MAX_ThRESHOLD_NUM    22
-#define APDS9999_MIN_ThRESHOLD_NUM    23
+#define TMD2745_MAX_ThRESHOLD_NUM 8
+#define TMD2745_MIN_ThRESHOLD_NUM 9
 
-#define TMD3702_MAX_ThRESHOLD_NUM    27
-#define TMD3702_MIN_ThRESHOLD_NUM    28
+#define APDS9999_MAX_ThRESHOLD_NUM 22
+#define APDS9999_MIN_ThRESHOLD_NUM 23
 
-#define TCS3701_MAX_ThRESHOLD_NUM    30
-#define TCS3701_MIN_ThRESHOLD_NUM    31
+#define TMD3702_MAX_ThRESHOLD_NUM 27
+#define TMD3702_MIN_ThRESHOLD_NUM 28
 
-#define VCNL36658_MAX_ThRESHOLD_NUM    28
-#define VCNL36658_MIN_ThRESHOLD_NUM    29
+#define TCS3707_MAX_THRESHOLD_NUM 27
+#define TCS3707_MIN_THRESHOLD_NUM 28
+#define TCS3701_MAX_ThRESHOLD_NUM 30
+#define TCS3701_MIN_ThRESHOLD_NUM 31
 
-#define TP_COORDINATE_THRESHOLD      (4)
+#define VCNL36658_MAX_ThRESHOLD_NUM 28
+#define VCNL36658_MIN_ThRESHOLD_NUM 29
 
-#define TSL2591_MAX_ThRESHOLD_NUM    13
-#define TSL2591_MIN_ThRESHOLD_NUM    14
+#define TP_COORDINATE_THRESHOLD 4
 
-#define BH1726_MAX_ThRESHOLD_NUM    14
-#define BH1726_MIN_ThRESHOLD_NUM    15
+#define TSL2591_MAX_ThRESHOLD_NUM 15
+#define TSL2591_MIN_ThRESHOLD_NUM 16
+
+#define BH1726_MAX_ThRESHOLD_NUM 14
+#define BH1726_MIN_ThRESHOLD_NUM 15
 
 #define BH1749_MAX_ThRESHOLD_NUM 25
 #define BH1749_MIN_ThRESHOLD_NUM 26
 
-#define VD6281_MAX_ThRESHOLD_NUM    6
-#define VD6281_MIN_ThRESHOLD_NUM    7
+#define VD6281_MAX_ThRESHOLD_NUM 6
+#define VD6281_MIN_ThRESHOLD_NUM 7
 
-#define KB_DEFAULT_UART_NUM           (8)
-#define KB_DEFAULT_DETECT_ADC_NUM     (7)
-#define KB_DEFAULT_DISCONNECT_ADC_VOL (1700)
+#define LTR2594_MAX_ThRESHOLD_NUM 32
+#define LTR2594_MIN_ThRESHOLD_NUM 33
 
-#define CAP_MODEM_THRESHOLE_LEN        8
-#define CAP_CALIBRATE_THRESHOLE_LEN    4
+#define STK3638_MAX_THRESHOLD_NUM 28
+#define STK3638_MIN_THRESHOLD_NUM 29
+
+#define KB_DEFAULT_UART_NUM 8
+#define KB_DEFAULT_DETECT_ADC_NUM 7
+#define KB_DEFAULT_DISCONNECT_ADC_VOL 1700
+
+#define CAP_MODEM_THRESHOLE_LEN 8
+#define CAP_CALIBRATE_THRESHOLE_LEN 4
+
+#define CAP_CHIPID_DATA_LENGTH 2
+
+#define THP_MAX_PROJECT_ID_LENGTH 11
+
+#define ACC_SENSOR_DEFAULT_ID "1"
+#define GYR_SENSOR_DEFAULT_ID "4"
+#define MAG_SENSOR_DEFAULT_ID "2"
+#define CAP_SENSOR_DEFAULT_ID "65541"
 
 typedef uint16_t GPIO_NUM_TYPE;
 
@@ -105,19 +129,21 @@ typedef enum {
 	MAG1,
 	CAP_PROX1,
 	KB,
+	MOTION,
+	THP,
+	IOMCU_MODEM,
 	SENSOR_MAX
-}SENSOR_DETECT_LIST;
+} SENSOR_DETECT_LIST;
 
-#define SENSOR_DETECT_RETRY           2
-typedef enum{
+#define SENSOR_DETECT_RETRY 2
+typedef enum {
 	BOOT_DETECT,
 	DETECT_RETRY,
 	BOOT_DETECT_END = DETECT_RETRY + SENSOR_DETECT_RETRY - 1,
 	REDETECT_LATER
-}DETECT_MODE;
+} DETECT_MODE;
 
-struct sleeve_detect_pare
-{
+struct sleeve_detect_pare {
 	unsigned int tp_color;
 	unsigned int sleeve_detect_threshhold;
 };
@@ -131,7 +157,7 @@ struct sensor_combo_cfg {
 		uint32_t i2c_address;
 		union SPI_CTRL ctrl;
 	};
-}__packed;
+} __packed;
 
 struct g_sensor_platform_data {
 	struct sensor_combo_cfg cfg;
@@ -238,6 +264,7 @@ struct ps_platform_data {
 	int pwave_screenon_value;
 	int threshold_screenon_value;
 	GPIO_NUM_TYPE gpio_int1;
+	GPIO_NUM_TYPE gpio_int1_sh;
 	uint16_t oily_max_near_pdata;
 	uint16_t max_oily_add_pdata;
 	uint16_t poll_interval;
@@ -247,16 +274,17 @@ struct ps_platform_data {
 	uint16_t ps_calib_20cm_threshold;
 	uint16_t ps_calib_5cm_threshold;
 	uint16_t ps_calib_3cm_threshold;
+	uint8_t need_reduce_interference;
 	uint8_t ps_pulse_count;        /* Pulse number for proximity */
-	uint8_t persistent;            /* consecutive Interrupt persistence*/
+	uint8_t persistent;            /* consecutive Interrupt persistence */
 	uint8_t ptime;                 /* Prox integration time */
-	uint8_t p_on;  //need to close oscillator
+	uint8_t p_on;                  /* need to close oscillator */
 	uint8_t ps_oily_threshold;
-	uint8_t wtime; //wait time (ms)
-	uint8_t pulse_len; //pulse length (us)
-	uint8_t pgain; //ps gain
-	uint8_t led_current; //mA
-	uint8_t prox_avg;// open filter or not
+	uint8_t wtime;                 /* wait time (ms) */
+	uint8_t pulse_len;             /* pulse length (us) */
+	uint8_t pgain;                 /* ps gain */
+	uint8_t led_current;           /* mA */
+	uint8_t prox_avg;              /* open filter or not */
 	uint8_t offset_max;
 	uint8_t offset_min;
 	uint8_t max_near_pdata_loop;
@@ -282,7 +310,6 @@ struct tof_platform_data {
 	int tof_calib_6cm_threshold;
 	int tof_calib_10cm_threshold;
 	int tof_calib_60cm_threshold;
-	//int offset;
 };
 
 struct handpress_platform_data {
@@ -296,70 +323,40 @@ struct handpress_platform_data {
 	uint8_t handpress_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
 };
 
-/*
-* sar platform data
-*/
-
-#define	STG_SUPPORTED_NUM	(3)
-#define	TO_MODEM_SUPPORTED_LEVEL_NUM	(8)
-#define	DEFAULT_THRESHOLD	(0xC8)
-#define	ADUX_REGS_NEED_INITIATED_NUM	(16)
-#define	SEMTECH_REGS_NEED_INITIATED_NUM	(12)
-#define	CALIBRATE_THRED_NUM  (4)
-
-
-
-struct adux_sar_data {
-	uint32_t init_reg_val[17];
-	uint16_t high_threshold;
-	uint16_t low_threshold;
-	uint16_t swap_flag[3];
-	uint16_t cal_fact_base[3];
-	uint16_t cal_offset[3];
-	uint16_t digi_offset[3];
-	uint16_t cap_prox_extend_data[2];//3
-};
-
-struct adux_sar_add_data_t{
-	uint16_t threshold_to_ap_stg[STG_SUPPORTED_NUM];
-	uint16_t threshold_to_modem_stg[STG_SUPPORTED_NUM*TO_MODEM_SUPPORTED_LEVEL_NUM];
-	uint16_t calibrate_thred[CALIBRATE_THRED_NUM];
-	uint8_t updata_offset;
-	uint8_t cdc_calue_threshold;
-};
-
-struct cypress_sar_data {
-	uint16_t threshold_to_ap;
-	uint16_t threshold_to_modem[8];
-};
+#define STG_SUPPORTED_NUM 3
+#define TO_MODEM_SUPPORTED_LEVEL_NUM 8
+#define DEFAULT_THRESHOLD 0xC8
+#define ADUX_REGS_NEED_INITIATED_NUM 16
+#define SEMTECH_REGS_NEED_INITIATED_NUM 12
+#define CALIBRATE_THRED_NUM 4
 
 struct semteck_sar_data {
 	uint16_t threshold_to_ap;
 	uint16_t phone_type;
-	uint16_t threshold_to_modem[8];
+	uint16_t threshold_to_modem[8]; /* default array length */
 	uint32_t init_reg_val[17];
 	uint8_t ph;
 	uint16_t calibrate_thred[4];
 };
+
 struct abov_sar_data {
 	uint16_t phone_type;
+	uint16_t abov_project_id;
 	uint16_t threshold_to_modem[CAP_MODEM_THRESHOLE_LEN];
 	uint8_t ph;
 	uint16_t calibrate_thred[CAP_CALIBRATE_THRESHOLE_LEN];
 };
+
 union sar_data {
-	struct cypress_sar_data cypress_data;
-	struct adux_sar_data	adux_data;
 	struct semteck_sar_data	semteck_data;
 	struct abov_sar_data abov_data;
-	//add the others here
+	/* add the others here */
 };
 
 /*
-*
-* calibrate_type: config by bit(0~7): 0-free 1-near 2-far other-reserve;
-* sar_datas: data for diffrent devices.
-*/
+ * calibrate_type: config by bit(0~7): 0-free 1-near 2-far other-reserve
+ * sar_datas: data for diffrent devices
+ */
 struct sar_platform_data {
 	struct sensor_combo_cfg cfg;
 	GPIO_NUM_TYPE gpio_int;
@@ -381,14 +378,14 @@ struct cap_prox_platform_data {
 	GPIO_NUM_TYPE gpio_int;
 	uint16_t poll_interval;
 	int  calibrate_type;
-	uint32_t init_reg_val[17];	/* init value */
+	uint32_t init_reg_val[17];        /* init value */
 	uint16_t high_threshold;
 	uint16_t low_threshold;
-	uint16_t swap_flag[3];   //0x06
-	uint16_t cal_fact_base[3];  //read:0x71  write:0x79
-	uint16_t cal_offset[3];  //0x09
-	uint16_t digi_offset[3]; //0x0a
-	uint16_t cap_prox_extend_data[2];//3 //3mm and 8mm threshold
+	uint16_t swap_flag[3];            /* 0x06 */
+	uint16_t cal_fact_base[3];        /* read:0x71  write:0x79 */
+	uint16_t cal_offset[3];           /* 0x09 */
+	uint16_t digi_offset[3];          /* 0x0a */
+	uint16_t cap_prox_extend_data[2]; /* 3, 3mm and 8mm threshold */
 };
 
 struct connectivity_platform_data {
@@ -400,6 +397,7 @@ struct connectivity_platform_data {
 	GPIO_NUM_TYPE gpio2_gps_ready_sh;
 	GPIO_NUM_TYPE gpio3_wakeup_gps_ap;
 	GPIO_NUM_TYPE gpio3_wakeup_gps_sh;
+	uint32_t i3c_frequency;
 };
 
 struct fingerprint_platform_data {
@@ -415,6 +413,7 @@ struct fingerprint_platform_data {
 	uint16_t poll_interval;
 	uint16_t tp_hover_support;
 };
+
 struct tp_ud_algo_config {
 	uint16_t move_area_x_min;
 	uint16_t move_area_x_max;
@@ -426,12 +425,50 @@ struct tp_ud_algo_config {
 	uint16_t finger_area_y_max;
 	uint16_t coor_scale;
 };
+
 struct tp_ud_platform_data {
 	struct sensor_combo_cfg cfg;
 	uint16_t reg;
 	GPIO_NUM_TYPE gpio_irq;
 	GPIO_NUM_TYPE gpio_irq_sh;
 	GPIO_NUM_TYPE gpio_cs;
+	uint16_t gpio_irq_pull_up_status;
+	uint16_t pressure_support;
+	uint16_t anti_forgery_support;
+	uint32_t ic_type;
+	uint32_t hover_enable;
+	uint32_t i2c_max_speed_hz;
+	uint32_t spi_max_speed_hz;
+	uint8_t spi_mode;
+	uint16_t fw_power_config_reg;
+	uint16_t fw_touch_data_reg;
+	uint16_t fw_touch_command_reg;
+	uint16_t fw_addr_3;
+	uint16_t fw_addr_4;
+	uint16_t fw_addr_5;
+	uint16_t fw_addr_6;
+	uint16_t fw_addr_7;
+	uint16_t tp_sensorhub_irq_flag;
+	uint16_t tp_sensor_spi_sync_cs_low_delay_us;
+	uint16_t soft_reset_support;
+	struct tp_ud_algo_config algo_conf;
+	uint16_t touch_report_restore_support;
+};
+
+struct thp_gesture_capability {
+	uint8_t support_fp_ud;
+	uint8_t support_virtual_key;
+	uint8_t support_double_click;
+	uint8_t support_hw_m_pen;
+};
+
+struct thp_platform_data {
+	struct sensor_combo_cfg cfg;
+	uint16_t reg;
+	GPIO_NUM_TYPE gpio_irq;
+	GPIO_NUM_TYPE gpio_irq_sh;
+	GPIO_NUM_TYPE gpio_cs;
+	uint16_t gpio_irq_pull_up_status;
 	uint16_t pressure_support;
 	uint16_t anti_forgery_support;
 	uint32_t ic_type;
@@ -450,6 +487,9 @@ struct tp_ud_platform_data {
 	uint16_t tp_sensorhub_irq_flag;
 	uint16_t tp_sensor_spi_sync_cs_low_delay_us;
 	struct tp_ud_algo_config algo_conf;
+	char project_id[THP_MAX_PROJECT_ID_LENGTH];
+	uint8_t shb_thp_log;
+	struct thp_gesture_capability gestures;
 };
 
 struct key_platform_data {
@@ -458,16 +498,25 @@ struct key_platform_data {
 	GPIO_NUM_TYPE gpio_key_int;
 	GPIO_NUM_TYPE gpio_key_int_sh;
 	uint16_t poll_interval;
-	uint8_t reserve[16];
+	uint8_t reserve[16];   /* 16 : default array length */
 };
 
-#define HUB_LRA_RATED_VOLTAGE               0x34
-#define HUB_LRA_OVERDRIVE_CLAMP_VOLTAGE     0x76
+#define HUB_LRA_RATED_VOLTAGE 0x34
+#define HUB_LRA_OVERDRIVE_CLAMP_VOLTAGE 0x76
 #define HUB_REAL_TIME_PLAYBACK_STRENGTH 0x66
 #define HUB_MAX_TIMEOUT 10000
 #define VIB_FAC_LRALVILTAGE 0x48
+#define VIB_RESET_GPIO_DELAY 5
 
-struct vibrator_paltform_data{
+#define SENSOR_COLD_LEVEL_COUNT   3
+
+enum vibrator_chip_type {
+	VIBRATOR_CHIP_UNKNOWN = 0,
+	VIBRATOR_CHIP_TFA9874 = 0x36,
+	VIBRATOR_CHIP_TAS2562 = 0x4E
+};
+
+struct vibrator_paltform_data {
 	struct sensor_combo_cfg cfg;
 	int gpio_enable;
 	int gpio_pwm;
@@ -478,7 +527,17 @@ struct vibrator_paltform_data{
 	char lra_overdriver_voltage;
 	char lra_rtp_strength;
 	char skip_lra_autocal;
+	int cold_level_count;
+	int cold_level[SENSOR_COLD_LEVEL_COUNT];
+	int battery_level[SENSOR_COLD_LEVEL_COUNT];
+	uint32_t chip_type;
+	GPIO_NUM_TYPE gpio_irq;
+	GPIO_NUM_TYPE gpio_reset;
+	uint8_t rst_value;
+	uint8_t reg_addr_bytes;
+	uint8_t reg_value_bytes;
 };
+
 struct magn_bracket_platform_data {
 	struct sensor_combo_cfg cfg;
 	int mag_x_change_lower;
@@ -488,16 +547,33 @@ struct magn_bracket_platform_data {
 	int mag_z_change_lower;
 	int mag_z_change_upper;
 };
+
+struct motion_platform_data {
+	uint8_t motion_horizontal_pickup_flag;
+};
+
 struct aod_platform_data {
 	struct sensor_combo_cfg cfg;
-	uint32_t phone_type;
+	uint32_t feature_set[AOD_FEATURE_NUM];
 };
+
+struct modem_platform_data {
+	struct sensor_combo_cfg cfg;
+	uint32_t mode;
+};
+
 struct rpc_platform_data {
 	uint16_t table[32];
 	uint16_t mask[32];
 	uint16_t default_value;
 	uint16_t mask_enable;
+	uint16_t sar_choice;
 };
+
+struct mag_platform_iron_data {
+	uint8_t pdc_data_far[PDC_SIZE];
+};
+
 struct kb_platform_data {
 	uint16_t uart_num;
 	uint16_t kb_detect_adc_num;
@@ -517,95 +593,101 @@ struct detect_word {
 };
 
 #define MAX_SENSOR_NAME_LENGTH 20
-struct sensor_detect_manager{
+struct sensor_detect_manager {
 	char sensor_name_str[MAX_SENSOR_NAME_LENGTH];
 	SENSOR_DETECT_LIST sensor_id;
 	uint8_t detect_result;
 	int tag;
 	const void *spara;
-    	int cfg_data_length;
+	int cfg_data_length;
 };
 
 #define MAX_REDETECT_NUM 100
-struct sensor_redetect_state{
+struct sensor_redetect_state {
 	uint8_t need_redetect_sensor;
 	uint8_t need_recovery;
 	uint8_t detect_fail_num;
 	uint8_t redetect_num;
 };
 
-struct sensorlist_info{
-	/**
+struct sensorlist_info {
+	/*
 	 * Name of this sensor.
 	 * All sensors of the same "type" must have a different "name".
 	 */
-	char     name[50];
+	char name[50];
 
-	/** vendor of the hardware part */
-	char     vendor[50];
-	/**
-	* version of the hardware part + driver. The value of this field
-	* must increase when the driver is updated in a way that changes the
-	* output of this sensor. This is important for fused sensors when the
-	* fusion algorithm is updated.
-	*/
-	int32_t             version;
+	/* vendor of the hardware part */
+	char vendor[50];
+	/*
+	 * version of the hardware part + driver. The value of this field
+	 * must increase when the driver is updated in a way that changes the
+	 * output of this sensor. This is important for fused sensors when the
+	 * fusion algorithm is updated.
+	 */
+	int32_t version;
 
-	/** maximum range of this sensor's value in SI units */
-	int32_t           maxRange;
+	/* maximum range of this sensor's value in SI units */
+	int32_t maxRange;
 
-	/** smallest difference between two values reported by this sensor */
-	int32_t           resolution;
+	/* smallest difference between two values reported by this sensor */
+	int32_t resolution;
 
-	/** rough estimate of this sensor's power consumption in mA */
-	int32_t           power;
+	/* rough estimate of this sensor's power consumption in mA */
+	int32_t power;
 
-	/**
-	* this value depends on the reporting mode:
-	*
-	* continuous: minimum sample period allowed in microseconds
-	* on-change : 0
-	* one-shot  :-1
-	* special   : 0, unless otherwise noted
-	*/
-	int32_t         minDelay;
+	/*
+	 * this value depends on the reporting mode:
+	 * continuous: minimum sample period allowed in microseconds
+	 * on-change : 0
+	 * one-shot  :-1
+	 * special   : 0, unless otherwise noted
+	 */
+	int32_t minDelay;
 
-	/**
-	* number of events reserved for this sensor in the batch mode FIFO.
-	* If there is a dedicated FIFO for this sensor, then this is the
-	* size of this FIFO. If the FIFO is shared with other sensors,
-	* this is the size reserved for that sensor and it can be zero.
-	*/
-	uint32_t        fifoReservedEventCount;
+	/*
+	 * number of events reserved for this sensor in the batch mode FIFO.
+	 * If there is a dedicated FIFO for this sensor, then this is the
+	 * size of this FIFO. If the FIFO is shared with other sensors,
+	 * this is the size reserved for that sensor and it can be zero.
+	 */
+	uint32_t fifoReservedEventCount;
 
-	/**
-	* maximum number of events of this sensor that could be batched.
-	* This is especially relevant when the FIFO is shared between
-	* several sensors; this value is then set to the size of that FIFO.
-	*/
-	uint32_t        fifoMaxEventCount;
-	/**
-	* This value is defined only for continuous mode and on-change sensors. It is the delay between
-	* two sensor events corresponding to the lowest frequency that this sensor supports. When lower
-	* frequencies are requested through batch()/setDelay() the events will be generated at this
-	* frequency instead. It can be used by the framework or applications to estimate when the batch
-	* FIFO may be full.
-	*
-	* @note
-	*   1) period_ns is in nanoseconds where as maxDelay/minDelay are in microseconds.
-	*              continuous, on-change: maximum sampling period allowed in microseconds.
-	*              one-shot, special : 0
-	*   2) maxDelay should always fit within a 32 bit signed integer. It is declared as 64 bit
-	*      on 64 bit architectures only for binary compatibility reasons.
-	* Availability: SENSORS_DEVICE_API_VERSION_1_3
-	*/
+	/*
+	 * maximum number of events of this sensor that could be batched.
+	 * This is especially relevant when the FIFO is shared between
+	 * several sensors; this value is then set to the size of that FIFO.
+	 */
+	uint32_t fifoMaxEventCount;
+	/*
+	 * This value is defined only for continuous mode and on-change sensors.
+	 * It is the delay between two sensor events corresponding to the
+	 * lowest frequency that this sensor supports.
+	 * When lower frequencies are requested through batch()/setDelay()
+	 * the events will be generated at this frequency instead.
+	 * It can be used by the framework or applications to estimate
+	 * when the batch FIFO may be full.
+	 *
+	 * @note
+	 *   1) period_ns is in nanoseconds
+	 *      where as maxDelay/minDelay are in microseconds.
+	 *         continuous, on-change: maximum sampling period
+	 *                                allowed in microseconds.
+	 *         one-shot, special : 0
+	 *   2) maxDelay should always fit within a 32 bit signed integer.
+	 *      It is declared as 64 bit
+	 *      on 64 bit architectures only for binary compatibility reasons.
+	 * Availability: SENSORS_DEVICE_API_VERSION_1_3
+	 */
 	int32_t maxDelay;
 
-	/**
-	* Flags for sensor. See SENSOR_FLAG_* above. Only the least significant 32 bits are used here.
-	* It is declared as 64 bit on 64 bit architectures only for binary compatibility reasons.
-	* Availability: SENSORS_DEVICE_API_VERSION_1_3
-	*/
+	/*
+	 * Flags for sensor. See SENSOR_FLAG_* above.
+	 * Only the least significant 32 bits are used here.
+	 * It is declared as 64 bit on 64 bit architectures
+	 * only for binary compatibility reasons.
+	 * Availability: SENSORS_DEVICE_API_VERSION_1_3
+	 */
 	uint32_t flags;
 };
 
@@ -616,11 +698,15 @@ extern int akm_current_y_fac;
 extern int akm_current_z_fac;
 
 int init_sensors_cfg_data_from_dts(void);
-extern SENSOR_DETECT_LIST get_id_by_sensor_tag(int tag);
-extern int sensor_set_cfg_data(void);
-extern int send_fileid_to_mcu(void);
+SENSOR_DETECT_LIST get_id_by_sensor_tag(int tag);
+int sensor_set_cfg_data(void);
+int send_fileid_to_mcu(void);
 void sensor_redetect_enter(void);
 void sensor_redetect_init(void);
 int sensor_set_fw_load(void);
 int sensor_get_als_bh1749_flag(void);
-#endif
+int motion_set_cfg_data(void);
+void resend_als_parameters_to_mcu(void);
+void resend_vibrator_parameters_to_mcu(void);
+
+#endif /* __SENSOR_DETECT_H */

@@ -23,7 +23,7 @@
 #include <linux/hisi/hisi_bootup_keypoint.h>
 #include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
 #include <linux/hisi/mntn_dump.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <mntn_subtype_exception.h>
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 #include <linux/hisi/rdr_hisi_platform.h>
@@ -75,8 +75,9 @@ int rdr_exception_analysis_ap(u64                         etime,
                               u32                         len,
                               struct rdr_exception_info_s *exception)
 {
-	struct hisiap_ringbuffer_s *q;
-	rdr_exception_trace_t      *trace, *min_trace;
+	struct hisiap_ringbuffer_s *q = NULL;
+	rdr_exception_trace_t *trace = NULL;
+	rdr_exception_trace_t *min_trace = NULL;
 	u64                        min_etime = etime;
 	u32                        start, end, i;
 
@@ -196,7 +197,7 @@ static int ap_awdt_check(void)
 static int ap_awdt_analysis_get_etime(u64 *p_etime)
 {
 	struct rdr_register_module_result info;
-	AP_EH_ROOT                        *ap_root;
+	AP_EH_ROOT                        *ap_root = NULL;
 	u64                               offset, etime;
 	u32                               i;
 
@@ -213,7 +214,7 @@ static int ap_awdt_analysis_get_etime(u64 *p_etime)
 		) ) {
 		BB_PRINT_ERR("[%s], offset %llu log_len %u sizeof(AP_EH_ROOT) %u "
 			"PMU_RESET_RECORD_DDR_AREA_SIZE %u rdr_reserved_phymem_size %llu!\n",
-			__func__, offset, info.log_len, (u32)sizeof(AP_EH_ROOT), 
+			__func__, offset, info.log_len, (u32)sizeof(AP_EH_ROOT),
 			(u32)PMU_RESET_RECORD_DDR_AREA_SIZE, rdr_reserved_phymem_size());
 		return -1;
 	}
@@ -260,10 +261,10 @@ static int ap_awdt_analysis_get_etime(u64 *p_etime)
  */
 int ap_awdt_analysis(struct rdr_exception_info_s *exception)
 {
-	pfn_exception_analysis_ops        ops_fn;
+	pfn_exception_analysis_ops        ops_fn = NULL;
 	u64                               offset, etime;
 	u32                               i, num, size[EXCEPTION_TRACE_ENUM];
-	u8                                *exception_addr;
+	u8                                *exception_addr = NULL;
 
 	if (unlikely(IS_ERR_OR_NULL(exception))) {
 		return -1;
@@ -277,7 +278,7 @@ int ap_awdt_analysis(struct rdr_exception_info_s *exception)
 		return -1;
 	}
 
-	if (get_every_core_exception_info(&num, size)) {
+	if (get_every_core_exception_info(&num, size, EXCEPTION_TRACE_ENUM)) {
 		BB_PRINT_ERR("[%s], bbox_get_every_core_area_info fail!\n", __func__);
 		return -1;
 	}
@@ -390,9 +391,9 @@ int rdr_exception_trace_record(u64 e_reset_core_mask,
  * -1 failed
  *
  */
-int get_every_core_exception_info(u32 *num, u32 *size)
+int get_every_core_exception_info(u32 *num, u32 *size, u32 sizelen)
 {
-	struct device_node *np;
+	struct device_node *np = NULL;
 	int                ret;
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,exceptiontrace");
@@ -409,12 +410,12 @@ int get_every_core_exception_info(u32 *num, u32 *size)
 
 	BB_PRINT_DBG("[%s], get area_num %u in dts!\n", __func__, *num);
 
-	if (unlikely(*num != EXCEPTION_TRACE_ENUM)) {
+	if (unlikely(*num != sizelen)) {
 		BB_PRINT_ERR("[%s], invaild core num in dts!\n", __func__);
 		return -1;
 	}
 
-	ret = of_property_read_u32_array(np, "area_sizes", 
+	ret = of_property_read_u32_array(np, "area_sizes",
 		&size[0], (unsigned long)(*num));
 	if (unlikely(ret)) {
 		BB_PRINT_ERR("[%s], cannot find area_sizes in dts!\n", __func__);
@@ -471,10 +472,8 @@ int exception_trace_buffer_init(u8 *addr, unsigned int size)
  */
 static int rdr_exception_trace_ap_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 {
-	if (EOK != memset_s(virt_addr, log_len, 0, log_len)) {
-		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
-	}
-	
+	memset_s(virt_addr, log_len, 0, log_len);
+
 	if ( unlikely(exception_trace_buffer_init(virt_addr, log_len)) ) {
 		return -1;
 	}
@@ -501,7 +500,7 @@ static pfn_exception_init_ops g_exception_init_fn[EXCEPTION_TRACE_ENUM] =
  */
 int rdr_exception_trace_init(void)
 {
-	pfn_exception_init_ops ops_fn;
+	pfn_exception_init_ops ops_fn = NULL;
 	static bool            init;
 	u32                    i, num, size[EXCEPTION_TRACE_ENUM], offset;
 
@@ -524,7 +523,7 @@ int rdr_exception_trace_init(void)
 		}
 	}
 
-	if (unlikely(get_every_core_exception_info(&num, size))) {
+	if (unlikely(get_every_core_exception_info(&num, size, EXCEPTION_TRACE_ENUM))) {
 		BB_PRINT_ERR("[%s], bbox_get_every_core_area_info fail!\n", __func__);
 		goto error;
 	}
@@ -546,7 +545,7 @@ int rdr_exception_trace_init(void)
 		}
 
 		ops_fn = g_exception_init_fn[i];
-		if ( unlikely(ops_fn 
+		if ( unlikely(ops_fn
 			&& ops_fn((u8 *)(uintptr_t)current_info.log_addr + g_exception_core[i].offset,
 				g_exception_trace_addr + g_exception_core[i].offset, size[i])) ) {
 			BB_PRINT_ERR("[%s], exception init fail: core %u size %u ops_fn 0x%pK\n",

@@ -40,7 +40,7 @@ typedef enum {
 	MODID_AP_S_PANIC_SOFTLOCKUP = 0x80000020,
 	MODID_AP_S_PANIC_OTHERCPU_HARDLOCKUP = 0x80000021,
 	MODID_AP_S_PANIC_SP805_HARDLOCKUP = 0x80000022,
-	MODID_AP_S_PANIC_Storage = 0x80000023,
+	MODID_AP_S_PANIC_STORAGE = 0x80000023,
 	MODID_AP_S_PANIC_ISP = 0x80000025,
 	MODID_AP_S_PANIC_IVP = 0x80000026,
 	MODID_AP_S_PANIC_GPU = 0x80000028,
@@ -83,13 +83,14 @@ bool rdr_get_ap_init_done(void);
 unsigned long long get_pmu_reset_reg(void);
 void set_reboot_reason(unsigned int reboot_reason);
 unsigned int get_reboot_reason(void);
+void hisi_pmic_powerkey_only_status_get(void);
 int rdr_press_key_to_fastboot(struct notifier_block *nb,
 		unsigned long event, void *buf);
 void rdr_long_press_powerkey(void);
 unsigned long long get_pmu_subtype_reg(void);
 void set_subtype_exception(unsigned int subtype, bool save_value);
 unsigned int get_subtype_exception(void);
-char *rdr_get_subtype_name(u32 e_exce_type,u32 subtype);
+char *rdr_get_subtype_name(u32 e_exce_type, u32 subtype);
 char *rdr_get_category_name(u32 e_exce_type, u32 subtype);
 u32 rdr_get_exec_subtype_value(void);
 char *rdr_get_exec_subtype(void);
@@ -98,24 +99,26 @@ char *rdr_get_exec_subtype(void);
 static inline void save_module_dump_mem(void) {}
 static inline void regs_dump(void) {}
 static inline void hisiap_nmi_notify_lpm3(void) {}
-static inline void set_exception_info(unsigned long address){}
+static inline void set_exception_info(unsigned long address) {}
 static inline int register_module_dump_mem_func(rdr_hisiap_dump_func_ptr func,
-				  char *module_name, dump_mem_module modu){return -1;}
-int get_module_dump_mem_addr(dump_mem_module modu, unsigned char *dump_addr){return -1};
-static inline bool rdr_get_ap_init_done(void){return 0;}
-static inline unsigned long long get_pmu_reset_reg(void){return 0;}
+				  char *module_name, dump_mem_module modu){return -1; }
+static inline int get_module_dump_mem_addr(dump_mem_module modu,
+				  unsigned char *dump_addr) {return -1; }
+static inline bool rdr_get_ap_init_done(void){return 0; }
+static inline unsigned long long get_pmu_reset_reg(void){return 0; }
 static inline void set_reboot_reason(unsigned int reboot_reason) {}
-static inline unsigned int get_reboot_reason(void){return 0;}
+static inline unsigned int get_reboot_reason(void){return 0; }
+static inline void hisi_pmic_powerkey_only_status_get(void){return; }
 static inline int rdr_press_key_to_fastboot(struct notifier_block *nb,
-		unsigned long event, void *buf){return 0;}
+		unsigned long event, void *buf){return 0; }
 static inline void rdr_long_press_powerkey(void){}
-static inline unsigned long long get_pmu_subtype_reg(void){return 0;}
-static inline void set_subtype_exception(unsigned int subtype, bool save_value){}
-static inline unsigned int get_subtype_exception(void) {return 0;}
-static inline char *rdr_get_subtype_name(u32 e_exce_type,u32 subtype) {return NULL;}
-static inline char *rdr_get_category_name(u32 e_exce_type, u32 subtype) {return NULL;}
-static inline u32 rdr_get_exec_subtype_value(void) { return 0;}
-static inline char *rdr_get_exec_subtype(void) { return NULL;}
+static inline unsigned long long get_pmu_subtype_reg(void){return 0; }
+static inline void set_subtype_exception(unsigned int subtype, bool save_value) {}
+static inline unsigned int get_subtype_exception(void) {return 0; }
+static inline char *rdr_get_subtype_name(u32 e_exce_type, u32 subtype) {return NULL; }
+static inline char *rdr_get_category_name(u32 e_exce_type, u32 subtype) {return NULL; }
+static inline u32 rdr_get_exec_subtype_value(void) { return 0; }
+static inline char *rdr_get_exec_subtype(void) { return NULL; }
 #endif
 
 #ifdef CONFIG_HISI_IRQ_REGISTER

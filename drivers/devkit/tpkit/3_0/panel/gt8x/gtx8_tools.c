@@ -69,6 +69,7 @@ static int read_config_data(void __user *arg)
 	u32 reg_addr = 0, length = 0;
 	u8 i2c_msg_head[I2C_MSG_HEAD_LEN] = {0};
 	u8 *tmp_buf = NULL;
+	u32 cfg_len = 0;
 
 	ret = copy_from_user(&i2c_msg_head, arg, I2C_MSG_HEAD_LEN);
 	if (ret) {
@@ -93,10 +94,12 @@ static int read_config_data(void __user *arg)
 		return -ENOMEM;
 	}
 
+	if (gtx8_ts->ic_type == IC_TYPE_7382)
+		cfg_len = CFG_LEN_GT7382;
 	/* if reg_addr == 0, read config data with specific flow */
 	if (!reg_addr) {
 		if (gtx8_ts->ops.read_cfg)
-			ret = gtx8_ts->ops.read_cfg(tmp_buf, 0);
+			ret = gtx8_ts->ops.read_cfg(tmp_buf, cfg_len);
 		else
 			ret = -EINVAL;
 	} else {

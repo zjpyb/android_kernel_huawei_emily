@@ -34,12 +34,19 @@ EXTRA_CFLAGS += -Idrivers/vcodec/hi_vcodec/venc_hivna/include
 EXTRA_CFLAGS += -Idrivers/vcodec/hi_vcodec/venc_hivna/drv/venc
 EXTRA_CFLAGS += -Idrivers/vcodec/hi_vcodec/venc_hivna/drv/product/$(PLATFORM)
 
+
+ifeq ($(chip_type), )
+EXTRA_CFLAGS += -I$(srctree)/drivers/hisi/ap/platform/$(TARGET_BOARD_PLATFORM)
+else
+EXTRA_CFLAGS += -I$(srctree)/drivers/hisi/ap/platform/$(TARGET_BOARD_PLATFORM)_$(chip_type)
+endif
+
 ifeq ($(es_low_freq),true)
 EXTRA_CFLAGS += -DCONFIG_ES_VENC_LOW_FREQ
 endif
 
 ifneq ($(TARGET_BUILD_VARIANT), user)
-EXTRA_CFLAGS += -DUSER_DISABLE_VENC_PROC
+EXTRA_CFLAGS += -DVENC_DEBUG_ENABLE
 endif
 
 obj-$(CONFIG_HI_VCODEC_VENC_HIVNA) += hi_omxvenc.o
@@ -57,7 +64,7 @@ endif
 
 
 #obj-m += venc.o
-#venc-y :=           venc_regulator.o     \
+#venc-y :=          venc_regulator.o     \
                     drv_venc_intf.o      \
                     drv_venc_efl.o       \
                     drv_venc_osal.o      \

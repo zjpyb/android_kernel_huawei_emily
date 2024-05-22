@@ -88,7 +88,7 @@ int get_ro_secure(void);
  *          that correspond to ops_mask. In this function, result keep its
  *          original statu. For example, rproc contains whitelist.
  */
-int rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result);
+uint rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result);
 
 /*
  * rscan_dynamic_raw_and_upload - for TEE calling
@@ -129,3 +129,4 @@ int rscan_get_status(struct rscan_status *status);
 int load_rproc_whitelist(char *whitelist, size_t len);
 
 #endif
+

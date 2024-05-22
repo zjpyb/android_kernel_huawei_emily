@@ -63,11 +63,13 @@
 #define    THIS_FILE_ID PS_FILE_ID_PIH_API_C
 
 
+#if  ((OSA_CPU_ACPU == VOS_OSA_CPU) || (defined(DMT)))
 
 VOS_UINT32 SI_PIH_GetReceiverPid(
     MN_CLIENT_ID_T                      ClientId,
     VOS_UINT32                          *pulReceiverPid)
 {
+#if (MULTI_MODEM_NUMBER > 1)
     MODEM_ID_ENUM_UINT16    enModemID;
 
     /* 调用接口获取Modem ID */
@@ -80,15 +82,20 @@ VOS_UINT32 SI_PIH_GetReceiverPid(
     {
         *pulReceiverPid = I1_MAPS_PIH_PID;
     }
+#if (MULTI_MODEM_NUMBER == 3)
     else if (MODEM_ID_2 == enModemID)
     {
         *pulReceiverPid = I2_MAPS_PIH_PID;
     }
+#endif /* MULTI_MODEM_NUMBER == 3 */
     else
     {
         *pulReceiverPid = I0_MAPS_PIH_PID;
     }
 
+#else
+    *pulReceiverPid = I0_MAPS_PIH_PID;
+#endif
 
     return VOS_OK;
 }
@@ -109,6 +116,13 @@ VOS_UINT32 SI_PIH_FdnEnable (
         return TAF_FAILURE;
     }
 
+#if (FEATURE_OFF == FEATURE_PHONE_SC)
+    if(PB_INIT_FINISHED != gstPBInitState.enPBInitStep)
+    {
+        PIH_ERROR_LOG("SI_PIH_FdnEnable:PB is Busy.");
+        return TAF_FAILURE;
+    }
+#endif
 
     pMsg = (SI_PIH_FDN_ENABLE_REQ_STRU *)VOS_AllocMsg(WUEPS_PID_AT, sizeof(SI_PIH_FDN_ENABLE_REQ_STRU) - VOS_MSG_HEAD_LENGTH);
 
@@ -154,6 +168,13 @@ VOS_UINT32 SI_PIH_FdnDisable (
         return TAF_FAILURE;
     }
 
+#if (FEATURE_OFF == FEATURE_PHONE_SC)
+    if(PB_INIT_FINISHED != gstPBInitState.enPBInitStep)
+    {
+        PIH_ERROR_LOG("SI_PIH_FdnEnable:PB is Busy.");
+        return TAF_FAILURE;
+    }
+#endif
 
     pMsg = (SI_PIH_FDN_DISABLE_REQ_STRU *)VOS_AllocMsg(WUEPS_PID_AT, sizeof(SI_PIH_FDN_DISABLE_REQ_STRU) - VOS_MSG_HEAD_LENGTH);
 
@@ -894,6 +915,8 @@ VOS_UINT32 SI_PIH_SciCfgQuery (
 
 VOS_VOID SI_PIH_AcpuInit(VOS_VOID)
 {
+#if ((FEATURE_ON == FEATURE_VSIM) && (FEATURE_ON == FEATURE_VSIM_ICC_SEC_CHANNEL))
+#ifdef CONFIG_TZDRIVER
     VOS_UINT8    aucUUID[] = {0x47,0x91,0xe8,0xab,
                                 0x61,0xcd,
                                 0x3f,0xf4,
@@ -907,16 +930,22 @@ VOS_VOID SI_PIH_AcpuInit(VOS_VOID)
     }
 
     vos_printf("SI_PIH_AcpuInit: Reg TEE Timeout CB FUN\r\n");
+#endif  /* CONFIG_TZDRIVER */
+#endif  /*(FEATURE_ON == FEATURE_VSIM)*/
 
     return;
 }
 
+#if (FEATURE_VSIM == FEATURE_ON)
+#if (FEATURE_ON == FEATURE_VSIM_ICC_SEC_CHANNEL)
 
 VOS_UINT32 SI_PIH_GetSecIccVsimVer(VOS_VOID)
 {
     return SI_PIH_SEC_ICC_VSIM_VER;
 }
+#endif
 
+#ifdef CONFIG_TZDRIVER
 
 VOS_VOID SI_PIH_TEETimeOutCB (VOS_VOID *timerDataCb)
 {
@@ -959,6 +988,7 @@ VOS_VOID SI_PIH_TEETimeOutCB (VOS_VOID *timerDataCb)
 
     return ;
 }
+#endif  /*CONFIG_TZDRIVER*/
 
 
 VOS_UINT32 SI_PIH_HvCheckCardQuery(
@@ -968,7 +998,9 @@ VOS_UINT32 SI_PIH_HvCheckCardQuery(
     return TAF_SUCCESS;
 }
 
+#endif  /*end of (FEATURE_VSIM == FEATURE_ON)*/
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_UINT32 SI_PIH_UiccAuthReq(
     MN_CLIENT_ID_T                      ClientId,
@@ -1071,6 +1103,7 @@ VOS_UINT32 SI_PIH_AccessUICCFileReq(
 
     return TAF_SUCCESS;
 }
+#endif  /*(FEATURE_ON == FEATURE_IMS)*/
 
 
 VOS_UINT32 SI_PIH_CardTypeQueryProc(
@@ -1125,6 +1158,7 @@ VOS_UINT32 SI_PIH_CardTypeExQuery(
                                     SI_PIH_EVENT_CARDTYPEEX_QUERY_CNF);
 }
 
+#if (FEATURE_ON == FEATURE_PHONE_SC)
 
 VOS_UINT32 SI_PIH_GetSilentPinInfoReq(
     MN_CLIENT_ID_T                      ClientId,
@@ -1217,6 +1251,7 @@ VOS_UINT32 SI_PIH_SetSilentPinReq(
 
     return TAF_SUCCESS;
 }
+#endif
 
 
 VOS_UINT32 SI_PIH_CardTypeQuery(
@@ -1522,6 +1557,7 @@ VOS_UINT32 SI_PIH_CCimiSetReq(
 
     return TAF_SUCCESS;
 }
+#endif  /*((OSA_CPU_ACPU == VOS_OSA_CPU) || (defined(DMT)))*/
 
 
 

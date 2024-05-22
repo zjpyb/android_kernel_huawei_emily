@@ -101,7 +101,7 @@ void slimbus_freq_request()
 	mutex_unlock(&slimbus_freq_mutex);
 }
 
-void slimbus_freq_release()
+void slimbus_freq_release(bool disable)
 {
 	unsigned int div_siobclk = get_clk_asp_div(SLIMBUS_CLK_21777);
 
@@ -119,7 +119,9 @@ void slimbus_freq_release()
 
 	/* When all req released, Slimbus clk change to 21.777 to avoid signal interference to GPS*/
 	if (slimbus_freq_cnt == 0) {
-		slimbus_reg_write((asp_reg_base_addr + ASP_CFG_R_CLK1_DIV_REG), div_siobclk);
+		if (!disable)
+			slimbus_reg_write((asp_reg_base_addr + ASP_CFG_R_CLK1_DIV_REG),
+				div_siobclk);
 	}
 	mutex_unlock(&slimbus_freq_mutex);
 }
@@ -135,15 +137,23 @@ uint32_t slimbus_asp_state_get(const void __iomem *asppower_base_addr, uint32_t 
 	return aspreg;
 }
 
-void slimbus_module_enable(slimbus_device_info_t *dev, bool enable)
+void slimbus_module_enable(slimbus_device_info_t *dev, bool frq_update_disable, bool enable)
 {
 	slimbus_rf_type_t	rf	= dev->rf;
 	void __iomem * ioc_base_addr  = 0;
-	unsigned int div_siobclk = get_clk_asp_div(SLIMBUS_CLK_21777);
+	unsigned int div_siobclk;
 
 	if (NULL == asp_reg_base_addr) {
 		pr_err("slimbus_utils not init\n");
 		return;
+	}
+
+	if (frq_update_disable) {
+		div_siobclk = get_clk_asp_div(SLIMBUS_CLK_24576);
+		pr_info("get slimbus clk 24576, div is 0x%x\n", div_siobclk);
+	} else {
+		div_siobclk = get_clk_asp_div(SLIMBUS_CLK_21777);
+		pr_info("get slimbus clk 21777, div is 0x%x\n", div_siobclk);
 	}
 
 	if (enable) {
@@ -156,18 +166,18 @@ void slimbus_module_enable(slimbus_device_info_t *dev, bool enable)
 		/* For FPGA */
 		if (SLIMBUS_RF_6144 == rf) {
 			/* IOMG slimbus clk*/
-			slimbus_reg_write((void __iomem *)((uint64_t)ioc_base_addr + dev->slimbusclk_offset), 0x00000003);
+			slimbus_reg_write((void __iomem *)((uintptr_t)ioc_base_addr + dev->slimbusclk_offset), 0x00000003);
 			/* IOMG slimbus data*/
-			slimbus_reg_write((void __iomem *)((uint64_t)ioc_base_addr + dev->slimbusdata_offset), 0x00000003);
+			slimbus_reg_write((void __iomem *)((uintptr_t)ioc_base_addr + dev->slimbusdata_offset), 0x00000003);
 			/* IOCG slimbus clk*/
-			slimbus_reg_write((void __iomem *)((uint64_t)ioc_base_addr + dev->slimbusclk_cfg_offset), 0x12);
+			slimbus_reg_write((void __iomem *)((uintptr_t)ioc_base_addr + dev->slimbusclk_cfg_offset), 0x12);
 			/* IOCG slimbus data*/
-			slimbus_reg_write((void __iomem *)((uint64_t)ioc_base_addr + dev->slimbusdata_cfg_offset), 0x13);
+			slimbus_reg_write((void __iomem *)((uintptr_t)ioc_base_addr + dev->slimbusdata_cfg_offset), 0x13);
 		} else {
 			/* IOCG slimbus clk drv 6ma slew rate*/
-			slimbus_reg_write((void __iomem *)((uint64_t)ioc_base_addr + dev->slimbusclk_cfg_offset), dev->slimbusclk_drv);
+			slimbus_reg_write((void __iomem *)((uintptr_t)ioc_base_addr + dev->slimbusclk_cfg_offset), dev->slimbusclk_drv);
 			/* IOCG slimbus data drv 6ma pu pd*/
-			slimbus_reg_write((void __iomem *)((uint64_t)ioc_base_addr + dev->slimbusdata_cfg_offset), dev->slimbusdata_drv);
+			slimbus_reg_write((void __iomem *)((uintptr_t)ioc_base_addr + dev->slimbusdata_cfg_offset), dev->slimbusdata_drv);
 		}
 
 		iounmap(ioc_base_addr);

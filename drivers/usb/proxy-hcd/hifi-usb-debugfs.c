@@ -19,7 +19,7 @@ static int hibernation_show(struct seq_file *s, void *unused)
 {/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
 	int complete_urb_count;
-	struct list_head *pos;
+	struct list_head *pos = NULL;
 
 	if (!hifi_usb)
 		return -ENOENT;
@@ -68,6 +68,9 @@ static ssize_t hibernation_write(struct file *file,
 
 	if (!hifi_usb)
 		return -ENOENT;
+
+	if (!ubuf)
+		return -EINVAL;
 
 	len = min_t(size_t, sizeof(buf) - 1, count);
 	if (copy_from_user(&buf, ubuf, len))
@@ -118,6 +121,9 @@ static ssize_t never_use_hifi_usb_write(struct file *file,
 	size_t len;
 	char buf[32] = {0};
 
+	if (!ubuf)
+		return -EINVAL;
+
 	len = min_t(size_t, sizeof(buf) - 1, count);
 	if (copy_from_user(&buf, ubuf, len))
 		return -EFAULT;
@@ -160,6 +166,9 @@ static ssize_t always_use_hifi_usb_write(struct file *file,
 	size_t len;
 	char buf[32] = {0};
 
+	if (!ubuf)
+		return -EINVAL;
+
 	len = min_t(size_t, sizeof(buf) - 1, count);
 	if (copy_from_user(&buf, ubuf, len))
 		return -EFAULT;
@@ -185,7 +194,7 @@ static const struct file_operations always_use_hifi_usb_fops = {
 static int urb_bufs_show(struct seq_file *s, void *unused)
 {/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
-	struct urb_buffers *bufs;
+	struct urb_buffers *bufs = NULL;
 
 	if (!hifi_usb)
 		return -ENOENT;
@@ -213,7 +222,7 @@ static const struct file_operations urb_bufs_fops = {
 static int hifi_usb_stat_show(struct seq_file *s, void *unused)
 {/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
-	struct hifi_usb_stats *stats;
+	struct hifi_usb_stats *stats = NULL;
 
 	if (!hifi_usb)
 		return -ENOENT;
@@ -373,7 +382,7 @@ static int hifi_usb_sr_show(struct seq_file *s, void *unused)
 {/*lint !e578 */
 	struct hifi_usb_proxy *hifi_usb = s->private;
 	struct hifi_usb_test_msg mesg;
-	char *state;
+	char *state = NULL;
 	int ret;
 
 	if (!hifi_usb)
@@ -438,6 +447,9 @@ static ssize_t hifi_usb_sr_write(struct file *file,
 
 	if (!hifi_usb->runstop)
 		return -EPERM;
+
+	if (!ubuf)
+		return -EINVAL;
 
 	len = min_t(size_t, sizeof(buf) - 1, count);
 	if (copy_from_user(&buf, ubuf, len))
@@ -558,7 +570,7 @@ static int hifi_test_open(struct inode *inode, struct file *file)
 static int get_inject_point_data(const char *cmd, size_t len,
 		enum inject_point *point, u32 *data)
 {
-	char *fun_name;
+	char *fun_name = NULL;
 	unsigned i;
 
 	if (!cmd || !point || !data)
@@ -627,6 +639,9 @@ static ssize_t hifi_test_write(struct file *file,
 	if (!hifi_usb || !hifi_usb->runstop)
 		return -EPERM;
 
+	if (!ubuf)
+		return -EINVAL;
+
 	len = min_t(size_t, sizeof(buf) - 1, count);
 	if (copy_from_user(&buf, ubuf, len))
 		return -EFAULT;
@@ -674,8 +689,8 @@ static const struct file_operations hifi_test_fops = {
 
 int hifi_usb_debugfs_init(struct hifi_usb_proxy *hifi_usb)
 {
-	struct dentry		*root;
-	struct dentry		*file;
+	struct dentry		*root = NULL;
+	struct dentry		*file = NULL;
 
 	root = debugfs_create_dir("hifiusb", usb_debug_root);
 	if (IS_ERR_OR_NULL(root))

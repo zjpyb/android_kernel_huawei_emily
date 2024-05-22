@@ -551,6 +551,14 @@ static int set_nr_rd_config(hjpeg_hw_ctl_t *hw_ctl)
     }
 
     tmp.reg32 = get_reg_val((void __iomem*)((char*)cvdr_srt_base + nr_rd_cfg_offset));
+    cam_info("%s: get CVDR reg: 0x%08x=0x%08x", __func__, nr_rd_cfg_offset, tmp.reg32);
+    lmt.reg32 = get_reg_val((void __iomem*)((char*)cvdr_srt_base + limiter_nr_rd_offset));
+    cam_info("%s: get CVDR reg: 0x%08x=0x%08x", __func__, limiter_nr_rd_offset, lmt.reg32);
+    if (hw_ctl->cvdr_prop.flag && rd_port == RD_PORT_4) {
+        // check platform default value
+        tmp.reg32 = CVDR_AXI_JPEG_NR_RD_CFG_4_DEFAULT_VALUE;
+        lmt.reg32 = CVDR_AXI_JPEG_LIMITER_NR_RD_4_DEFAULT_VALUE;
+    }
     tmp.bits.nrrd_allocated_du_1 = allocated_du;
     tmp.bits.nrrd_enable_1 = 1;
     tmp.bits.nr_rd_stop_enable_pressure_1 = 1;
@@ -558,7 +566,6 @@ static int set_nr_rd_config(hjpeg_hw_ctl_t *hw_ctl)
     set_reg_val((void __iomem*)((char*)cvdr_srt_base + nr_rd_cfg_offset) , tmp.reg32);
     cam_info("%s: set CVDR reg: 0x%08x=0x%08x", __func__, nr_rd_cfg_offset, tmp.reg32);
 
-    lmt.reg32 = get_reg_val((void __iomem*)((char*)cvdr_srt_base + limiter_nr_rd_offset));
     lmt.bits.nrrd_access_limiter_0_1 = access_limiter;
     lmt.bits.nrrd_access_limiter_1_1 = access_limiter;
     lmt.bits.nrrd_access_limiter_2_1 = access_limiter;

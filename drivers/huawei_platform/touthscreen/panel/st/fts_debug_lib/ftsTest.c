@@ -44,7 +44,8 @@ int computeAdjHoriz(u8* data, int row, int column, u8** result)
 	int size = row*(column - 1);
 
 	if (column < 2) {
-		TS_LOG_ERR("%s computeAdjHoriz: ERROR % 02X\n", __func__, ERROR_OP_NOT_ALLOW);
+		TS_LOG_ERR("%s: ERROR %02X\n",
+			__func__, ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 	}
 
@@ -75,7 +76,8 @@ int computeAdjHorizTotal(u16* data, int row, int column, u16** result)
 	int size = row*(column - 1);
 
 	if (column < 2) {
-		TS_LOG_ERR("%s computeAdjHorizTotal: ERROR % 02X\n", __func__, ERROR_OP_NOT_ALLOW);
+		TS_LOG_ERR("%s: ERROR %02X\n",
+			__func__, ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 	}
 
@@ -106,7 +108,8 @@ int computeAdjVert(u8* data, int row, int column, u8**result)
 	int size = (row - 1)*(column);
 
 	if (row < 2) {
-		TS_LOG_ERR("%s computeAdjVert: ERROR % 02X\n", __func__, ERROR_OP_NOT_ALLOW);
+		TS_LOG_ERR("%s: ERROR %02X\n",
+			__func__, ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 	}
 
@@ -136,7 +139,8 @@ int computeAdjVertTotal(u16* data, int row, int column, u16**result)
 	int size = (row - 1)*(column);
 
 	if (row < 2) {
-		TS_LOG_ERR("%s computeAdjVertTotal: ERROR % 02X\n", __func__, ERROR_OP_NOT_ALLOW);
+		TS_LOG_ERR("%s: ERROR %02X\n",
+			__func__, ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 	}
 
@@ -1195,6 +1199,8 @@ int production_test_ms_raw(struct ts_rawdata_info *info, struct production_data_
 	}
 
 	columns = getSenseLen();
+	if (columns == 0)
+		return ERROR_PROD_TEST_DATA;
 	rows = ret / columns;//compute the number of row in this way is safer because in general we don't know if the first row is included or not
 
 	print_data_s16(msRawFrame, rows, columns);

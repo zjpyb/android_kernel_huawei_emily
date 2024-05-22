@@ -1,14 +1,19 @@
 /*
- * drivers/huawei/drivers/tps65132.c
+ * tps65132.c
  *
- * tps65132 driver reffer to lcd
+ * tps65132 bias driver
  *
- * Copyright (C) 2012-2015 HUAWEI, Inc.
- * Author: HUAWEI, Inc.
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
  *
- * This package is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/module.h>
@@ -25,14 +30,15 @@
 
 #define DTS_COMP_TPS65132 "ti,tps65132"
 
-struct i2c_client *g_client = NULL;
+struct i2c_client *g_client;
 
 static struct lcd_kit_bias_ops bias_ops = {
 	.set_bias_voltage = NULL,
 	.dbg_set_bias_voltage = NULL,
 };
 
-static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id *id)
+static int tps65132_probe(struct i2c_client *client,
+	const struct i2c_device_id *id)
 {
 	int retval = 0;
 	struct device_node *np = NULL;
@@ -44,29 +50,24 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 		retval = -ENODEV;
 		goto failed_1;
 	}
-
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
-		LCD_KIT_ERR("[%s,%d]: need I2C_FUNC_I2C\n",__FUNCTION__,__LINE__);
+		LCD_KIT_ERR("[%s,%d]: need I2C_FUNC_I2C\n", __func__, __LINE__);
 		retval = -ENODEV;
 		goto failed_1;
 	}
-
 	di = kzalloc(sizeof(*di), GFP_KERNEL);
 	if (!di) {
 		dev_err(&client->dev, "failed to allocate device info data\n");
 		retval = -ENOMEM;
 		goto failed_1;
 	}
-
 	i2c_set_clientdata(client, di);
 	di->dev = &client->dev;
 	di->client = client;
-
 #ifdef CONFIG_HUAWEI_DEV_SELFCHECK
-        /* detect current device successful, set the flag as present */
-        set_hw_dev_detect_result(DEV_DETECT_DC_DC);
+	/* detect current device successful, set the flag as present */
+	set_hw_dev_detect_result(DEV_DETECT_DC_DC);
 #endif
-
 	g_client = client;
 	lcd_kit_bias_register(&bias_ops);
 	return retval;
@@ -74,8 +75,6 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 failed_1:
 	return retval;
 }
-
-
 
 static const struct of_device_id tps65132_match_table[] = {
 	{
@@ -90,7 +89,6 @@ static const struct i2c_device_id tps65132_i2c_id[] = {
 	{ "tps65132", 0 },
 	{}
 };
-
 
 MODULE_DEVICE_TABLE(of, tps65132_match_table);
 
@@ -107,12 +105,11 @@ static struct i2c_driver tps65132_driver = {
 
 static int __init tps65132_module_init(void)
 {
-	int ret = 0;
+	int ret;
 
 	ret = i2c_add_driver(&tps65132_driver);
-	if (ret) {
+	if (ret)
 		LCD_KIT_ERR("Unable to register tps65132 driver\n");
-    }
 	return ret;
 }
 static void __exit tps65132_exit(void)

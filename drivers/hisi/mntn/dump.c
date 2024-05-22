@@ -43,6 +43,7 @@
 #include <linux/hisi/util.h>
 #include <linux/hisi/reset.h>
 #include <linux/hisi/hisi_log.h>
+#include <securec.h>
 #define HISI_LOG_TAG HISI_DUMP_TAG
 #include "blackbox/rdr_print.h"
 
@@ -50,6 +51,13 @@
 #define STRINGLEN 9
 #define MAX_LEN_OF_RSTLOGADDR_STR  30
 #define MAX_MEMDUMP_NAME 16
+#define MEMDUMP_ADDR_LEN (10)
+#define MEMDUMP_END_LEN (10)
+#define MEMDUMP_SIZE_LEN (10)
+#define MEMDUMP_SKP_ADDR (33)
+#define MEMDUMP_SKP_LEN  (10)
+#define MEMDUMP_RESIZE_FLAG_ADDR (40)
+#define MEMDUMP_RESIZE_FLAG_LEND (12)
 
 #define memdump_remap(phys_addr, size) memdump_remap_type(phys_addr, size, PAGE_KERNEL)
 #define memdump_unmap(vaddr) vunmap((void *)(uintptr_t)(((uintptr_t)vaddr) & (~(PAGE_SIZE - 1))))
@@ -67,6 +75,9 @@ struct dump_info {
 static phys_addr_t g_memdump_addr;
 static phys_addr_t g_memdump_end;
 static unsigned int g_memdump_size;
+static unsigned int g_skp_flag;
+static u64 g_resize_addr;
+
 static DEFINE_MUTEX(g_memdump_mutex);
 struct memdump {
 	char name[MAX_MEMDUMP_NAME];
@@ -82,11 +93,11 @@ static inline void *memdump_remap_type(uintptr_t phys_addr, size_t size,
 				       pgprot_t pgprot)
 {
 	int i;
-	u8 *vaddr;
+	u8 *vaddr = NULL;
 	int npages =
 	    PAGE_ALIGN((phys_addr & (PAGE_SIZE - 1)) + size) >> PAGE_SHIFT;
 	uintptr_t offset = phys_addr & (PAGE_SIZE - 1);
-	struct page **pages;
+	struct page **pages = NULL;
 	pages = vmalloc(sizeof(struct page *) * npages);
 	if (!pages) {
 		BB_PRINT_ERR("%s: vmalloc return NULL!\n", __func__);
@@ -111,9 +122,14 @@ static ssize_t dump_phy_mem_proc_file_read(struct file *file,
 					   char __user * userbuf, size_t bytes,
 					   loff_t * off)
 {
-	struct dump_info *info = (struct dump_info *)file->private_data;
-	void __iomem *p;
+	struct dump_info *info = NULL;
+	void __iomem *p = NULL;
 	ssize_t copy;
+
+	if ((!file) || (!userbuf) || (!off))
+		return -EFAULT;
+
+	info = (struct dump_info *)file->private_data;
 
 	if (!info) {
 		BB_PRINT_ERR("the proc file don't be created in advance.\n");
@@ -154,6 +170,9 @@ copy_err:
 
 static int dump_phy_mem_proc_file_open(struct inode *inode, struct file *file)
 {
+	if ((!inode) || (!file))
+		return -EFAULT;
+
 	file->private_data = PDE_DATA(inode);
 
 	if (!g_memdump_addr) {
@@ -166,6 +185,9 @@ static int dump_phy_mem_proc_file_open(struct inode *inode, struct file *file)
 static int dump_phy_mem_proc_file_release(struct inode *inode,
 					  struct file *file)
 {
+	if (!file)
+		return -EFAULT;
+
 	file->private_data = NULL;
 
 	return 0;
@@ -182,7 +204,7 @@ static const struct file_operations dump_phy_mem_proc_fops = {
 static void create_dump_phy_mem_proc_file(char *name, unsigned long phy_addr,
 					  size_t size)
 {
-	struct dump_info *info;
+	struct dump_info *info = NULL;
 
 	/*as a public interface, we should check the parameter */
 	if ((NULL == name) || (0 == phy_addr) || (0 == size)) {
@@ -211,7 +233,7 @@ static ssize_t dump_end_proc_read(struct file *file, char __user * userbuf,
 				  size_t bytes, loff_t * off)
 {
 	phys_addr_t addr;
-	struct page *page;
+	struct page *page = NULL;
 
 	mutex_lock(&g_memdump_mutex);
 	if (!g_memdump_addr || !g_memdump_size) {
@@ -252,32 +274,61 @@ static int __init early_parse_memdumpaddr_cmdline(char *p)
 	char memdump_addr[MAX_LEN_OF_RSTLOGADDR_STR];
 	char memdump_end[MAX_LEN_OF_RSTLOGADDR_STR];
 	char memdump_size[MAX_LEN_OF_RSTLOGADDR_STR];
+	char memdump_fastbootflag[MAX_LEN_OF_RSTLOGADDR_STR];
+	char memdump_resize_addr[MAX_LEN_OF_RSTLOGADDR_STR];
 	char *endptr = NULL;
 
-	memcpy(memdump_addr, p, 18);
-	memdump_addr[18] = 0;
-	memcpy(memdump_end, p + 19, 18);
-	memdump_end[18] = 0;
-	memcpy(memdump_size, p + 38, 18);
-	memdump_size[18] = 0;
+	if (EOK != memcpy_s(memdump_addr, sizeof(memdump_addr), p, MEMDUMP_ADDR_LEN)) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	}
+	memdump_addr[MEMDUMP_ADDR_LEN] = 0;
+	if (EOK != memcpy_s(memdump_end, sizeof(memdump_end), p + MEMDUMP_ADDR_LEN+1, MEMDUMP_END_LEN)) {
+		BB_PRINT_ERR("%s():%d:memdump_end memcpy_s fail!\n", __func__, __LINE__);
+	}
+	memdump_end[MEMDUMP_END_LEN] = 0;
+	if (EOK != memcpy_s(memdump_size, sizeof(memdump_size), p + MEMDUMP_ADDR_LEN+MEMDUMP_END_LEN+2, MEMDUMP_SIZE_LEN)) {
+		BB_PRINT_ERR("%s():%d:memdump_size memcpy_s fail!\n", __func__, __LINE__);
+	}
+	memdump_size[MEMDUMP_SIZE_LEN] = 0;
+	if (EOK != memcpy_s(memdump_fastbootflag, sizeof(memdump_fastbootflag), p + MEMDUMP_SKP_ADDR, MEMDUMP_SKP_LEN)) {
+		BB_PRINT_ERR("%s():%d:memdump_fastbootflag memcpy_s fail!\n", __func__, __LINE__);
+	}
+	memdump_fastbootflag[MEMDUMP_SKP_LEN] = 0;
+	if (EOK != memcpy_s(memdump_resize_addr, sizeof(memdump_resize_addr), p + MEMDUMP_RESIZE_FLAG_ADDR, MEMDUMP_RESIZE_FLAG_LEND)) {
+		BB_PRINT_ERR("%s():%d:memdump_resize_addr memcpy_s fail!\n", __func__, __LINE__);
+	}
+	memdump_resize_addr[MEMDUMP_RESIZE_FLAG_LEND] = 0;
 
 	g_memdump_addr = simple_strtoul(memdump_addr, &endptr, TRANSFER_BASE);
-	g_memdump_end = simple_strtoul(memdump_end, &endptr, TRANSFER_BASE);
+	g_memdump_end  = simple_strtoul(memdump_end, &endptr, TRANSFER_BASE);
 	g_memdump_size = simple_strtoul(memdump_size, &endptr, TRANSFER_BASE);
+	g_skp_flag     = (unsigned int)simple_strtoul(memdump_fastbootflag, &endptr, TRANSFER_BASE);
+	g_resize_addr  = simple_strtoul(memdump_resize_addr, &endptr, TRANSFER_BASE);
+
 	pr_err
-	    ("[early_parse_memdumpaddr_cmdline] p:%s, g_memdump_addr:0x%lx g_memdump_end:0x%lx,g_memdump_size:0x%x\n",
+	    ("[early_parse_memdumpaddr_cmdline] p:%s, g_memdump_addr:0x%lx g_memdump_end:0x%lx,g_memdump_size:0x%x, g_skp_flag:0x%x, g_resize_addr:0x%llx \n",
 	     (const char *)p, (unsigned long)g_memdump_addr,
-	     (unsigned long)g_memdump_end, g_memdump_size);
+	     (unsigned long)g_memdump_end, g_memdump_size,g_skp_flag,g_resize_addr);
 
 	return 0;
+}
+
+unsigned int skp_skp_flag(void)
+{
+    return g_skp_flag;
+}
+
+u64 skp_skp_resizeaddr(void)
+{
+    return g_resize_addr;
 }
 
 early_param("memdump_addr", early_parse_memdumpaddr_cmdline);
 
 static int __init memdump_init(void)
 {
-	struct memdump *mem_info;
-	void __iomem *memdump_head;
+	struct memdump *mem_info = NULL;
+	void __iomem *memdump_head = NULL;
 
 	if (!check_himntn(HIMNTN_GOBAL_RESETLOG)) {
 		return 0;

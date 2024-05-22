@@ -51,7 +51,9 @@
 #include "omringbuffer.h"
 #include "omprivate.h"
 
+#if(FEATURE_ON == FEATURE_PTM)
 #include "omerrorlog.h"
+#endif
 
 
 
@@ -63,8 +65,12 @@
 
 #define OM_MIN(x, y)             (((x) < (y)) ? (x) : (y))
 
+#if(FEATURE_ON == FEATURE_PTM)
 #define OM_RING_BUFF_EX_MAX_LEN  (1024*8)
 #define OM_MAX_RING_BUFFER_NUM   (48)  /* Error logÐÂÔö32*/
+#else
+#define OM_MAX_RING_BUFFER_NUM   (16)
+#endif
 
 VOS_UINT8 g_ucOMBufferOccupiedFlag[OM_MAX_RING_BUFFER_NUM] = {0};
 OM_RING   g_stOMControlBlock[OM_MAX_RING_BUFFER_NUM];

@@ -25,7 +25,7 @@ int mclk_config(sensor_t *s_ctrl, unsigned int id, unsigned int clk, int on)
 {
     int ret = 0;
     bool fSnclk2 = (2 == id || 3 == id || 4 == id);
-    struct device *dev;
+    struct device *dev = NULL;
 
     if(NULL == s_ctrl) {
         cam_err("%s invalid parameter.\n", __func__);
@@ -532,7 +532,7 @@ int hw_sensor_power_down(sensor_t *s_ctrl)
 	int index = 0, rc = 0;
 	struct hisi_pmic_ctrl_t *pmic_ctrl = NULL;
 	struct sensor_power_setting *power_setting = NULL;
-	struct sensor_power_setting_array *power_setting_array;
+	struct sensor_power_setting_array *power_setting_array = NULL;
 
 	if (hisi_is_clt_flag()) {
 		cam_debug("%s just return for CLT camera.", __func__);
@@ -837,7 +837,7 @@ int hw_sensor_power_up_config(struct device *dev, hwsensor_board_info_t *sensor_
         return -1;
     }
 
-    rc = devm_regulator_bulk_get(dev, sensor_info->ldo_num, sensor_info->ldo);
+    rc = regulator_bulk_get(dev, sensor_info->ldo_num, sensor_info->ldo);
     if (rc < 0) {
         cam_err("%s failed %d\n", __func__, __LINE__);
         return rc;
@@ -858,7 +858,7 @@ void hw_sensor_power_down_config(hwsensor_board_info_t *sensor_info)
     for(i = 0; i < sensor_info->ldo_num; i++){
         cam_info("%s %d=%s",__func__,i,sensor_info->ldo[i].supply);
         if(NULL != sensor_info->ldo[i].consumer){
-          devm_regulator_put(sensor_info->ldo[i].consumer);
+            regulator_put(sensor_info->ldo[i].consumer);
         }
     }
     cam_info("power down config the ldo end");
@@ -1001,7 +1001,7 @@ int hw_sensor_get_dt_data(struct platform_device *pdev,
 		}
     }
 
-	rc = devm_regulator_bulk_get(&(pdev->dev), sensor_info->ldo_num, sensor_info->ldo);
+	rc = regulator_bulk_get(&(pdev->dev), sensor_info->ldo_num, sensor_info->ldo);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;

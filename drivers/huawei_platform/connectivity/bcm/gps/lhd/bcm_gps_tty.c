@@ -270,7 +270,7 @@ static void alarm_idle_init(enum ttyalarmtimer_type type,
 	base->timer_idle_expiration_ms = timer_expiration_ms;
 
 	// my_timer, my_timer.function, my_timer.data
-	setup_timer( &base->timer_idle, base->timer_idle_function, (long)base );
+	setup_timer(&base->timer_idle, base->timer_idle_function, (long)(uintptr_t)base);
 
 	spin_unlock_irqrestore(&base->lock, flags);
 
@@ -430,7 +430,7 @@ static int bcm_tty_config_close(struct file *f)
 	set_fs(KERNEL_DS);
 
 	/* Get termios */
-	ret = f->f_op->unlocked_ioctl(f, TCGETS, (unsigned long)&termios);
+	ret = f->f_op->unlocked_ioctl(f, TCGETS, (unsigned long)(uintptr_t)&termios);
 	if (ret) {
 		GPSERR(" TCGETS failed, err=%ld", ret);
 		set_fs(fs);
@@ -445,7 +445,7 @@ static int bcm_tty_config_close(struct file *f)
 	termios.c_cc[VTIME] = 1;
 	termios.c_cflag |= B921600;
 	/* Set termios */
-	ret = f->f_op->unlocked_ioctl(f, TCSETS, (unsigned long)&termios);
+	ret = f->f_op->unlocked_ioctl(f, TCSETS, (unsigned long)(uintptr_t)&termios);
 	if (ret) {
 		GPSERR(" TCSETS failed, err=%ld", ret);
 		set_fs(fs);

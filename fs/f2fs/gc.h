@@ -1,17 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * fs/f2fs/gc.h
  *
  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
  *             http://www.samsung.com/
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/ratelimit.h>
 
-#define F2FS_GC_DSM_INTERVAL      (200 * HZ)
-#define F2FS_GC_DSM_BURST         2
+#define F2FS_GC_DSM_INTERVAL	  (200 * HZ)
+#define F2FS_GC_DSM_BURST	  2
 
 #define GC_THREAD_MIN_WB_PAGES		1	/*
 						 * a threshold to determine
@@ -45,6 +42,7 @@ enum {
 	GC_PERF,
 	GC_FRAG
 };
+
 
 struct gc_inode_list {
 	struct list_head ilist;

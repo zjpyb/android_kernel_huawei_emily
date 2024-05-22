@@ -327,9 +327,9 @@ FSC_BOOL core_is_c2a_cable(void)
     return c2a_cable;
 }
 
-int core_cc_disable(FSC_BOOL disabled)
+int core_cc_disable(bool disabled)
 {
-	if(disabled == FALSE){
+	if(disabled == false){
 		SetStateUnattached();
 	} else {
 		clearState();

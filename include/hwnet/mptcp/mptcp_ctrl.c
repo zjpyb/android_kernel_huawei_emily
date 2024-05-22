@@ -72,6 +72,7 @@ static struct kmem_cache *mptcp_cb_cache __read_mostly;
 static struct kmem_cache *mptcp_tw_cache __read_mostly;
 
 int sysctl_mptcp_enabled __read_mostly = 1;
+EXPORT_SYMBOL(sysctl_mptcp_enabled);
 int sysctl_mptcp_version __read_mostly;
 static int min_mptcp_version;
 static int max_mptcp_version = 1;
@@ -532,7 +533,11 @@ begin:
 		meta_sk = (struct sock *)meta_tp;
 		if (token == meta_tp->mptcp_loc_token &&
 		    net_eq(net, sock_net(meta_sk))) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+			if (unlikely(!refcount_inc_not_zero(&meta_sk->sk_refcnt)))
+#else
 			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+#endif
 				goto out;
 			if (unlikely(token != meta_tp->mptcp_loc_token ||
 				     !net_eq(net, sock_net(meta_sk)))) {
@@ -735,7 +740,7 @@ void mptcp_destroy_sock(struct sock *sk)
 			mptcp_sub_close(sk_it, 0);
 		}
 	} else {
-		struct sock *meta_sk;
+		struct sock *meta_sk = NULL;
 
 		mptcp_del_sock(sk);
 
@@ -763,12 +768,17 @@ static void mptcp_set_state(struct sock *sk)
 
 		if (!sock_flag(meta_sk, SOCK_DEAD)) {
 			meta_sk->sk_state_change(meta_sk);
-			if (tcp_sk(meta_sk)->mptcp_cap_flag != MPTCP_CAP_ALL_APP) {
+#ifdef CONFIG_MPTCP_EPC
+			if (tcp_sk(meta_sk)->mptcp_cap_flag != MPTCP_CAP_ALL_APP)
+#endif
 				sk_wake_async(meta_sk, SOCK_WAKE_IO, POLL_OUT);
-			}
 		}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		tcp_sk(meta_sk)->lsndtime = tcp_jiffies32;
+#else
 		tcp_sk(meta_sk)->lsndtime = tcp_time_stamp;
+#endif
 	}
 
 	if (sk->sk_state == TCP_ESTABLISHED) {
@@ -814,7 +824,11 @@ static void mptcp_assign_congestion_control(struct sock *sk)
 	return;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+siphash_key_t mptcp_secret __read_mostly;
+#else
 u32 mptcp_secret[MD5_MESSAGE_BYTES / 4] ____cacheline_aligned;
+#endif
 u32 mptcp_seed;
 
 void mptcp_key_sha1(u64 key, u32 *token, u64 *idsn)
@@ -1028,7 +1042,11 @@ int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb)
 	struct sock *sk = skb->sk ? skb->sk : meta_sk;
 	int ret = 0;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (unlikely(!refcount_inc_not_zero(&sk->sk_refcnt))) {
+#else
 	if (unlikely(!atomic_inc_not_zero(&sk->sk_refcnt))) {
+#endif
 		kfree_skb(skb);
 		return 0;
 	}
@@ -1113,10 +1131,6 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	master_sk->bastet = NULL;
 	master_sk->reconn = NULL;
 #endif
-#ifdef CONFIG_HW_NETWORK_MEASUREMENT
-	master_sk->sk_tcp_statis = NULL;
-	master_sk->sk_nm_http = NULL;
-#endif
 
 	master_tp = tcp_sk(master_sk);
 
@@ -1125,39 +1139,45 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 		/* sk_free (and __sk_free) requirese wmem_alloc to be 1.
 		 * All the rest is set to 0 thanks to __GFP_ZERO above.
 		 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		refcount_set(&master_sk->sk_wmem_alloc, 1);
+#else
 		atomic_set(&master_sk->sk_wmem_alloc, 1);
+#endif
 		sk_free(master_sk);
 		return -ENOBUFS;
 	}
 
 #if IS_ENABLED(CONFIG_IPV6)
 	if (meta_icsk->icsk_af_ops == &mptcp_v6_mapped) {
+		struct tcp6_sock *master_tp6 = (struct tcp6_sock *)master_sk;
 		struct ipv6_pinfo *newnp, *np = inet6_sk(meta_sk);
 
-		inet_sk(master_sk)->pinet6 = &((struct tcp6_sock *)master_sk)->inet6;
+		inet_sk(master_sk)->pinet6 = &master_tp6->inet6;
 
 		newnp = inet6_sk(master_sk);
 		memcpy(newnp, np, sizeof(struct ipv6_pinfo));
-
-		newnp->ipv6_mc_list = NULL;
-		newnp->ipv6_ac_list = NULL;
-		newnp->ipv6_fl_list = NULL;
-		newnp->opt = NULL;
-		newnp->pktoptions = NULL;
-		(void)xchg(&newnp->rxpmtu, NULL);
 	} else if (meta_sk->sk_family == AF_INET6) {
+		struct tcp6_sock *master_tp6 = (struct tcp6_sock *)master_sk;
 		struct ipv6_pinfo *newnp, *np = inet6_sk(meta_sk);
+		struct ipv6_txoptions *opt;
 
-		inet_sk(master_sk)->pinet6 = &((struct tcp6_sock *)master_sk)->inet6;
+		inet_sk(master_sk)->pinet6 = &master_tp6->inet6;
 
+		/* The following heavily inspired from tcp_v6_syn_recv_sock() */
 		newnp = inet6_sk(master_sk);
 		memcpy(newnp, np, sizeof(struct ipv6_pinfo));
 
-		newnp->hop_limit	= -1;
-		newnp->mcast_hops	= IPV6_DEFAULT_MCASTHOPS;
-		newnp->mc_loop	= 1;
-		newnp->pmtudisc	= IPV6_PMTUDISC_WANT;
-		master_sk->sk_ipv6only = sock_net(master_sk)->ipv6.sysctl.bindv6only;
+		opt = rcu_dereference(np->opt);
+		if (opt) {
+			opt = ipv6_dup_options(master_sk, opt);
+			RCU_INIT_POINTER(newnp->opt, opt);
+		}
+		inet_csk(master_sk)->icsk_ext_hdr_len = 0;
+		if (opt)
+			inet_csk(master_sk)->icsk_ext_hdr_len = opt->opt_nflen +
+								opt->opt_flen;
+
 	}
 #endif
 
@@ -1212,10 +1232,16 @@ static int mptcp_alloc_mpcb(struct sock *meta_sk, __u64 remote_key,
 	/* Initialize the queues */
 	skb_queue_head_init(&mpcb->reinject_queue);
 	master_tp->out_of_order_queue = RB_ROOT;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	tcp_prequeue_init(master_tp);
+#endif
 	INIT_LIST_HEAD(&master_tp->tsq_node);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	master_sk->sk_tsq_flags = 0;
+#else
 	master_tp->tsq_flags = 0;
+#endif
 
 	mutex_init(&mpcb->mpcb_mutex);
 
@@ -1409,9 +1435,8 @@ void mptcp_del_sock(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk), *tp_prev;
 	struct mptcp_cb *mpcb;
-	struct mptcp_deleted_flow_info *flow_info;
-	unsigned int start;
-	struct dst_entry *dst;
+	struct mptcp_deleted_flow_info *flow_info = NULL;
+	struct dst_entry *dst = NULL;
 
 	if (!tp->mptcp || !tp->mptcp->attached)
 		return;
@@ -1459,11 +1484,8 @@ void mptcp_del_sock(struct sock *sk)
 			} else
 				flow_info->ifname[0] = '\0';
 
-			do {
-				start = u64_stats_fetch_begin_irq(&tp->syncp);
-				put_unaligned(tp->bytes_acked, &flow_info->tcpi_bytes_acked);
-				put_unaligned(tp->bytes_received, &flow_info->tcpi_bytes_received);
-			} while (u64_stats_fetch_retry_irq(&tp->syncp, start));
+			flow_info->tcpi_bytes_acked = tp->bytes_acked;
+			flow_info->tcpi_bytes_received = tp->bytes_received;
 			list_add(&flow_info->node, &mpcb->deleted_flow_info);
 		}
 	}
@@ -1750,7 +1772,8 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	struct mptcp_hw_ext_sock hw_ext_sock;
 	struct socket *sock = meta_sk->sk_socket;
 #endif
-	struct mptcp_deleted_flow_info *deleted, *tmp;
+	struct mptcp_deleted_flow_info *deleted = NULL;
+	struct mptcp_deleted_flow_info *tmp = NULL;
 	char src_ip_str[INET_ADDRSTRLEN];
 	char dst_ip_str[INET_ADDRSTRLEN];
 
@@ -1866,7 +1889,7 @@ adjudge_to_death:
 		hw_ext_sock.uid = sock_i_uid(meta_sk).val;
 		hw_ext_sock.pid = sock->pid;
 		hw_ext_sock.fd = sock->fd;
-		Emcom_Xengine_MptcpSocketClosed(&hw_ext_sock, sizeof(hw_ext_sock));
+		emcom_xengine_mptcp_socket_closed(&hw_ext_sock, sizeof(hw_ext_sock));
 		mptcp_info("%s: report close for uid:%d, pid:%d, fd:%d\n",
 			    __func__, sock_i_uid(meta_sk).val, sock->pid,
 			    sock->fd);
@@ -2184,7 +2207,11 @@ int mptcp_check_req_master(struct sock *sk, struct sock *child,
 		inet_csk_complete_hashdance(sk, meta_sk, req, true);
 	} else {
 		/* Thus, we come from syn-cookies */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		refcount_set(&req->rsk_refcnt, 1);
+#else
 		atomic_set(&req->rsk_refcnt, 1);
+#endif
 		inet_csk_reqsk_queue_add(sk, req, meta_sk);
 	}
 
@@ -2256,7 +2283,11 @@ struct sock *mptcp_check_req_child(struct sock *meta_sk,
 	child_tp->mptcp->rcv_isn = tcp_rsk(req)->rcv_isn;
 	child_tp->mptcp->init_rcv_wnd = req->rsk_rcv_wnd;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	child->sk_tsq_flags = 0;
+#else
 	child_tp->tsq_flags = 0;
+#endif
 
 	sock_rps_save_rxhash(child, skb);
 	tcp_synack_rtt_meas(child, req);
@@ -2410,7 +2441,11 @@ void mptcp_tsq_flags(struct sock *sk)
 		sock_hold(sk);
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (!test_and_set_bit(MPTCP_SUB_DEFERRED, &meta_sk->sk_tsq_flags))
+#else
 	if (!test_and_set_bit(MPTCP_SUB_DEFERRED, &tcp_sk(meta_sk)->tsq_flags))
+#endif
 		sock_hold(meta_sk);
 }
 
@@ -2571,8 +2606,11 @@ static void __mptcp_get_info(const struct sock *meta_sk,
 {
 	const struct inet_connection_sock *meta_icsk = inet_csk(meta_sk);
 	const struct tcp_sock *meta_tp = tcp_sk(meta_sk);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	u32 now = tcp_jiffies32;
+#else
 	u32 now = tcp_time_stamp;
-	unsigned int start;
+#endif
 
 	memset(info, 0, sizeof(*info));
 
@@ -2591,11 +2629,8 @@ static void __mptcp_get_info(const struct sock *meta_sk,
 
 	info->mptcpi_total_retrans = meta_tp->total_retrans;
 
-	do {
-		start = u64_stats_fetch_begin_irq(&meta_tp->syncp);
 		info->mptcpi_bytes_acked = meta_tp->bytes_acked;
 		info->mptcpi_bytes_received = meta_tp->bytes_received;
-	} while (u64_stats_fetch_retry_irq(&meta_tp->syncp, start));
 }
 
 static void mptcp_get_sub_info(struct sock *sk, struct mptcp_sub_info *info)
@@ -2973,18 +3008,30 @@ void __init mptcp_init(void)
 		goto mptcp_sock_cache_failed;
 
 	mptcp_cb_cache = kmem_cache_create("mptcp_cb", sizeof(struct mptcp_cb),
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+					   0, SLAB_TYPESAFE_BY_RCU|SLAB_HWCACHE_ALIGN,
+#else
 					   0, SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+#endif
 					   NULL);
 	if (!mptcp_cb_cache)
 		goto mptcp_cb_cache_failed;
 
 	mptcp_tw_cache = kmem_cache_create("mptcp_tw", sizeof(struct mptcp_tw),
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+					   0, SLAB_TYPESAFE_BY_RCU|SLAB_HWCACHE_ALIGN,
+#else
 					   0, SLAB_DESTROY_BY_RCU|SLAB_HWCACHE_ALIGN,
+#endif
 					   NULL);
 	if (!mptcp_tw_cache)
 		goto mptcp_tw_cache_failed;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	get_random_bytes(&mptcp_secret, sizeof(mptcp_secret));
+#else
 	get_random_bytes(mptcp_secret, sizeof(mptcp_secret));
+#endif
 
 	mptcp_wq = alloc_workqueue("mptcp_wq", WQ_UNBOUND | WQ_MEM_RECLAIM, 8);
 	if (!mptcp_wq)
@@ -3020,7 +3067,7 @@ void __init mptcp_init(void)
 	if (mptcp_register_scheduler(&mptcp_sched_default_adv))
 		goto register_sched_failed;
 
-	pr_info("MPTCP: Stable release v0.93.1");
+	pr_info("MPTCP: Stable release v0.94.2");
 
 	mptcp_init_failed = false;
 

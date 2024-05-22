@@ -96,10 +96,12 @@ static int hisi_clkmbox_send_ipc_sync(mbox_msg_t *msg)
  * (2) Please check the return variable, as the mailbox may not ready.
  *
  */
-int hisi_clkmbox_send_msg(mbox_msg_t *msg)
+int hisi_clkmbox_send_msg(mbox_msg_t *msg, int length)
 {
 	int ret = 0;
 	int loop = MAX_SEND_MSG_TRY;
+	if(length > MBOX_CHAN_DATA_SIZE)
+		pr_err("fail to mbox_length!\n");
 
 	/* try again when the mail box is full */
 	do {

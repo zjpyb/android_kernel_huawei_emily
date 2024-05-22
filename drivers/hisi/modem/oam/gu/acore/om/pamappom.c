@@ -360,7 +360,9 @@ VOS_UINT32 PAM_OM_AcpuAtToPihMsgFilter(
         case SI_PIH_CRSM_SET_REQ:
         case SI_PIH_CRLA_SET_REQ:
         case SI_PIH_CGLA_SET_REQ:
+#if (FEATURE_ON == FEATURE_PHONE_SC)
         case SI_PIH_SILENT_PININFO_SET_REQ:
+#endif
         case SI_PIH_GACCESS_REQ:
         case SI_PIH_ISDB_ACCESS_REQ:
         case SI_PIH_PRIVATECGLA_SET_REQ:
@@ -468,12 +470,16 @@ VOS_VOID PAM_OM_LayerMsgReplaceCBReg(VOS_VOID)
     PS_OM_LayerMsgReplaceCBReg(I0_MAPS_PB_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I0_MAPS_STK_PID, PAM_OM_LayerMsgFilter);
 
+#if (FEATURE_MULTI_MODEM == FEATURE_ON)
     PS_OM_LayerMsgReplaceCBReg(I1_MAPS_PIH_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I1_MAPS_PB_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I1_MAPS_STK_PID, PAM_OM_LayerMsgFilter);
+#if (3 == MULTI_MODEM_NUMBER)
     PS_OM_LayerMsgReplaceCBReg(I2_MAPS_PIH_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I2_MAPS_PB_PID, PAM_OM_LayerMsgFilter);
     PS_OM_LayerMsgReplaceCBReg(I2_MAPS_STK_PID, PAM_OM_LayerMsgFilter);
+#endif
+#endif
 
 }
 
@@ -586,6 +592,7 @@ VOS_UINT32 PAMOM_APP_FID_Init(enum VOS_INIT_PHASE_DEFINE ip)
     return VOS_OK;
 }
 
+#if (VOS_WIN32 != VOS_OS_VER)
 
 VOS_VOID OM_OSAEvent(VOS_VOID *pData, VOS_UINT32 ulLength)
 {
@@ -601,6 +608,7 @@ VOS_VOID OM_OSAEvent(VOS_VOID *pData, VOS_UINT32 ulLength)
 
     return;
 }
+#endif
 
 
 /* AT<->AT的屏蔽处理，移到GuNasLogFilter.c */

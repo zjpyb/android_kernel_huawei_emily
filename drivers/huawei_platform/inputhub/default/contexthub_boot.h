@@ -40,6 +40,7 @@
 #define VITAL_TPLCD (11)
 #define TM_TPLCD (12)
 #define AUO_TPLCD (13)
+#define TCL_TPLCD (14)
 #define CTC_TPLCD (15)
 
 #define DTS_COMP_LG_ER69006A "hisilicon,mipi_lg_eR69006A"
@@ -84,13 +85,20 @@
 #define DTS_COMP_SAMSUNG_EA8076 "samsung_ea8076_elle_6p11_1080plus_cmd"
 #define DTS_COMP_SAMSUNG_EA8076_V2 "samsung_ea8076_elle_v2_6p11_1080plus_cmd"
 #define DTS_COMP_BOE_NT37700F_TAH "boe-nt37800f-tah-8p03-3lane-2mux-cmd"
+#define DTS_COMP_HLK_AUO_OTM1901A "hlk_auo_otm1901a_5p2_1080p_video_default"
+#define DTS_COMP_BOE_NT36682A "boe_nt36682a_6p59_1080p_video"
+#define DTS_COMP_BOE_TD4320 "boe_td4320_6p59_1080p_video"
+#define DTS_COMP_INX_NT36682A "inx_nt36682a_6p59_1080p_video"
+#define DTS_COMP_TCL_NT36682A "tcl_nt36682a_6p59_1080p_video"
+#define DTS_COMP_TM_NT36682A "tm_nt36682a_6p59_1080p_video"
+#define DTS_COMP_TM_TD4320 "tm_td4320_6p59_1080p_video"
 #define DTS_COMP_TM_TD4320_6P26 "tm_td4320_6p26_1080p_video"
 #define DTS_COMP_TM_TD4330_6P26 "tm_td4330_6p26_1080p_video"
 #define DTS_COMP_TM_NT36672A_6P26 "tm_nt36672a_6p26_1080p_video"
 
 #define DTS_COMP_CTC_FT8719_6P26 "ctc_ft8719_6p26_1080p_video"
 #define DTS_COMP_CTC_NT36672A_6P26 "ctc_nt36672a_6p26_1080p_video"
-
+#define DTS_COMP_BOE_TD4321_6P26 "boe_td4321_6p26_1080p_video"
 
 enum SENSOR_POWER_CHECK {
 	SENSOR_POWER_STATE_OK = 0,
@@ -100,93 +108,92 @@ enum SENSOR_POWER_CHECK {
 	SENSOR_POWER_STATE_NOT_PMIC,
 };
 
-typedef struct
-{
-    u32 mutex;
-    u16 index;
-    u16 pingpang;
-    u32 buff;
-    u32 ddr_log_buff_cnt;
-    u32 ddr_log_buff_index;
-    u32 ddr_log_buff_last_update_index;
+typedef struct {
+	u32 mutex;
+	u16 index;
+	u16 pingpang;
+	u32 buff;
+	u32 ddr_log_buff_cnt;
+	u32 ddr_log_buff_index;
+	u32 ddr_log_buff_last_update_index;
 } log_buff_t;
 
-typedef struct WRONG_WAKEUP_MSG
-{
-    u32 flag;
-    u64 time;
-    u32 irq0;
-    u32 irq1;
-    u32 recvfromapmsg[4];
-    u32 recvfromlpmsg[4];
-    u32 sendtoapmsg[4];
-    u32 sendtolpmsg[4];
-    u32 recvfromapmsgmode;
-    u32 recvfromlpmsgmode;
-    u32 sendtoapmsgmode;
-    u32 sendtolpmsgmode;
+typedef struct WRONG_WAKEUP_MSG {
+	u32 flag;
+	u32 reserved1;
+	u64 time;
+	u32 irq0;
+	u32 irq1;
+	u32 recvfromapmsg[4];
+	u32 recvfromlpmsg[4];
+	u32 sendtoapmsg[4];
+	u32 sendtolpmsg[4];
+	u32 recvfromapmsgmode;
+	u32 recvfromlpmsgmode;
+	u32 sendtoapmsgmode;
+	u32 sendtolpmsgmode;
 } wrong_wakeup_msg_t;
 
-typedef enum DUMP_LOC
-{
-    DL_NONE = 0,
-    DL_TCM,
-    DL_EXT,
-    DL_BOTTOM = DL_EXT,
+typedef enum DUMP_LOC {
+	DL_NONE = 0,
+	DL_TCM,
+	DL_EXT,
+	DL_BOTTOM = DL_EXT,
 } dump_loc_t;
 
-enum DUMP_REGION
-{
-    DE_TCM_CODE,
-    DE_DDR_CODE,
-    DE_DDR_DATA,
-    DE_BOTTOM = 16,
+enum DUMP_REGION {
+	DE_TCM_CODE,
+	DE_DDR_CODE,
+	DE_DDR_DATA,
+	DE_BOTTOM = 16,
 };
 
-typedef struct DUMP_REGION_CONFIG
-{
-    u8 loc;
-    u8 reserved[3];
+typedef struct DUMP_REGION_CONFIG {
+	u8 loc;
+	u8 reserved[3];
 } dump_region_config_t;
 
-typedef struct DUMP_CONFIG
-{
-    u64 dump_addr;
-    u32 dump_size;
-    u64 ext_dump_addr;
-    u32 ext_dump_size;
-    u8 enable;
-    u8 finish;
-    u8 reason;
-    dump_region_config_t elements[DE_BOTTOM];
+typedef struct DUMP_CONFIG {
+	u64 dump_addr;
+	u32 dump_size;
+	u32 reserved1;
+	u64 ext_dump_addr;
+	u32 ext_dump_size;
+	u8 enable;
+	u8 finish;
+	u8 reason;
+	u8 reserved2;
+	dump_region_config_t elements[DE_BOTTOM];
 } dump_config_t;
 
 typedef struct {
 	u64 syscnt;
 	u64 kernel_ns;
-}timestamp_kernel_t;
+} timestamp_kernel_t;
 
 typedef struct {
 	u64 syscnt;
 	u64 kernel_ns;
 	u32 timer32k_cyc;
-}timestamp_iomcu_base_t;
+	u32 reserved;
+} timestamp_iomcu_base_t;
 
 typedef struct {
 	const char *dts_comp_mipi;
 	uint8_t tplcd;
-}lcd_module;
+} lcd_module;
 
 typedef struct {
 	const char *dts_comp_lcd_model;
 	uint8_t tplcd;
-}lcd_model;
+} lcd_model;
 
 typedef struct coul_core_info {
 	int c_offset_a;
 	int c_offset_b;
 	int r_coul_mohm;
-}coul_core_info_t;
+	int reserved;
+} coul_core_info_t;
 
 struct BrightData {
 	uint32_t mipiData;
@@ -194,44 +201,68 @@ struct BrightData {
 	uint64_t timeStamp;
 };
 
-struct ReadDataAlsUd{
+struct ReadDataAlsUd {
 	float rdata;
 	float gdata;
 	float bdata;
 	float irdata;
 };
 
-struct AlsUdConfig{
+struct AlsUdConfig {
 	u8 screen_status;
 	u64 als_rgb_pa;
 	struct BrightData BrightData_input;
 	struct ReadDataAlsUd read_data_history;
 };
 
-struct CONFIG_ON_DDR
-{
+typedef struct {
+	u64 log_addr;
+	u32 log_size;
+	u32 rsvd;
+} bbox_config_t;
+
+struct CONFIG_ON_DDR {
 	dump_config_t dump_config;
 	log_buff_t LogBuffCBBackup;
 	wrong_wakeup_msg_t WrongWakeupMsg;
 	u32 log_level;
 	float gyro_offset[3];
 	u8 modem_open_app_state;
+	u8 reserved1[7];
 	u64 reserved;
 	timestamp_kernel_t timestamp_base;
 	timestamp_iomcu_base_t timestamp_base_iomcu;
 	coul_core_info_t coul_info;
+	bbox_config_t bbox_conifg;
 	struct AlsUdConfig als_ud_config;
 	u32 te_irq_tcs3701;
 	u32 old_dc_flag;
 };
 
-/*receive data from mcu,you should copy the buf each time.*/
-/*extern size_t (*api_inputhub_mcu_recv)(const char *buf,unsigned long length);*/
-extern int (*api_inputhub_mcu_recv) (const char* buf, unsigned int length);
-extern int (*api_mculog_process) (const char* buf, unsigned int length);
+extern uint32_t need_reset_io_power;
+extern uint32_t need_set_3v_io_power;
+extern uint32_t need_set_3_2v_io_power;
+extern atomic_t iom3_rec_state;
+#ifdef CONFIG_HISI_COUL
+extern int c_offset_a;
+extern int c_offset_b;
+#endif
+
+#ifdef SENSOR_1V8_POWER
+extern int hw_extern_pmic_query_state(int index, int *state);
+#else
+static int hw_extern_pmic_query_state(int index, int *state);
+#endif
+
+extern int (*api_inputhub_mcu_recv) (const char *buf, unsigned int length);
+extern int (*api_mculog_process) (const char *buf, unsigned int length);
 void write_timestamp_base_to_sharemem(void);
 int getSensorMcuMode(void);
 int is_sensorhub_disabled(void);
 void peri_used_request(void);
 void peri_used_release(void);
+#ifdef CONFIG_HUAWEI_DSM
+struct dsm_client *inputhub_get_shb_dclient(void);
+#endif
+extern uint32_t no_need_sensor_ldo24;
 #endif /* __LINUX_INPUTHUB_CMU_H__ */

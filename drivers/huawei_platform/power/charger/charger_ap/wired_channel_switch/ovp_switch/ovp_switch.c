@@ -27,6 +27,7 @@
 
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/wired_channel_switch.h>
+#include <huawei_platform/power/power_dts.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -35,11 +36,11 @@
 #define HWLOG_TAG ovp_chsw
 HWLOG_REGIST();
 
-static int wired_channel_by_ovp;
+static u32 wired_channel_by_ovp;
 static int gpio_ovp_chsw_en;
 static int ovp_gpio_initialized;
 static int wired_channel_ovp_status = WIRED_CHANNEL_RESTORE;
-static int g_gpio_low_by_set_input = 1;
+static u32 g_gpio_low_by_set_input = 1;
 
 static int ovp_chsw_get_wired_channel(void)
 {
@@ -75,7 +76,7 @@ static int ovp_chsw_set_wired_channel(int flag)
 		ret = ovp_chsw_set_gpio_low();
 	}
 
-	hwlog_info("ovp channel switch set en(%d)\n",
+	hwlog_info("ovp channel switch set en=%d\n",
 		(flag == WIRED_CHANNEL_CUTOFF) ? 1 : 0);
 
 	wired_channel_ovp_status = flag;
@@ -90,23 +91,11 @@ static struct wired_chsw_device_ops ovp_chsw_ops = {
 
 static void ovp_chsw_parse_dts(struct device_node *np)
 {
-	int ret;
-
-	ret = of_property_read_u32(of_find_compatible_node(NULL, NULL,
-			"huawei,wired_channel_switch"),
-			"use_ovp_cutoff_wired_channel",
-			&wired_channel_by_ovp);
-	if (ret)
-		wired_channel_by_ovp = 0;
-
-	hwlog_info("wired_channel_by_ovp=%d\n", wired_channel_by_ovp);
-
-	ret = of_property_read_u32(np, "gpio_low_by_set_input",
-			&g_gpio_low_by_set_input);
-	if (ret)
-		g_gpio_low_by_set_input = 1;
-
-	hwlog_info("gpio_low_by_set_input=%d\n", g_gpio_low_by_set_input);
+	(void)power_dts_read_u32_compatible("huawei,wired_channel_switch",
+		"use_ovp_cutoff_wired_channel",
+		&wired_channel_by_ovp, 0);
+	(void)power_dts_read_u32(np, "gpio_low_by_set_input",
+		&g_gpio_low_by_set_input, 1);
 }
 
 static int ovp_chsw_gpio_init(struct device_node *np)
@@ -117,18 +106,18 @@ static int ovp_chsw_gpio_init(struct device_node *np)
 	hwlog_info("gpio_ovp_chsw_en=%d\n", gpio_ovp_chsw_en);
 
 	if (!gpio_is_valid(gpio_ovp_chsw_en)) {
-		hwlog_err("gpio(gpio_ovp_chsw_en) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		return -EINVAL;
 	}
 
 	if (gpio_request(gpio_ovp_chsw_en, "gpio_ovp_chsw_en")) {
-		hwlog_err("gpio(gpio_ovp_chsw_en) request fail\n");
+		hwlog_err("gpio request fail\n");
 		return -ENOMEM;
 	}
 
 	ret = ovp_chsw_set_gpio_low();
 	if (ret) {
-		hwlog_err("gpio(gpio_ovp_chsw_en) set input fail\n");
+		hwlog_err("gpio set input fail\n");
 		gpio_free(gpio_ovp_chsw_en);
 		return -1;
 	}
@@ -141,9 +130,14 @@ static int ovp_chsw_gpio_init(struct device_node *np)
 static int ovp_chsw_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct device_node *np = (&pdev->dev)->of_node;
+	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
+
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
+	np = pdev->dev.of_node;
 
 	ovp_chsw_parse_dts(np);
 

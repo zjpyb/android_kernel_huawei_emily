@@ -522,7 +522,7 @@ int send_cap_prox_calibrate_data_to_mcu(void)
 				sar_calibrate_datas.semtech_cali_data.diff, sizeof(sar_calibrate_datas), sizeof(sar_calibrate_datas));
 	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,abov-a96t3x6",
 		strlen("huawei,abov-a96t3x6"))) {
-		hwlog_info("a96t3x6:offset=%d, diff=%d length:%ld %ld diff2=%d len:%ld\n",
+		hwlog_info("a96t3x6:offset=%d, diff=%d length:%ld %ld\n",
 			sar_calibrate_datas.abov_cali_data.offset,
 			sar_calibrate_datas.abov_cali_data.diff,
 			sizeof(sar_calibrate_datas),
@@ -619,7 +619,7 @@ void reset_calibrate_data(void)
 	}
 	if (rohm_rgb_flag == 1 || avago_rgb_flag == 1 || ams_tmd3725_rgb_flag == 1 || liteon_ltr582_rgb_flag == 1 || is_cali_supported == 1
 		|| apds9999_rgb_flag == 1 || ams_tmd3702_rgb_flag == 1 || apds9253_rgb_flag == 1|| vishay_vcnl36658_als_flag ==1
-		|| tsl2591_flag == 1) {
+		|| tsl2591_flag == 1 || bh1726_flag) {
 		send_calibrate_data_to_mcu(TAG_ALS, SUB_CMD_SET_OFFSET_REQ, als_sensor_calibrate_data, ALS_CALIDATA_NV_SIZE, true);
 	}
 	if (strlen(sensor_chip_info[GYRO])) {
@@ -1220,10 +1220,10 @@ void select_als_para(struct device_node *dn)
 	}else if (vishay_vcnl36658_als_flag ==1){
 		select_vishay_vcnl36658_als_data();
 	}  else if((apds9922_flag == 1)||(ltr578_flag == 1)){
+		mutex_lock(&mutex_set_para);
 		if(WAS == als_data.als_phone_type){
 			tp_manufacture = tplcd_manufacture;
 		}/*when the product is Was,the tp_manufacture is the same as tplcd_manufacture*/
-		mutex_lock(&mutex_set_para);
 		set_pinhole_als_extend_parameters();
 		set_pinhole_para_flag = 1;
 		mutex_unlock(&mutex_set_para);

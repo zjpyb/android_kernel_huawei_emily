@@ -32,7 +32,7 @@
 #include <linux/switch.h>
 #include <linux/timer.h>
 #include <linux/delay.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 
 struct drv2605_data {
 	struct led_classdev cclassdev;
@@ -61,7 +61,7 @@ static char reg_add = 0;
 static char reg_value = 0;
 extern struct vibrator_paltform_data vibrator_data;
 extern sys_status_t iom3_sr_status;
-struct wake_lock vibwlock;
+struct wakeup_source vibwlock;
 
 static int vib_time =0;
 #if defined(CONFIG_HISI_VIBRATOR)
@@ -142,7 +142,7 @@ struct {
     { 33, {0x2C,0,0,0,0,0,0,0},200},
 };
 
-static int vibrator_enable(struct led_classdev *cdev, int value);
+static void vibrator_enable(struct led_classdev *cdev, enum led_brightness value);
 static void vibrator_set_time(int val);
 
 static void vibrator_operate_reg(char reg, char rw_state, char write_regval, char* read_regval)
@@ -245,16 +245,16 @@ static read_info_t vibrator_send_cali_test_cmd(char* cmd, int len, RET_TYPE *rty
 	}
 	return pkg_mcu;
 }
-static int vibrator_off(void)
+static void vibrator_off(void)
 {
 	vibrator_set_time(VIB_OFF);
 	vibrator_shake = 0;
 }
-static void vibra_set_work(void)
+static void vibra_set_work(struct work_struct *work)
 {
 	vibrator_set_time(vib_time);
 }
-static void haptics_play_effect(void)
+static void haptics_play_effect(struct work_struct *work)
 {
 	unsigned char haptics_val[VIB_TEST_CMD_LEN] = {0};
 	RET_TYPE vib_return_calibration = RET_INIT;
@@ -481,7 +481,7 @@ static ssize_t haptic_test_store(struct device *dev, struct device_attribute *at
 	vibrator_off();
 	memcpy(&data->sequence, &haptic_value,8);
 	data->play_effect_time = 0;
-	haptics_play_effect();
+	haptics_play_effect(NULL);
 	hwlog_info("%s\n", __func__);
 	return count;
 }
@@ -661,7 +661,7 @@ static void vibrator_set_time(int val){
 		hwlog_err("send tag %d vibrator_set_time fail, %d\n", TAG_VIBRATOR, pkg_mcu.errno);
 	}
 }
-static int vibrator_enable(struct led_classdev *cdev, int value)
+static void vibrator_enable(struct led_classdev *cdev, enum led_brightness value)
 {
 	int val = value;
 
@@ -677,7 +677,7 @@ static int vibrator_enable(struct led_classdev *cdev, int value)
 		}
 		vib_time = val;
 		//vibrator_set_time(val);
-		wake_lock_timeout(&vibwlock,VIB_WAKELOCK_TIME);
+		__pm_wakeup_event(&vibwlock,jiffies_to_msecs(VIB_WAKELOCK_TIME));
 		hwlog_err("vibrator_enable, time = %d end\n", val);
 	}else{
 		//vibrator_set_time(VIB_OFF);
@@ -686,7 +686,6 @@ static int vibrator_enable(struct led_classdev *cdev, int value)
 		vibrator_shake = 0;
 	}
 	schedule_work(&data->work);
-	return 0;
 }
 
 static int haptics_open(struct inode * i_node, struct file * filp)
@@ -892,7 +891,7 @@ static int __init vibratorhub_init(void)
 		return -ENOMEM;
 	}
 
-	wake_lock_init(&vibwlock, WAKE_LOCK_SUSPEND, "vib_sensorhub");
+	wakeup_source_init(&vibwlock, "vib_sensorhub");
 	INIT_WORK(&data->work_play_eff, haptics_play_effect);
 	INIT_WORK(&data->work, vibra_set_work);
 
@@ -918,7 +917,7 @@ static void __exit vibratorhub_exit(void)
 	led_classdev_unregister(&data->cclassdev);
 	cancel_work_sync(&data->work_play_eff);
 	cancel_work_sync(&data->work);
-	wake_lock_destroy(&vibwlock);
+	wakeup_source_trash(&vibwlock);
 	hwlog_info("exit %s\n", __func__);
 }
 

@@ -37,8 +37,14 @@
 #define HKIP_HVC_RO_MOD_UNREGISTER      0xC6001033
 #define HKIP_HVC_ROWM_REGISTER          0xC6001040
 #define HKIP_HVC_ROWM_SET_BIT           0xC6001050
+
+#define HKIP_HVC_XO_REGISTER            0xC6001060
+#define HKIP_HVC_XO_UNREGISTER          0xC6001061
+
 #define HHEE_HVC_LIVEPATCH              0xC6001088
 #define HHEE_HVC_TOKEN                  0xC6001089
+#define HHEE_HVC_ENABLE_TVM             0xC600108A
+#define HHEE_HVC_DISABLE_LIVEPATCH      0xC600108B
 #define HHEE_RETURN_STAGE2_INFO         0xC60000fe
 /*
  * Defines for el2 register read
@@ -70,27 +76,6 @@
 
 #define HHEE_UNKNOWN_HVC                0xC90000ff
 
-/*
- * Defines for psci
- */
-#define PSCI_VERSION                    0x84000000
-#define PSCI_CPU_SUSPEND_AARCH32        0x84000001
-#define PSCI_CPU_SUSPEND_AARCH64        0xc4000001
-#define PSCI_CPU_OFF                    0x84000002
-#define PSCI_CPU_ON_AARCH32             0x84000003
-#define PSCI_CPU_ON_AARCH64             0xc4000003
-#define PSCI_AFFINITY_INFO_AARCH32      0x84000004
-#define PSCI_AFFINITY_INFO_AARCH64      0xc4000004
-#define PSCI_MIG_AARCH32                0x84000005
-#define PSCI_MIG_AARCH64                0xc4000005
-#define PSCI_MIG_INFO_TYPE              0x84000006
-#define PSCI_MIG_INFO_UP_CPU_AARCH32    0x84000007
-#define PSCI_MIG_INFO_UP_CPU_AARCH64    0xc4000007
-#define PSCI_SYSTEM_OFF                 0x84000008
-#define PSCI_SYSTEM_RESET               0x84000009
-#define PSCI_FEATURES                   0x8400000A
-
-
 #define HHEE_ENABLE    1
 #define HHEE_DISABLE   0
 
@@ -104,6 +89,7 @@ typedef int (*hhee_callback_t)(unsigned int len, void *buf);
 int hhee_msg_init(void);
 int hhee_msg_register_handler(unsigned int id, hhee_callback_t fn);
 int hhee_check_enable(void);
+void hkip_clean_counters(void);
 
 static inline struct arm_smccc_res hhee_fn_hvc(unsigned long function_id,
 			unsigned long arg0, unsigned long arg1,

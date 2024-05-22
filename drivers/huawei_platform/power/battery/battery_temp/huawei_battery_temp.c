@@ -3,7 +3,7 @@
  *
  * battery temp driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -33,20 +33,25 @@
 #define HWLOG_TAG huawei_battery_temp
 HWLOG_REGIST();
 
-#define UTEMP_PER_MTEMP                      (1000)
-#define ABNORMAL_BATT_TEMPERATURE_POWEROFF   (67000)
-#define LOW_BATT_TEMP_CHECK_THRESHOLD        (10000)
-#define DELTA_TEMP                           (15000)
-#define DEFAULT_TEMP                         (25000)
-#define TEMP_LOW                             (15000)
-#define TEMP_HIGH                            (40000)
-#define BATT_TEMP_NTC_INVALID_THRE           (10)
-#define BATT_TEMP_NTC_SAMPLES                (3)
-#define COMP_PARA_ARRAYSIZE                  (6)
-#define TEMP_SAMPLES                         (3)
-#define RETRY_TIMES                          (5)
+#define UTEMP_PER_MTEMP                      1000
+#define ABNORMAL_BATT_TEMPERATURE_POWEROFF   67000
+#define LOW_BATT_TEMP_CHECK_THRESHOLD        10000
+#define DELTA_TEMP                           15000
+#define DEFAULT_TEMP                         (-40000)
+#define TEMP_LOW                             15000
+#define TEMP_HIGH                            40000
+#define BATT_TEMP_NTC_INVALID_THRE           10
+#define BATT_TEMP_NTC_SAMPLES                3
+#define COMP_PARA_ARRAYSIZE                  6
+#define TEMP_SAMPLES                         3
+#define RETRY_TIMES                          5
 #define SENSOR_NAME_BATT_ID_0                "bat_0"
 #define SENSOR_NAME_BATT_ID_1                "bat_1"
+#define READ_TEMPERATURE_MS                  5000 /* 5 sec */
+#define TEMPERATURE_CHANGE_LIMIT             1000 /* 1 degrees */
+#define HUNDRED                              100
+#define TEMPERATURE_UPDATE_STATUS            0
+#define TEMPERATURE_INIT_STATUS              1
 
 enum batt_temp_comp_para_info {
 	BATT_TEMP_COMP_PARA_ICHG = 0,
@@ -70,13 +75,18 @@ struct batt_temp_comp_para_data {
 
 struct hw_batt_temp_info {
 	struct device *dev;
+	struct batt_temp_comp_para_data comp_para[COMP_PARA_ARRAYSIZE];
+	struct delayed_work temp_work;
 	int ntc_compensation_is;
 	int batt_temp_low;
 	int batt_temp_high;
-	struct batt_temp_comp_para_data comp_para[COMP_PARA_ARRAYSIZE];
+	int batt_temp_0;
+	int batt_temp_1;
+	int batt_temp_mixed;
+	int init_temp;
 };
 
-struct hw_batt_temp_info *g_di;
+static struct hw_batt_temp_info *g_di;
 
 #ifdef CONFIG_SYSFS
 #define HW_BATT_TEMP_SYSFS_FIELD(_name, n, m, store) \
@@ -86,7 +96,7 @@ struct hw_batt_temp_info *g_di;
 }
 
 #define HW_BATT_TEMP_SYSFS_FIELD_RO(_name, n) \
-	HW_BATT_TEMP_SYSFS_FIELD(_name, n, 0444, NULL)
+	HW_BATT_TEMP_SYSFS_FIELD(_name, n, 0440, NULL)
 
 struct hw_batt_temp_sysfs_field_info {
 	struct device_attribute attr;
@@ -124,8 +134,8 @@ static void hw_batt_temp_sysfs_init_attrs(void)
 	hw_batt_temp_sysfs_attrs[limit] = NULL;
 }
 
-static struct hw_batt_temp_sysfs_field_info
-	*hw_batt_temp_sysfs_field_lookup(const char *name)
+static struct hw_batt_temp_sysfs_field_info *hw_batt_temp_sysfs_field_lookup(
+	const char *name)
 {
 	int i;
 	int limit = ARRAY_SIZE(hw_batt_temp_sysfs_field_tbl);
@@ -133,7 +143,7 @@ static struct hw_batt_temp_sysfs_field_info
 	for (i = 0; i < limit; i++) {
 		if (!strncmp(name,
 			hw_batt_temp_sysfs_field_tbl[i].attr.attr.name,
-				strlen(name)))
+			strlen(name)))
 			break;
 	}
 
@@ -154,9 +164,7 @@ static void hw_batt_temp_sysfs_remove_group(struct hw_batt_temp_info *di)
 {
 	sysfs_remove_group(&di->dev->kobj, &hw_batt_temp_sysfs_attr_group);
 }
-
 #else
-
 static int hw_batt_temp_sysfs_create_group(struct hw_batt_temp_info *di)
 {
 	return 0;
@@ -186,34 +194,28 @@ static ssize_t hw_batt_temp_sysfs_show(struct device *dev,
 		huawei_battery_temp(BAT_TEMP_0, &batt_temp);
 		len = snprintf(buf, PAGE_SIZE, "%d\n", batt_temp);
 		break;
-
 	case HW_BATT_TEMP_SYSFS_BATT_TEMP_1:
 		huawei_battery_temp(BAT_TEMP_1, &batt_temp);
 		len = snprintf(buf, PAGE_SIZE, "%d\n", batt_temp);
 		break;
-
 	case HW_BATT_TEMP_SYSFS_BATT_TEMP_MIXED:
 		huawei_battery_temp(BAT_TEMP_MIXED, &batt_temp);
 		len = snprintf(buf, PAGE_SIZE, "%d\n", batt_temp);
 		break;
-
 	case HW_BATT_TEMP_SYSFS_BATT_TEMP_0_COMP:
-		huawei_battery_temp_with_comp(BAT_TEMP_0, &batt_temp);
+		huawei_battery_temp_now(BAT_TEMP_0, &batt_temp);
 		len = snprintf(buf, PAGE_SIZE, "%d\n", batt_temp);
 		break;
-
 	case HW_BATT_TEMP_SYSFS_BATT_TEMP_1_COMP:
-		huawei_battery_temp_with_comp(BAT_TEMP_1, &batt_temp);
+		huawei_battery_temp_now(BAT_TEMP_1, &batt_temp);
 		len = snprintf(buf, PAGE_SIZE, "%d\n", batt_temp);
 		break;
-
 	case HW_BATT_TEMP_SYSFS_BATT_TEMP_MIXED_COMP:
-		huawei_battery_temp_with_comp(BAT_TEMP_MIXED, &batt_temp);
+		huawei_battery_temp_now(BAT_TEMP_MIXED, &batt_temp);
 		len = snprintf(buf, PAGE_SIZE, "%d\n", batt_temp);
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -227,14 +229,9 @@ static int get_batt_temp_by_sensor_name(char *sensor_name)
 	int temp_samples = TEMP_SAMPLES;
 	int temp_invalid_flag = 0;
 	int max, min, i;
-	int temp = 0;
-	int ret = 0;
+	int temp;
+	int ret;
 	int sum = 0;
-
-	if (!sensor_name) {
-		hwlog_err("sensor name is null\n");
-		goto fail_get_temp;
-	}
 
 	tz = thermal_zone_get_zone_by_name(sensor_name);
 	if (IS_ERR(tz)) {
@@ -304,9 +301,9 @@ fail_get_temp:
 static int get_batt_temp_with_comp(int temp_without_compensation)
 {
 	struct hw_batt_temp_info *di = g_di;
-	int temp_with_compensation = 0;
-	int ichg = 0;
-	int i = 0;
+	int temp_with_compensation = temp_without_compensation;
+	int ichg;
+	int i;
 
 	if (!di) {
 		hwlog_err("di is null\n");
@@ -336,13 +333,13 @@ static int get_batt_temp_with_comp(int temp_without_compensation)
 	return temp_with_compensation;
 }
 
-int get_batt_temp_stably(char *sensor_name)
+static int get_batt_temp_stably(char *sensor_name)
 {
 	int retry_times = RETRY_TIMES;
 	int cnt = 0;
 	int temperature = 0;
-	int delta = 0;
-	int batt_temp = 0;
+	int delta;
+	int batt_temp;
 
 	batt_temp = get_batt_temp_by_sensor_name(sensor_name);
 
@@ -356,7 +353,7 @@ int get_batt_temp_stably(char *sensor_name)
 			continue;
 		}
 
-		hwlog_info("stably temp!, old_temp =%d, cnt =%d, temp = %d\n",
+		hwlog_info("stably temp, old_temp:%d, cnt:%d, temp:%d\n",
 			batt_temp, cnt, temperature);
 		return temperature;
 	}
@@ -366,12 +363,18 @@ int get_batt_temp_stably(char *sensor_name)
 
 static int get_batt_temp_mixed(int bat0_temp, int bat1_temp)
 {
-	int temp_mixed = 0;
+	int temp_mixed;
 	int batt_temp_high = g_di->batt_temp_high;
 	int batt_temp_low = g_di->batt_temp_low;
+	s64 temp_pro1;
+	s64 temp_pro2;
 
 	hwlog_info("bat0_temp is %d, bat1_temp is %d\n",
 		bat0_temp, bat1_temp);
+	temp_pro1 = (s64)(bat0_temp - batt_temp_low) *
+		(s64)(bat1_temp - batt_temp_low);
+	temp_pro2 = (s64)(bat0_temp - batt_temp_high) *
+		(s64)(bat1_temp - batt_temp_high);
 
 	if ((bat0_temp < batt_temp_low) && (bat1_temp > batt_temp_high)) {
 		temp_mixed = (batt_temp_low - bat0_temp) >
@@ -381,34 +384,88 @@ static int get_batt_temp_mixed(int bat0_temp, int bat1_temp)
 		temp_mixed = (bat0_temp - batt_temp_high) >
 			(batt_temp_low - bat1_temp) ? bat0_temp : bat1_temp;
 	} else if (((bat0_temp < batt_temp_low) &&
-		(bat1_temp < batt_temp_low)) ||
-		((bat0_temp - batt_temp_low) *
-		(bat1_temp - batt_temp_low) < 0)) {
+		(bat1_temp < batt_temp_low)) || (temp_pro1 < 0)) {
 		temp_mixed = bat0_temp < bat1_temp ? bat0_temp : bat1_temp;
 	} else if (((bat0_temp > batt_temp_high) &&
-		(bat1_temp > batt_temp_high)) ||
-		((bat0_temp - batt_temp_high) *
-		(bat1_temp - batt_temp_high) < 0)) {
+		(bat1_temp > batt_temp_high)) || (temp_pro2 < 0)) {
 		temp_mixed = bat0_temp > bat1_temp ? bat0_temp : bat1_temp;
 	} else {
 		/* temp 0 temp 1 between batt_temp_high and batt_temp_low */
 		temp_mixed = (bat0_temp + bat1_temp) / 2; /* average value */
 	}
 
-	hwlog_info("mixed batt temp is %d", temp_mixed);
+	hwlog_info("mixed batt temp is %d\n", temp_mixed);
 	return temp_mixed;
+}
+
+static int smooth_batt_temp(int temp_curr, int temp_pre)
+{
+	hwlog_info("temp_pre:%d, temp_curr:%d\n", temp_pre, temp_curr);
+
+	if (temp_curr - temp_pre > TEMPERATURE_CHANGE_LIMIT)
+		temp_curr = temp_pre + TEMPERATURE_CHANGE_LIMIT;
+	else if (temp_pre - temp_curr > TEMPERATURE_CHANGE_LIMIT)
+		temp_curr = temp_pre - TEMPERATURE_CHANGE_LIMIT;
+
+	return temp_curr;
+}
+
+static void init_battery_temp(struct hw_batt_temp_info *di)
+{
+	int batt_temp_0 = get_batt_temp_stably(SENSOR_NAME_BATT_ID_0);
+	int batt_temp_1 = get_batt_temp_stably(SENSOR_NAME_BATT_ID_1);
+	int batt_temp_mixed = get_batt_temp_mixed(batt_temp_0, batt_temp_1);
+
+	di->batt_temp_0 = batt_temp_0;
+	di->batt_temp_1 = batt_temp_1;
+	di->batt_temp_mixed = batt_temp_mixed;
+	hwlog_info("init temp0:%d,temp1:%d,temp_mixed:%d\n",
+		batt_temp_0, batt_temp_1, batt_temp_mixed);
+}
+
+static void update_battery_temp(struct hw_batt_temp_info *di)
+{
+	int batt_temp_0;
+	int batt_temp_1;
+	int batt_temp_mixed;
+
+	if (!di->init_temp) {
+		init_battery_temp(di);
+		di->init_temp = true;
+		return;
+	}
+
+	batt_temp_0 = get_batt_temp_stably(SENSOR_NAME_BATT_ID_0);
+	batt_temp_1 = get_batt_temp_stably(SENSOR_NAME_BATT_ID_1);
+	batt_temp_mixed = get_batt_temp_mixed(batt_temp_0, batt_temp_1);
+	di->batt_temp_0 = smooth_batt_temp(batt_temp_0, di->batt_temp_0);
+	di->batt_temp_1 = smooth_batt_temp(batt_temp_1, di->batt_temp_1);
+	di->batt_temp_mixed = smooth_batt_temp(batt_temp_mixed,
+		di->batt_temp_mixed);
+}
+
+static void read_temperature_work(struct work_struct *work)
+{
+	struct hw_batt_temp_info *di = container_of(work,
+		struct hw_batt_temp_info, temp_work.work);
+
+	update_battery_temp(di);
+	schedule_delayed_work(&di->temp_work,
+		msecs_to_jiffies(READ_TEMPERATURE_MS));
 }
 
 int huawei_battery_temp(enum battery_temp_id id, int *temp)
 {
-	int batt_temp_0 = 0;
-	int batt_temp_1 = 0;
-	int batt_temp = 0;
+	int batt_temp;
+	struct hw_batt_temp_info *di = g_di;
 
 	if (!temp) {
 		hwlog_err("temp is null\n");
 		return -1;
 	}
+
+	if (!is_hisi_battery_exist())
+		hwlog_err("battery not exist\n");
 
 	if (hw_battery_get_series_num() == HW_ONE_BAT) {
 		*temp = hisi_battery_temperature();
@@ -416,46 +473,42 @@ int huawei_battery_temp(enum battery_temp_id id, int *temp)
 		return 0;
 	}
 
-	if (!g_di) {
+	if (!di) {
 		*temp = hisi_battery_temperature();
 		hwlog_err("g_di is null, batt_temp = [%d]\n", *temp);
 		return 0;
 	}
 
+	if (!di->init_temp) {
+		init_battery_temp(di);
+		di->init_temp = true;
+	}
+
 	switch (id) {
 	case BAT_TEMP_0:
-		batt_temp = get_batt_temp_by_sensor_name(
-			SENSOR_NAME_BATT_ID_0);
+		batt_temp = di->batt_temp_0;
 		break;
-
 	case BAT_TEMP_1:
-		batt_temp = get_batt_temp_by_sensor_name(
-			SENSOR_NAME_BATT_ID_1);
+		batt_temp = di->batt_temp_1;
 		break;
-
 	case BAT_TEMP_MIXED:
-		batt_temp_0 = get_batt_temp_by_sensor_name(
-			SENSOR_NAME_BATT_ID_0);
-		batt_temp_1 = get_batt_temp_by_sensor_name(
-			SENSOR_NAME_BATT_ID_1);
-		batt_temp = get_batt_temp_mixed(batt_temp_0, batt_temp_1);
+		batt_temp = di->batt_temp_mixed;
 		break;
-
 	default:
-		hwlog_err("invalid battery_temp_id: %d", id);
+		hwlog_err("invalid battery_temp_id: %d\n", id);
 		return -1;
 	}
 
 	*temp = batt_temp / UTEMP_PER_MTEMP;
-	hwlog_info("hw_batt_temp: temp = [%d]", *temp);
+	hwlog_info("hw_batt_temp: temp is %d\n", *temp);
 	return 0;
 }
 
-int huawei_battery_temp_with_comp(enum battery_temp_id id, int *temp)
+int huawei_battery_temp_now(enum battery_temp_id id, int *temp)
 {
-	int batt_temp = 0;
-	int batt_temp_0 = 0;
-	int batt_temp_1 = 0;
+	int batt_temp;
+	int batt_temp_0;
+	int batt_temp_1;
 
 	if (!temp) {
 		hwlog_err("temp is null\n");
@@ -478,24 +531,21 @@ int huawei_battery_temp_with_comp(enum battery_temp_id id, int *temp)
 	case BAT_TEMP_0:
 		batt_temp = get_batt_temp_stably(SENSOR_NAME_BATT_ID_0);
 		break;
-
 	case BAT_TEMP_1:
 		batt_temp = get_batt_temp_stably(SENSOR_NAME_BATT_ID_1);
 		break;
-
 	case BAT_TEMP_MIXED:
 		batt_temp_0 = get_batt_temp_stably(SENSOR_NAME_BATT_ID_0);
 		batt_temp_1 = get_batt_temp_stably(SENSOR_NAME_BATT_ID_1);
 		batt_temp = get_batt_temp_mixed(batt_temp_0, batt_temp_1);
 		break;
-
 	default:
-		hwlog_err("invalid battery_temp_id: %d", id);
+		hwlog_err("invalid battery_temp_id: %d\n", id);
 		return -1;
 	}
 
 	*temp = batt_temp / UTEMP_PER_MTEMP;
-	hwlog_info("hw_batt_comp_temp: temp = [%d]", *temp);
+	hwlog_info("hw_batt_comp_temp: temp is %d\n", *temp);
 	return 0;
 }
 
@@ -504,10 +554,12 @@ static void batt_temp_parse_dts(struct device_node *np,
 {
 	const char *compensation_data_string = NULL;
 	int ntc_compensation_is = 0;
-	int array_len = 0;
-	int i = 0;
+	int array_len;
+	int i;
 	int idata = 0;
-	int ret = 0;
+	int ret;
+	int col;
+	int row;
 
 	ret = of_property_read_u32(np, "battery_temp_high",
 		&di->batt_temp_high);
@@ -558,31 +610,28 @@ static void batt_temp_parse_dts(struct device_node *np,
 			return;
 		}
 
-		if (kstrtol(compensation_data_string, 10, (long *)&idata)) {
-			hwlog_err("kstrtol fail\n");
+		/* 10: decimal base */
+		if (kstrtoint(compensation_data_string, 10, &idata)) {
 			di->ntc_compensation_is = 0;
 			return;
 		}
 
-		switch (i % BATT_TEMP_COMP_PARA_TOTAL) {
+		col = i % BATT_TEMP_COMP_PARA_TOTAL;
+		row = i / BATT_TEMP_COMP_PARA_TOTAL;
+
+		switch (col) {
 		case BATT_TEMP_COMP_PARA_ICHG:
-			di->comp_para[i / BATT_TEMP_COMP_PARA_TOTAL]
-				.batt_temp_comp_ichg = idata;
+			di->comp_para[row].batt_temp_comp_ichg = idata;
 			break;
-
 		case BATT_TEMP_COMP_PARA_VALUE:
-			di->comp_para[i / BATT_TEMP_COMP_PARA_TOTAL]
-				.batt_temp_comp_value = idata;
+			di->comp_para[row].batt_temp_comp_value = idata;
 			break;
-
 		default:
 			hwlog_err("ntc_temp_compensation_para get failed\n");
 			break;
 		}
 
-		hwlog_info("di->comp_para[%d][%d] is %d\n",
-			i / BATT_TEMP_COMP_PARA_TOTAL,
-			i % BATT_TEMP_COMP_PARA_TOTAL, idata);
+		hwlog_info("di->comp_para[%d][%d] is %d\n", row, col, idata);
 	}
 
 }
@@ -592,9 +641,12 @@ static int batt_temp_probe(struct platform_device *pdev)
 	struct hw_batt_temp_info *di = NULL;
 	struct device_node *np = NULL;
 	struct class *power_class = NULL;
-	int ret = -1;
+	int ret;
 
 	hwlog_info("probe begin\n");
+
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
 
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
 	if (!di)
@@ -632,21 +684,29 @@ static int batt_temp_probe(struct platform_device *pdev)
 		}
 	}
 
+	INIT_DELAYED_WORK(&di->temp_work, read_temperature_work);
+	di->init_temp = false;
+	schedule_delayed_work(&di->temp_work,
+		msecs_to_jiffies(READ_TEMPERATURE_MS));
 	hwlog_info("probe end\n");
 	return 0;
 
 fail_free_mem:
+	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);
 	g_di = NULL;
 
 	return ret;
 }
 
-static int  batt_temp_remove(struct platform_device *pdev)
+static int batt_temp_remove(struct platform_device *pdev)
 {
 	struct hw_batt_temp_info *di = platform_get_drvdata(pdev);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);
@@ -655,6 +715,41 @@ static int  batt_temp_remove(struct platform_device *pdev)
 	hwlog_info("remove end\n");
 	return 0;
 }
+
+#ifdef CONFIG_PM
+static int batt_temp_resume(struct platform_device *pdev)
+{
+	struct hw_batt_temp_info *di = NULL;
+
+	di = platform_get_drvdata(pdev);
+	if (!di) {
+		hwlog_err("di is null\n");
+		return 0;
+	}
+
+	hwlog_info("batt_temp_resume begin\n");
+	init_battery_temp(di);
+	schedule_delayed_work(&di->temp_work,
+		msecs_to_jiffies(READ_TEMPERATURE_MS));
+	hwlog_info("batt_temp_resume end\n");
+	return 0;
+}
+
+static int batt_temp_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	struct hw_batt_temp_info *di = platform_get_drvdata(pdev);
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return 0;
+	}
+
+	hwlog_info("batt_temp_suspend begin\n");
+	cancel_delayed_work_sync(&di->temp_work);
+	hwlog_info("batt_temp_suspend end\n");
+	return 0;
+}
+#endif /* CONFIG_PM */
 
 static const struct of_device_id batt_temp_match_table[] = {
 	{
@@ -667,6 +762,10 @@ static const struct of_device_id batt_temp_match_table[] = {
 static struct platform_driver batt_temp_driver = {
 	.probe = batt_temp_probe,
 	.remove = batt_temp_remove,
+#ifdef CONFIG_PM
+	.resume = batt_temp_resume,
+	.suspend = batt_temp_suspend,
+#endif /* CONFIG_PM */
 	.driver = {
 		.name = "huawei,battery_temp",
 		.owner = THIS_MODULE,

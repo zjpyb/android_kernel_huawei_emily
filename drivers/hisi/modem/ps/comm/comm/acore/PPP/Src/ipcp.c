@@ -55,6 +55,7 @@
 *****************************************************************************/
 #define    THIS_FILE_ID        PS_FILE_ID_IPCP_C
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 #define    REJECTED(p, x)    ((p)->peer_reject & (1<<(x)))
 #define issep(ch) ((ch) == ' ' || (ch) == '\t')
@@ -901,4 +902,5 @@ ipcp_PushPacket(struct ipcp *ipcp, struct link *l)
   return 0;
 }
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

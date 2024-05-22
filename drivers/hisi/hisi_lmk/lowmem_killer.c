@@ -18,7 +18,7 @@ static int nzones = INVALID_NUM;
 static inline void hisi_lowmem_init(void)
 {
 	int n = 0;
-	struct zone *zone;
+	struct zone *zone = NULL;
 
 	for_each_populated_zone(zone)
 		n++;
@@ -34,11 +34,7 @@ int hisi_lowmem_tune(int *other_free, int *other_file,
 
 	if (!(sc->gfp_mask & ___GFP_CMA)) {
 		int nr_free_cma;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
-		nr_free_cma = (int)global_page_state(NR_FREE_CMA_PAGES);
-#else
 		nr_free_cma = (int)global_zone_page_state(NR_FREE_CMA_PAGES);
-#endif
 		trace_lowmem_tune(nzones, sc->gfp_mask, *other_free,
 				  *other_file, -nr_free_cma, 0);
 		*other_free -= nr_free_cma;

@@ -104,7 +104,10 @@ typedef struct
 {
     u64 clock;
     u64 action;
-    u8 dir;
+    u8  dir;
+	u8  cpu;
+	u16 resv;
+	u32 pid;
 }
 worker_info;
 

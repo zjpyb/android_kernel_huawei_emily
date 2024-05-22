@@ -111,7 +111,7 @@ static int ddrfreq_input_connect(struct input_handler *handler,
 					     struct input_dev *dev,
 					     const struct input_device_id *id)
 {
-	struct input_handle *handle;
+	struct input_handle *handle = NULL;
 	int error;
 
 	pr_info("%s: connect to %s\n", __func__, dev->name);
@@ -270,8 +270,8 @@ static int ddr_devfreq_target(struct device *dev, unsigned long *freq, u32 flags
 	struct platform_device *pdev = container_of(dev,
 					struct platform_device, dev);  //lint !e826
 	struct ddr_devfreq_device *ddev = platform_get_drvdata(pdev);
-	struct devfreq_pm_qos_data *data;
-	struct devfreq *devfreq;
+	struct devfreq_pm_qos_data *data = NULL;
+	struct devfreq *devfreq = NULL;
 	unsigned long _freq = *freq;
 	int lev;
 
@@ -582,8 +582,8 @@ out:
 
 static int ddr_devfreq_remove(struct platform_device *pdev)
 {
-	struct ddr_devfreq_device *ddev;
-	struct devfreq_dev_profile *profile;
+	struct ddr_devfreq_device *ddev = NULL;
+	struct devfreq_dev_profile *profile = NULL;
 
 	ddev = platform_get_drvdata(pdev);
 	if(NULL == ddev)

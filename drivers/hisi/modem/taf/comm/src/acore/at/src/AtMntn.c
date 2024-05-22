@@ -160,7 +160,11 @@ VOS_VOID AT_SetCtrlPsCallFlag(
 )
 {
     g_stAtDebugInfo.ucCtrlPsCallFlg     = ucFlag;
+#if (FEATURE_ON == FEATURE_VCOM_EXT)
     g_stAtDebugInfo.ucCtrlUserId        = AT_CLIENT_TAB_APP5_INDEX;
+#else
+    g_stAtDebugInfo.ucCtrlUserId        = AT_CLIENT_TAB_APP_INDEX;
+#endif
 }
 
 
@@ -182,7 +186,11 @@ VOS_VOID AT_SetPcui2PsCallFlag(
 )
 {
     g_stAtDebugInfo.ucPcui2PsCallFlg    = ucFlag;
+#if  (FEATURE_ON == FEATURE_VCOM_EXT)
     g_stAtDebugInfo.ucPcui2UserId       = AT_CLIENT_TAB_APP20_INDEX;
+#else
+    g_stAtDebugInfo.ucPcui2UserId       = AT_CLIENT_TAB_APP_INDEX;
+#endif /* #if FEATURE_ON == FEATURE_VCOM_EXT */
 
 }
 
@@ -226,6 +234,7 @@ VOS_VOID AT_MNTN_TraceEvent(VOS_VOID *pMsg)
 
     if (VOS_TRUE == AT_GetPrivacyFilterEnableFlg())
     {
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
         if (VOS_NULL_PTR == GUNAS_FilterAtToAtMsg((PS_MSG_HEADER_STRU *)pMsg))
         {
             return;
@@ -237,15 +246,18 @@ VOS_VOID AT_MNTN_TraceEvent(VOS_VOID *pMsg)
         {
             return;
         }
+#endif
     }
 
     DIAG_TraceReport(pLogPrivacyMsg);
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     /* 如果脱敏处理函数申请了新的at命令字符串，释放掉 */
     if (pLogPrivacyMsg != pMsg)
     {
         VOS_MemFree(WUEPS_PID_AT, pLogPrivacyMsg);
     }
+#endif
 
     return;
 }
@@ -676,6 +688,152 @@ VOS_VOID AT_RecordAtMsgInfo(
     return;
 }
 
+#if (FEATURE_ON == FEATURE_AT_HSUART)
+
+VOS_VOID AT_ShowHsUartConfigInfo(VOS_VOID)
+{
+    AT_UART_LINE_CTRL_STRU             *pstLineCtrl = VOS_NULL_PTR;
+    AT_UART_FLOW_CTRL_STRU             *pstFlowCtrl = VOS_NULL_PTR;
+    AT_UART_RI_CFG_STRU                *pstUartRiCfgInfo = VOS_NULL_PTR;
+    AT_UART_PHY_CFG_STRU               *pstUartPhyCfgInfo = VOS_NULL_PTR;
+    AT_UART_FORMAT_PARAM_STRU          *pstFormatParam = VOS_NULL_PTR;
+    VOS_CHAR                            acParityStr[][20] = {"ODD", "EVEN", "MARK", "SPACE", "NONE"};
+    VOS_CHAR                            acDcdStr[][20] = {"ALWAYS ON", "CONNECT ON"};
+    VOS_CHAR                            acDtrStr[][20] = {"IGNORE", "SWITCH CMD MODE", "HANGUP CALL"};
+    VOS_CHAR                            acDsrStr[][20] = {"ALWAYS ON", "CONNECT ON"};
+    VOS_CHAR                            acDceByDteStr[][20] = {"NONE", "XON OR XOFF REMOVE", "RTS", "XON_OR_XOFF_PASS"};
+    VOS_CHAR                            acDteByDceStr[][20] = {"NONE", "XON OR XOFF REMOVE", "CTS"};
+
+    pstLineCtrl       = AT_GetUartLineCtrlInfo();
+    pstFlowCtrl       = AT_GetUartFlowCtrlInfo();
+    pstUartRiCfgInfo  = AT_GetUartRiCfgInfo();
+    pstUartPhyCfgInfo = AT_GetUartPhyCfgInfo();
+    pstFormatParam    = AT_HSUART_GetFormatParam(pstUartPhyCfgInfo->stFrame.enFormat);
+
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("[1] HSUART PHY                      \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("BaudRate:                   %d\r\n", pstUartPhyCfgInfo->enBaudRate);
+    PS_PRINTF("Format:                     %d\r\n", pstUartPhyCfgInfo->stFrame.enFormat);
+    PS_PRINTF("->Data Bit Length:          %d\r\n", pstFormatParam->enDataBitLength);
+    PS_PRINTF("->Stop Bit Length:          %d\r\n", pstFormatParam->enStopBitLength);
+    PS_PRINTF("->Parity Bit Length:        %d\r\n", pstFormatParam->enParityBitLength);
+    PS_PRINTF("Parity Type:                %s\r\n", acParityStr[pstUartPhyCfgInfo->stFrame.enParity]);
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("[2] HSUART LINE                     \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("DCD[%d]:                    %s\r\n", pstLineCtrl->enDcdMode, acDcdStr[pstLineCtrl->enDcdMode]);
+    PS_PRINTF("DTR[%d]:                    %s\r\n", pstLineCtrl->enDtrMode, acDtrStr[pstLineCtrl->enDtrMode]);
+    PS_PRINTF("DSR[%d]:                    %s\r\n", pstLineCtrl->enDsrMode, acDsrStr[pstLineCtrl->enDsrMode]);
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("[3] HSUART FLOW CTRL                \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("DCE BY DTE[%d]:             %s\r\n", pstFlowCtrl->enDceByDte, acDceByDteStr[pstFlowCtrl->enDceByDte]);
+    PS_PRINTF("DTE BY DCE[%d]:             %s\r\n", pstFlowCtrl->enDteByDce, acDteByDceStr[pstFlowCtrl->enDteByDce]);
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("[4] HSUART RI                       \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("SMS RI ON (ms):             %u\r\n", pstUartRiCfgInfo->ulSmsRiOnInterval);
+    PS_PRINTF("SMS RI OFF (ms):            %u\r\n", pstUartRiCfgInfo->ulSmsRiOffInterval);
+    PS_PRINTF("VOICE RI ON (ms):           %u\r\n", pstUartRiCfgInfo->ulVoiceRiOnInterval);
+    PS_PRINTF("VOICE RI OFF (ms):          %u\r\n", pstUartRiCfgInfo->ulVoiceRiOffInterval);
+    PS_PRINTF("VOICE RI Cycle Times:       %d\r\n", pstUartRiCfgInfo->ucVoiceRiCycleTimes);
+
+    return;
+}
+
+
+VOS_VOID AT_ShowHsUartNvStats(VOS_VOID)
+{
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("HSUART NV STATS                     \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("Read NV Fail NUM:           %d\r\n", g_stAtStatsInfo.stHsUartStats.ucReadNvFailNum);
+    PS_PRINTF("Write NV Fail NUM:          %d\r\n", g_stAtStatsInfo.stHsUartStats.ucWriteNvFailNum);
+    PS_PRINTF("BaudRate Invalid NUM:       %d\r\n", g_stAtStatsInfo.stHsUartStats.ucBaudRateERR);
+    PS_PRINTF("Format Invalid NUM:         %d\r\n", g_stAtStatsInfo.stHsUartStats.ucFormatERR);
+
+    return;
+}
+
+
+VOS_VOID AT_ShowHsUartIoctlStats(VOS_VOID)
+{
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("HSUART IOCTL STATS                  \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("Set Read CB ERR:            %d\r\n", g_stAtStatsInfo.stHsUartStats.ucSetReadCbERR);
+    PS_PRINTF("Relloc Read BUFF ERR:       %d\r\n", g_stAtStatsInfo.stHsUartStats.ucRellocReadBuffERR);
+    PS_PRINTF("Set Free CB ERR:            %d\r\n", g_stAtStatsInfo.stHsUartStats.ucSetFreeBuffCbERR);
+    PS_PRINTF("Set MSC Read CB ERR:        %d\r\n", g_stAtStatsInfo.stHsUartStats.ucSetMscReadCbERR);
+    PS_PRINTF("Set Switch CB ERR:          %d\r\n", g_stAtStatsInfo.stHsUartStats.ucSetSwitchCmdCbERR);
+    PS_PRINTF("Set Water Detect CB ERR:    %d\r\n", g_stAtStatsInfo.stHsUartStats.ucSetWaterCbERR);
+    PS_PRINTF("Set BaudRate FAIL NUM:      %d\r\n", g_stAtStatsInfo.stHsUartStats.ulSetBaudRateFailNum);
+    PS_PRINTF("Set WLEN FAIL NUM:          %d\r\n", g_stAtStatsInfo.stHsUartStats.ulSetWlenFailNum);
+    PS_PRINTF("Set STP FAIL NUM:           %d\r\n", g_stAtStatsInfo.stHsUartStats.ulSetStpFailNum);
+    PS_PRINTF("Set PARITY FAIL NUM:        %d\r\n", g_stAtStatsInfo.stHsUartStats.ulSetParityFailNum);
+    PS_PRINTF("Config FLOW CTL SUCC NUM:   %d\r\n", g_stAtStatsInfo.stHsUartStats.ulCfgFlowCtrlSuccNum);
+    PS_PRINTF("Config FLOW CTL FAIL NUM:   %d\r\n", g_stAtStatsInfo.stHsUartStats.ulCfgFlowCtrlFailNum);
+    PS_PRINTF("Clear BUFF SUCC NUM:        %d\r\n", g_stAtStatsInfo.stHsUartStats.ulClearBuffSuccNum);
+    PS_PRINTF("Clear BUFF FAIL NUM:        %d\r\n", g_stAtStatsInfo.stHsUartStats.ulClearBuffFailNum);
+    PS_PRINTF("MSC Read CB NUM:            %d\r\n", g_stAtStatsInfo.stHsUartStats.ulMscReadCBNum);
+    PS_PRINTF("MSC Write SUCC NUM:         %d\r\n", g_stAtStatsInfo.stHsUartStats.ulMscWriteSuccNum);
+    PS_PRINTF("MSC Write FAIL NUM:         %d\r\n", g_stAtStatsInfo.stHsUartStats.ulMscWriteFailNum);
+    PS_PRINTF("MSC Switch CMD CB NUM:      %d\r\n", g_stAtStatsInfo.stHsUartStats.ulSwitchCmdCBNum);
+
+    return;
+}
+
+
+VOS_VOID AT_ShowHsUartDataStats(VOS_VOID)
+{
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("HSUART UL DATA STATS                \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("UL Read CB NUM:             %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlDataReadCBNum);
+    PS_PRINTF("UL RD SUCC NUM:             %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlGetRDSuccNum);
+    PS_PRINTF("UL RD Fail NUM:             %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlGetRDFailNum);
+    PS_PRINTF("UL Invalid RD NUM:          %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlInvalidRDNum);
+    PS_PRINTF("UL Invalid CMD DATA NUM:    %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlRcvInvalidCmdNum);
+    PS_PRINTF("UL Valid CMD DATA NUM:      %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlValidCmdNum);
+    PS_PRINTF("UL IP Data NUM:             %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlIpDataNum);
+    PS_PRINTF("UL PPP Data NUM:            %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlPppDataNum);
+    PS_PRINTF("UL CSD Data NUM:            %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlOmDataNum);
+    PS_PRINTF("UL OM Data NUM:             %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlOmDataNum);
+    PS_PRINTF("UL DIAG Data NUM:           %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlDiagDataNum);
+    PS_PRINTF("UL Invalid MODE DATA NUM:   %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlInvalidModeDataNum);
+    PS_PRINTF("UL Retrun BUFF SUCC NUM:    %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlReturnBuffSuccNum);
+    PS_PRINTF("UL Retrun BUFF FAIL NUM:    %d\r\n", g_stAtStatsInfo.stHsUartStats.ulUlReturnBuffFailNum);
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("HSUART DL DATA STATS                \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("DL Write Async SUCC NUM:    %d\r\n", g_stAtStatsInfo.stHsUartStats.ulDlWriteAsyncSuccNum);
+    PS_PRINTF("DL Write Async FAIL NUM:    %d\r\n", g_stAtStatsInfo.stHsUartStats.ulDlWriteAsyncFailNum);
+    PS_PRINTF("DL Write Sync SUCC NUM:     %d\r\n", g_stAtStatsInfo.stHsUartStats.ulDlWriteSyncSuccNum);
+    PS_PRINTF("DL Write Sync FAIL NUM:     %d\r\n", g_stAtStatsInfo.stHsUartStats.ulDlWriteSyncFailNum);
+    PS_PRINTF("DL Write Sync SUCC LEN:     %d\r\n", g_stAtStatsInfo.stHsUartStats.ulDlWriteSyncSuccLen);
+    PS_PRINTF("DL Write Sync FAIL LEN:     %d\r\n", g_stAtStatsInfo.stHsUartStats.ulDlWriteSyncFailLen);
+    PS_PRINTF("DL Free BUFF NUM:           %d\r\n", g_stAtStatsInfo.stHsUartStats.ulDlFreeBuffNum);
+
+    return;
+}
+
+
+VOS_VOID AT_ShowHsUartFcState(VOS_VOID)
+{
+    VOS_CHAR                            acFcStateStr[][20] = {"START", "STOP"};
+    AT_IO_LEVEL_ENUM_UINT8              enIoLevel;
+
+    enIoLevel = AT_GetIoLevel(AT_CLIENT_TAB_HSUART_INDEX, IO_CTRL_CTS);
+
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("HSUART FLOW CTRL STATE              \r\n");
+    PS_PRINTF("====================================\r\n");
+    PS_PRINTF("FLOW CTRL STATE:            %s\r\n", acFcStateStr[enIoLevel]);
+
+    return;
+}
+#endif
 
 
 VOS_VOID AT_ShowModemDataStats(VOS_VOID)
@@ -705,9 +863,11 @@ VOS_VOID AT_ShowPsEntityInfo(VOS_UINT8 ucCallId)
 {
     AT_PS_CALL_ENTITY_STRU             *pstCallEntity = VOS_NULL_PTR;
     MODEM_ID_ENUM_UINT16                enModemId;
+#if (FEATURE_ON == FEATURE_IPV6)
     VOS_UINT8                           aucIpv6AddrStr[TAF_MAX_IPV6_ADDR_COLON_STR_LEN];
     VOS_UINT8                           aucIpv6PrimDnsStr[TAF_MAX_IPV6_ADDR_COLON_STR_LEN];
     VOS_UINT8                           aucIpv6SecDnsStr[TAF_MAX_IPV6_ADDR_COLON_STR_LEN];
+#endif
 
     for (enModemId = 0; enModemId < MODEM_ID_BUTT; enModemId++)
     {
@@ -733,6 +893,7 @@ VOS_VOID AT_ShowPsEntityInfo(VOS_UINT8 ucCallId)
         PS_PRINTF("IPv4 Bearer NET Mask                    0x%x\n", pstCallEntity->stIpv4DhcpInfo.ulIpv4NetMask);
         PS_PRINTF("***********************************************************\n");
 
+#if (FEATURE_ON == FEATURE_IPV6)
         TAF_MEM_SET_S(aucIpv6AddrStr, sizeof(aucIpv6AddrStr), 0x00, sizeof(aucIpv6AddrStr));
         TAF_MEM_SET_S(aucIpv6PrimDnsStr, sizeof(aucIpv6PrimDnsStr), 0x00, sizeof(aucIpv6PrimDnsStr));
         TAF_MEM_SET_S(aucIpv6SecDnsStr, sizeof(aucIpv6SecDnsStr), 0x00, sizeof(aucIpv6SecDnsStr));
@@ -758,6 +919,7 @@ VOS_VOID AT_ShowPsEntityInfo(VOS_UINT8 ucCallId)
         PS_PRINTF("IPv6 Bearer Primary DNS                 %s\n", aucIpv6PrimDnsStr);
         PS_PRINTF("IPv6 Bearer Secondary DNS               %s\n", aucIpv6SecDnsStr);
         PS_PRINTF("***********************************************************\n");
+#endif
     }
 
     return;
@@ -885,6 +1047,7 @@ VOS_VOID AT_ShowClientCtxInfo(VOS_VOID)
     }
 }
 
+#if (FEATURE_ON == FEATURE_IPV6)
 
 VOS_VOID AT_ShowIPv6IIDMgrInfo(VOS_VOID)
 {
@@ -922,6 +1085,7 @@ VOS_VOID AT_ShowIPv6IIDMgrInfo(VOS_VOID)
 
     return;
 }
+#endif
 
 
 VOS_VOID AT_Help(VOS_VOID)

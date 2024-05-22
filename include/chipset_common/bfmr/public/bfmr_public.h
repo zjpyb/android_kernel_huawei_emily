@@ -284,6 +284,8 @@ typedef enum BFM_ERRNO_CODE
 */
 typedef enum BFM_BOOT_STAGE_CODE
 {
+    STAGE_UNDEFINED = 0x0,
+
     /* BL1 -- bootloader stage 1, it's xloader for hisi, sbl1 for qualcomm*/
     BL1_STAGE_START = ((BL1_STAGE <<24)|(COMMON_PLATFORM<<16)) + 0x1,
     BL1_STAGE_DDR_INIT_START,

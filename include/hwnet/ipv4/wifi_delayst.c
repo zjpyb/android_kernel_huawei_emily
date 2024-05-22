@@ -8,7 +8,7 @@
 #include <trace/events/skb.h>
 #include <linux/cryptohash.h>
 #include <linux/inet.h>
-#include <huawei_platform/chr/wbc_hw_hook.h>
+#include <hwnet/chr/wbc_hw_hook.h>
 
 u8 delayst_switch = 1;
 /*for sysctl command,statistic configuration*/
@@ -360,7 +360,7 @@ void delay_print_time_exception(struct sk_buff *skb, int t1, int t2)
 }
 
 
-int delay_set_wifi_command(char *val)
+int delay_set_wifi_command(const char *val)
 {
     char *clone = NULL, *sub_cmd = NULL;
     int err = 0;

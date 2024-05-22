@@ -3,7 +3,7 @@
  *
  * battery voltage interface for power module
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -44,7 +44,7 @@ int hw_battery_get_series_num(void)
 
 int hw_battery_voltage(enum hw_batt_id batt_id)
 {
-	int i = 0;
+	int i;
 	int max = -1;
 	int min = MAX_VOL_MV;
 	int vol = 0;
@@ -60,7 +60,6 @@ int hw_battery_voltage(enum hw_batt_id batt_id)
 	}
 
 	switch (batt_id) {
-	/* fall through: diff voltage source by case BAT_ID_ALL */
 	case BAT_ID_0:
 	case BAT_ID_1:
 	case BAT_ID_ALL:
@@ -80,7 +79,6 @@ int hw_battery_voltage(enum hw_batt_id batt_id)
 			return vol;
 		}
 		break;
-
 	case BAT_ID_MAX:
 		for (i = 0; i < g_hw_batt_di->total_vol; i++) {
 			if (g_hw_batt_di->vol_buff[i].batt_id == BAT_ID_ALL)
@@ -106,8 +104,6 @@ int hw_battery_voltage(enum hw_batt_id batt_id)
 
 		hwlog_info("get hw_batt_vol_max[%d]=%dmv\n", batt_id, max);
 		return max;
-		/* break; */
-
 	case BAT_ID_MIN:
 		for (i = 0; i < g_hw_batt_di->total_vol; i++) {
 			if (g_hw_batt_di->vol_buff[i].batt_id == BAT_ID_ALL)
@@ -139,7 +135,6 @@ int hw_battery_voltage(enum hw_batt_id batt_id)
 			return -1;
 		}
 		break;
-
 	default:
 		hwlog_err("invalid batt_id:%d\n", batt_id);
 		break;
@@ -184,7 +179,7 @@ int hw_battery_voltage_ops_register(struct hw_batt_vol_ops *ops,
 }
 
 #define HW_BATT_VOL_SYSFS_FIELD_RO(_name, n) \
-	HW_BATT_VOL_SYSFS_FIELD(_name, n, 0444, NULL)
+	HW_BATT_VOL_SYSFS_FIELD(_name, n, 0440, NULL)
 
 struct hw_batt_vol_sysfs_field_info {
 	struct device_attribute attr;
@@ -211,7 +206,8 @@ static const struct attribute_group hw_batt_vol_sysfs_attr_group = {
 
 static void hw_batt_vol_sysfs_init_attrs(void)
 {
-	int i, limit = ARRAY_SIZE(hw_batt_vol_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(hw_batt_vol_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++)
 		hw_batt_vol_sysfs_attrs[i] =
@@ -223,7 +219,8 @@ static void hw_batt_vol_sysfs_init_attrs(void)
 static struct hw_batt_vol_sysfs_field_info *hw_batt_vol_sysfs_field_lookup(
 	const char *name)
 {
-	int i, limit = ARRAY_SIZE(hw_batt_vol_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(hw_batt_vol_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++) {
 		if (!strncmp(name,
@@ -255,29 +252,24 @@ static ssize_t hw_batt_vol_sysfs_show(struct device *dev,
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			hw_battery_voltage(BAT_ID_0));
 		break;
-
 	case HW_BATT_VOL_SYSFS_BAT_ID_1:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			hw_battery_voltage(BAT_ID_1));
 		break;
-
 	case HW_BATT_VOL_SYSFS_BAT_ID_ALL:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			hw_battery_voltage(BAT_ID_ALL));
 		break;
-
 	case HW_BATT_VOL_SYSFS_BAT_ID_MAX:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			hw_battery_voltage(BAT_ID_MAX));
 		break;
-
 	case HW_BATT_VOL_SYSFS_BAT_ID_MIN:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			hw_battery_voltage(BAT_ID_MIN));
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -287,7 +279,6 @@ static ssize_t hw_batt_vol_sysfs_show(struct device *dev,
 static int hw_batt_vol_sysfs_create_group(struct hw_batt_vol_info *di)
 {
 	hw_batt_vol_sysfs_init_attrs();
-
 	return sysfs_create_group(&di->dev->kobj,
 		&hw_batt_vol_sysfs_attr_group);
 }
@@ -296,9 +287,7 @@ static void hw_batt_vol_sysfs_remove_group(struct hw_batt_vol_info *di)
 {
 	sysfs_remove_group(&di->dev->kobj, &hw_batt_vol_sysfs_attr_group);
 }
-
 #else
-
 static inline int hw_batt_vol_sysfs_create_group(struct hw_batt_vol_info *di)
 {
 	return 0;
@@ -398,19 +387,17 @@ static int hw_batt_vol_probe(struct platform_device *pdev)
 
 	hwlog_info("probe begin\n");
 
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
 	if (!di)
 		return -ENOMEM;
 
 	g_hw_batt_di = di;
-
 	di->pdev = pdev;
 	di->dev = &pdev->dev;
 	np = pdev->dev.of_node;
-	if (!di->pdev || !di->dev || !np) {
-		hwlog_err("device_node is null\n");
-		goto fail_free_mem;
-	}
 
 	if (of_property_read_u32(np, "batt_series_num", &di->batt_series_num)) {
 		hwlog_err("batt_series_num dts read failed\n");
@@ -452,6 +439,9 @@ static int hw_batt_vol_remove(struct platform_device *pdev)
 	struct hw_batt_vol_info *info = platform_get_drvdata(pdev);
 
 	hwlog_info("remove begin\n");
+
+	if (!info)
+		return -ENODEV;
 
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, info);

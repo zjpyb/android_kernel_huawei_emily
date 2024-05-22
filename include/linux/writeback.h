@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * include/linux/writeback.h
  */
@@ -9,6 +10,9 @@
 #include <linux/fs.h>
 #include <linux/flex_proportions.h>
 #include <linux/backing-dev-defs.h>
+#include <linux/blk_types.h>
+
+struct bio;
 
 DECLARE_PER_CPU(int, dirty_throttle_leaks);
 
@@ -44,6 +48,7 @@ enum writeback_sync_modes {
 enum wb_reason {
 	WB_REASON_BACKGROUND,
 	WB_REASON_TRY_TO_FREE_PAGES,
+	WB_REASON_VMSCAN,
 	WB_REASON_SYNC,
 	WB_REASON_PERIODIC,
 	WB_REASON_LAPTOP_TIMER,
@@ -86,7 +91,7 @@ struct writeback_control {
 	unsigned for_reclaim:1;		/* Invoked from the page allocator */
 	unsigned range_cyclic:1;	/* range_start is cyclic */
 	unsigned for_sync:1;		/* sync(2) WB_SYNC_ALL writeback */
-	unsigned for_free_mem:1;	/* writeback for free some memory */
+	unsigned for_free_mem:1;        /* writeback for free some memory */
 #ifdef CONFIG_CGROUP_WRITEBACK
 	struct bdi_writeback *wb;	/* wb this writeback is issued under */
 	struct inode *inode;		/* inode being written out */
@@ -104,6 +109,16 @@ struct writeback_control {
 	unsigned nr_writedblock;  /*the number of blocks that was writebacked*/
 #endif
 };
+
+static inline int wbc_to_write_flags(struct writeback_control *wbc)
+{
+	if (wbc->sync_mode == WB_SYNC_ALL)
+		return REQ_SYNC;
+	else if (wbc->for_kupdate || wbc->for_background)
+		return REQ_BACKGROUND;
+
+	return 0;
+}
 
 /*
  * A wb_domain represents a domain that wb's (bdi_writeback's) belong to
@@ -191,16 +206,6 @@ static inline void wait_on_inode(struct inode *inode)
 	wait_on_bit(&inode->i_state, __I_NEW, TASK_UNINTERRUPTIBLE);
 }
 
-static inline int wbc_to_write_flag(struct writeback_control *wbc)
-{
-	if (wbc->sync_mode == WB_SYNC_ALL)
-		return WRITE_SYNC;
-	else if (wbc->for_kupdate || wbc->for_background)
-		return WRITE_BG;
-
-	return 0;
-}
-
 #ifdef CONFIG_CGROUP_WRITEBACK
 
 #include <linux/cgroup.h>
@@ -239,6 +244,7 @@ static inline void inode_attach_wb(struct inode *inode, struct page *page)
 static inline void inode_detach_wb(struct inode *inode)
 {
 	if (inode->i_wb) {
+		WARN_ON_ONCE(!(inode->i_state & I_CLEAR));
 		wb_put(inode->i_wb);
 		inode->i_wb = NULL;
 	}
@@ -377,7 +383,6 @@ void global_dirty_limits(unsigned long *pbackground, unsigned long *pdirty);
 unsigned long wb_calc_thresh(struct bdi_writeback *wb, unsigned long thresh);
 
 void wb_update_bandwidth(struct bdi_writeback *wb, unsigned long start_time);
-void page_writeback_init(void);
 void balance_dirty_pages_ratelimited(struct address_space *mapping);
 bool wb_over_bg_thresh(struct bdi_writeback *wb);
 

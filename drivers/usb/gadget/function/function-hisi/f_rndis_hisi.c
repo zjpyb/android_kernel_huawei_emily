@@ -4,14 +4,6 @@
 
 extern struct device *create_function_device(char *name);
 
-atomic_t hisi_uether_enable_flag = ATOMIC_INIT(0);
-
-static inline struct f_rndis_opts *
-f_rndis_opts_from_func_inst(const struct usb_function_instance *fi)
-{
-	return container_of(fi, struct f_rndis_opts, func_inst);
-}
-
 static u8 host_ethaddr_record[ETH_ALEN];
 static char manufacturer[256];
 static bool wceis;
@@ -128,9 +120,9 @@ static struct device_attribute *rndis_function_attributes[] = {
 
 int create_rndis_device(void)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	struct device_attribute **attrs;
-	struct device_attribute *attr;
+	struct device_attribute *attr = NULL;
 	int err = 0;
 
 	dev = create_function_device("f_rndis");
@@ -160,6 +152,15 @@ void destroy_rndis_device(void)
 	}
 }
 
+static int get_ether_addr_str(u8 dev_addr[ETH_ALEN], char *str, int len)
+{
+	if (len < 18)
+		return -EINVAL;
+
+	snprintf(str, len, "%pM", dev_addr);
+		return 18;
+}
+
 static void hisi_rndis_set_host_ethaddr(struct f_rndis_opts *opts)
 {
 #define HOST_ADD_LEN (18)
@@ -177,7 +178,6 @@ static void hisi_rndis_set_host_ethaddr(struct f_rndis_opts *opts)
 	gether_get_host_addr_u8(opts->net, host_ethaddr_record);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 static void hisi_rndis_nop_release(struct device *dev)
 {
 	dev_vdbg(dev, "%s\n", __func__);
@@ -185,10 +185,10 @@ static void hisi_rndis_nop_release(struct device *dev)
 
 static struct usb_function_instance *rndis_alloc_inst(void)
 {
-	struct f_rndis_opts *opts;
+	struct f_rndis_opts *opts = NULL;
 	struct usb_os_desc *descs[1];
 	char *names[1];
-	struct config_group *rndis_interf_group;
+	struct config_group *rndis_interf_group = NULL;
 	int ret;
 
 	pr_info("%s:in\n", __func__);
@@ -225,11 +225,9 @@ static struct usb_function_instance *rndis_alloc_inst(void)
 
 	INIT_LIST_HEAD(&opts->rndis_os_desc.ext_prop);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	opts->class = rndis_iad_descriptor.bFunctionClass;
 	opts->subclass = rndis_iad_descriptor.bFunctionSubClass;
 	opts->protocol = rndis_iad_descriptor.bFunctionProtocol;
-#endif
 
 	descs[0] = &opts->rndis_os_desc;
 	names[0] = "rndis";
@@ -258,64 +256,4 @@ static struct usb_function_instance *rndis_alloc_inst(void)
 
 	pr_info("%s:out\n", __func__);
 	return &opts->func_inst;
-}
-#else
-static struct usb_function_instance *rndis_alloc_inst(void)
-{
-	struct f_rndis_opts *opts;
-	struct usb_os_desc *descs[1];
-	char *names[1];
-
-	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
-	if (!opts)
-		return ERR_PTR(-ENOMEM);
-	opts->rndis_os_desc.ext_compat_id = opts->rndis_ext_compat_id;
-
-	mutex_init(&opts->lock);
-	opts->func_inst.free_func_inst = rndis_free_inst;
-	opts->manufacturer = manufacturer;
-	opts->vendor_id = vendor_id;
-
-	opts->net = gether_setup_name_default("rndis");
-	if (IS_ERR(opts->net)) {
-		struct net_device *net = opts->net;
-		kfree(opts);
-		return ERR_CAST(net);
-	}
-
-	hisi_rndis_set_host_ethaddr(opts);
-
-	if (wceis) {
-		/* "Wireless" RNDIS; auto-detected by Windows */
-		rndis_iad_descriptor.bFunctionClass =
-						USB_CLASS_WIRELESS_CONTROLLER;
-		rndis_iad_descriptor.bFunctionSubClass = 0x01;
-		rndis_iad_descriptor.bFunctionProtocol = 0x03;
-		rndis_control_intf.bInterfaceClass =
-						USB_CLASS_WIRELESS_CONTROLLER;
-		rndis_control_intf.bInterfaceSubClass =	 0x01;
-		rndis_control_intf.bInterfaceProtocol =	 0x03;
-	}
-
-	INIT_LIST_HEAD(&opts->rndis_os_desc.ext_prop);
-
-	descs[0] = &opts->rndis_os_desc;
-	names[0] = "rndis";
-	usb_os_desc_prepare_interf_dir(&opts->func_inst.group, 1, descs,
-				       names, THIS_MODULE);
-	config_group_init_type_name(&opts->func_inst.group, "",
-				    &rndis_func_type);
-
-	return &opts->func_inst;
-}
-#endif
-
-void hisi_uether_enable_set(int n)
-{
-	atomic_set(&hisi_uether_enable_flag, n);
-}
-
-int hisi_uether_enable_get(void)
-{
-	return atomic_read(&hisi_uether_enable_flag);
 }

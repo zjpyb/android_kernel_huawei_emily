@@ -13,7 +13,7 @@
 #include <linux/syscalls.h>
 #include <linux/hisi/hisi_bootup_keypoint.h>
 #include <linux/hisi/hisi_bbox_diaginfo.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/hisi/hisi_pstore.h>
 #include <linux/hisi/hisi_log.h>
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
@@ -23,7 +23,9 @@
 #include "rdr_field.h"
 #include "rdr_print.h"
 #include "rdr_debug.h"
+#ifdef CONFIG_HUAWEI_BFM
 #include <chipset_common/hwbfm/hw_boot_fail_core.h>
+#endif
 
 struct bootcheck {
 	u64 mask;
@@ -55,8 +57,8 @@ return
 static int rdr_check_exceptionboot(struct bootcheck *info)
 {
 	u32 reboot_type;/*lint !e578 */
-	struct rdr_base_info_s *base;
-	struct rdr_struct_s *tmpbb;
+	struct rdr_base_info_s *base = NULL;
+	struct rdr_struct_s *tmpbb = NULL;
 
 	if (NULL == info) {
 		BB_PRINT_PN();
@@ -113,9 +115,12 @@ static int rdr_check_exceptionboot(struct bootcheck *info)
 	return RDR_DONTNEED_SAVE_MEM;
 }
 
-static inline void rdr_bootcheck_notify_dump(char *path, struct bootcheck *info)
+static inline void rdr_bootcheck_notify_dump(char *path, u32 pathLen, struct bootcheck *info)
 {
 	u64 result;
+	if ( pathLen < PATH_MAXLEN ) {
+		BB_PRINT_ERR("[%s:%d]: pathLen is invalid \n]", __func__, __LINE__);
+	}
 
 	BB_PRINT_PN("create dump file path:[%s].\n", path);
 	while (info->mask) {
@@ -172,7 +177,12 @@ static int rdr_save_history_log_back(void)
 		temp.e_from_core = RDR_EMMC;
 	}
 
-	rdr_save_history_log(&temp, &date[0], false, get_last_boot_keypoint());
+	if ((CP_S_EXCEPTION_START <= temp.e_exce_type)
+		&& (CP_S_EXCEPTION_END >= temp.e_exce_type)) {
+		temp.e_from_core = RDR_CP;
+	}
+
+	rdr_save_history_log(&temp, &date[0], DATATIME_MAXLEN, false, get_last_boot_keypoint());
 
 	return 0;
 }
@@ -184,19 +194,24 @@ int rdr_bootcheck_thread_body(void *arg)
 	char path[PATH_MAXLEN];
 	struct bootcheck info;
 	struct rdr_syserr_param_s p;
-	struct rdr_struct_s *temp_pbb;
+	struct rdr_struct_s *temp_pbb = NULL;
 	int max_reboot_times = rdr_get_reboot_times();
 	BB_PRINT_START();
 
-	memset(path, 0, PATH_MAXLEN);
+	if (EOK != memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+		BB_PRINT_PN("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
 
+#ifdef CONFIG_HUAWEI_BFM
 	save_hwbootfailInfo_to_file();
+#endif
 
 	BB_PRINT_PN("============wait for fs ready start =============\n");
 	while (rdr_wait_partition("/data/lost+found", 1000) != 0)
 		;
 	BB_PRINT_PN("============wait for fs ready e n d =============\n");
 
+	bbox_diaginfo_exception_save2fs();
 	if (is_need_save_dfx2file()) {
 		save_dfxpartition_to_file();
 	}
@@ -229,14 +244,14 @@ int rdr_bootcheck_thread_body(void *arg)
 		goto check_log;
 	}
 
-	ret = rdr_create_epath_bc(path);
+	ret = rdr_create_epath_bc(path, PATH_MAXLEN);
 	if (-1 == ret) {
 		BB_PRINT_ERR("failed to create epath!\n");
 		goto end;
 	}
 	rdr_set_saving_state(1);
 
-	rdr_bootcheck_notify_dump(path, &info);
+	rdr_bootcheck_notify_dump(path, PATH_MAXLEN, &info);
 
 	if (check_himntn(HIMNTN_GOBAL_RESETLOG)) {
 		rdr_save_last_baseinfo(path);
@@ -259,7 +274,6 @@ check_log:
 end:
 
 	hisi_free_persist_store();
-	bbox_diaginfo_exception_save2fs();
 	rdr_clear_tmppbb();
 
 	BB_PRINT_END();

@@ -157,7 +157,7 @@ static void full_mesh_update_forbid_path(struct fullmesh_rem4 *remaddr4, struct 
 	int i;
 	struct net *net = sock_net(meta_sk);
 	char ifname[IFNAMSIZ] = {0};
-	struct mptcp_loc_addr *mptcp_local;
+	struct mptcp_loc_addr *mptcp_local = NULL;
 	const struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 
 	if (tcp_sk(meta_sk)->mptcp_cap_flag != MPTCP_CAP_UID_DIP_DPORT)
@@ -320,8 +320,6 @@ static void mptcp_addv6_raddr(struct mptcp_cb *mpcb,
 		 */
 		if (rem6->rem6_id == id) {
 			/* update the address */
-			mptcp_debug("%s: updating old addr: %pI6 to addr %pI6 with id:%d\n",
-				    __func__, &rem6->addr, addr, id);
 			rem6->addr = *addr;
 			rem6->port = port;
 			mpcb->list_rcvd = 1;
@@ -332,8 +330,8 @@ static void mptcp_addv6_raddr(struct mptcp_cb *mpcb,
 	i = mptcp_find_free_index(fmp->rem6_bits);
 	/* Do we have already the maximum number of local/remote addresses? */
 	if (i < 0) {
-		mptcp_debug("%s: At max num of remote addresses: %d --- not adding address: %pI6\n",
-			    __func__, MPTCP_MAX_ADDR, addr);
+		mptcp_debug("%s: At max num of remote addresses: %d --- not adding address\n",
+			    __func__, MPTCP_MAX_ADDR);
 		return;
 	}
 
@@ -608,6 +606,10 @@ next_subflow:
 		u8 remaining_bits;
 
 		rem = &fmp->remaddr4[i];
+#ifdef CONFIG_MPTCP_EPC
+		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_ALL_APP && rem->bitfield)
+			continue;
+#endif
 		remaining_bits = ~(rem->bitfield | rem->forbid_bitfield) & mptcp_local->loc4_bits;
 		mptcp_debug("%s: remaining: %x, connected: %x, prohibit: %x, mptcp_local->loc4_bits: %x\n", __func__, remaining_bits, rem->bitfield, rem->forbid_bitfield, mptcp_local->loc4_bits);
 		/* Are there still combinations to handle? */
@@ -656,6 +658,10 @@ next_subflow:
 		u8 remaining_bits;
 
 		rem = &fmp->remaddr6[i];
+#ifdef CONFIG_MPTCP_EPC
+		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_ALL_APP && rem->bitfield)
+			continue;
+#endif
 		remaining_bits = ~(rem->bitfield) & mptcp_local->loc6_bits;
 
 		/* Are there still combinations to handle? */
@@ -803,13 +809,14 @@ static int mptcp_find_address_transp(const struct mptcp_loc_addr *mptcp_local,
 static bool mptcp_is_sock_closed_for_prim_iface_on(struct sock *meta_sk, int if_idx)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
-	struct mptcp_cb *mpcb;
+	struct mptcp_cb *mpcb = NULL;
 
 	mpcb = meta_tp->mpcb;
 
 	if (!meta_tp->user_switch) {
-		struct net_device *net_dev;
-		struct sock *sk, *tmpsk;
+		struct net_device *net_dev = NULL;
+		struct sock *sk = NULL;
+		struct sock *tmpsk = NULL;
 
 		net_dev = dev_get_by_name(sock_net(meta_sk), meta_tp->prim_iface);
 		if (net_dev) {
@@ -986,7 +993,11 @@ duno:
 				continue;
 			}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+			if (unlikely(!refcount_inc_not_zero(&meta_sk->sk_refcnt)))
+#else
 			if (unlikely(!atomic_inc_not_zero(&meta_sk->sk_refcnt)))
+#endif
 				continue;
 
 			bh_lock_sock(meta_sk);
@@ -1007,7 +1018,11 @@ duno:
 
 			if (sock_owned_by_user(meta_sk)) {
 				if (!test_and_set_bit(MPTCP_PATH_MANAGER_DEFERRED,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+						      &meta_sk->sk_tsq_flags))
+#else
 						      &meta_tp->tsq_flags))
+#endif
 					sock_hold(meta_sk);
 
 				goto next;
@@ -1347,8 +1362,8 @@ static void addr6_event_handler(const struct inet6_ifaddr *ifa, unsigned long ev
 	else if (event == NETDEV_CHANGE)
 		mpevent.code = MPTCP_EVENT_MOD;
 
-	mptcp_debug("%s created event for %pI6, code %u prio %u\n", __func__,
-		    &ifa->addr, mpevent.code, mpevent.low_prio);
+	mptcp_debug("%s created event for %pI6, code %u prio %u idx %u\n", __func__,
+		    &ifa->addr, mpevent.code, mpevent.low_prio, mpevent.if_idx);
 	add_pm_event(net, &mpevent);
 
 	spin_unlock_bh(&fm_ns->local_lock);
@@ -1367,6 +1382,7 @@ static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 		return NOTIFY_DONE;
 
 	if ((ifa6->idev->dev->reg_state == NETREG_REGISTERED) &&
+	    sysctl_mptcp_enabled &&
 	    !ipv6_dad_finished(ifa6))
 		dad_setup_timer(ifa6);
 	else
@@ -1972,7 +1988,7 @@ out:
 
 static void full_mesh_user_switch(struct sock *meta_sk, bool on, const char *iface)
 {
-	struct mptcp_cb *mpcb;
+	struct mptcp_cb *mpcb = NULL;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 
 	if (sock_flag(meta_sk, SOCK_DEAD) ||
@@ -1996,9 +2012,10 @@ static void full_mesh_user_switch(struct sock *meta_sk, bool on, const char *ifa
 		full_mesh_create_subflows(meta_sk);
 		mptcp_debug("%s: try full_mesh_create_subflows\n", __func__);
 	} else {
-		struct sock *sk, *tmpsk;
+		struct sock *sk = NULL;
+		struct sock *tmpsk = NULL;
 		struct sock *sk_keep = NULL;
-		struct net_device *net_dev;
+		struct net_device *net_dev = NULL;
 		bool is_prim_iface_on = false;
 
 		if (iface && (iface != meta_tp->prim_iface)) {
@@ -2020,7 +2037,7 @@ static void full_mesh_user_switch(struct sock *meta_sk, bool on, const char *ifa
 		}
 		/* Look for the socket and remove him */
 		mptcp_for_each_sk_safe(mpcb, sk, tmpsk) {
-			struct dst_entry *dst;
+			struct dst_entry *dst = NULL;
 			bool is_prim = false;
 
 			dst = sk_dst_get(sk);
@@ -2068,7 +2085,7 @@ static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 	const struct mptcp_fm_ns *fm_ns = fm_get_ns(net);
 	int i;
 
-	seq_printf(seq, "Index, Address-ID, Backup, IP-address\n");
+	seq_printf(seq, "Index, Address-ID, Backup, IP-address, if-idx\n");
 
 	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
@@ -2078,8 +2095,8 @@ static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
 		struct mptcp_loc4 *loc4 = &mptcp_local->locaddr4[i];
 
-		seq_printf(seq, "%u, %u, %u, %pI4\n", i, loc4->loc4_id,
-			   loc4->low_prio, &loc4->addr);
+		seq_printf(seq, "%u, %u, %u, %pI4 %u\n", i, loc4->loc4_id,
+			   loc4->low_prio, &loc4->addr, loc4->if_idx);
 	}
 
 	seq_printf(seq, "IPv6, next v6-index: %u\n", mptcp_local->next_v6_index);
@@ -2087,8 +2104,8 @@ static int mptcp_fm_seq_show(struct seq_file *seq, void *v)
 	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
 		struct mptcp_loc6 *loc6 = &mptcp_local->locaddr6[i];
 
-		seq_printf(seq, "%u, %u, %u, %pI6\n", i, loc6->loc6_id,
-			   loc6->low_prio, &loc6->addr);
+		seq_printf(seq, "%u, %u, %u, %pI6 %u\n", i, loc6->loc6_id,
+			   loc6->low_prio, &loc6->addr, loc6->if_idx);
 	}
 	rcu_read_unlock_bh();
 

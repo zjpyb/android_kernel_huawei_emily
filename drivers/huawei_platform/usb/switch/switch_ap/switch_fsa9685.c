@@ -1,24 +1,20 @@
-/************************************************************
-*
-* Copyright (C), 1988-1999, Huawei Tech. Co., Ltd.
-* FileName: switch_fsa9685.c
-* Author: lixiuna(00213837)       Version : 0.1      Date:  2013-11-06
-*
-* This software is licensed under the terms of the GNU General Public
-* License version 2, as published by the Free Software Foundation, and
-* may be copied, distributed, and modified under those terms.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-*  Description:    .c file for switch chip
-*  Version:
-*  Function List:
-*  History:
-*  <author>  <time>   <version >   <desc>
-***********************************************************/
+/*
+ * switch_fsa9685.c
+ *
+ * driver file for switch chip
+ *
+ * Copyright (c) 2013-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/i2c.h>
 #include <linux/delay.h>
@@ -58,7 +54,7 @@
 #ifdef CONFIG_BOOST_5V
 #include <huawei_platform/power/boost_5v.h>
 #endif
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <huawei_platform/log/hw_log.h>
 #include <chipset_common/hwusb/hw_usb_rwswitch.h>
 #include <huawei_platform/usb/switch/switch_fsa9685.h>
@@ -67,6 +63,7 @@
 #include <huawei_platform/power/direct_charger.h>
 #endif
 #include <huawei_platform/power/direct_charger_power_supply.h>
+#include <linux/power/hisi/charger/hisi_charger_scp.h>
 
 extern unsigned int get_boot_into_recovery_flag(void);
 static int fsa9685_is_support_scp(void);
@@ -88,6 +85,7 @@ static int rt8979_osc_trim_adjust = 0;	/* OSC adjustment */
 static int rt8979_osc_trim_default = 0;	/* While attaching, reset OSC adjustment*/
 
 static bool rt8979_dcd_timeout_enabled = false;
+static bool adp_plugout;
 
 static inline bool is_rt8979(void)
 {
@@ -101,6 +99,17 @@ static int rt8979_adjust_osc(int8_t val);
 
 static void rt8979_regs_dump(void);
 int is_support_fcp(void);
+
+static inline bool is_adp_plugout(void)
+{
+	if (!g_fsa9685_dev)
+		return false;
+
+	if (g_fsa9685_dev->power_by_5v && adp_plugout)
+		return true;
+
+	return false;
+}
 
 void fsa9685_accp_detect_lock(void)
 {
@@ -167,8 +176,8 @@ void fsa9685_usb_switch_wake_lock(void)
 		return;
 	}
 
-	if (!wake_lock_active(&di->usb_switch_lock)) {
-		wake_lock(&di->usb_switch_lock);
+	if (!di->usb_switch_lock.active) {
+		__pm_stay_awake(&di->usb_switch_lock);
 		hwlog_info("usb_switch_lock lock\n");
 	}
 }
@@ -182,8 +191,8 @@ void fsa9685_usb_switch_wake_unlock(void)
 		return;
 	}
 
-	if (wake_lock_active(&di->usb_switch_lock)) {
-		wake_unlock(&di->usb_switch_lock);
+	if (di->usb_switch_lock.active) {
+		__pm_relax(&di->usb_switch_lock);
 		hwlog_info("usb_switch_lock unlock\n");
 	}
 }
@@ -191,7 +200,7 @@ void fsa9685_usb_switch_wake_unlock(void)
 static int fsa9685_write_reg(int reg, int val)
 {
 	int ret = -1;
-	int i = 0;
+	int i;
 	struct fsa9685_device_info *di = g_fsa9685_dev;
 
 	if (!di || !di->client) {
@@ -213,7 +222,7 @@ static int fsa9685_write_reg(int reg, int val)
 static int fsa9685_read_reg(int reg)
 {
 	int ret = -1;
-	int i = 0;
+	int i;
 	struct fsa9685_device_info *di = g_fsa9685_dev;
 
 	if (!di || !di->client) {
@@ -234,8 +243,8 @@ static int fsa9685_read_reg(int reg)
 
 static int fsa9685_write_reg_mask(int reg, int value, int mask)
 {
-	int ret = 0;
-	int val = 0;
+	int ret;
+	int val;
 
 	val = fsa9685_read_reg(reg);
 	if (val < 0)
@@ -265,10 +274,10 @@ int fsa9685_common_write_reg_mask(int reg, int value, int mask)
 
 static int fsa9685_get_device_id(void)
 {
-	int id = 0;
-	int vendor_id = 0;
-	int version_id = 0;
-	int device_id = 0;
+	int id;
+	int vendor_id;
+	int version_id;
+	int device_id;
 
 	id = fsa9685_read_reg(FSA9685_REG_DEVICE_ID);
 	if (id < 0)
@@ -317,7 +326,7 @@ static int fsa9685_get_device_id(void)
 
 static int fsa9685_device_ops_register(struct fsa9685_device_ops *ops)
 {
-	if (ops != NULL) {
+	if (ops) {
 		g_fsa9685_dev_ops = ops;
 		hwlog_info("fsa9685_device ops register ok\n");
 	} else {
@@ -331,18 +340,15 @@ static int fsa9685_device_ops_register(struct fsa9685_device_ops *ops)
 static void fsa9685_select_device_ops(int device_id)
 {
 	switch (device_id) {
-	/* fall through: fsa968x serial */
 	case USBSWITCH_ID_FSA9683:
 	case USBSWITCH_ID_FSA9685:
 	case USBSWITCH_ID_FSA9688:
 	case USBSWITCH_ID_FSA9688C:
 		fsa9685_device_ops_register(usbswitch_fsa9685_get_device_ops());
 		break;
-
 	case USBSWITCH_ID_RT8979:
 		fsa9685_device_ops_register(usbswitch_rt8979_get_device_ops());
 		break;
-
 	default:
 		fsa9685_device_ops_register(usbswitch_fsa9685_get_device_ops());
 		hwlog_err("use default ops (fsa9685)\n");
@@ -674,7 +680,8 @@ static void rt8979_intb_work(struct work_struct *work)
 
 	reg_intrpt = fsa9685_read_reg(FSA9685_REG_INTERRUPT);
 	vbus_status = fsa9685_read_reg(FSA9685_REG_VBUS_STATUS);
-    hwlog_info("%s: read FSA9685_REG_INTERRUPT. reg_intrpt=0x%x\n", __func__, reg_intrpt);
+	hwlog_info("%s: reg_intrpt=0x%x, vbus_status=0x%x\n",
+		__func__, reg_intrpt, vbus_status);
 	muic_status1 = fsa9685_read_reg(RT8979_REG_MUIC_STATUS1); //Patrick Added, 2017/4/19
 	muic_status2 = fsa9685_read_reg(RT8979_REG_MUIC_STATUS2); //Patrick Added, 2017/4/25
 	hwlog_info("%s: read MUIC STATUS1. reg_status=0x%x\n", __func__, muic_status1);
@@ -915,7 +922,8 @@ static void fsa9685_intb_work(struct work_struct *work)
 
     reg_intrpt = fsa9685_read_reg(FSA9685_REG_INTERRUPT);
     vbus_status = fsa9685_read_reg(FSA9685_REG_VBUS_STATUS);
-    hwlog_info("%s: read FSA9685_REG_INTERRUPT. reg_intrpt=0x%x\n", __func__, reg_intrpt);
+    hwlog_info("%s: reg_intrpt=0x%x, vbus_status=0x%x\n",
+		__func__, reg_intrpt, vbus_status);
     /* if support fcp ,disable fcp interrupt */
     if(!is_support_fcp()
         &&((0xFF != fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT_MASK1))
@@ -1181,10 +1189,9 @@ static ssize_t switchctrl_store(struct device *dev,
 
 static bool rt8979_is_in_fm8(void)
 {
-    int id_value, device_type3, status1;
-    bool retval;
-    device_type3 = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_3);
-    id_value = fsa9685_read_reg(RT8979_REG_ADC);
+    int status1;
+	bool retval = false;
+
     status1 = fsa9685_read_reg(RT8979_REG_MUIC_STATUS1);
     if (status1 & RT8979_REG_MUIC_STATUS1_FMEN)
         retval = true;
@@ -1360,6 +1367,10 @@ int fsa9685_fcp_cmd_transfer_check(void)
     int reg_val1 = 0,reg_val2 =0,i =0;
     /*read accp interrupt registers until value is not zero */
     do{
+		if (is_adp_plugout()) {
+			hwlog_info("adp plugout\n");
+			return -1;
+		}
         usleep_range(30000, 31000);
         reg_val1 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT1);
         reg_val2 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT2);
@@ -1414,6 +1425,10 @@ int rt8979_fcp_cmd_transfer_check(void)
     if (scp_status == 0)
         return -1;
     do{
+		if (is_adp_plugout()) {
+			hwlog_info("adp plugout\n");
+			return -1;
+		}
         usleep_range(30000,31000);
         reg_val1 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT1);
         reg_val2 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT2);
@@ -1561,6 +1576,11 @@ int accp_adapter_reg_read(int* val, int reg)
     fsa9685_accp_adaptor_reg_lock();
     for(i=0;i< FCP_RETRY_MAX_TIMES && adjust_osc_count < RT8979_ADJ_OSC_MAX_COUNT;i++)
     {
+		if (is_adp_plugout()) {
+			hwlog_info("adp plugout\n");
+			fsa9685_accp_adaptor_reg_unlock();
+			return -1;
+		}
         /*before send cmd, read and clear accp interrupt registers */
         reg_val1 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT1);
         reg_val2 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT2);
@@ -1623,6 +1643,12 @@ int accp_adapter_reg_write(int val, int reg)
     fsa9685_accp_adaptor_reg_lock();
     for(i=0;i< FCP_RETRY_MAX_TIMES && adjust_osc_count < RT8979_ADJ_OSC_MAX_COUNT;i++)
     {
+		if (is_adp_plugout()) {
+			hwlog_info("adp plugout\n");
+			fsa9685_accp_adaptor_reg_unlock();
+			return -1;
+		}
+
         /*before send cmd, clear accp interrupt registers */
         reg_val1 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT1);
         reg_val2 = fsa9685_read_reg(FSA9685_REG_ACCP_INTERRUPT2);
@@ -1743,6 +1769,11 @@ static int check_accp_ic_status(void)
 #endif
 	for (check_times = 0; check_times < ADAPTOR_BC12_TYPE_MAX_CHECK_TIME; check_times++)
 	{
+		if (is_adp_plugout()) {
+			hwlog_info("adp plugout\n");
+			return ACCP_NOT_PREPARE_OK;
+		}
+
 		reg_dev_type1 = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
 		if (reg_dev_type1 & FSA9685_DCP_DETECTED)
 		{
@@ -1753,6 +1784,19 @@ static int check_accp_ic_status(void)
 		usleep_range(WAIT_FOR_BC12_DELAY*1000, (WAIT_FOR_BC12_DELAY+1)*1000);
 	}
 	hwlog_info("[%s]:accp is ok,check_times = %d!\n", __func__,check_times);
+
+#ifdef CONFIG_BOOST_5V
+	if (check_times >= ADAPTOR_BC12_TYPE_MAX_CHECK_TIME) {
+		if (!g_fsa9685_dev)
+			return ACCP_PREPARE_OK;
+
+		if (g_fsa9685_dev->power_by_5v) {
+			boost_5v_enable(DISABLE, BOOST_CTRL_FCP);
+			direct_charge_set_bst_ctrl(DISABLE);
+		}
+	}
+#endif /* CONFIG_BOOST_5V */
+
 	return ACCP_PREPARE_OK;
 }
 /****************************************************************************
@@ -1813,6 +1857,11 @@ static int fsa9865_accp_adapter_detect(void)
     /*detect hisi acp charger*/
     for(i=0; i < ACCP_DETECT_MAX_COUT; i++)
     {
+		if (is_adp_plugout()) {
+			hwlog_info("adp plugout\n");
+			fsa9685_accp_detect_unlock();
+			return ACCP_ADAPTOR_DETECT_OTHER;
+		}
         reg_val1 = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_4);
         reg_val2 = fsa9685_read_reg(FSA9685_REG_ACCP_STATUS);
         if((reg_val1 & FSA9685_ACCP_CHARGER_DET)
@@ -1846,7 +1895,7 @@ static int rt8979_accp_adapter_detect(void)
     int reg_val2 = 0;
     int i = 0, j = 0;
     int slave_good, accp_status_mask;
-    bool vbus_present;
+	bool vbus_present = false;
 	struct fsa9685_device_info *di = g_fsa9685_dev;
 
 	if ((NULL == di) || (NULL == di->client)) {
@@ -1894,6 +1943,11 @@ static int rt8979_accp_adapter_detect(void)
     {
         for(i=0; i < ACCP_DETECT_MAX_COUT; i++)
         {
+			if (is_adp_plugout()) {
+				hwlog_info("adp plugout\n");
+				fsa9685_accp_detect_unlock();
+				return ACCP_ADAPTOR_DETECT_OTHER;
+			}
             reg_val1 = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_4);
             reg_val2 = fsa9685_read_reg(FSA9685_REG_ACCP_STATUS);
             if((reg_val1 & FSA9685_ACCP_CHARGER_DET)
@@ -1932,268 +1986,6 @@ int accp_adapter_detect(void)
 {
     return is_rt8979() ? rt8979_accp_adapter_detect() :
         fsa9865_accp_adapter_detect();
-}
-static int fcp_adapter_detect(void)
-{
-    int ret;
-#ifdef CONFIG_DIRECT_CHARGER
-    int val;
-#endif
-    ret = accp_adapter_detect();
-    if (ACCP_ADAPTOR_DETECT_OTHER == ret)
-    {
-        hwlog_info("fcp adapter other detect\n");
-        return FCP_ADAPTER_DETECT_OTHER;
-    }
-    if (ACCP_ADAPTOR_DETECT_FAIL == ret)
-    {
-        hwlog_info("fcp adapter detect fail\n");
-        return FCP_ADAPTER_DETECT_FAIL;
-    }
-#ifdef CONFIG_DIRECT_CHARGER
-    if (fsa9685_is_support_scp())
-    {
-        return FCP_ADAPTER_DETECT_SUCC;
-    }
-    ret = accp_adapter_reg_read(&val, SCP_ADP_TYPE);
-    if(ret)
-    {
-        hwlog_err("%s : read SCP_ADP_TYPE fail ,ret = %d \n",__func__,ret);
-        return FCP_ADAPTER_DETECT_SUCC;
-    }
-    return FCP_ADAPTER_DETECT_OTHER;
-#else
-    return FCP_ADAPTER_DETECT_SUCC;
-#endif
-}
-/**********************************************************
-*  Function:        fsa9685_reg_dump
-*  Discription:     dump register for charger dsm
-*  Parameters:    ptr
-*  return value:   void
-**********************************************************/
-#define DUMP_REG_NUM 21
-#define DUMP_STR_LENTH 32
-
-struct fsa9885_reg_dump_type
-{
-    unsigned char reg_add[DUMP_REG_NUM];
-    unsigned char reg_val[DUMP_REG_NUM];
-};
-
-void fsa9685_reg_dump(char* ptr)
-{
-	const unsigned char reg_dump[DUMP_REG_NUM] = {0x01, 0x02, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x40, 0x41, 0x44, 0x47, 0x48, 0x5b, 0x5c};
-	int i = 0;
-	int val = 0;
-	char buf[DUMP_STR_LENTH] = {0};
-
-	struct fsa9885_reg_dump_type fsa9885_reg_dump;
-
-	for(i = 0;i < sizeof(reg_dump)/sizeof(unsigned char);i++)
-	{
-		val = fsa9685_read_reg(reg_dump[i]);
-		if (val < 0) {
-			hwlog_err("%s: fsa9685_read_reg error!!!", __func__);
-			return ;
-		}
-		fsa9885_reg_dump.reg_val[i] = val;
-		fsa9885_reg_dump.reg_add[i] = reg_dump[i];
-		val = 0;
-	}
-
-	snprintf(buf,sizeof(buf),"\n");
-	strncat(ptr,buf,strlen(buf));
-	memset(buf, 0, DUMP_STR_LENTH);
-
-	for(i = 0;i < DUMP_REG_NUM;i++)
-	{
-		snprintf(buf,sizeof(buf),"reg[0x%2x]=0x%2x\n",fsa9885_reg_dump.reg_add[i],fsa9885_reg_dump.reg_val[i]);
-		strncat(ptr,buf,strlen(buf));
-		memset(buf, 0, DUMP_STR_LENTH);
-	}
-}
-/****************************************************************************
-  Function:     fcp_get_adapter_output_vol
-  Description:  get fcp output vol
-  Input:        NA.
-  Output:       fcp output vol(5V/9V/12V)
-  Return:        0: success
-                -1: fail
-***************************************************************************/
-int fcp_get_adapter_output_vol(int *vol)
-{
-    int num = 0;
-    int output_vol = 0;
-    int ret =0;
-	struct fsa9685_device_info *di = g_fsa9685_dev;
-
-	if ((NULL == di) || (NULL == di->client)) {
-		hwlog_err("error: di or client is null!\n");
-		return -1;
-	}
-
-    /*get adapter vol list number,exclude 5V*/
-    ret = accp_adapter_reg_read(&num, FCP_SLAVE_REG_DISCRETE_CAPABILITIES);
-    /*currently,fcp only support three out vol config(5v/9v/12v)*/
-    if (ret || num > 2 )
-    {
-        hwlog_err("%s: vout list support err, reg[0x21] = %d.\n", __func__, num);
-        return -1;
-    }
-
-    /*get max out vol value*/
-   ret = accp_adapter_reg_read(&output_vol, FCP_SLAVE_REG_DISCRETE_OUT_V(num));
-    if(ret )
-    {
-        hwlog_err("%s: get max out vol value failed ,ouputvol=%d,num=%d.\n",__func__,output_vol,num);
-        return -1;
-    }
-    *vol = output_vol;
-    hwlog_info("%s: get adapter max out vol = %d,num= %d.\n", __func__, output_vol,num);
-    return 0;
-}
-
-
-/****************************************************************************
-  Function:     fcp_set_adapter_output_vol
-  Description:  set fcp adapter output vol
-  Input:        NA
-  Output:       NA
-  Return:        0: success
-                -1: fail
-***************************************************************************/
-int fcp_set_adapter_output_vol(int output_vol)
-{
-    int val = 0;
-    int vol = 0;
-    int ret = 0;
-	struct fsa9685_device_info *di = g_fsa9685_dev;
-
-	if ((NULL == di) || (NULL == di->client)) {
-		hwlog_err("error: di or client is null!\n");
-		return -1;
-	}
-
-    /*read ID OUTI , for identify huawei adapter*/
-    ret = accp_adapter_reg_read(&val, FCP_SLAVE_REG_ID_OUT0);
-    if(ret < 0)
-    {
-        hwlog_err("%s: adapter ID OUTI read failed, ret is %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("%s: id out reg[0x4] = %d.\n", __func__, val);
-
-	switch (output_vol) {
-	case FCP_OUTPUT_VOL_5V:
-		ret = accp_adapter_reg_read(&vol,
-			FCP_SLAVE_REG_DISCRETE_OUT_V(0));
-		if (ret < 0) {
-			hwlog_err("%s get output_vol error\n", __func__);
-			return -1;
-		}
-		break;
-	case FCP_OUTPUT_VOL_9V:
-		/* get adapter max output vol value */
-		ret = fcp_get_adapter_output_vol(&vol);
-		if (ret < 0) {
-			hwlog_err("%s: fcp get adapter output vol err\n",
-				__func__);
-			return -1;
-		}
-		/* PLK only support 5V/9V */
-		if (vol > (FCP_OUTPUT_VOL_9V * FCP_VOL_STEP)) {
-			vol = FCP_OUTPUT_VOL_9V * FCP_VOL_STEP;
-			hwlog_info("limit adap to 9V, while support 12V\n");
-		}
-		break;
-	default:
-		hwlog_err("input val is invalid\n");
-		return -1;
-	}
-
-	hwlog_info("%s: output_vol=%d\n", __func__, vol);
-
-    /*retry if write fail */
-    ret |= accp_adapter_reg_write(vol, FCP_SLAVE_REG_VOUT_CONFIG);
-    ret |= accp_adapter_reg_read(&val, FCP_SLAVE_REG_VOUT_CONFIG);
-    hwlog_info("%s: vout config reg[0x2c] = %d.\n", __func__, val);
-    if(ret <0 ||val != vol )
-    {
-        hwlog_err("%s:out vol config err, reg[0x2c] = %d.\n", __func__, val);
-        return -1;
-    }
-
-    ret = accp_adapter_reg_write(FCP_SLAVE_SET_VOUT, FCP_SLAVE_REG_OUTPUT_CONTROL);
-    if(ret < 0)
-    {
-        hwlog_err("%s : enable adapter output voltage failed \n ",__func__);
-        return -1;
-    }
-    hwlog_info("fcp adapter output vol set ok.\n");
-    return 0;
-}
-
-/****************************************************************************
-  Function:     fcp_get_adapter_max_power
-  Description:  get fcp adpter max power
-  Input:        NA.
-  Output:       NA
-  Return:       MAX POWER(W)
-***************************************************************************/
-int fcp_get_adapter_max_power(int *max_power)
-{
-    int reg_val = 0;
-    int ret =0;
-	struct fsa9685_device_info *di = g_fsa9685_dev;
-
-	if ((NULL == di) || (NULL == di->client)) {
-		hwlog_err("error: di or client is null!\n");
-		return -1;
-	}
-
-    /*read max power*/
-    ret = accp_adapter_reg_read(&reg_val, FCP_SLAVE_REG_MAX_PWR);
-    if(ret != 0)
-    {
-        hwlog_err("%s: read max power failed \n",__func__);
-        return -1;
-    }
-
-    hwlog_info("%s: max power reg[0x22] = %d.\n", __func__, reg_val);
-    *max_power = (reg_val >> 1);
-    return 0;
-}
-
-/**********************************************************
-*  Function:       fcp_get_adapter_output_current
-*  Discription:    fcp get the output current from adapter max power and output vol
-*  Parameters:     NA
-*  return value:  input_current(MA)
-**********************************************************/
-int fcp_get_adapter_output_current(void)
-{
-    int output_current = 0;
-    int output_vol = 0;
-    int max_power = 0;
-    int ret =0;
-	struct fsa9685_device_info *di = g_fsa9685_dev;
-
-	if ((NULL == di) || (NULL == di->client)) {
-		hwlog_err("error: di or client is null!\n");
-		return -1;
-	}
-
-    ret |= fcp_get_adapter_output_vol(&output_vol);
-    ret |= fcp_get_adapter_max_power(&max_power);
-    if (ret != 0)
-    {
-        hwlog_err("%s : output current read failed \n",__func__);
-        return -1;
-    }
-    output_current = max_power*1000/output_vol;
-    hwlog_info("%s: output current = %d.\n", __func__, output_current);
-    return output_current;
 }
 
 /**********************************************************
@@ -2265,39 +2057,7 @@ int fcp_read_switch_status(void)
     }
     return 0;
 }
-/**********************************************************
-*  Function:       fcp_adapter_status_check
-*  Discription:    when in fcp status ,it will check adapter reg status
-*  Parameters:     NA
-*  return value: 0:status ok ;FCP_ADAPTER_OTEMP:over temp;FCP_ADAPTER_OCURRENT: over current;FCP_ADAPTER_OVLT: over ovl;
-**********************************************************/
-int fcp_read_adapter_status (void)
-{
-    int val = 0,ret =0;
-    ret = accp_adapter_reg_read(&val, FCP_ADAPTER_STATUS);
-    if(ret !=0)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return 0;
-    }
-    hwlog_info("val is %d \n",val);
 
-    if( FCP_ADAPTER_OVLT == (val & FCP_ADAPTER_OVLT))
-    {
-       return FCP_ADAPTER_OVLT;
-    }
-
-    if( FCP_ADAPTER_OCURRENT == (val & FCP_ADAPTER_OCURRENT))
-    {
-        return FCP_ADAPTER_OCURRENT;
-    }
-
-    if( FCP_ADAPTER_OTEMP == (val & FCP_ADAPTER_OTEMP))
-    {
-        return FCP_ADAPTER_OTEMP;
-    }
-    return 0;
-}
 #ifdef CONFIG_DIRECT_CHARGER
 static int  fsa9685_is_support_scp(void)
 {
@@ -2364,53 +2124,59 @@ static int fsa9685_scp_adaptor_reset(void)
 #endif
 
 #ifdef CONFIG_BOOST_5V
-static int charge_usb_notifier_call(struct notifier_block *usb_nb,
+static int charge_notifier_call(struct notifier_block *usb_nb,
 	unsigned long event, void *data)
 {
-	enum hisi_charger_type type = ((enum hisi_charger_type)event);
+	switch (event) {
+	case CHARGER_START_CHARGING_EVENT:
+		hwlog_info("%s:adp_plug in\n", __func__);
+		adp_plugout = false;
+		break;
+	case CHARGER_STOP_CHARGING_EVENT:
+		if (adp_plugout) {
+			hwlog_info("%s:already stop\n", __func__);
+			break;
+		}
+	/* if STOP_CHARGING_EVENT coming, adp_plugout is false, go on next */
+	/* fall-through */
+	case CHARGER_PRE_STOP_CHARGING_EVENT:
+		adp_plugout = true;
+		scp_error_flag = 0;
+		boost_5v_enable(DISABLE, BOOST_CTRL_FCP);
+		direct_charge_set_bst_ctrl(DISABLE);
 
-	if (type != CHARGER_TYPE_NONE)
-		return NOTIFY_OK;
+		switch_chip_reset();
+		hwlog_info("%s:adp_plug out\n", __func__);
+		break;
+	default:
+		hwlog_info("do nothing\n");
+		break;
+	}
 
-	scp_error_flag = 0;
-	boost_5v_enable(DISABLE, BOOST_CTRL_FCP);
-	direct_charge_set_bst_ctrl(DISABLE);
-
-	switch_chip_reset();
-	hwlog_info("%s:5v boost close!\n", __func__);
 	return NOTIFY_OK;
 }
 #endif
 
-struct fcp_adapter_device_ops fcp_fsa9688_ops = {
-    .get_adapter_output_current = fcp_get_adapter_output_current,
-    .set_adapter_output_vol     = fcp_set_adapter_output_vol,
-    .detect_adapter             = fcp_adapter_detect,
-    .is_support_fcp             = is_support_fcp,
-    .switch_chip_reset          = switch_chip_reset,
-    .fcp_adapter_reset          = fcp_adapter_reset,
-    .stop_charge_config        = fcp_stop_charge_config,
-    .is_fcp_charger_type    = is_fcp_charger_type,
-    .fcp_read_adapter_status = fcp_read_adapter_status,
-    .fcp_read_switch_status = fcp_read_switch_status,
-    .reg_dump = fsa9685_reg_dump,
-};
 struct charge_switch_ops chrg_fsa9685_ops = {
 	.get_charger_type = fsa9685_get_charger_type,
 	.is_water_intrused = fsa9685_is_water_intrused,
 };
 
-static int fsa9685_scp_reg_read_block(int reg, int *val, int num)
+static int fsa9685_fcp_reg_read_block(int reg, int *val, int num)
 {
-	int ret = 0;
-	int i = 0;
+	int ret;
+	int i;
 	int data = 0;
-	scp_error_flag = 0;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
 
 	for (i = 0; i < num; i++) {
-		ret = scp_adapter_reg_read(&data, reg + i);
+		ret = accp_adapter_reg_read(&data, reg + i);
 		if (ret) {
-			hwlog_err("error: scp read failed(reg=0x%x)!\n", reg + i);
+			hwlog_err("fcp read failed(reg=0x%x)\n", reg + i);
 			return -1;
 		}
 
@@ -2420,16 +2186,81 @@ static int fsa9685_scp_reg_read_block(int reg, int *val, int num)
 	return 0;
 }
 
-static int fsa9685_scp_reg_write_block(int reg, int *val, int num)
+static int fsa9685_fcp_reg_write_block(int reg, const int *val, int num)
 {
-	int ret = 0;
-	int i = 0;
+	int ret;
+	int i;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
+
+	for (i = 0; i < num; i++) {
+		ret = accp_adapter_reg_write(val[i], reg + i);
+		if (ret) {
+			hwlog_err("fcp write failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static struct fcp_protocol_ops fsa9685_fcp_protocol_ops = {
+	.chip_name = "fsa9685",
+	.reg_read = fsa9685_fcp_reg_read_block,
+	.reg_write = fsa9685_fcp_reg_write_block,
+	.detect_adapter = accp_adapter_detect,
+	.soft_reset_master = switch_chip_reset,
+	.soft_reset_slave = fcp_adapter_reset,
+	.get_master_status = fcp_read_switch_status,
+	.stop_charging_config = fcp_stop_charge_config,
+	.is_accp_charger_type = is_fcp_charger_type,
+};
+
+static int fsa9685_scp_reg_read_block(int reg, int *val, int num)
+{
+	int ret;
+	int i;
+	int data = 0;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
+
+	scp_error_flag = 0;
+
+	for (i = 0; i < num; i++) {
+		ret = scp_adapter_reg_read(&data, reg + i);
+		if (ret) {
+			hwlog_err("scp read failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
+
+		val[i] = data;
+	}
+
+	return 0;
+}
+
+static int fsa9685_scp_reg_write_block(int reg, const int *val, int num)
+{
+	int ret;
+	int i;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
+
 	scp_error_flag = 0;
 
 	for (i = 0; i < num; i++) {
 		ret = scp_adapter_reg_write(val[i], reg + i);
 		if (ret) {
-			hwlog_err("error: scp write failed(reg=0x%x)!\n", reg + i);
+			hwlog_err("scp write failed(reg=0x%x)\n", reg + i);
 			return -1;
 		}
 	}
@@ -2671,322 +2502,309 @@ static int rt8979_init_osc_params(void)
 	retval = fsa9685_write_reg(RT8979_REG_TEST_MODE, RT8979_REG_TEST_MODE_DEFAULT_VAL);
 	return retval;
 }
-static int fsa9685_probe(
-    struct i2c_client *client, const struct i2c_device_id *id)
+
+static int fsa9685_probe(struct i2c_client *client,
+	const struct i2c_device_id *id)
 {
 	struct fsa9685_device_info *di = NULL;
 	struct device_node *node = NULL;
+	struct power_devices_info_data *power_dev_info = NULL;
+	int ret = -ERR_NO_DEV;
+	int reg_ctl;
+	int gpio_value;
+	int reg_vendor;
+	bool is_dcp = false;
+	struct class *switch_class = NULL;
+	struct device *new_dev = NULL;
 
-    int ret = 0, reg_ctl, gpio_value, reg_vendor = -1;
-    bool is_dcp = false;
-#ifdef CONFIG_FSA9685_DEBUG_FS
-    struct class *switch_class = NULL;
-    struct device * new_dev = NULL;
-#endif
+	hwlog_info("probe begin\n");
 
-    hwlog_info("%s: ------entry.\n", __func__);
-
-	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA)) {
-		hwlog_err("error: i2c_check failed!\n");
-		ret = -ERR_NO_DEV;
-		g_fsa9685_dev = NULL;
-		goto err_i2c_check_functionality;
+	if (!i2c_check_functionality(client->adapter,
+		I2C_FUNC_SMBUS_BYTE_DATA)) {
+		hwlog_err("i2c_check failed\n");
+		goto fail_i2c_check_functionality;
 	}
 
 	if (g_fsa9685_dev) {
-		hwlog_err("error: chip is already detected!\n");
-		ret = -ERR_NO_DEV;
+		hwlog_err("chip is already detected\n");
 		return ret;
 	}
-	else {
-		di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-		if (!di) {
-			hwlog_err("error: kzalloc failed!\n");
-			return -ENOMEM;
-		}
-		g_fsa9685_dev = di;
 
-		di->dev = &client->dev;
-		node = di->dev->of_node;
-		di->client = client;
-		i2c_set_clientdata(client, di);
-	}
+	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
+	if (!di)
+		return -ENOMEM;
+
+	g_fsa9685_dev = di;
+	di->dev = &client->dev;
+	node = di->dev->of_node;
+	di->client = client;
+	i2c_set_clientdata(client, di);
 
 	/* device idendify */
 	di->device_id = fsa9685_get_device_id();
-	if (di->device_id < 0) {
-		goto err_i2c_check_functionality;
-	}
+	if (di->device_id < 0)
+		goto fail_i2c_check_functionality;
 
 	fsa9685_select_device_ops(di->device_id);
 
-    /* distingush the chip with different address */
-    reg_vendor = fsa9685_read_reg(FSA9685_REG_DEVICE_ID);
-    if ( reg_vendor < 0 ) {
-        hwlog_err("%s: read FSA9685_REG_DEVICE_ID error!!! reg_vendor=%d.\n", __func__, reg_vendor);
-        goto err_i2c_check_functionality;
-    }
-    vendor_id = reg_vendor & FAS9685_VENDOR_ID_BIT_MASK;
-    if (is_rt8979()) {
+	/* distingush the chip with different address */
+	reg_vendor = fsa9685_read_reg(FSA9685_REG_DEVICE_ID);
+	if (reg_vendor < 0) {
+		hwlog_err("read FSA9685_REG_DEVICE_ID error\n");
+		goto fail_i2c_check_functionality;
+	}
+	vendor_id = ((unsigned int)reg_vendor) & FAS9685_VENDOR_ID_BIT_MASK;
+	if (is_rt8979()) {
 		rt8979_accp_enable(true);
-        reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
-        hwlog_info("%s : DEV_TYPE1 = 0x%x\n", __func__, reg_ctl);
+		reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
+		hwlog_info("DEV_TYPE1 = 0x%x\n", reg_ctl);
         is_dcp = (reg_ctl & FSA9685_DCP_DETECTED) ? true : false;
-
-	if (is_dcp) {
-            hwlog_info("%s: reset rt8979\n", __func__);
-            fsa9685_write_reg(FSA9685_REG_RESET, FSA9685_REG_RESET_ENTIRE_IC);
-            msleep(1);
-            fsa9685_write_reg_mask(FSA9685_REG_CONTROL, 0, FSA9685_SWITCH_OPEN);
+		if (is_dcp) {
+			hwlog_info("reset rt8979\n");
+			fsa9685_write_reg(FSA9685_REG_RESET,
+				FSA9685_REG_RESET_ENTIRE_IC);
+			usleep_range(1000, 1100); /* sleep 1ms */
+			fsa9685_write_reg_mask(FSA9685_REG_CONTROL,
+				0, FSA9685_SWITCH_OPEN);
 			rt8979_accp_enable(true);
-        }
-        fsa9685_write_reg_mask(RT8979_REG_TIMING_SET_2, RT8979_REG_TIMING_SET_2_DCDTIMEOUT, RT8979_REG_TIMING_SET_2_DCDTIMEOUT);
+		}
+		fsa9685_write_reg_mask(RT8979_REG_TIMING_SET_2,
+			RT8979_REG_TIMING_SET_2_DCDTIMEOUT,
+			RT8979_REG_TIMING_SET_2_DCDTIMEOUT);
 		rt8979_init_osc_params();
-    }
+	}
 
 	ret = device_create_file(&client->dev, &dev_attr_dump_regs);
 	if (ret < 0) {
-		hwlog_err("error: sysfs device_file create failed(dump_regs)!\n");
-		ret = -ERR_SWITCH_USB_DEV_REGISTER;
-		goto err_i2c_check_functionality;
+		hwlog_err("sysfs device_file create failed\n");
+		goto fail_i2c_check_functionality;
 	}
 
-/*create a node for phone-off current drain test*/
-    ret = device_create_file(&client->dev, &dev_attr_switchctrl);
-    if (ret < 0) {
-        hwlog_err("%s: device_create_file error!!! ret=%d.\n", __func__, ret);
-        ret = -ERR_SWITCH_USB_DEV_REGISTER;
-        goto err_get_named_gpio;
-    }
+	/* create a node for phone-off current drain test */
+	ret = device_create_file(&client->dev, &dev_attr_switchctrl);
+	if (ret < 0) {
+		hwlog_err("device_create_file error\n");
+		goto fail_get_named_gpio;
+	}
 
-    ret = device_create_file(&client->dev, &dev_attr_jigpin_ctrl);
-    if (ret < 0) {
-        hwlog_err("%s: device_create_file error!!! ret=%d.\n", __func__, ret);
-        ret = -ERR_SWITCH_USB_DEV_REGISTER;
-        goto err_create_jigpin_ctrl_failed;
-    }
+	ret = device_create_file(&client->dev, &dev_attr_jigpin_ctrl);
+	if (ret < 0) {
+		hwlog_err("device_create_file error\n");
+		goto fail_create_jigpin_ctrl;
+	}
 
-    ret = device_create_file(&client->dev, &dev_attr_fcp_mmi);
-    if (ret < 0) {
-        hwlog_err("%s: device_create_file error!!! ret=%d.\n", __func__, ret);
-        ret = -ERR_SWITCH_USB_DEV_REGISTER;
-        goto err_create_fcp_mmi_failed;
-    }
+	ret = device_create_file(&client->dev, &dev_attr_fcp_mmi);
+	if (ret < 0) {
+		hwlog_err("device_create_file error\n");
+		goto fail_create_fcp_mmi;
+	}
 
-    switch_class = class_create(THIS_MODULE, "usb_switch");
-    if (IS_ERR(switch_class)) {
-        hwlog_err("%s:create switch class failed!\n", __func__);
-        goto err_create_link_failed;
-    }
-    new_dev = device_create(switch_class, NULL, 0, NULL, "switch_ctrl");
-    if (NULL == new_dev) {
-        hwlog_err("%s:device create failed!\n", __func__);
-        goto err_create_link_failed;
-    }
-    ret = sysfs_create_link(&new_dev->kobj, &client->dev.kobj, "manual_ctrl");
-    if (ret < 0) {
-        hwlog_err("%s:create link to switch failed!\n", __func__);
-        goto err_create_link_failed;
-    }
+	switch_class = class_create(THIS_MODULE, "usb_switch");
+	if (IS_ERR(switch_class)) {
+		hwlog_err("create switch class failed\n");
+		ret = PTR_ERR(switch_class);
+		goto fail_create_link;
+	}
+	new_dev = device_create(switch_class, NULL, 0, NULL, "switch_ctrl");
+	if (!new_dev) {
+		hwlog_err("device create failed\n");
+		ret = PTR_ERR(new_dev);
+		goto fail_create_link;
+	}
+	ret = sysfs_create_link(&new_dev->kobj, &client->dev.kobj,
+		"manual_ctrl");
+	if (ret < 0) {
+		hwlog_err("create link to switch failed\n");
+		goto fail_create_link;
+	}
 
 	ret = fsa9685_parse_dts(node, di);
 	if (ret) {
-		hwlog_err("error: parse dts failed!\n");
-		goto err_create_link_failed;
+		hwlog_err("parse dts failed\n");
+		goto fail_create_link;
 	}
 
 	/* init lock */
 	mutex_init(&di->accp_detect_lock);
 	mutex_init(&di->accp_adaptor_reg_lock);
-	wake_lock_init(&di->usb_switch_lock, WAKE_LOCK_SUSPEND, "usb_switch_wakelock");
+	wakeup_source_init(&di->usb_switch_lock, "usb_switch_wakelock");
 
 	/* init work */
 	INIT_DELAYED_WORK(&di->detach_delayed_work, fsa9685_detach_work);
-	INIT_WORK(&di->g_intb_work, is_rt8979() ? rt8979_intb_work : fsa9685_intb_work);
+	INIT_WORK(&di->g_intb_work,
+		is_rt8979() ? rt8979_intb_work : fsa9685_intb_work);
 
-/*create link end*/
-    gpio = of_get_named_gpio(node, "fairchild_fsa9685,gpio-intb", 0);
-    if (gpio < 0) {
-        hwlog_err("%s: of_get_named_gpio error!!! ret=%d, gpio=%d.\n", __func__, ret, gpio);
-        ret = -ERR_OF_GET_NAME_GPIO;
-        goto fail_free_wakelock;
-    }
+	/* create link end */
+	gpio = of_get_named_gpio(node, "fairchild_fsa9685,gpio-intb", 0);
+	if (gpio < 0) {
+		hwlog_err("of_get_named_gpio error\n");
+		ret = -EIO;
+		goto fail_free_wakelock;
+	}
 
-    client->irq = gpio_to_irq(gpio);
+	client->irq = gpio_to_irq(gpio);
+	if (client->irq < 0) {
+		hwlog_err("gpio_to_irq error\n");
+		ret = -EIO;
+		goto fail_free_wakelock;
+	}
 
-    if (client->irq < 0) {
-        hwlog_err("%s: gpio_to_irq error!!! ret=%d, gpio=%d, client->irq=%d.\n", __func__, ret, gpio, client->irq);
-        ret = -ERR_GPIO_TO_IRQ;
-        goto fail_free_wakelock;
-    }
+	ret = gpio_request(gpio, "fsa9685_int");
+	if (ret < 0) {
+		hwlog_err("gpio_request error\n");
+		goto fail_free_wakelock;
+	}
 
-    ret = gpio_request(gpio, "fsa9685_int");
-    if (ret < 0) {
-        hwlog_err("%s: gpio_request error!!! ret=%d. gpio=%d.\n", __func__, ret, gpio);
-        ret = -ERR_GPIO_REQUEST;
-        goto fail_free_wakelock;
-    }
+	ret = gpio_direction_input(gpio);
+	if (ret < 0) {
+		hwlog_err("gpio_direction_input error\n");
+		goto fail_free_int_gpio;
+	}
 
-    ret = gpio_direction_input(gpio);
-    if (ret < 0) {
-        hwlog_err("%s: gpio_direction_input error!!! ret=%d. gpio=%d.\n", __func__, ret, gpio);
-        ret = -ERR_GPIO_DIRECTION_INPUT;
-        goto fail_free_int_gpio;
-    }
-
-    if (!is_rt8979()) {
+	if (!is_rt8979()) {
         ret |= fsa9685_write_reg_mask(FSA9685_REG_CONTROL2, 0,FSA9685_DCD_TIME_OUT_MASK);
-        if ( ret < 0 ){
-            hwlog_err("%s: write FSA9685_REG_CONTROL2 FSA9685_DCD_TIME_OUT_MASK error!!! ret=%d", __func__, ret);
-        }
+		if (ret < 0)
+			hwlog_err("write FSA9685_REG_CONTROL2 error\n");
         ret |= fsa9685_write_reg_mask(FSA9685_REG_INTERRUPT_MASK,FSA9685_DEVICE_CHANGE,FSA9685_DEVICE_CHANGE);
-        if ( ret < 0 ){
-            hwlog_err("%s: write Mask  Device change intterrupt error!!! ret=%d", __func__, ret);
-        }
-    }
-    /* if support fcp ,disable fcp interrupt */
-    if( 0 == is_support_fcp())
-    {
+		if (ret < 0)
+			hwlog_err("write FSA9685_REG_INTERRUPT_MASK error\n");
+	}
+	/* if support fcp, disable fcp interrupt */
+	if (is_support_fcp() == 0) {
         ret |= fsa9685_write_reg_mask(FSA9685_REG_CONTROL2, 0, FSA9685_ACCP_OSC_ENABLE);
         ret |= fsa9685_write_reg(FSA9685_REG_ACCP_INTERRUPT_MASK1, 0xFF);
         ret |= fsa9685_write_reg(FSA9685_REG_ACCP_INTERRUPT_MASK2, 0xFF);
-        if(ret < 0)
-        {
-            hwlog_err("accp interrupt mask write failed \n");
-        }
-        reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
-        hwlog_info("%s : DEV_TYPE1 = 0x%x\n", __func__, reg_ctl);
-        if (is_rt8979()) {
-            hwlog_info("ChipID = RT8979 (reg_vendor = 0x%02x)\n", reg_vendor);
-            fsa9685_write_reg(RT8979_REG_EXT3, RT8979_REG_EXT3_VAL);
-            fsa9685_write_reg(RT8979_REG_MUIC_CTRL_3, RT8979_REG_MUIC_CTRL_3_DISABLEID_FUNCTION);
-            reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
-            hwlog_info("%s : DEV_TYPE1 = 0x%x\n", __func__, reg_ctl);
-            reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_4);
-            hwlog_info("%s : DEV_TYPE4 = 0x%x\n", __func__, reg_ctl);
-            hwlog_info("fsa9685_read_reg, 0xa4=0x%x\r\n", fsa9685_read_reg(RT8979_REG_USBCHGEN));
-            hwlog_info("fsa9685_read_reg, 0xA0=0x%x\r\n", fsa9685_read_reg(RT8979_REG_EXT3));
-            hwlog_info("fsa9685_read_reg, 0x10=0x%x\r\n", fsa9685_read_reg(RT8979_REG_MUIC_CTRL_3));
-            hwlog_info("fsa9685_read_reg, 0x0e=0x%x\r\n", fsa9685_read_reg(RT8979_REG_MUIC_CTRL));
-        }
-    }
-    /* interrupt register */
-
-    ret = request_irq(client->irq,
-               fsa9685_irq_handler,
-               IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
-               "fsa9685_int", client);
-    if (ret < 0) {
-        hwlog_err("%s: request_irq error!!! ret=%d.\n", __func__, ret);
-        ret = -ERR_REQUEST_THREADED_IRQ;
-        goto fail_free_int_gpio;
-    }
-    /* clear INT MASK */
-    reg_ctl = fsa9685_read_reg(FSA9685_REG_CONTROL);
-    if ( reg_ctl < 0 ) {
-        hwlog_err("%s: read FSA9685_REG_CONTROL error!!! reg_ctl=%d.\n", __func__, reg_ctl);
-        goto fail_free_int_irq;
-    }
-    hwlog_info("%s: read FSA9685_REG_CONTROL. reg_ctl=0x%x.\n", __func__, reg_ctl);
+		if (ret < 0)
+			hwlog_err("accp interrupt mask write failed\n");
+		reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
+		hwlog_info("DEV_TYPE1 = 0x%x\n", reg_ctl);
+		if (is_rt8979()) {
+			hwlog_info("RT8979 reg vendor 0x%02x\n", reg_vendor);
+			fsa9685_write_reg(RT8979_REG_EXT3, RT8979_REG_EXT3_VAL);
+			fsa9685_write_reg(RT8979_REG_MUIC_CTRL_3,
+				RT8979_REG_MUIC_CTRL_3_DISABLEID_FUNCTION);
+			reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_1);
+			hwlog_info("DEV_TYPE1 = 0x%x\n", reg_ctl);
+			reg_ctl = fsa9685_read_reg(FSA9685_REG_DEVICE_TYPE_4);
+			hwlog_info("DEV_TYPE4 = 0x%x\n", reg_ctl);
+			hwlog_info("read reg 0xa4=0x%x\n",
+				fsa9685_read_reg(RT8979_REG_USBCHGEN));
+			hwlog_info("read reg 0xA0=0x%x\n",
+				fsa9685_read_reg(RT8979_REG_EXT3));
+			hwlog_info("read reg 0x10=0x%x\n",
+				fsa9685_read_reg(RT8979_REG_MUIC_CTRL_3));
+			hwlog_info("read reg 0x0e=0x%x\n",
+				fsa9685_read_reg(RT8979_REG_MUIC_CTRL));
+		}
+	}
+	/* interrupt register */
+	ret = request_irq(client->irq,
+		fsa9685_irq_handler,
+		IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
+		"fsa9685_int", client);
+	if (ret < 0) {
+		hwlog_err("request_irq error\n", ret);
+		goto fail_free_int_gpio;
+	}
+	/* clear INT MASK */
+	reg_ctl = fsa9685_read_reg(FSA9685_REG_CONTROL);
+	if (reg_ctl < 0) {
+		hwlog_err("read FSA9685_REG_CONTROL error\n");
+		ret = -EIO;
+		goto fail_free_int_irq;
+	}
 
     reg_ctl &= (~FSA9685_INT_MASK);
-    ret = fsa9685_write_reg(FSA9685_REG_CONTROL, reg_ctl);
-    if ( ret < 0 ) {
-        hwlog_err("%s: write FSA9685_REG_CONTROL error!!! reg_ctl=%d.\n", __func__, reg_ctl);
-        goto fail_free_int_irq;
-    }
-    hwlog_info("%s: write FSA9685_REG_CONTROL. reg_ctl=0x%x.\n", __func__, reg_ctl);
+	ret = fsa9685_write_reg(FSA9685_REG_CONTROL, reg_ctl);
+	if (ret < 0) {
+		hwlog_err("write FSA9685_REG_CONTROL error\n");
+		goto fail_free_int_irq;
+	}
 
-    ret = fsa9685_write_reg(FSA9685_REG_DCD, 0x0c);
-    if ( ret < 0 ) {
-        hwlog_err("%s: write FSA9685_REG_DCD error!!! reg_DCD=0x%x.\n", __func__, 0x08);
-        goto fail_free_int_irq;
-    }
-    hwlog_info("%s: write FSA9685_REG_DCD. reg_DCD=0x%x.\n", __func__, 0x0c);
+	ret = fsa9685_write_reg(FSA9685_REG_DCD, 0x0c);
+	if (ret < 0) {
+		hwlog_err("write FSA9685_REG_DCD error\n");
+		goto fail_free_int_irq;
+	}
 
-    gpio_value = gpio_get_value(gpio);
-    hwlog_info("%s: intb=%d after clear MASK.\n", __func__, gpio_value);
-
-    if (gpio_value == 0) {
-        hwlog_info("%s: GPIO == 0\n", __func__);
-        schedule_work(&di->g_intb_work);
-    }
-
-    /* if chip support fcp ,register fcp adapter ops */
-    if( 0 == is_support_fcp() && 0 ==fcp_adapter_ops_register(&fcp_fsa9688_ops))
-    {
-        hwlog_info(" fcp adapter ops register success!\n");
-    }
+	gpio_value = gpio_get_value(gpio);
+	if (gpio_value == 0) {
+		hwlog_info("get gpio value 0\n");
+		schedule_work(&di->g_intb_work);
+	}
 
 #ifdef CONFIG_HUAWEI_CHARGER
-    if(0 == charge_switch_ops_register(&chrg_fsa9685_ops))
-    {
-        hwlog_info(" charge switch ops register success!\n");
-    }
-#endif
+	if (charge_switch_ops_register(&chrg_fsa9685_ops) == 0)
+		hwlog_info("charge switch ops register success\n");
+#endif /* CONFIG_HUAWEI_CHARGER */
+
+	/* if chip support fcp, register fcp adapter ops */
+	if (is_support_fcp() == 0)
+		fcp_protocol_ops_register(&fsa9685_fcp_protocol_ops);
 
 #ifdef CONFIG_DIRECT_CHARGER
-	/* if chip support scp ,register scp adapter ops */
-	if (0 == fsa9685_is_support_scp()) {
+	/* if chip support scp, register scp adapter ops */
+	if (fsa9685_is_support_scp() == 0)
 		scp_protocol_ops_register(&fsa9685_scp_protocol_ops);
-	}
-#endif
+#endif /* CONFIG_DIRECT_CHARGER */
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
-    /* detect current device successful, set the flag as present */
-    set_hw_dev_flag(DEV_I2C_USB_SWITCH);
-#endif
+	/* detect current device successful, set the flag as present */
+	set_hw_dev_flag(DEV_I2C_USB_SWITCH);
+#endif /* CONFIG_HUAWEI_HW_DEV_DCT */
 
-    ret = usbswitch_common_ops_register(&huawei_switch_extra_ops);
-    if (ret) {
-    	hwlog_err("register extra switch ops failed!\n");
-    }
+	ret = usbswitch_common_ops_register(&huawei_switch_extra_ops);
+	if (ret)
+		hwlog_err("register extra switch ops failed\n");
 
-    if (is_rt8979() && is_dcp)
-    {
-        charge_type_dcp_detected_notify();
-    }
+	if (is_rt8979() && is_dcp)
+		charge_type_dcp_detected_notify();
 
 #ifdef CONFIG_BOOST_5V
 	if (di->power_by_5v) {
-		di->usb_nb.notifier_call = charge_usb_notifier_call;
-		ret = hisi_charger_type_notifier_register(&di->usb_nb);
+		di->usb_nb.notifier_call = charge_notifier_call;
+		ret = blocking_notifier_chain_register(
+			&charger_event_notify_head,
+			&di->usb_nb);
 		if (ret) {
 			hwlog_err("charge_usb_notifier register fail\n");
 			goto fail_free_int_irq;
 		}
 	}
-#endif
+#endif /* CONFIG_BOOST_5V */
 
-    hwlog_info("%s: ------end. ret = %d.\n", __func__, ret);
-    return ret;
+	power_dev_info = power_devices_info_register();
+	if (power_dev_info) {
+		power_dev_info->dev_name = di->dev->driver->name;
+		power_dev_info->dev_id = di->device_id;
+		power_dev_info->ver_id = 0;
+	}
+
+	hwlog_info("probe end\n");
+	return 0;
 
 fail_free_int_irq:
 	free_irq(client->irq, client);
 fail_free_int_gpio:
 	gpio_free(gpio);
 fail_free_wakelock:
-	wake_lock_destroy(&di->usb_switch_lock);
-err_create_link_failed:
-    device_remove_file(&client->dev, &dev_attr_fcp_mmi);
-err_create_fcp_mmi_failed:
-    device_remove_file(&client->dev, &dev_attr_jigpin_ctrl);
-err_create_jigpin_ctrl_failed:
-    device_remove_file(&client->dev, &dev_attr_switchctrl);
-err_get_named_gpio:
-    device_remove_file(&client->dev, &dev_attr_dump_regs);
-err_i2c_check_functionality:
-    g_fsa9685_dev = NULL;
-
-    hwlog_err("%s: ------FAIL!!! end. ret = %d.\n", __func__, ret);
-    return ret;
+	wakeup_source_trash(&di->usb_switch_lock);
+fail_create_link:
+	device_remove_file(&client->dev, &dev_attr_fcp_mmi);
+fail_create_fcp_mmi:
+	device_remove_file(&client->dev, &dev_attr_jigpin_ctrl);
+fail_create_jigpin_ctrl:
+	device_remove_file(&client->dev, &dev_attr_switchctrl);
+fail_get_named_gpio:
+	device_remove_file(&client->dev, &dev_attr_dump_regs);
+fail_i2c_check_functionality:
+	g_fsa9685_dev = NULL;
+	return ret;
 }
 
 static int fsa9685_remove(struct i2c_client *client)
 {
 	struct fsa9685_device_info *di = i2c_get_clientdata(client);
-
-	hwlog_info("remove begin\n");
 
 	device_remove_file(&client->dev, &dev_attr_dump_regs);
 	device_remove_file(&client->dev, &dev_attr_switchctrl);
@@ -2994,31 +2812,30 @@ static int fsa9685_remove(struct i2c_client *client)
 	free_irq(client->irq, client);
 	gpio_free(gpio);
 	if (di)
-		wake_lock_destroy(&di->usb_switch_lock);
+		wakeup_source_trash(&di->usb_switch_lock);
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 
 static void fsa9685_shutdown(struct i2c_client *client)
 {
+	int ret;
 
-    int ret = 0;
 #ifdef CONFIG_BOOST_5V
 	boost_5v_enable(DISABLE, BOOST_CTRL_FCP);
 	direct_charge_set_bst_ctrl(DISABLE);
-#endif
-    if (is_rt8979()) {
-        ret = fsa9685_read_reg(RT8979_REG_MUIC_CTRL_4);
+#endif /* CONFIG_BOOST_5V */
+	if (is_rt8979()) {
+		ret = fsa9685_read_reg(RT8979_REG_MUIC_CTRL_4);
         ret = fsa9685_write_reg(RT8979_REG_MUIC_CTRL_4, ret&RT8979_REG_MUIC_CTRL_4_ENABLEID2_FUNCTION);
-        if(ret < 0)
-            hwlog_info("%s: error !!! ret=%d\n", __func__, ret);
-    }
+		if (ret < 0)
+			hwlog_info("shutdown error\n");
+	}
 }
 
 static const struct i2c_device_id fsa9685_i2c_id[] = {
-    { "fsa9685", 0 },
-    { }
+	{ "fsa9685", 0 },
+	{}
 };
 
 static struct i2c_driver fsa9685_i2c_driver = {
@@ -3035,14 +2852,7 @@ static struct i2c_driver fsa9685_i2c_driver = {
 
 static __init int fsa9685_i2c_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&fsa9685_i2c_driver);
-	if (ret) {
-		hwlog_err("error: fsa9685 i2c_add_driver error!\n");
-	}
-
-	return ret;
+	return i2c_add_driver(&fsa9685_i2c_driver);
 }
 
 static __exit void fsa9685_i2c_exit(void)
@@ -3053,6 +2863,6 @@ static __exit void fsa9685_i2c_exit(void)
 device_initcall_sync(fsa9685_i2c_init);
 module_exit(fsa9685_i2c_exit);
 
-MODULE_AUTHOR("Lixiuna<lixiuna@huawei.com>");
-MODULE_DESCRIPTION("I2C bus driver for FSA9685 USB Accesory Detection Switch");
 MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("huawei switch module driver");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

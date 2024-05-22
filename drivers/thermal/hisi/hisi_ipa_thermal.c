@@ -28,7 +28,8 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 69)
 #include <uapi/linux/sched/types.h>
 #endif
-#include "securec.h"
+#include <securec.h>
+#include <linux/of_platform.h>
 
 #ifdef CONFIG_HISI_THERMAL_SPM
 #include <linux/string.h>
@@ -64,6 +65,12 @@ struct spm_t {
 enum {
 	SOC = 0,
 	BOARD
+};
+
+enum {
+	HOTPLUG_NONE = 0,
+	HOTPLUG_NORMAL,
+	HOTPLUG_CRITICAL
 };
 
 u32 g_cluster_num = 2;
@@ -110,7 +117,12 @@ struct hotplug_t {
 	struct device *device;
 	int cpu_down_threshold;
 	int cpu_up_threshold;
+	int critical_cpu_down_threshold;
+	int critical_cpu_up_threshold;
+	int hotplug_status;
 	unsigned int cpu_hotplug_mask;
+	unsigned int critical_cpu_hotplug_mask;
+	unsigned int control_mask;	/* diff mask */
 	bool need_down;
 	bool need_up;
 	long current_temp;
@@ -118,7 +130,36 @@ struct hotplug_t {
 	int emul_temp;
 #endif
 	bool cpu_downed;
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG /*GPU PASUE FEATURE CONFIG*/
+	bool gpu_need_down;
+	bool gpu_need_up;
+	bool gpu_downed;
+	int gpu_down_threshold;
+	int gpu_up_threshold;
+	unsigned int gpu_limit_cores;
+	unsigned int gpu_total_cores;
+	long gpu_current_temp;
+#endif
+#ifdef CONFIG_HISI_GPU_HOTPLUG_EMULATION
+	int gpu_emul_temp;
+#endif
+#ifdef CONFIG_HISI_THERMAL_NPU_HOTPLUG /*GPU PASUE FEATURE CONFIG*/
+	bool npu_need_down;
+	bool npu_need_up;
+	bool npu_downed;
+	int npu_down_threshold;
+	int npu_up_threshold;
+	unsigned int npu_limit_cores;
+	unsigned int npu_total_cores;
+	long npu_current_temp;
+#endif
+#ifdef CONFIG_HISI_NPU_HOTPLUG_EMULATION
+	int npu_emul_temp;
+#endif
 	struct task_struct *hotplug_task;
+	struct delayed_work poll_work;
+	u32 polling_delay;
+	u32 polling_delay_passive;
 	spinlock_t hotplug_lock;
 	bool disabled;
 	bool initialized;
@@ -145,6 +186,15 @@ extern int ipa_get_sensor_value(u32 sensor, int *val);
 extern int ipa_get_periph_value(u32 sensor, int *val);
 extern int ipa_get_tsensor_id(char *name);
 extern int ipa_get_periph_id(char *name);
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG /* GPU PAUSE FEATURE */
+extern void hisi_gpu_thermal_cores_control(u64 cores);
+#endif
+
+#ifdef CONFIG_HISI_THERMAL_NPU_HOTPLUG /* NPU HOTPLUG FEATURE */
+#define NPU_DEV_ID 0
+extern int devdrv_npu_ctrl_core(u32 dev_id, u32 core_num);
+#endif
+
 #ifdef CONFIG_HISI_THERMAL_SHELL
 extern int hisi_get_shell_temp(struct thermal_zone_device *thermal, int *temp);
 #endif
@@ -184,7 +234,7 @@ static ssize_t
 hotplug_emul_temp_store(struct device *dev, struct device_attribute *attr,
 		     const char *buf, size_t count)
 {
-	int temperature;
+	int temperature = 0;
 
 	if (dev == NULL || attr == NULL)
 		return -EINVAL;
@@ -192,9 +242,7 @@ hotplug_emul_temp_store(struct device *dev, struct device_attribute *attr,
 	if (kstrtoint(buf, 10, &temperature))
 		return -EINVAL;
 
-#ifdef CONFIG_HISI_IPA_THERMAL
 	temperature = thermal_zone_temp_check(temperature);
-#endif
 	thermal_info.hotplug.emul_temp = temperature;
 	pr_err("hotplug emul temp set : %d\n", temperature);
 
@@ -204,9 +252,55 @@ hotplug_emul_temp_store(struct device *dev, struct device_attribute *attr,
 /*lint -e84 -e846 -e514 -e778 -e866 -esym(84,846,514,778,866,*)*/
 static DEVICE_ATTR(hotplug_emul_temp, S_IWUSR, NULL, hotplug_emul_temp_store);
 /*lint -e84 -e846 -e514 -e778 -e866 +esym(84,846,514,778,866,*)*/
-
 #endif
 
+#ifdef CONFIG_HISI_GPU_HOTPLUG_EMULATION
+static ssize_t
+gpu_hotplug_emul_temp_store(struct device *dev, struct device_attribute *attr,
+		     const char *buf, size_t count)
+{
+	int temperature = 0;
+
+	if (dev == NULL || attr == NULL)
+		return -EINVAL;
+
+	if (kstrtoint(buf, 10, &temperature))
+		return -EINVAL;
+
+	temperature = thermal_zone_temp_check(temperature);
+	thermal_info.hotplug.gpu_emul_temp = temperature;
+	pr_err("gpu hotplug emul temp set : %d\n", temperature);
+
+	return (long)count;
+}
+/*lint -e84 -e846 -e514 -e778 -e866 -esym(84,846,514,778,866,*)*/
+static DEVICE_ATTR(gpu_hotplug_emul_temp, S_IWUSR, NULL, gpu_hotplug_emul_temp_store);
+/*lint -e84 -e846 -e514 -e778 -e866 +esym(84,846,514,778,866,*)*/
+#endif
+
+#ifdef CONFIG_HISI_NPU_HOTPLUG_EMULATION
+static ssize_t
+npu_hotplug_emul_temp_store(struct device *dev, struct device_attribute *attr,
+		     const char *buf, size_t count)
+{
+	int temperature = 0;
+
+	if (dev == NULL || attr == NULL)
+		return -EINVAL;
+
+	if (kstrtoint(buf, 10, &temperature))
+		return -EINVAL;
+
+	temperature = thermal_zone_temp_check(temperature);
+	thermal_info.hotplug.npu_emul_temp = temperature;
+	pr_err("npu hotplug emul temp set : %d\n", temperature);
+
+	return (long)count;
+}
+/*lint -e84 -e846 -e514 -e778 -e866 -esym(84,846,514,778,866,*)*/
+static DEVICE_ATTR(npu_hotplug_emul_temp, S_IWUSR, NULL, npu_hotplug_emul_temp_store);
+/*lint -e84 -e846 -e514 -e778 -e866 +esym(84,846,514,778,866,*)*/
+#endif
 #ifdef CONFIG_HISI_THERMAL_HOTPLUG
 static ssize_t
 mode_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -214,7 +308,7 @@ mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 	if (dev == NULL || attr == NULL)
 		return -EINVAL;
 
-	return snprintf(buf, (unsigned long)MAX_MODE_LEN, "%s\n", thermal_info.hotplug.disabled ? "disabled"
+	return snprintf_s(buf, (unsigned long)MAX_MODE_LEN, (unsigned long)(MAX_MODE_LEN - 1), "%s\n", thermal_info.hotplug.disabled ? "disabled"
 		       : "enabled");
 }
 
@@ -238,6 +332,85 @@ mode_store(struct device *dev, struct device_attribute *attr,
 /*lint -e84 -e846 -e514 -e778 -e866 -esym(84,846,514,778,866,*)*/
 static DEVICE_ATTR(hotplug_mode, 0644, mode_show, mode_store);
 /*lint -e84 -e846 -e514 -e778 -e866 +esym(84,846,514,778,866,*)*/
+
+#ifdef CONFIG_HISI_HOTPLUG_EMULATION
+// cppcheck-suppress *
+#define MODE_NAME_LEN 8
+#define SHOW_THRESHOLD(mode_name)					\
+static ssize_t show_##mode_name					\
+(struct device *dev, struct device_attribute *attr, char *buf) 			\
+{										\
+	if (dev == NULL || attr == NULL)					\
+		return 0;							\
+										\
+	return snprintf_s(buf, MODE_NAME_LEN,  MODE_NAME_LEN - 1, "%d\n",		\
+					(int)thermal_info.hotplug.mode_name);	\
+}
+
+#ifdef CONFIG_HISI_GPU_HOTPLUG_EMULATION
+SHOW_THRESHOLD(gpu_down_threshold);
+SHOW_THRESHOLD(gpu_up_threshold);
+#endif
+#ifdef CONFIG_HISI_NPU_HOTPLUG_EMULATION
+SHOW_THRESHOLD(npu_down_threshold);
+SHOW_THRESHOLD(npu_up_threshold);
+#endif
+SHOW_THRESHOLD(cpu_down_threshold);
+SHOW_THRESHOLD(cpu_up_threshold);
+SHOW_THRESHOLD(critical_cpu_down_threshold);
+SHOW_THRESHOLD(critical_cpu_up_threshold);
+// cppcheck-suppress *
+#define STORE_THRESHOLD(mode_name)					\
+static ssize_t store_##mode_name				\
+(struct device *dev, struct device_attribute *attr, 		\
+	const char *buf, size_t count)				\
+{								\
+	int value;						\
+								\
+	if (dev == NULL || attr == NULL)			\
+		return 0;					\
+								\
+	if (kstrtoint(buf, 10, &value)) /*lint !e64*/	\
+		return -EINVAL;					\
+								\
+	thermal_info.hotplug.mode_name = value;	\
+								\
+	return (ssize_t)count;					\
+}
+
+#ifdef CONFIG_HISI_GPU_HOTPLUG_EMULATION
+STORE_THRESHOLD(gpu_down_threshold);
+STORE_THRESHOLD(gpu_up_threshold);
+#endif
+#ifdef CONFIG_HISI_NPU_HOTPLUG_EMULATION
+STORE_THRESHOLD(npu_down_threshold);
+STORE_THRESHOLD(npu_up_threshold);
+#endif
+STORE_THRESHOLD(cpu_down_threshold);
+STORE_THRESHOLD(cpu_up_threshold);
+STORE_THRESHOLD(critical_cpu_down_threshold);
+STORE_THRESHOLD(critical_cpu_up_threshold);
+
+/*lint -e84 -e846 -e514 -e778 -e866 -esym(84,846,514,778,866,*)*/
+#define THRESHOLD_ATTR_RW(mode_name)				\
+static DEVICE_ATTR(mode_name, S_IWUSR | S_IRUGO,	\
+				show_##mode_name,	\
+				store_##mode_name)
+
+#ifdef CONFIG_HISI_GPU_HOTPLUG_EMULATION
+THRESHOLD_ATTR_RW(gpu_down_threshold);
+THRESHOLD_ATTR_RW(gpu_up_threshold);
+#endif
+#ifdef CONFIG_HISI_NPU_HOTPLUG_EMULATION
+THRESHOLD_ATTR_RW(npu_down_threshold);
+THRESHOLD_ATTR_RW(npu_up_threshold);
+#endif
+THRESHOLD_ATTR_RW(cpu_down_threshold);
+THRESHOLD_ATTR_RW(cpu_up_threshold);
+THRESHOLD_ATTR_RW(critical_cpu_down_threshold);
+THRESHOLD_ATTR_RW(critical_cpu_up_threshold);
+/*lint -e84 -e846 -e514 -e778 -e866 +esym(84,846,514,778,866,*)*/
+#endif
 #endif
 
 u32 get_camera_power(void)
@@ -289,12 +462,13 @@ static void update_cpufreqs(void)
 
 static bool setfreq_available(unsigned int idx, u32 freq)
 {
-	struct cpufreq_frequency_table *pos, *table = NULL;
+	struct cpufreq_frequency_table *pos = NULL;
+	struct cpufreq_frequency_table *table = NULL;
 	int ret = false;
 
 	if (idx < g_cluster_num) {
 		table = cpufreq_frequency_get_table(ipa_cpufreq_table_index[idx]);//cpu core
-		if (!table) {
+		if (table == NULL) {
 			pr_err("%s: Unable to find freq table(0)\n", __func__);
 			return false;
 		}
@@ -371,9 +545,9 @@ vr_freq_store(struct device *dev, struct device_attribute *attr,
 {
 	u32 freq;
 	unsigned int i = 0;
-	char *token;
+	char *token = NULL;
 	char temp_buf[40] = {0};
-	char *s;
+	char *s = NULL;
 
 	if (dev == NULL || attr == NULL)
 		return 0;
@@ -418,9 +592,9 @@ spm_freq_store(struct device *dev, struct device_attribute *attr,
 {
 	u32 freq;
 	unsigned int i = 0;
-	char *token;
+	char *token = NULL;
 	char temp_buf[40] = {0};
-	char *s;
+	char *s = NULL;
 
 	if (dev == NULL || attr == NULL)
 		return 0;
@@ -465,9 +639,9 @@ min_freq_store(struct device *dev, struct device_attribute *attr,
 {
 	u32 freq;
 	unsigned int i = 0;
-	char *token;
+	char *token = NULL;
 	char temp_buf[40] = {0};
-	char *s;
+	char *s = NULL;
 
 	if (dev == NULL || attr == NULL)
 		return 0;
@@ -515,7 +689,7 @@ EXPORT_SYMBOL(is_spm_mode_enabled);
 
 int ipa_get_actor_id(const char *name)
 {
-	int ret = -ENODEV;
+	int ret = -1;
 	u32 id = 0;
 
 	for (id = 0; id < g_ipa_sensor_num; id++) {
@@ -605,23 +779,39 @@ static u32 get_cache_static_power_coeff(int cluster)
 	return caps->cache_capacitance[cluster];
 }
 
+#define MAX_TEMPERATURE 145
+#define MIN_TEMPERATURE -40
+#define MAX_CAPS 0xFFFFF
 static unsigned long get_temperature_scale(int temp)
 {
-	int i, t_exp = 1, t_scale = 0, ret = 0;
+	int i, temperature, cap;
+	int t_exp = 1, ret = 0;
+	long long t_scale = 0;
 	struct capacitances *caps = &g_caps;
 	int capacitance[5] = {0};
 
+	temperature = clamp_val(temp, MIN_TEMPERATURE, MAX_TEMPERATURE);
 	for (i = 0; i < 4; i++) {
-		ret = kstrtoint(caps->temperature_scale_capacitance[i], 10, &capacitance[i]);
-		if (ret)
+		ret = kstrtoint(caps->temperature_scale_capacitance[i], 10, &cap);
+		if (ret) {
 			pr_warning("%s kstortoint is failed \n", __func__);
-		t_scale += capacitance[i] * t_exp;
-		t_exp *= temp;
+			return 0;
+		}
+		capacitance[i] = clamp_val(cap, -MAX_CAPS, MAX_CAPS);
+		t_scale += (long long)capacitance[i] * t_exp;
+		t_exp *= temperature;
 	}
 
+	t_scale = clamp_val(t_scale, 0, UINT_MAX);
 	ret = kstrtoint(caps->temperature_scale_capacitance[4], 10, &capacitance[4]);
-	if (ret)
+	if (ret) {
 		pr_warning("%s kstortoint is failed \n", __func__);
+		return 0;
+	}
+
+	if (capacitance[4] <= 0)
+		return 0;
+
 	return (unsigned long)(t_scale / capacitance[4]); /*lint !e571*/
 }
 
@@ -667,14 +857,23 @@ static int hisi_cluster_get_static_power(cpumask_t *cpumask, int interval,
 static int thermal_hotplug_task(void *data)
 {
 	unsigned int cpu_num;
-	struct device *cpu_dev;
-	long sensor_val;
+	struct device *cpu_dev = NULL;
 	unsigned long flags;
 
 	while (1) {
-		set_current_state(TASK_INTERRUPTIBLE);/*lint !e446 !e666*/
 		spin_lock_irqsave(&thermal_info.hotplug.hotplug_lock, flags); /*lint !e550*/
-		if ((!thermal_info.hotplug.need_up) && (!thermal_info.hotplug.need_down)) {
+		if ((!thermal_info.hotplug.need_up) &&
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG
+			(!thermal_info.hotplug.gpu_need_down) &&
+			(!thermal_info.hotplug.gpu_need_up) &&
+#endif
+#ifdef CONFIG_HISI_THERMAL_NPU_HOTPLUG
+			(!thermal_info.hotplug.npu_need_down) &&
+			(!thermal_info.hotplug.npu_need_up) &&
+#endif
+			(!thermal_info.hotplug.need_down)
+			) {
+			set_current_state(TASK_INTERRUPTIBLE);/*lint !e446 !e666*/
 			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
 
 			schedule();
@@ -685,20 +884,18 @@ static int thermal_hotplug_task(void *data)
 			spin_lock_irqsave(&thermal_info.hotplug.hotplug_lock, flags); /*lint !e550*/
 		}
 
-		set_current_state(TASK_RUNNING);/*lint !e446 !e666*/
-		sensor_val = thermal_info.hotplug.current_temp;
-
 		if (thermal_info.hotplug.need_down) {
 			thermal_info.hotplug.need_down = false;
 			thermal_info.hotplug.cpu_downed = true;
 			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
-			pr_err("cluster_big temp = %ld, cpu_down!!!\n", sensor_val);
+			pr_err("cluster_big temp = %ld, cpu_down!!!\n", thermal_info.hotplug.current_temp);
 			for (cpu_num = 0; cpu_num < NR_CPUS; cpu_num++) {
-				if ((1 << cpu_num) & thermal_info.hotplug.cpu_hotplug_mask) {
+				if ((1 << cpu_num) & thermal_info.hotplug.control_mask) {
 					cpu_dev = get_cpu_device(cpu_num);
 					if (cpu_dev != NULL) {
 						device_lock(cpu_dev);
 						cpu_down(cpu_num);
+						kobject_uevent(&cpu_dev->kobj, KOBJ_OFFLINE);
 						cpu_dev->offline = true;
 						device_unlock(cpu_dev);
 					}
@@ -706,23 +903,61 @@ static int thermal_hotplug_task(void *data)
 			}
 		} else if (thermal_info.hotplug.need_up) {
 			thermal_info.hotplug.need_up = false;
-			thermal_info.hotplug.cpu_downed = false;
+			if (thermal_info.hotplug.hotplug_status == HOTPLUG_NONE) {
+				thermal_info.hotplug.cpu_downed = false;
+			}
 			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
-			pr_err("cluster_big temp = %ld, cpu_up!!!\n", sensor_val);
+			pr_err("cluster_big temp = %ld, cpu_up!!!\n", thermal_info.hotplug.current_temp);
 			for (cpu_num = 0; cpu_num < NR_CPUS; cpu_num++) {
-				if ((1 << cpu_num) & thermal_info.hotplug.cpu_hotplug_mask) {
+				if ((1 << cpu_num) & thermal_info.hotplug.control_mask) {
 					cpu_dev = get_cpu_device(cpu_num);
 					if (cpu_dev != NULL) {
 						device_lock(cpu_dev);
 						cpu_up(cpu_num);
+						kobject_uevent(&cpu_dev->kobj, KOBJ_ONLINE);
 						cpu_dev->offline = false;
 						device_unlock(cpu_dev);
 					}
 				}
 			}
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG
+		} else if (thermal_info.hotplug.gpu_need_down) {
+			thermal_info.hotplug.gpu_downed = true;
+			thermal_info.hotplug.gpu_need_down = false;
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+			pr_err("gpu limit to %u cores, current_temp:%ld !!!\n", thermal_info.hotplug.gpu_limit_cores, thermal_info.hotplug.gpu_current_temp);
+			hisi_gpu_thermal_cores_control(thermal_info.hotplug.gpu_limit_cores);
+		} else if (thermal_info.hotplug.gpu_need_up) {
+			thermal_info.hotplug.gpu_downed = false;
+			thermal_info.hotplug.gpu_need_up = false;
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+			pr_err("gpu restore to max cores:%u, current_temp:%ld !!!\n", thermal_info.hotplug.gpu_total_cores, thermal_info.hotplug.gpu_current_temp);
+			hisi_gpu_thermal_cores_control(thermal_info.hotplug.gpu_total_cores); //max number of cores
+#endif
+#ifdef CONFIG_HISI_THERMAL_NPU_HOTPLUG
+		} else if (thermal_info.hotplug.npu_need_down) {
+			thermal_info.hotplug.npu_downed = true;
+			thermal_info.hotplug.npu_need_down = false;
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+			pr_err("npu limit to %u cores, current_temp:%ld !!!\n", thermal_info.hotplug.npu_limit_cores, thermal_info.hotplug.npu_current_temp);
+			devdrv_npu_ctrl_core(NPU_DEV_ID, thermal_info.hotplug.npu_limit_cores);
+		} else if (thermal_info.hotplug.npu_need_up) {
+			thermal_info.hotplug.npu_downed = false;
+			thermal_info.hotplug.npu_need_up = false;
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+			pr_err("npu restore to max cores:%u, current_temp:%ld !!!\n", thermal_info.hotplug.npu_total_cores, thermal_info.hotplug.npu_current_temp);
+			devdrv_npu_ctrl_core(NPU_DEV_ID, thermal_info.hotplug.npu_total_cores); //max number of cores
+#endif
+		} else {
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
 		}
-		trace_IPA_hot_plug(thermal_info.hotplug.cpu_downed, sensor_val, thermal_info.hotplug.cpu_up_threshold,
-				thermal_info.hotplug.cpu_down_threshold);
+
+		trace_IPA_cpu_hot_plug(thermal_info.hotplug.cpu_downed, thermal_info.hotplug.current_temp,
+				thermal_info.hotplug.cpu_up_threshold, thermal_info.hotplug.cpu_down_threshold);
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG
+		trace_IPA_gpu_hot_plug(thermal_info.hotplug.gpu_downed, thermal_info.hotplug.gpu_current_temp,
+				thermal_info.hotplug.gpu_up_threshold, thermal_info.hotplug.gpu_down_threshold);
+#endif
 	}
 
 	return 0;
@@ -744,7 +979,7 @@ static int thermal_hotplug_task(void *data)
  /*lint -e702*/
 static inline s32 mul_frac(s32 x, s32 y)
 {
-	return (x * y) >> FRAC_BITS;
+	return (s32)((u32)(x * y) >> FRAC_BITS);
 }
 /*lint +e702*/
 #ifdef CONFIG_HISI_THERMAL_HOTPLUG
@@ -761,23 +996,141 @@ void hisi_thermal_hotplug_check(int *temp)
 		thermal_info.hotplug.current_temp = *temp;
 
 		if (thermal_info.hotplug.cpu_downed) {
-			if (*temp < thermal_info.hotplug.cpu_up_threshold) {
+			if (*temp > thermal_info.hotplug.critical_cpu_down_threshold) {
+				if (thermal_info.hotplug.hotplug_status == HOTPLUG_NORMAL) {
+					thermal_info.hotplug.need_down = true;
+					thermal_info.hotplug.control_mask =
+						thermal_info.hotplug.critical_cpu_hotplug_mask & (~thermal_info.hotplug.cpu_hotplug_mask);
+					thermal_info.hotplug.hotplug_status = HOTPLUG_CRITICAL;
+					spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+					wake_up_process(thermal_info.hotplug.hotplug_task);
+				} else {
+					spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+				}
+			} else if (*temp < thermal_info.hotplug.critical_cpu_up_threshold &&
+				*temp > thermal_info.hotplug.cpu_up_threshold) {
+				if (thermal_info.hotplug.hotplug_status == HOTPLUG_CRITICAL) {
+					thermal_info.hotplug.need_up = true;
+					thermal_info.hotplug.control_mask =
+							thermal_info.hotplug.critical_cpu_hotplug_mask & (~thermal_info.hotplug.cpu_hotplug_mask);
+					thermal_info.hotplug.hotplug_status = HOTPLUG_NORMAL;
+					spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+					wake_up_process(thermal_info.hotplug.hotplug_task);
+				} else {
+					spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+				}
+			} else if (*temp < thermal_info.hotplug.cpu_up_threshold) {
 				thermal_info.hotplug.need_up = true;
+				if (thermal_info.hotplug.hotplug_status == HOTPLUG_CRITICAL) {
+					thermal_info.hotplug.control_mask = thermal_info.hotplug.critical_cpu_hotplug_mask;
+				} else if (thermal_info.hotplug.hotplug_status == HOTPLUG_NORMAL) {
+					thermal_info.hotplug.control_mask = thermal_info.hotplug.cpu_hotplug_mask;
+				} else {
+					thermal_info.hotplug.control_mask = 0;
+				}
+				thermal_info.hotplug.hotplug_status = HOTPLUG_NONE;
 				spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
-
 				wake_up_process(thermal_info.hotplug.hotplug_task);
 			} else {
 				spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
 			}
 		} else {
-			if (*temp > thermal_info.hotplug.cpu_down_threshold) {
+			if (*temp > thermal_info.hotplug.critical_cpu_down_threshold) {
 				thermal_info.hotplug.need_down = true;
+				thermal_info.hotplug.hotplug_status = HOTPLUG_CRITICAL;
+				thermal_info.hotplug.control_mask = thermal_info.hotplug.critical_cpu_hotplug_mask;
 				spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
-
+				wake_up_process(thermal_info.hotplug.hotplug_task);
+			} else if (*temp > thermal_info.hotplug.cpu_down_threshold) {
+				thermal_info.hotplug.need_down = true;
+				thermal_info.hotplug.hotplug_status = HOTPLUG_NORMAL;
+				thermal_info.hotplug.control_mask = thermal_info.hotplug.cpu_hotplug_mask;
+				spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
 				wake_up_process(thermal_info.hotplug.hotplug_task);
 			} else {
 				spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
 			}
+		}
+	}
+}
+#endif
+
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG /*GPU PASUE FEATURE CONFIG*/
+void hisi_thermal_gpu_hotplug_check(int *temp)
+{
+	unsigned long flags;
+
+#ifdef CONFIG_HISI_GPU_HOTPLUG_EMULATION
+	if (thermal_info.hotplug.gpu_emul_temp)
+		*temp = thermal_info.hotplug.gpu_emul_temp;
+#endif
+	if (thermal_info.hotplug.initialized && !thermal_info.hotplug.disabled) {
+		spin_lock_irqsave(&thermal_info.hotplug.hotplug_lock, flags); /*lint !e550*/
+		thermal_info.hotplug.gpu_current_temp = *temp;
+
+		if (thermal_info.hotplug.gpu_downed) {
+			if (*temp < thermal_info.hotplug.gpu_up_threshold) {
+					thermal_info.hotplug.gpu_need_up = true;
+					wake_up_process(thermal_info.hotplug.hotplug_task);
+			}
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+		} else {
+			if (*temp > thermal_info.hotplug.gpu_down_threshold) {
+				thermal_info.hotplug.gpu_need_down = true;
+				wake_up_process(thermal_info.hotplug.hotplug_task);
+			}
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+		}
+	}
+}
+#endif
+
+#ifdef CONFIG_HISI_THERMAL_NPU_HOTPLUG /*NPU HOTPLUG FEATURE CONFIG*/
+static int ipa_get_npu_temp(int *val)
+{
+	int id = 0;
+	int ret;
+
+	id = ipa_get_tsensor_id("npu");
+	if (id < 0) {
+		pr_err("%s:%d:tsensor npu is not exist.\n", __func__, __LINE__);
+		return -ENODEV;
+	}
+
+	ret = ipa_get_sensor_value((u32)id, val);
+	return ret;
+}
+
+void hisi_thermal_npu_hotplug_check(void)
+{
+	unsigned long flags;
+	int temp = 0;
+	int ret;
+
+	ret = ipa_get_npu_temp(&temp);
+	if (ret != 0)
+		return;
+
+#ifdef CONFIG_HISI_NPU_HOTPLUG_EMULATION
+	if (thermal_info.hotplug.npu_emul_temp)
+		temp = thermal_info.hotplug.npu_emul_temp;
+#endif
+	if (thermal_info.hotplug.initialized && !thermal_info.hotplug.disabled) {
+		spin_lock_irqsave(&thermal_info.hotplug.hotplug_lock, flags); /*lint !e550*/
+		thermal_info.hotplug.npu_current_temp = temp;
+
+		if (thermal_info.hotplug.npu_downed) {
+			if (temp < thermal_info.hotplug.npu_up_threshold) {
+					thermal_info.hotplug.npu_need_up = true;
+					wake_up_process(thermal_info.hotplug.hotplug_task);
+			}
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
+		} else {
+			if (temp > thermal_info.hotplug.npu_down_threshold) {
+				thermal_info.hotplug.npu_need_down = true;
+				wake_up_process(thermal_info.hotplug.hotplug_task);
+			}
+			spin_unlock_irqrestore(&thermal_info.hotplug.hotplug_lock, flags);
 		}
 	}
 }
@@ -812,9 +1165,7 @@ static int get_temp_value(void *data, int *temp)
 			if (ret)
 				return ret;
 		}
-#ifdef CONFIG_HISI_THERMAL_HOTPLUG
-		hisi_thermal_hotplug_check(&sensor_val[g_cluster_num - 1]);
-#endif
+
 		val_max = sensor_val[0];
 		for (id = 1; id < (int)g_ipa_sensor_num; id++) {
 			if (sensor_val[id] > val_max)
@@ -822,7 +1173,6 @@ static int get_temp_value(void *data, int *temp)
 		}
 
 		val = val_max;
-
 		trace_IPA_get_tsens_value(g_ipa_sensor_num, sensor_val, val_max);
 #ifdef CONFIG_HISI_THERMAL_SHELL
 	} else if (IPA_SENSOR_SHELLID == sensor->sensor_id) {
@@ -862,7 +1212,8 @@ static int get_temp_value(void *data, int *temp)
 static void update_debugfs(struct ipa_sensor *sensor_data)
 {
 #ifdef CONFIG_HISI_DEBUG_FS
-	struct dentry *dentry_f, *filter_d;
+	struct dentry *dentry_f = NULL;
+	struct dentry *filter_d = NULL;
 	char filter_name[25];
 
 	snprintf(filter_name, sizeof(filter_name), "thermal_lpf_filter%d", sensor_data->sensor_id);
@@ -894,15 +1245,16 @@ extern struct thermal_zone_device_ops shell_thermal_zone_ops;
 #endif
 
 #ifdef CONFIG_HISI_THERMAL_HOTPLUG
+#define DEFAULT_POLL_DELAY 200        //unit is ms
 static int thermal_hotplug_init(void)
 {
-	struct device_node *hotplug_np;
+	struct device_node *hotplug_np = NULL;
 	int ret;
 	struct sched_param param = { .sched_priority = MAX_RT_PRIO - 1 };
 
 	if (!thermal_info.hotplug.initialized) {
 		hotplug_np = of_find_node_by_name(NULL, "cpu_temp_threshold");
-		if (!hotplug_np) {
+		if (hotplug_np == NULL) {
 			pr_err("cpu_temp_threshold node not found\n");
 			return -ENODEV;
 		}
@@ -924,7 +1276,90 @@ static int thermal_hotplug_init(void)
 			pr_err("%s hotplug maskd read err\n", __func__);
 			goto node_put;
 		}
+		ret = of_property_read_u32(hotplug_np, "hisilicon,critical_down_threshold",
+									(u32 *)&thermal_info.hotplug.critical_cpu_down_threshold);
+		if (ret) {
+			pr_err("%s critical_down_threshold use down_threshold value\n", __func__);
+			thermal_info.hotplug.critical_cpu_down_threshold = thermal_info.hotplug.cpu_down_threshold;
+		}
 
+		ret = of_property_read_u32(hotplug_np, "hisilicon,critical_up_threshold",
+									(u32 *)&thermal_info.hotplug.critical_cpu_up_threshold);
+		if (ret) {
+			pr_err("%s critical_up_threshold use up_threshold value\n", __func__);
+			thermal_info.hotplug.critical_cpu_up_threshold = thermal_info.hotplug.cpu_up_threshold;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,critical_cpu_hotplug_mask",
+									(u32 *)&thermal_info.hotplug.critical_cpu_hotplug_mask);
+		if (ret) {
+			pr_err("%s critical_cpu_hotplug_mask use cpu_hotplug_mask value\n", __func__);
+			thermal_info.hotplug.critical_cpu_hotplug_mask = thermal_info.hotplug.cpu_hotplug_mask;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,polling_delay",
+									(u32 *)&thermal_info.hotplug.polling_delay);
+		if (ret) {
+			pr_err("%s hotplug polling_delay use  default value\n", __func__);
+			thermal_info.hotplug.polling_delay = DEFAULT_POLL_DELAY;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,polling_delay_passive",
+									(u32 *)&thermal_info.hotplug.polling_delay_passive);
+		if (ret) {
+			pr_err("%s hotplug polling_delay_passive use  default value\n", __func__);
+			thermal_info.hotplug.polling_delay_passive = DEFAULT_POLL_DELAY;
+		}
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG
+		ret = of_property_read_u32(hotplug_np, "hisilicon,gpu_limit_cores", (u32 *)&thermal_info.hotplug.gpu_limit_cores);
+		if (ret) {
+			pr_err("%s gpu_limit_cores read err\n", __func__);
+			goto node_put;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,gpu_total_cores", (u32 *)&thermal_info.hotplug.gpu_total_cores);
+		if (ret) {
+			pr_err("%s gpu_total_cores read err\n", __func__);
+			goto node_put;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,gpu_down_threshold", (u32 *)&thermal_info.hotplug.gpu_down_threshold);
+		if (ret) {
+			pr_err("%s gpu_down_threshold read err\n", __func__);
+			goto node_put;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,gpu_up_threshold", (u32 *)&thermal_info.hotplug.gpu_up_threshold);
+		if (ret) {
+			pr_err("%s gpu_up_threshold read err\n", __func__);
+			goto node_put;
+		}
+#endif
+#ifdef CONFIG_HISI_THERMAL_NPU_HOTPLUG
+		ret = of_property_read_u32(hotplug_np, "hisilicon,npu_limit_cores", (u32 *)&thermal_info.hotplug.npu_limit_cores);
+		if (ret) {
+			pr_err("%s npu_limit_cores read err\n", __func__);
+			goto node_put;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,npu_total_cores", (u32 *)&thermal_info.hotplug.npu_total_cores);
+		if (ret) {
+			pr_err("%s npu_total_cores read err\n", __func__);
+			goto node_put;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,npu_down_threshold", (u32 *)&thermal_info.hotplug.npu_down_threshold);
+		if (ret) {
+			pr_err("%s gpu_down_threshold read err\n", __func__);
+			goto node_put;
+		}
+
+		ret = of_property_read_u32(hotplug_np, "hisilicon,npu_up_threshold", (u32 *)&thermal_info.hotplug.npu_up_threshold);
+		if (ret) {
+			pr_err("%s npu_up_threshold read err\n", __func__);
+			goto node_put;
+		}
+#endif
 		spin_lock_init(&thermal_info.hotplug.hotplug_lock);
 		thermal_info.hotplug.hotplug_task = kthread_create(thermal_hotplug_task, NULL, "thermal_hotplug");
 		if (IS_ERR(thermal_info.hotplug.hotplug_task)) {
@@ -958,7 +1393,7 @@ int of_parse_ipa_sensor_index_table(void)
 	struct device_node *np;
 
 	np = of_find_node_by_name(NULL, "ipa_sensors_info");
-	if (!np) {
+	if (np == NULL) {
 		pr_err("ipa_sensors_info node not found\n");
 		return -ENODEV;
 	}
@@ -1010,11 +1445,11 @@ EXPORT_SYMBOL(of_parse_ipa_sensor_index_table);
 static int of_parse_thermal_zone_caps(void)
 {
 	int ret, i;
-	struct device_node *np;
+	struct device_node *np = NULL;
 
 	if (!g_caps.initialized) {
 		np = of_find_node_by_name(NULL, "capacitances");
-		if (!np) {
+		if (np == NULL) {
 			pr_err("Capacitances node not found\n");
 			return -ENODEV;
 		}
@@ -1061,41 +1496,41 @@ static int ipa_register_soc_cdev(struct ipa_thermal *thermal_data, struct platfo
 	int ret = 0;
 	int cpuid;
 	int cluster;
-	struct device_node *cdev_np;
+	struct device_node *cdev_np = NULL;
 	int i;
 	struct cpumask cpu_masks[CAPACITY_OF_ARRAY];
 	int cpu;
 	char node[16];
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 69)
-	struct cpufreq_policy *policy;
+	struct cpufreq_policy *policy = NULL;
 #endif
 
 	memset(cpu_masks, 0, sizeof(struct cpumask) * CAPACITY_OF_ARRAY);
-	for_each_online_cpu(cpu) { /*lint !e713*/
+	for_each_online_cpu(cpu) { /*lint !e713 !e574*/
 		int cluster_id = topology_physical_package_id(cpu);
-		if (cluster_id > (int)g_cluster_num) {
-			pr_warn("IPA:Cluster id: %d > %d\n", cluster_id, g_cluster_num);
+		if (cluster_id >= (int)g_cluster_num) {
+			pr_warn("IPA:Cluster id: %d >= max id:%d\n", cluster_id, g_cluster_num);
 			return -ENODEV;
 		}
 		cpumask_set_cpu((u32)cpu, &cpu_masks[cluster_id]);
 	}
 
 	thermal_data->cdevs = kcalloc((size_t)g_cluster_num, sizeof(struct thermal_cooling_device *), GFP_KERNEL); /*lint !e433*/
-	if (!thermal_data->cdevs) {
+	if (thermal_data->cdevs == NULL) {
 		ret = -ENOMEM;
 		goto end;
 	}
 
 	for (i = 0; i < (int)g_cluster_num; i++) {
 		cpuid = (int)cpumask_any(&cpu_masks[i]);
-		if (cpuid >= nr_cpu_ids)
+		if ((u32)cpuid >= nr_cpu_ids)
 			continue;
 		cluster = topology_physical_package_id(cpuid);
 
 		snprintf(node, sizeof(node), "cluster%d", i);
 		cdev_np = of_find_node_by_name(NULL, node);
 
-		if (!cdev_np) {
+		if (cdev_np == NULL) {
 			dev_err(&pdev->dev, "Node not found: %s\n", node);
 			continue;
 		}
@@ -1150,12 +1585,12 @@ end:
 
 static int ipa_register_board_cdev(struct ipa_thermal *thermal_data, struct platform_device *pdev)
 {
-	struct device_node *board_np;
+	struct device_node *board_np = NULL;
 	int ret = 0, i;
 	struct device_node *child = NULL;
 
 	board_np = of_find_node_by_name(NULL, "board-map");
-	if (!board_np) {
+	if (board_np == NULL) {
 		dev_err(&pdev->dev, "Board map node not found\n");
 		goto end;
 	}
@@ -1169,7 +1604,7 @@ static int ipa_register_board_cdev(struct ipa_thermal *thermal_data, struct plat
 	}
 
 	thermal_data->cdevs = kzalloc(sizeof(struct thermal_cooling_device *) * (unsigned long)ret, GFP_KERNEL); /*lint !e571*/
-	if (!thermal_data->cdevs) {
+	if (thermal_data->cdevs == NULL) {
 		ret = -ENOMEM;
 		goto end;
 	}
@@ -1205,7 +1640,7 @@ static inline void cooling_device_unregister(struct ipa_thermal *thermal_data)
 {
 	int i;
 
-	if (!thermal_data->cdevs)
+	if (thermal_data->cdevs == NULL)
 		return;
 
 	for (i = 0; i < thermal_data->cdevs_num; i++) {
@@ -1225,7 +1660,7 @@ static int ipa_thermal_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct device_node *dev_node = dev->of_node;
 	int ret;
-	const char *ch;
+	const char *ch = NULL;
 
 	if (!of_device_is_available(dev_node)) {
 		dev_err(&pdev->dev, "IPA thermal dev not found\n");
@@ -1237,12 +1672,6 @@ static int ipa_thermal_probe(struct platform_device *pdev)
 			"IPA:Frequency table not initialized. Deferring probe...\n");
 		return -EPROBE_DEFER;
 	}
-
-#ifdef CONFIG_HISI_THERMAL_HOTPLUG
-	ret = thermal_hotplug_init();
-	if (ret)
-		pr_err("thermal hotplug init error\n");
-#endif
 
 	ret = of_parse_thermal_zone_caps();
 	if (ret) {
@@ -1330,14 +1759,6 @@ static int ipa_thermal_remove(struct platform_device *pdev)
 {
 	struct ipa_thermal *thermal_data = platform_get_drvdata(pdev);
 
-#ifdef CONFIG_HISI_THERMAL_HOTPLUG
-	if (thermal_info.hotplug.hotplug_task) {
-		kthread_stop(thermal_info.hotplug.hotplug_task);
-		put_task_struct(thermal_info.hotplug.hotplug_task);
-		thermal_info.hotplug.hotplug_task = NULL;
-	}
-#endif
-
 	if (NULL == thermal_data) {
 		dev_warn(&pdev->dev, "%s sensor is null!\n", __func__);
 		return -1;
@@ -1378,12 +1799,12 @@ module_platform_driver(ipa_thermal_platdrv);
 #ifdef CONFIG_HISI_THERMAL_SPM
 static int powerhal_cfg_init(void)
 {
-	struct device_node *node;
+	struct device_node *node = NULL;
 	int ret;
 	unsigned int data[CAPACITY_OF_ARRAY] = {0};
 
 	node = of_find_compatible_node(NULL, NULL, "hisi,powerhal");
-	if (!node) {
+	if (node == NULL) {
 		pr_err("%s cannot find powerhal dts.\n", __func__);
 		return -ENODEV;
 	}
@@ -1399,14 +1820,22 @@ static int powerhal_cfg_init(void)
 		pr_err("%s cannot find hisi,powerhal-spm-cfg.\n", __func__);
 		return -ENODEV;
 	}
-	memcpy(powerhal_profiles[0], data, sizeof(data));
+	ret = memcpy_s(powerhal_profiles[0], sizeof(powerhal_profiles[0]), data, sizeof(powerhal_profiles[0]));
+	if (ret != EOK) {
+		pr_err("%s:%d:memcpy_s copy failed.\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	ret = of_property_read_u32_array(node, "hisi,powerhal-vr-cfg", data, g_powerhal_actor_num);
 	if (ret) {
 		pr_err("%s cannot find hisi,powerhal-spm-cfg.\n", __func__);
 		return -ENODEV;
 	}
-	memcpy(powerhal_profiles[1], data, sizeof(data));
+	ret = memcpy_s(powerhal_profiles[1], sizeof(powerhal_profiles[1]), data, sizeof(powerhal_profiles[1]));
+	if (ret != EOK) {
+		pr_err("%s:%d:memcpy_s copy failed.\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	ret = of_property_read_u32_array(node, "hisi,powerhal-min-cfg", data, g_powerhal_actor_num);
 	if (ret) {
@@ -1414,7 +1843,11 @@ static int powerhal_cfg_init(void)
 		return -ENODEV;
 	}
 
-	memcpy(powerhal_profiles[2], data, sizeof(data));
+	ret = memcpy_s(powerhal_profiles[2], sizeof(powerhal_profiles[2]), data, sizeof(powerhal_profiles[2]));
+	if (ret != EOK) {
+		pr_err("%s:%d:memcpy_s copy failed.\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 	return 0;
 
 }
@@ -1427,13 +1860,13 @@ extern unsigned int g_ipa_normal_weights[CAPACITY_OF_ARRAY];
 
 int ipa_weights_cfg_init(void)
 {
-	struct device_node *node;
+	struct device_node *node = NULL;
 	int ret;
 	unsigned int data[2][CAPACITY_OF_ARRAY] = {{0}, {0} };
 
 #if CONFIG_OF
 	node = of_find_compatible_node(NULL, NULL, "hisi,weights");
-	if (!node) {
+	if (node == NULL) {
 		pr_err("%s cannot find weights dts.\n", __func__);
 		return -ENODEV;
 	}
@@ -1451,25 +1884,82 @@ int ipa_weights_cfg_init(void)
 		return -ENODEV;
 	}
 
-	memcpy_s(weights_profiles[0], sizeof(weights_profiles[0]), data[0], sizeof(weights_profiles[0]));
-
+	ret = memcpy_s(weights_profiles[0], sizeof(weights_profiles[0]), data[0], sizeof(weights_profiles[0]));
+	if (ret != EOK) {
+		pr_err("%s:%d:memcpy_s copy failed.\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 	ret = of_property_read_u32_array(node, "hisi,weights-boost-cfg", data[1], g_ipa_actor_num);
 	if (ret) {
 		pr_err("%s cannot find hisi,weights-boost-cfg.\n", __func__);
 		return -ENODEV;
 	} /*lint !e419*/
 
-	memcpy_s(weights_profiles[1], sizeof(weights_profiles[1]), data[1], sizeof(weights_profiles[1]));
+	ret = memcpy_s(weights_profiles[1], sizeof(weights_profiles[1]), data[1], sizeof(weights_profiles[1]));
+	if (ret != EOK) {
+		pr_err("%s:%d:memcpy_s copy failed.\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 #endif
 	return 0;
 }
 EXPORT_SYMBOL(ipa_weights_cfg_init);
 void dynipa_get_weights_cfg(unsigned int *weight0, unsigned int *weight1)
 {
-	memcpy_s(weight0, sizeof(*weight0) * g_ipa_actor_num, weights_profiles[0], sizeof(*weight0) * g_ipa_actor_num);
-	memcpy_s(weight1, sizeof(*weight1) * g_ipa_actor_num, weights_profiles[1], sizeof(*weight1) * g_ipa_actor_num);
+	int ret = 0;
+	ret = memcpy_s(weight0, sizeof(*weight0) * g_ipa_actor_num, weights_profiles[0], sizeof(*weight0) * g_ipa_actor_num);
+	if (ret != EOK) {
+		pr_err("%s:%d:memcpy_s copy failed.\n", __func__, __LINE__);
+	}
+	ret = memcpy_s(weight1, sizeof(*weight1) * g_ipa_actor_num, weights_profiles[1], sizeof(*weight1) * g_ipa_actor_num);
+	if (ret != EOK) {
+		pr_err("%s:%d:memcpy_s copy failed.\n", __func__, __LINE__);
+	}
 }
 EXPORT_SYMBOL(dynipa_get_weights_cfg);
+
+#ifdef CONFIG_HISI_THERMAL_HOTPLUG
+
+static void hotplug_check_work(struct work_struct *work)
+{
+	int sensor_val[CAPACITY_OF_ARRAY] = {0};
+	int val_max = 0;
+	int val = 0;
+	int ret = -EINVAL;
+	int id = 0;
+	u32 polling_delay = DEFAULT_POLL_DELAY;
+	struct delayed_work *delayed_work = to_delayed_work(work);
+
+	/*read all sensor*/
+	for (id = 0; id < (int)g_ipa_sensor_num; id++) {
+		ret = ipa_get_sensor_value((u32)id, &val);
+		sensor_val[id] = val;
+		if (ret)
+			return;
+	}
+
+	val_max = sensor_val[0];
+	for (id = 1; id < (int)g_cluster_num; id++) {
+		if (sensor_val[id] > val_max)
+			val_max = sensor_val[id];
+	}
+
+	hisi_thermal_hotplug_check(&val_max); /*max cluster temp*/
+#ifdef CONFIG_HISI_THERMAL_GPU_HOTPLUG
+	hisi_thermal_gpu_hotplug_check(&sensor_val[g_ipa_sensor_num - 1]); /* GPU */
+#endif
+#ifdef CONFIG_HISI_THERMAL_NPU_HOTPLUG
+	hisi_thermal_npu_hotplug_check(); /* NPU */
+#endif
+	if (val_max >  thermal_info.hotplug.critical_cpu_up_threshold || sensor_val[g_ipa_sensor_num - 1] > thermal_info.hotplug.critical_cpu_up_threshold)
+		polling_delay = thermal_info.hotplug.polling_delay_passive;
+	else
+		polling_delay = thermal_info.hotplug.polling_delay;
+
+	mod_delayed_work(system_freezable_power_efficient_wq, delayed_work,
+		msecs_to_jiffies(polling_delay));
+}
+#endif
 
 static int hisi_thermal_init(void)
 {
@@ -1529,6 +2019,13 @@ static int hisi_thermal_init(void)
 #endif
 
 #ifdef CONFIG_HISI_THERMAL_HOTPLUG
+	ret = thermal_hotplug_init();
+	if (ret) {
+		pr_err("thermal hotplug init error\n");
+		goto device_destroy;
+	}
+
+	INIT_DELAYED_WORK(&thermal_info.hotplug.poll_work, hotplug_check_work);
 	thermal_info.hotplug.device =
 	    device_create(thermal_info.hisi_thermal_class, NULL, 0, NULL,
 			  "hotplug");
@@ -1542,19 +2039,81 @@ static int hisi_thermal_init(void)
 #endif
 	}
 
-#ifdef CONFIG_HISI_HOTPLUG_EMULATION
-	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_hotplug_emul_temp);
-	if (ret) {
-		pr_err("Hotplug emulation temp create error\n");
-		goto device_destroy;
-	}
-#endif
 	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_hotplug_mode);
 	if (ret) {
 		pr_err("Hotplug mode create error\n");
 		goto device_destroy;
 	}
 
+#ifdef CONFIG_HISI_HOTPLUG_EMULATION
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_hotplug_emul_temp);
+	if (ret) {
+		pr_err("Hotplug emulation temp create error\n");
+		goto device_destroy;
+	}
+
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_cpu_down_threshold);
+	if (ret) {
+		pr_err("Hotplug down_threshold create error\n");
+		goto device_destroy;
+	}
+
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_cpu_up_threshold);
+	if (ret) {
+		pr_err("Hotplug up_threshold create error\n");
+		goto device_destroy;
+	}
+
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_critical_cpu_down_threshold);
+	if (ret) {
+		pr_err("Hotplug critical_down_threshold create error\n");
+		goto device_destroy;
+	}
+
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_critical_cpu_up_threshold);
+	if (ret) {
+		pr_err("Hotplug critical_up_threshold create error\n");
+		goto device_destroy;
+	}
+#ifdef CONFIG_HISI_GPU_HOTPLUG_EMULATION
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_gpu_hotplug_emul_temp);
+	if (ret) {
+		pr_err("GPU hotplug emulation temp create error\n");
+		goto device_destroy;
+	}
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_gpu_down_threshold);
+	if (ret) {
+		pr_err("Hotplug gpu_down_threshold create error\n");
+		goto device_destroy;
+	}
+
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_gpu_up_threshold);
+	if (ret) {
+		pr_err("Hotplug gpu_up_threshold create error\n");
+		goto device_destroy;
+	}
+#endif
+#ifdef CONFIG_HISI_NPU_HOTPLUG_EMULATION
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_npu_hotplug_emul_temp);
+	if (ret) {
+		pr_err("NPU hotplug emulation temp create error\n");
+		goto device_destroy;
+	}
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_npu_down_threshold);
+	if (ret) {
+		pr_err("Hotplug npu_down_threshold create error\n");
+		goto device_destroy;
+	}
+
+	ret = device_create_file(thermal_info.hotplug.device, &dev_attr_npu_up_threshold);
+	if (ret) {
+		pr_err("Hotplug gpu_up_threshold create error\n");
+		goto device_destroy;
+	}
+#endif
+#endif
+	mod_delayed_work(system_freezable_power_efficient_wq, &thermal_info.hotplug.poll_work,
+		msecs_to_jiffies(DEFAULT_POLL_DELAY));
 #endif
 	return 0;
 
@@ -1564,6 +2123,7 @@ device_destroy:
 class_destroy:
 	class_destroy(thermal_info.hisi_thermal_class);
 	thermal_info.hisi_thermal_class = NULL;
+	cancel_delayed_work(&thermal_info.hotplug.poll_work);
 
 	return ret;
 #endif
@@ -1576,6 +2136,14 @@ static void hisi_thermal_exit(void)
 		device_destroy(thermal_info.hisi_thermal_class, 0);
 		class_destroy(thermal_info.hisi_thermal_class);
 	}
+#endif
+#ifdef CONFIG_HISI_THERMAL_HOTPLUG
+	if (thermal_info.hotplug.hotplug_task) {
+		kthread_stop(thermal_info.hotplug.hotplug_task);
+		put_task_struct(thermal_info.hotplug.hotplug_task);
+		thermal_info.hotplug.hotplug_task = NULL;
+	}
+	cancel_delayed_work(&thermal_info.hotplug.poll_work);
 #endif
 }
 

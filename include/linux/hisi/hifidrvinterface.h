@@ -150,6 +150,7 @@ enum AUDIO_MSG_ENUM
 	ID_AP_HIFI_REQUEST_SET_PARA_CMD     = 0xDF08,    /* HIFI SET PARAM MSG */
 	ID_AP_HIFI_REQUEST_GET_PARA_CMD     = 0xDF09,    /* HIFI GET PARAM MSG */
 	ID_AP_HIFI_REQUEST_GET_PARA_CNF     = 0xDF0A,    /* HIFI GET PARAM BACK MSG */
+	ID_AP_HIFI_CCPU_RESET_DONE_IND      = 0xDF36,
 };
 
 //for 3mic: struct for ioctl cmd to notify hifi 3Mic/4Mic routing complete

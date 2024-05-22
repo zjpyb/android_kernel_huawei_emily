@@ -12,8 +12,10 @@
 */
 
 #include "hisi_fb.h"
+#if defined(CONFIG_LCDKIT_DRIVER) && defined(CONFIG_HUAWEI_DSM)
 #include "lcdkit_panel.h"
 extern struct lcdkit_esd_error_info g_esd_error_info;
+#endif
 
 /*lint -e574*/
 #define HISI_ESD_RECOVER_MAX_COUNT   (10)
@@ -21,18 +23,6 @@ extern struct lcdkit_esd_error_info g_esd_error_info;
 #define HISI_ESD_POWER_OFF_TIME      100
 
 extern unsigned int g_esd_recover_disable;
-
-static void hisifb_frame_refresh_for_esd(struct hisi_fb_data_type *hisifd)
-{
-	char *envp[2];
-	char buf[64];
-	snprintf(buf, sizeof(buf), "Refresh=1");
-	envp[0] = buf;
-	envp[1] = NULL;
-	kobject_uevent_env(&(hisifd->fbi->dev->kobj), KOBJ_CHANGE, envp);
-
-	HISI_FB_INFO("ESD_HAPPENDED=1!\n");
-}
 
 static void hisifb_esd_recover(struct hisi_fb_data_type *hisifd)
 {
@@ -65,7 +55,9 @@ static void hisifb_esd_recover(struct hisi_fb_data_type *hisifd)
 	if (ret != 0) {
 		HISI_FB_ERR("fb%d, blank_mode(%d) failed!\n", hisifd->index, FB_BLANK_UNBLANK);
 	}
-	hisifb_frame_refresh_for_esd(hisifd);
+
+	hisi_fb_frame_refresh(hisifd, "esd");
+
 	/*backlight on*/
 	msleep(100);
 	down(&hisifd->brightness_esd_sem);
@@ -76,6 +68,7 @@ static void hisifb_esd_recover(struct hisi_fb_data_type *hisifd)
 
 static void dsm_client_record_esd_err(uint32_t err_no)
 {
+#if defined(CONFIG_LCDKIT_DRIVER) && defined(CONFIG_HUAWEI_DSM)
 	int i=0;
 
 	if (lcd_dclient && !dsm_client_ocuppy(lcd_dclient)) {
@@ -91,6 +84,7 @@ static void dsm_client_record_esd_err(uint32_t err_no)
 		dsm_client_record(lcd_dclient, "\n");
 		dsm_client_notify(lcd_dclient, err_no);
 	}
+#endif
 
 	return;
 }
@@ -112,6 +106,13 @@ static void hisifb_esd_check_wq_handler(struct work_struct *work)
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
+	}
+
+	if (hisifd->panel_info.emi_protect_enable && hisifd->enter_idle) {
+		hisifd->emi_protect_check_count++;
+		if (hisifd->emi_protect_check_count >= HISI_EMI_PROTECT_CHECK_MAX_COUNT) {
+			hisi_fb_frame_refresh(hisifd, "emi");
+		}
 	}
 
 	if (!hisifd->panel_info.esd_enable || g_esd_recover_disable) {
@@ -141,9 +142,12 @@ static void hisifb_esd_check_wq_handler(struct work_struct *work)
 			}
 		}
 
-		if ((esd_check_count >= HISI_ESD_CHECK_MAX_COUNT) || (ESD_RECOVER_STATE_START == hisifd->esd_recover_state)) {
+		if ((esd_check_count >= HISI_ESD_CHECK_MAX_COUNT) ||
+			(hisifd->esd_recover_state == ESD_RECOVER_STATE_START)) {
 			HISI_FB_ERR("esd recover panel, recover_count:%d!\n",recover_count);
+		#ifdef CONFIG_HUAWEI_DSM
 			dsm_client_record_esd_err(DSM_LCD_ESD_STATUS_ERROR_NO);
+		#endif
 			hisifb_esd_recover(hisifd);
 			hisifd->esd_recover_state = ESD_RECOVER_STATE_COMPLETE;
 			esd_check_count = 0;
@@ -153,7 +157,9 @@ static void hisifb_esd_check_wq_handler(struct work_struct *work)
 
 	// recover count equate 5, we disable esd check function
 	if (recover_count >= hisifd->panel_info.esd_recovery_max_count) {
+	#ifdef CONFIG_HUAWEI_DSM
 		dsm_client_record_esd_err(DSM_LCD_POWER_ABNOMAL_ERROR_NO);
+	#endif
 		hrtimer_cancel(&esd_ctrl->esd_hrtimer);
 		hisifd->panel_info.esd_enable = 0;
 		HISI_FB_ERR("esd recover %d count, disable esd function\n", hisifd->panel_info.esd_recovery_max_count);
@@ -177,7 +183,7 @@ static enum hrtimer_restart hisifb_esd_hrtimer_fnc(struct hrtimer *timer)
 	}
 
 	if (hisifd->panel_info.esd_enable) {
-		if (esd_ctrl->esd_check_wq) {
+		if (esd_ctrl->esd_check_wq != NULL) {
 			queue_work(esd_ctrl->esd_check_wq, &(esd_ctrl->esd_check_work));
 		}
 	}
@@ -218,7 +224,7 @@ void hisifb_esd_register(struct platform_device *pdev)
 		esd_ctrl->hisifd = hisifd;
 
 		esd_ctrl->esd_check_wq = create_singlethread_workqueue("esd_check");
-		if (!esd_ctrl->esd_check_wq) {
+		if (esd_ctrl->esd_check_wq == NULL) {
 			dev_err(&pdev->dev, "create esd_check_wq failed\n");
 		}
 

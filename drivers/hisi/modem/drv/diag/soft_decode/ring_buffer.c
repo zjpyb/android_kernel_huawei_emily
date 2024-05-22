@@ -83,8 +83,12 @@
 
 #define OM_MIN(x, y)             (((x) < (y)) ? (x) : (y))
 
+#if(FEATURE_ON == FEATURE_PTM)
 #define OM_RING_BUFF_EX_MAX_LEN  (1024*8)
 #define OM_MAX_RING_BUFFER_NUM   (48)  /* Error logÐÂÔö32*/
+#else
+#define OM_MAX_RING_BUFFER_NUM   (16)
+#endif
 
 u8 g_ucDiagBufferOccupiedFlag[OM_MAX_RING_BUFFER_NUM] = {0};
 OM_RING   g_stDiagControlBlock[OM_MAX_RING_BUFFER_NUM];

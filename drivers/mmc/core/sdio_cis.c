@@ -56,7 +56,7 @@ static int cistpl_vers_1(struct mmc_card *card, struct sdio_func *func,
 	for (i = 0; i < nr_strings; i++) {
 		buffer[i] = string;
 		/*cppcheck-suppress * */
-		strcpy(string, buf);/*lint !e421*/
+		strcpy(string, buf); /*lint !e421*/
 		string += strlen(string) + 1;
 		buf += strlen(buf) + 1;
 	}
@@ -263,7 +263,8 @@ static int sdio_read_cis(struct mmc_card *card, struct sdio_func *func)
 	else
 		prev = &card->tuples;
 
-	BUG_ON(*prev);
+	if (*prev)
+		return -EINVAL;
 
 	do {
 		unsigned char tpl_code, tpl_link;

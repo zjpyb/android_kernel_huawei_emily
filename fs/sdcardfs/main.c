@@ -23,6 +23,7 @@
 #include <linux/types.h>
 #include <linux/parser.h>
 
+extern const struct xattr_handler *sdcardfs_xattr_handlers[];
 enum {
 	Opt_fsuid,
 	Opt_fsgid,
@@ -35,6 +36,7 @@ enum {
 	Opt_gid_derivation,
 	Opt_default_normal,
 	Opt_nocache,
+	Opt_unshared_obb,
 	Opt_err,
 };
 
@@ -48,6 +50,7 @@ static const match_table_t sdcardfs_tokens = {
 	{Opt_multiuser, "multiuser"},
 	{Opt_gid_derivation, "derive_gid"},
 	{Opt_default_normal, "default_normal"},
+	{Opt_unshared_obb, "unshared_obb"},
 	{Opt_reserved_mb, "reserved_mb=%u"},
 	{Opt_nocache, "nocache"},
 	{Opt_err, NULL}
@@ -134,6 +137,9 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 		case Opt_nocache:
 			opts->nocache = true;
 			break;
+		case Opt_unshared_obb:
+			opts->unshared_obb = true;
+			break;
 		/* unknown option */
 		default:
 			if (!silent)
@@ -187,13 +193,16 @@ int parse_options_remount(struct super_block *sb, char *options, int silent,
 				return 0;
 			vfsopts->mask = option;
 			break;
+		case Opt_unshared_obb:
 		case Opt_default_normal:
 		case Opt_multiuser:
 		case Opt_userid:
 		case Opt_fsuid:
 		case Opt_fsgid:
 		case Opt_reserved_mb:
-			pr_warn("Option \"%s\" can't be changed during remount\n", p);
+		case Opt_gid_derivation:
+			if (!silent)
+				pr_warn("Option \"%s\" can't be changed during remount\n", p);
 			break;
 		/* unknown option */
 		default:
@@ -303,7 +312,7 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 
 	sb->s_stack_depth = lower_sb->s_stack_depth + 1;
 	if (sb->s_stack_depth > FILESYSTEM_MAX_STACK_DEPTH) {
-		printk(KERN_ERR "sdcardfs: maximum fs stacking depth exceeded\n");
+		pr_err("sdcardfs: maximum fs stacking depth exceeded\n");
 		err = -EINVAL;
 		goto out_sput;
 	}
@@ -357,10 +366,17 @@ static int sdcardfs_read_super(struct vfsmount *mnt, struct super_block *sb,
 		setup_derived_state(d_inode(sb->s_root), PERM_PRE_ROOT,
 				sb_info->options.fs_user_id, AID_ROOT);
 		snprintf(sb_info->obbpath_s, PATH_MAX, "%s/obb", dev_name);
+#ifdef CONFIG_SDCARD_FS_SHARE_PRIMARY_OBB
+		sb_info->obbpath_empty = is_empty_dir(sb_info->obbpath_s);
+#endif
 	} else {
 		setup_derived_state(d_inode(sb->s_root), PERM_ROOT,
 				sb_info->options.fs_user_id, AID_ROOT);
 		snprintf(sb_info->obbpath_s, PATH_MAX, "%s/Android/obb", dev_name);
+#ifdef CONFIG_SDCARD_FS_SHARE_PRIMARY_OBB
+		// ignore this feature by set bellow value
+		sb_info->obbpath_empty = true;
+#endif
 	}
 #ifdef SDCARDFS_PLUGIN_PRIVACY_SPACE
 	sb_info->blocked_userid = sb_info->appid_excluded = -1;

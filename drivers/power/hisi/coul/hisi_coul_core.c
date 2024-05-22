@@ -1,5 +1,6 @@
 
 
+#include <linux/thermal.h>
 #include <huawei_platform/power/battery_type_identify.h>
 #include "hisi_coul_core.h"
 #ifdef CONFIG_HISI_SOH
@@ -33,7 +34,8 @@
 #ifdef CONFIG_HUAWEI_DUBAI
 #include <huawei_platform/log/hwlog_kernel.h>
 #endif
-#include "securec.h"
+#include <securec.h>
+#include "../charge_time/hisi_charge_time.h"
 #include "hisi_coul_imonitor.h"
 #ifdef CONFIG_HISI_ASW
 #include "../asw/asw_protect.h"
@@ -60,7 +62,6 @@ static int g_eco_leak_uah = 0;
 static int batt_backup_nv_flag = 0;
 static int batt_backup_nv_read = 0;
 static int need_restore_cycle_flag = 0;
-static int basp_mask_delay = 0;
 
 static u32 is_board_type = 0;
 static u32 battery_is_removable = 0;
@@ -101,6 +102,10 @@ static int low_temp_opt_flag = LOW_TEMP_OPT_CLOSE; /*1:open  0:close*/
 static int uuc_current_min   = UUC_MIN_CURRENT_MA;
 static int ratio_min         = 100;
 static int g_basp_full_pc;
+static int ntc_fit_reported;
+static int tz_should_ready;
+static int ntc_compensation_is_mem;
+
 /*NTC Table*/
 static int T_V_TABLE[][2] =
 {
@@ -131,6 +136,7 @@ static u8 g_test_delta_soc_renew_ocv = 0;
 static u32 multi_ocv_open_flag = 0;
 static u32 fcc_update_limit_flag = 0;
 static u32 batt_under_voltage_flag;
+static int supply_temp_points[SUPPLY_PARA_LEVEL] = {5, 0, -5, -10, -15};
 ATOMIC_NOTIFIER_HEAD(coul_fault_notifier_list);
 static int basp_learned_fcc = 0;
 static struct battery_aging_safe_policy basp_policy[BASP_PARA_LEVEL];
@@ -144,11 +150,14 @@ static void coul_get_rm(struct smartstar_coul_device *di, int *rm);
 static int hisi_coul_pm_notify(struct notifier_block * nb, unsigned long mode, void * unused);
 static BASP_LEVEL_TYPE get_basp_level(struct smartstar_coul_device *di);
 struct coul_core_info_sh *g_di_coul_info_sh = NULL;
-static struct wake_lock coul_lock;
+static struct wakeup_source coul_lock;
 static void iscd_clear_sampled_info(struct smartstar_coul_device *di);
 static void check_batt_critical_electric_leakage(struct smartstar_coul_device *di);
 static void isc_config_splash2_file_sync(struct iscd_info *iscd);
 static char dsm_buff[ISCD_DSM_LOG_SIZE_MAX] = { 0 };
+#ifdef CONFIG_HISI_COUL_POLAR
+static void clear_ishort_first_para(void);
+#endif
 #ifdef CONFIG_HISI_DEBUG_FS
 int print_multi_ocv_threshold(void);
 #endif
@@ -293,8 +302,8 @@ static void check_coul_abnormal_rollback(struct smartstar_coul_device *di)
 **********************************************************/
 static void coul_wake_lock(void)
 {
-    if (!wake_lock_active(&coul_lock)) {
-        wake_lock(&coul_lock);
+    if (!coul_lock.active) {
+        __pm_stay_awake(&coul_lock);
         coul_core_info("coul core wake lock\n");
     }
 }/*lint !e454 !e456*/
@@ -306,8 +315,8 @@ static void coul_wake_lock(void)
 **********************************************************/
 static void coul_wake_unlock(void)
 {
-    if (wake_lock_active(&coul_lock)) {
-        wake_unlock(&coul_lock);/*lint !e455*/
+    if (coul_lock.active) {
+        __pm_relax(&coul_lock);/*lint !e455*/
         coul_core_info("coul core wake unlock\n");
     }
 }
@@ -358,6 +367,8 @@ static int basp_nv_set(const char *buffer, const struct kernel_param *kp)
     long val = 0;
     int need_save = 0;
     struct ss_coul_nv_info *pinfo = NULL;
+    errno_t err = EOK;
+    int ret = 0;
 
     struct smartstar_coul_device *di = (struct smartstar_coul_device *)g_smartstar_coul_dev;
     if (NULL == di)
@@ -422,13 +433,18 @@ static int basp_nv_set(const char *buffer, const struct kernel_param *kp)
 			break;
 		}
 
-		memset_s(num, sizeof(num), 0, sizeof(num));
+		err = memset_s(num, sizeof(num), 0, sizeof(num));
+		if(err != EOK) {
+			coul_core_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
 		begin = end;
 	}
 
 	if (need_save)
-		save_nv_info(di);
-
+		ret = save_nv_info(di);
+	if (ret) {
+		coul_core_err("[%s]save_nv_info fail, ret=%d\n",__func__, ret);
+	}
 	di->basp_level = get_basp_level(di);
 
 func_end:
@@ -449,20 +465,21 @@ static int basp_nv_get(char *buffer, const struct kernel_param *kp)
 	}
 
 	for (i = 0; i < MAX_RECORDS_CNT; i++) {
-		snprintf_s(buffer + len, PAGE_SIZE - len, PAGE_SIZE - len -1,
+		(void)snprintf_s(buffer + len, PAGE_SIZE - len,
+			PAGE_SIZE - len - 1,
 			"learned_fcc[%d]:%d\n",
 			i, di->nv_info.real_fcc_record[i]);
 		len = strlen(buffer);
 	}
 
-	snprintf_s(buffer + len, PAGE_SIZE - len,
-		PAGE_SIZE - len -1,
+	(void)snprintf_s(buffer + len, PAGE_SIZE - len,
+		PAGE_SIZE - len - 1,
 		"chargecycles:%d\n",
 		di->batt_chargecycles);
 
 	len = strlen(buffer);
-	snprintf_s(buffer + len, PAGE_SIZE - len,
-		PAGE_SIZE - len -1,
+	(void)snprintf_s(buffer + len, PAGE_SIZE - len,
+		PAGE_SIZE - len - 1,
 		"latest_record_index:%d\n",
 		di->nv_info.latest_record_index);
 
@@ -505,7 +522,7 @@ static int coul_get_chip_temp(void)
 {
     int chip_temp = 0;
     if(g_coul_core_ops && g_coul_core_ops->get_chip_temp) {
-        chip_temp = g_coul_core_ops->get_chip_temp(NORMAL);
+	chip_temp = g_coul_core_ops->get_chip_temp();
         coul_core_info("%s:chip_temp=%d\n",__func__,chip_temp);
         return chip_temp;
     } else {
@@ -557,12 +574,15 @@ static void coul_clear_sr_time_array(void)
 ********************************************************/
 static void coul_clear_cc_register(void)
 {
-    struct smartstar_coul_device *di = g_smartstar_coul_dev;
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+	int cc_temp = 0;
 
-    if (di) {
-        di->iscd->full_update_cc += di->coul_dev_ops->calculate_cc_uah();
-        di->coul_dev_ops->clear_cc_register();
-    }
+	cc_temp = di->coul_dev_ops->calculate_cc_uah();
+	di->iscd->full_update_cc += cc_temp;
+#ifdef CONFIG_HISI_COUL_POLAR
+	di->ishort_info.cc_all += cc_temp;
+#endif
+	di->coul_dev_ops->clear_cc_register();
 }
 
  /*******************************************************
@@ -593,6 +613,12 @@ static void coul_clear_coul_time(void)
             coul_core_err("[SR]%s(%d): sr_cur_state = %d\n", __func__, __LINE__, sr_cur_state);
         }
         di->charging_stop_time -= time_now;
+#ifdef CONFIG_HISI_COUL_POLAR
+	if (di->ishort_info.time0 && di->ishort_info.last_time) {
+		di->ishort_info.time0 -= time_now;
+		di->ishort_info.last_time -= time_now;
+	}
+#endif
         di->coul_dev_ops->clear_coul_time();
     }
     else {
@@ -664,7 +690,7 @@ static int interpolate_single_lut(struct single_row_lut *lut, int x)
 	for (i = 0; i < lut->cols; i++)
 		if (x <= lut->x[i])
 			break;
-	if (x == lut->x[i]) {
+	if (x == lut->x[i] || i == 0) {
 		result = lut->y[i];
 	} else {
 		result = linear_interpolate(
@@ -691,7 +717,7 @@ static int interpolate_single_y_lut(struct single_row_lut *lut, int y)
 	for (i = 0; i < lut->cols; i++)
 		if (y >= lut->y[i])
 			break;
-	if (y == lut->y[i]) {
+	if (y == lut->y[i] || i == 0) {
 		result = lut->x[i];
 	} else {
 		result = linear_interpolate(
@@ -734,12 +760,10 @@ static int interpolate_scalingfactor(struct sf_lut *sf_lut,
 	rows = sf_lut->rows;
 	cols = sf_lut->cols;
 	if (pc > sf_lut->percent[0]) {
-		//coul_core_info("pc %d greater than known pc ranges for sfd\n", pc);
 		row1 = 0;
 		row2 = 0;
 	}
 	if (pc < sf_lut->percent[rows - 1]) {
-		//coul_core_info("pc %d less than known pc ranges for sf\n", pc);
 		row1 = rows - 1;
 		row2 = rows - 1;
 	}
@@ -759,15 +783,12 @@ static int interpolate_scalingfactor(struct sf_lut *sf_lut,
 		}
 	}
 
-	if (row_entry < sf_lut->row_entries[0])
-		row_entry = sf_lut->row_entries[0];
-	if (row_entry > sf_lut->row_entries[cols - 1])
-		row_entry = sf_lut->row_entries[cols - 1];
-
+	row_entry = clamp_val(row_entry, sf_lut->row_entries[0],
+		sf_lut->row_entries[cols - 1]);
 	for (i = 0; i < cols; i++)
 		if (row_entry <= sf_lut->row_entries[i])
 			break;
-	if (row_entry == sf_lut->row_entries[i]) {
+	if (row_entry == sf_lut->row_entries[i] || i == 0) {
 		scalefactor = linear_interpolate(
 				sf_lut->sf[row1][i],
 				sf_lut->percent[row1],
@@ -969,46 +990,34 @@ static int interpolate_pc_high_precision(struct pc_temp_ocv_lut *lut,
     rows = lut->rows;
     cols = lut->cols;
 
-    if (batt_temp < lut->temp[0]) {
-    	coul_core_err("batt_temp %d < known temp range for pc\n", batt_temp);
-    	batt_temp = lut->temp[0];
-    }
-    if (batt_temp > lut->temp[cols - 1]) {
-    	coul_core_err("batt_temp %d > known temp range for pc\n", batt_temp);
-    	batt_temp = lut->temp[cols - 1];
-    }
+	batt_temp = clamp_val(batt_temp, lut->temp[0], lut->temp[cols - 1]);
+	for (j = 0; j < cols; j++)
+		if (batt_temp <= lut->temp[j])
+			break;
+	if (batt_temp == lut->temp[j] || j == 0) {
+	    /* found an exact match for temp in the table */
+		if (ocv >= lut->ocv[0][j]) {
+			pc = linear_interpolate(lut->percent[1] * PERMILLAGE,
+				lut->ocv[1][j], lut->percent[0] * PERMILLAGE,
+				lut->ocv[0][j], ocv);
+			return pc;
+		}
 
-    for (j = 0; j < cols; j++)
-    	if (batt_temp <= lut->temp[j])
-    		break;
-    if (batt_temp == lut->temp[j]) {
-    	/* found an exact match for temp in the table */
-    if (ocv >= lut->ocv[0][j]) {
-		pc = linear_interpolate(
-			lut->percent[1]*PERMILLAGE,
-			lut->ocv[1][j],
-			lut->percent[0]*PERMILLAGE,
-			lut->ocv[0][j],
-			ocv);
-		return pc;
+		if (ocv <= lut->ocv[rows - 1][j])
+			return lut->percent[rows - 1] * PERMILLAGE;
+		for (i = 0; i < rows; i++) {
+			if (ocv >= lut->ocv[i][j]) {
+				if (ocv == lut->ocv[i][j] || i == 0)
+					return lut->percent[i] * PERMILLAGE;
+			    pc = linear_interpolate(
+					lut->percent[i] * PERMILLAGE,
+					lut->ocv[i][j],
+					lut->percent[i - 1] * PERMILLAGE,
+					lut->ocv[i - 1][j], ocv); /*lint !e676*/
+				return pc;
+			}
+		}
 	}
-
-    	if (ocv <= lut->ocv[rows - 1][j])
-		return lut->percent[rows - 1]*PERMILLAGE;
-    	for (i = 0; i < rows; i++) {
-		if (ocv >= lut->ocv[i][j]) {
-    			if (ocv == lut->ocv[i][j])
-				return lut->percent[i]*PERMILLAGE;
-    			pc = linear_interpolate(
-				lut->percent[i]*PERMILLAGE,
-    				lut->ocv[i][j],
-				lut->percent[i - 1]*PERMILLAGE,
-    				lut->ocv[i - 1][j],
-    				ocv);/*lint !e676*/
-    			return pc;
-    		}
-    	}
-    }
 
     /*
      * batt_temp is within temperature for
@@ -1235,12 +1244,10 @@ static int interpolate_ocv(struct pc_temp_ocv_lut *lut,
 	rows = lut->rows;
 	cols = lut->cols;
 	if (pc > lut->percent[0]*10) {
-		//coul_core_info("pc %d greater than known pc ranges for sfd\n", pc);
 		row1 = 0;
 		row2 = 0;
 	}
 	if (pc < lut->percent[rows - 1]*10) {
-		//coul_core_info("pc %d less than known pc ranges for sf\n", pc);
 		row1 = rows - 1;
 		row2 = rows - 1;
 	}
@@ -1257,15 +1264,12 @@ static int interpolate_ocv(struct pc_temp_ocv_lut *lut,
 		}
 	}
 
-	if (batt_temp_degc < lut->temp[0])
-		batt_temp_degc = lut->temp[0];
-	if (batt_temp_degc > lut->temp[cols - 1])
-		batt_temp_degc = lut->temp[cols - 1];
-
+	batt_temp_degc =
+		clamp_val(batt_temp_degc, lut->temp[0], lut->temp[cols - 1]);
 	for (i = 0; i < cols; i++)
 		if (batt_temp_degc <= lut->temp[i])
 			break;
-	if (batt_temp_degc == lut->temp[i]) {
+	if (batt_temp_degc == lut->temp[i] || i == 0) {
 		ocv = linear_interpolate(
 				lut->ocv[row1][i],
 				lut->percent[row1]*10,
@@ -1347,12 +1351,12 @@ static int calculate_termination_uuc(struct smartstar_coul_device *di,
     }
 #endif
 
-    if((batt_temp_degc < 5) && (batt_temp_degc > -10))
+    if((batt_temp_degc < 5) && (batt_temp_degc > -5))
     {
         zero_voltage =(((5 - batt_temp_degc)*(ZERO_VOLTAGE_MINUS_10 - ZERO_VOLTAGE_PLUS_5)
-                                /15)+ZERO_VOLTAGE_PLUS_5);
+                                /10)+ZERO_VOLTAGE_PLUS_5);
     }
-    else if(batt_temp_degc <= -10)
+    else if(batt_temp_degc <= -5)
     {
         zero_voltage = ZERO_VOLTAGE_MINUS_10;
     }
@@ -1524,7 +1528,12 @@ static unsigned int recalc_chargecycles(struct smartstar_coul_device *di)
         temp = di->batt_temp;
         real_fcc = (cc_end - di->charging_begin_cc)*1000/(1000 - di->charging_begin_soc);
         fcc = interpolate_fcc(di,temp);
-        pc = real_fcc *100 / fcc;
+        if (0 == fcc) {
+            coul_core_err("%s Divisor fcc equal zero.\n", __func__);
+            pc = 0;
+        }else {
+            pc = real_fcc *100 / fcc;
+        }
         new_chargecycles = interpolate_single_y_lut(di->batt_data->fcc_sf_lut, pc);
         new_chargecycles -= 40*100;
         retval = (unsigned int)(new_chargecycles>0?new_chargecycles:0);
@@ -1564,14 +1573,13 @@ early_param("pmu_nv_addr", early_parse_pmu_nv_addr_cmdline);
 
 static int __init move_pmu_nv_info(void)
 {
-    struct ss_coul_nv_info *pmu_nv_addr;
+    struct ss_coul_nv_info *pmu_nv_addr = NULL;
 
     if (nv_info_addr == 0){
         return 0;
     }
-   // #ifdef CONFIG_ARM64
+
     pmu_nv_addr = (struct ss_coul_nv_info*)ioremap_wc(nv_info_addr, sizeof (struct ss_coul_nv_info));
-    //pmu_nv_addr = (struct ss_coul_nv_info*)phys_to_virt(nv_info_addr);
 
     coul_core_info("pmu_nv_addr=0x%pK\n", pmu_nv_addr);
 	if (NULL == pmu_nv_addr)
@@ -1883,45 +1891,98 @@ static void battery_para_verification(struct smartstar_coul_device *di, struct p
 	coul_core_info("battery para changed ocv1 =%d,ocv2 =%d,ocv1-ocv2 =%d\n",ocv1, ocv2, ocv1-ocv2);
 }
 
-static int battery_para_changed(struct smartstar_coul_device *di, int flag)
+static int get_basp_nondc_volt_dec(unsigned int *volt_dec)
 {
-	AGING_SAFE_POLICY_TYPE asp;
-	int ret = 0, new_ocv = 0;
-	if(NULL == di || NULL == di->batt_data)
-	{
-		coul_core_err("di or batt_data is NULL!\n");
+	AGING_SAFE_POLICY_TYPE asp = {0};
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err(BASP_TAG"[%s]input param NULL\n", __func__);
 		return -1;
 	}
 
-	if(flag || batt_init_level != di->basp_level)/*battery age level charged*/
-	{
-		ret = coul_get_battery_aging_safe_policy(&asp);
-		if(ret < 0 || !asp.nondc_volt_dec)/*no limit vol can not changed*/
-		{
-			coul_core_err("get battery age fail ,vol dec= %d\n",asp.nondc_volt_dec);
+	if (di->basp_total_level) {
+		if (coul_get_battery_aging_safe_policy(&asp)) {
+			coul_core_err(BASP_TAG"get battery aging policy failed\n");
 			return -1;
 		}
-		if(di->batt_data->vol_dec1 > 0 && asp.nondc_volt_dec == di->batt_data->vol_dec1
-			&& di->batt_data->pc_temp_ocv_lut1)
-		{
-			battery_para_verification(di, di->batt_data->pc_temp_ocv_lut1, asp.nondc_volt_dec);
-		}else if(di->batt_data->vol_dec2 > 0 && asp.nondc_volt_dec == di->batt_data->vol_dec2
-			&& di->batt_data->pc_temp_ocv_lut2)
-		{
-			battery_para_verification(di, di->batt_data->pc_temp_ocv_lut2, asp.nondc_volt_dec);
-		}else if(di->batt_data->vol_dec3 > 0 && asp.nondc_volt_dec == di->batt_data->vol_dec3
-			&& di->batt_data->pc_temp_ocv_lut3)
-		{
-			battery_para_verification(di, di->batt_data->pc_temp_ocv_lut3, asp.nondc_volt_dec);
-		}else
-		{
-			coul_core_info("battery age para no changed\n");
+		*volt_dec = asp.nondc_volt_dec;
+		return 0;
+	}
+
+	*volt_dec = di->nondc_volt_dec;
+	return 0;
+}
+
+static int battery_para_changed(struct smartstar_coul_device *di,
+	int flag)
+{
+	int ret;
+	int new_ocv;
+	unsigned int nondc_volt_dec = 0;
+
+	if (!di || !di->batt_data) {
+		coul_core_err("di or batt_data is NULL\n");
+		return -1;
+	}
+
+	if (flag || (batt_init_level != di->basp_level)) {
+		ret = get_basp_nondc_volt_dec(&nondc_volt_dec);
+		if (ret < 0) {
+			coul_core_err("get basp nondc_volt_dec fail ret %d\n",
+				ret);
+			return -1;
 		}
-		new_ocv = interpolate_ocv(di->batt_data->pc_temp_ocv_lut, DEFAULT_TEMP, PERMILLAGE);
-		coul_core_info("battery age level charged asp.nondc_volt_dec =%d,new table max vol=%d\n",asp.nondc_volt_dec,new_ocv);
+		if (!nondc_volt_dec)
+			return 0;
+
+		if ((di->batt_data->vol_dec1 > 0) &&
+			(nondc_volt_dec == di->batt_data->vol_dec1) &&
+			di->batt_data->pc_temp_ocv_lut1)
+			battery_para_verification(di,
+				di->batt_data->pc_temp_ocv_lut1,
+				nondc_volt_dec);
+		else if ((di->batt_data->vol_dec2 > 0) &&
+			(nondc_volt_dec == di->batt_data->vol_dec2) &&
+			di->batt_data->pc_temp_ocv_lut2)
+			battery_para_verification(di,
+				di->batt_data->pc_temp_ocv_lut2,
+				nondc_volt_dec);
+		else if ((di->batt_data->vol_dec3 > 0) &&
+			(nondc_volt_dec == di->batt_data->vol_dec3) &&
+			di->batt_data->pc_temp_ocv_lut3)
+			battery_para_verification(di,
+				di->batt_data->pc_temp_ocv_lut3,
+				nondc_volt_dec);
+		else
+			coul_core_info("battery age para no changed\n");
+
+		new_ocv = interpolate_ocv(di->batt_data->pc_temp_ocv_lut,
+			DEFAULT_TEMP, PERMILLAGE);
+		coul_core_info("nondc_volt_dec =%d,new table max vol=%d\n",
+			nondc_volt_dec, new_ocv);
 	}
 	return 0;
 }
+
+static int coul_update_basp_policy(unsigned int level,
+	unsigned int nondc_volt_dec)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err(BASP_TAG"[%s]input param NULL!\n", __func__);
+		return -1;
+	}
+
+	di->basp_level = level;
+	di->nondc_volt_dec = nondc_volt_dec;
+
+	if (battery_para_changed(di, CHANGE_LOAD) < 0)
+		coul_core_err("battery charge para fail\n");
+	return 0;
+}
+
  /*******************************************************
   Function:       update_chargecycles
   Description:    update charge/discharge times
@@ -1944,7 +2005,6 @@ static void update_chargecycles(struct smartstar_coul_device *di)
         set_charge_cycles(di, di->batt_chargecycles + di->batt_soc_real/10 - di->charging_begin_soc/10);
         coul_core_info("new chargecycle=%d, added=%d\n", di->batt_chargecycles, di->batt_soc_real/10 - di->charging_begin_soc/10);
         hw_coul_update_chargecycles(di);/*update battery backup nv chargecycles*/
-	if (basp_mask_delay) {
 		temp_cycle =
 			(unsigned char)((di->batt_chargecycles / CHARGE_CYCLE_INDEX) & 0xff);
 		cfg = (struct bit_delay_config *)&(di->basp_delay_config);
@@ -1954,8 +2014,8 @@ static void update_chargecycles(struct smartstar_coul_device *di)
 			di->basp_need_delay = 0;
 			cfg->delayed = 1;
 		}
-	}
-        di->basp_level = get_basp_level(di);
+		if (!di->basp_total_level)
+			di->basp_level = get_basp_level(di);
     }
     else{
         coul_core_info("chargecycle not updated, soc_begin=%d, soc_current=%d, batt_soc=%d\n", di->charging_begin_soc/10, di->batt_soc_real/10,di->batt_soc);
@@ -2066,6 +2126,312 @@ int adc_to_temp(int temp_volt)
     }
     return temprature;
 }
+
+/************************************************************
+ *  Function:      coul_ntc_fit_supported_iqr
+ *  Discription:   inqury whether ntc fitting is supported
+ *  Parameters:    NULL
+ *  return value:  true: inqury succ   false: inqury fail
+ *                 di->ntc_fit(true: supported; false: unsupported)
+ **************************************************************/
+static bool coul_ntc_fit_supported_iqr(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return false;
+	}
+
+	return di->ntc_fit;
+}
+
+/************************************************************
+ *  Function:      coul_ntc_fitted_dc_ilim_iqr
+ *  Discription:   inqury the dc bttery current limitation by ntc fitting
+ *  Parameters:    NULL
+ *  return value:  DC current limitation
+ ***************************************************************/
+static int coul_ntc_fitted_dc_ilim_iqr(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return I_IMPOSSIBLE_LARGE;
+	}
+
+	if (!di->ntc_fit)
+		return I_IMPOSSIBLE_LARGE;
+
+	return di->ntc_fit_dc_ilimit;
+}
+
+/************************************************************
+ *  Function:      coul_get_fitted_temp_data
+ *  Discription:   get battery temp data for buck-charging in
+ *                 case of ntc fitting happened
+ *  Parameters:    NULL
+ *  return value:  battery temperature parameter with ntc val fitted
+ **************************************************************/
+struct chrg_para_lut *coul_get_fitted_temp_data(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return NULL;
+	}
+
+	if (!di->ntc_fit)
+		return NULL;
+
+	return &di->ntc_fit_temp_para;
+}
+
+/************************************************************
+ *  Function:     coul_temp_do_fit_iqr
+ *  Discription:  check whether temp val given by hisi_coul_core is fitted
+ *  Parameters:   NULL
+ *  return value: di->ntc_temp_fitted
+ **************************************************************/
+static bool coul_temp_do_fit_iqr(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return false;
+	}
+
+	if (!di->ntc_fit)
+		return false;
+
+	return di->ntc_temp_fitted;
+}
+
+/************************************************************
+ *  Function:      coul_temp_ntc_fit_case
+ *  Discription:   check fitting case (sensor group for fitting)
+ *  Parameters:    NULL
+ *  return value:  di->ntc_fit_case;
+ **************************************************************/
+static int coul_temp_ntc_fit_case(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return -1;
+	}
+
+	if (!di->ntc_fit)
+		return -1;
+
+	if (!di->ntc_temp_fitted)
+		return -1;
+
+	return di->ntc_fit_case;
+}
+
+/************************************************************
+ *  Function:       coul_set_tz_should_be_ready
+ *  Discription:    because thermalzone is probed latter, in the first
+ *                  several seconds the temperature of nodes are unavailable,
+ *                  tz_should_ready = 0 to return default fitting tbatt in
+ *                  the first 5s when fitting fail. otherwise return measured
+ *                  tbatt.
+ *  Parameters:     work
+ *  return value: NULL
+ **************************************************************/
+static void coul_set_tz_should_be_ready(struct work_struct *work)
+{
+	coul_core_info("[%d] tz should be ready\n", __func__);
+	tz_should_ready = 1;
+}
+
+/************************************************************
+ *  Function:      ntc_fit_dsm_report
+ *  Discription:   do dmd report in case of 30 continuous ntc fitting happen
+ *  Parameters:    tbatt_fit: fitted temp in the last fitting
+ *  return value:  ret: 0 : report succ
+ *                      -1: report fail
+ **************************************************************/
+static int ntc_fit_dsm_report(int tbatt_fit)
+{
+	char dsm_buf[DSM_BUFF_SIZE_MAX] = {0};
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return -1;
+	}
+
+	/* key info */
+	snprintf(dsm_buf, DSM_BUFF_SIZE_MAX,
+		"[BATT_TEMP_NTC_DETACH]temp_batt_msur:%d; temp_batt_fit:%d; "
+		"fit_case:%d\n", di->btemp_msur, tbatt_fit, di->ntc_fit_case);
+
+	/* report */
+	return power_dsm_dmd_report(POWER_DSM_BATTERY, ERROR_BATT_TEMP_LOW,
+		dsm_buf);
+}
+
+/************************************************************
+ *  Function:     coul_get_tz_temp
+ *  Discription:  get thermalzone temp designated by sensor_name
+ *  Parameters:   temp_tz: pointer to accept value given by thermalzone
+ *                sensor_name: giving the name of sensors
+ *  return value: ret: 0 : temperature inqury succ
+ *                     -1: temperature inqury fail
+ **************************************************************/
+static int coul_get_tz_temp(const char *sensor_name, int *temp_tz)
+{
+	int ret;
+	int temp;
+	struct thermal_zone_device *tz = NULL;
+
+	tz = thermal_zone_get_zone_by_name(sensor_name);
+	if (IS_ERR(tz)) {
+		coul_core_err("%s: get %s tz fail\n", __func__, sensor_name);
+		return -1;
+	}
+
+	/* do temp sampling */
+	ret = thermal_zone_get_temp(tz, &temp);
+	if (ret)
+		return -1;;
+
+	/* transfer 0.0001 degree to 1 degree */
+	*temp_tz = temp / 1000;
+	return 0;
+}
+
+/************************************************************
+ *  Function:       coul_temp_fitting
+ *  Discription:    check the necessity and possibility for tbatt fitting
+ *  Parameters:    temp_fit: pointer to accept value given by thermalzone
+ *                 temp_msur: measured battery temperature
+ *  return value:  ret: 0 : succ
+ *                      -1: fail
+ *************************************************************/
+static int coul_temp_fitting(int *temp_fit, int temp_msur)
+{
+	int ret;
+	int temp_usb;
+	int temp_chgr;
+	int temp_rfboard;
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return -1;
+	}
+
+	di->ntc_fit_case = -1;
+
+	ret = coul_get_tz_temp("usb_port", &temp_usb);
+	if (ret)
+		goto fitting_fail;
+
+	ret = coul_get_tz_temp("charger", &temp_chgr);
+	if (ret)
+		goto fitting_fail;
+
+	ret = coul_get_tz_temp("rfboard", &temp_rfboard);
+	if (ret)
+		goto fitting_fail;
+
+	if (!((temp_usb - temp_msur > NTC_DO_FIT_TEMP_GAP_TH) &&
+		(temp_chgr - temp_msur > NTC_DO_FIT_TEMP_GAP_TH) &&
+		(temp_rfboard - temp_msur > NTC_DO_FIT_TEMP_GAP_TH))) {
+		coul_core_err("%s:temp var small, fitting aban!\n", __func__);
+		goto fitting_fail;
+	}
+
+	/* t_fit=(a*tsen0+b*tsen1+c)/denominator, denominator=10000 */
+	/* row index: case; col_index: coeffients a/b/c */
+	if (abs(temp_usb - temp_chgr) < NTC_DO_FIT_TEMP_GAP_TH) {
+		*temp_fit = (di->ntc_fit_coef[0][0] * temp_usb +
+			di->ntc_fit_coef[0][1] * temp_chgr +
+			di->ntc_fit_coef[0][2]) / NTC_FIT_RESOLUTION;
+		di->ntc_fit_case = NTC_FIT_USB_CHGR;
+	} else if (abs(temp_chgr - temp_rfboard) < NTC_DO_FIT_TEMP_GAP_TH) {
+		*temp_fit = (di->ntc_fit_coef[1][0] * temp_rfboard+
+			di->ntc_fit_coef[1][1] * temp_chgr +
+			di->ntc_fit_coef[1][2]) / NTC_FIT_RESOLUTION;
+		di->ntc_fit_case = NTC_FIT_RFB_CHGR;
+	} else if (abs(temp_rfboard - temp_usb) < NTC_DO_FIT_TEMP_GAP_TH) {
+		*temp_fit = (di->ntc_fit_coef[2][0] * temp_usb +
+			di->ntc_fit_coef[2][1] * temp_rfboard +
+			di->ntc_fit_coef[2][2]) / NTC_FIT_RESOLUTION;
+		di->ntc_fit_case = NTC_FIT_USB_RFB;
+	} else {
+		coul_core_err("%s:temp_var of 3 sensors oversize!\n", __func__);
+		goto fitting_fail;
+	}
+	return 0;
+fitting_fail:
+	if (!tz_should_ready) {
+		coul_core_info("[%s] tz unready, return dft val\n", __func__);
+		*temp_fit = NTC_TEMP_DFT;
+		return 0;
+	}
+	return -1;
+}
+
+/************************************************************
+ *  Function:     coul_temp_valid_ck_and_corr
+ *  Discription:  check the necessity and possibility for tbatt fitting
+ *                and do it when needed
+ *  Parameters:   temp: pointer to accept the fitted tbatt
+ *  return value: NULL
+ *************************************************************/
+static void coul_temp_valid_ck_and_corr(int *temp)
+{
+	int ret;
+	int temp_fit;
+	static int ntc_fit_cnt;
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di) {
+		coul_core_err("%s: di NULL\n", __func__);
+		return;
+	}
+
+	if (!di->ntc_fit) {
+		di->ntc_temp_fitted = false;
+		return;
+	}
+
+	if (*temp < NTC_BUG_LOWTH) {
+		ret = coul_temp_fitting(&temp_fit, *temp);
+		if (ret) {
+			di->ntc_temp_fitted = false;
+			ntc_fit_cnt = 0;
+			coul_core_err("%s: temp fitting fail\n", __func__);
+			return;
+		}
+		coul_core_info("[%s] temp_msur: %d; temp_fit: %d;\n", __func__,
+			*temp, temp_fit);
+		*temp = temp_fit;
+		di->ntc_temp_fitted = true;
+		/* dsm report */
+		if (!ntc_fit_reported) {
+			ntc_fit_cnt++;
+			if (ntc_fit_cnt > NTC_BUG_REPORT_TH) {
+				ntc_fit_dsm_report(temp_fit);
+				coul_core_info("%s: dsm reported\n", __func__);
+				ntc_fit_cnt = 0;
+				ntc_fit_reported = 1;
+			}
+		}
+		return;
+	}
+
+	di->ntc_temp_fitted = false;
+}
+
 /*******************************************************
   Function:       coul_battery_temperature_tenth_degree
   Description:    get battery 10*temperature
@@ -2096,6 +2462,14 @@ int coul_battery_temperature_tenth_degree(BATTERY_TEMP_USER_TYPE user)
             else
             {
                 temperature = adc_to_temp(T_adc);
+		di->btemp_msur = temperature;
+		coul_temp_valid_ck_and_corr(&temperature);
+		if (di->ntc_fit) {
+			if (coul_temp_do_fit_iqr())
+				di->ntc_compensation_is = 0;
+			else
+				di->ntc_compensation_is = ntc_compensation_is_mem;
+		}
                 return 10*temperature;
             }
         }
@@ -2113,6 +2487,14 @@ int coul_battery_temperature_tenth_degree(BATTERY_TEMP_USER_TYPE user)
         else
         {
             temperature = adc_to_temp(T_adc);
+		di->btemp_msur = temperature;
+		coul_temp_valid_ck_and_corr(&temperature);
+		if (di->ntc_fit) {
+			if (coul_temp_do_fit_iqr())
+				di->ntc_compensation_is = 0;
+			else
+				di->ntc_compensation_is = ntc_compensation_is_mem;
+		}
             return 10*temperature;
         }
     }
@@ -2143,7 +2525,8 @@ int coul_ntc_temperature_compensation(struct smartstar_coul_device *di, BATTERY_
       corresponding to the different current */
     temp_without_compensation = coul_battery_temperature_tenth_degree(user);
     temp_with_compensation = temp_without_compensation;
-    if (1 == di->ntc_compensation_is){
+	if ((di->ntc_compensation_is == 1) &&
+		(temp_without_compensation >= COMPENSATION_THRESHOLD)) {
         ichg = coul_get_battery_current_ma();
         ichg = abs(ichg);
         for(i = 0;i < COMPENSATION_PARA_LEVEL;i++)
@@ -2220,6 +2603,36 @@ static void update_battery_temperature(struct smartstar_coul_device *di, int sta
             di->batt_temp = temp;
         }
     }
+}
+
+int coul_get_ocv_by_soc(int temp, int soc)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di || !di->batt_data)
+		return -EPERM;
+
+	return interpolate_ocv(di->batt_data->pc_temp_ocv_lut, temp, soc);
+}
+
+int coul_get_soc_by_ocv(int temp, int ocv)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di || !di->batt_data)
+		return -EPERM;
+
+	return interpolate_pc(di->batt_data->pc_temp_ocv_lut, temp, ocv);
+}
+
+int coul_get_last_powerdown_soc(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di)
+		return -EPERM;
+
+	return di->last_powerdown_soc;
 }
 
   /*******************************************************
@@ -2922,7 +3335,7 @@ int coul_get_battery_fifo_curr(unsigned int index)
     if (NULL == di || NULL == di->coul_dev_ops
         || NULL == di->coul_dev_ops->get_battery_cur_ua_from_fifo)
         return 0;
-    return di->coul_dev_ops->get_battery_cur_ua_from_fifo(index);
+    return di->coul_dev_ops->get_battery_cur_ua_from_fifo((short)index);
 }
 
 /*******************************************************
@@ -2983,7 +3396,6 @@ int coul_is_fcc_debounce(void)
     int fcc = 0;
 
     if (!di) {
-        //coul_core_err("%s, di is NULL\n", __func__);
         return ret;
     }
 
@@ -3077,8 +3489,12 @@ static void get_ocv_by_fcc(struct smartstar_coul_device *di,int batt_temp)
    	    return;
     }
     /*looking for ocv value in the OCV-FCC table*/
-    new_ocv = interpolate_ocv(di->batt_data->pc_temp_ocv_lut, batt_temp_degc, 1000);
-    new_ocv *=1000;
+	new_ocv = interpolate_ocv(
+		di->batt_data->pc_temp_ocv_lut, batt_temp_degc, 1000);
+	if (new_ocv > (CAPACITY_INVALID_AREA_4500 / UVOLT_PER_MVOLT))
+		new_ocv = CAPACITY_INVALID_AREA_4500;
+	else
+		new_ocv = new_ocv * UVOLT_PER_MVOLT;
 
     if ((new_ocv - di->batt_ocv) > 0) {
         DBG_CNT_INC(dbg_ocv_cng_1);
@@ -3225,7 +3641,7 @@ static int check_ocv_vol_data_valid(const int vol_data[], u32 data_cnt)
 
 static int get_ocv_vol_from_fifo(struct smartstar_coul_device *di)
 {
-    int i = 0;
+    short i = 0;
     int used;
     int current_ua = 0;
     int voltage_uv = 0;
@@ -3291,7 +3707,7 @@ static int get_ocv_vol_from_fifo(struct smartstar_coul_device *di)
 ********************************************************/
 static int coul_get_fifo_avg_current_ma(void)
 {
-    int i = 0;
+    short i = 0;
     int valid = 0;
     int current_ua = 0;
     int totalcur = 0;
@@ -3324,21 +3740,20 @@ static int coul_get_fifo_avg_current_ma(void)
 
 static int basp_full_pc_by_voltage(struct smartstar_coul_device *di)
 {
-    int delta_ocv = 0,pc =0;
-    int ret = 0 , batt_fcc_ocv = 0;
-    AGING_SAFE_POLICY_TYPE asp;
-    if(NULL == di)
-    {
-        return 0;
-    }
-    memset(&asp,0,sizeof(asp));
-    ret = coul_get_battery_aging_safe_policy(&asp);
+	int delta_ocv;
+	int pc = 0;
+	int batt_fcc_ocv;
+	unsigned int nondc_volt_dec = 0;
 
-    if(ret < 0)
-    {
-        coul_core_err("get_vol_dec fail!\n");
-    }
-    delta_ocv = (int)asp.nondc_volt_dec;
+	if (!di)
+		return 0;
+
+	if (get_basp_nondc_volt_dec(&nondc_volt_dec)) {
+		coul_core_err("get_vol_dec fail!\n");
+		return -1;
+	}
+
+	delta_ocv = (int)nondc_volt_dec;
 
     if (delta_ocv) {
         batt_fcc_ocv = interpolate_ocv(di->batt_data->pc_temp_ocv_lut0, di->batt_temp/TENTH, TENTH*SOC_FULL);
@@ -3581,20 +3996,48 @@ static void coul_set_low_vol_int(struct smartstar_coul_device *di, int state)
 {
     int vol = 0;
 
-    if( NULL == di )
-    {
-        coul_core_info("NULL point in [%s]\n", __func__);
-   	 return;
+    if(NULL == di) {
+		coul_core_info("NULL point in [%s]\n", __func__);
+		return;
     }
     di->v_low_int_value = state;
 
-    if (state == LOW_INT_STATE_RUNNING){
+    if (state == LOW_INT_STATE_RUNNING)
         vol = di->v_cutoff;
-    }
-    else{
+    else
         vol = di->v_cutoff_sleep;
-    }
-    di->coul_dev_ops->set_low_low_int_val(vol);
+
+	if (di->batt_temp <= LOW_INT_TEMP_THRED)
+		vol = di->v_cutoff_low_temp < vol ? di->v_cutoff_low_temp : vol;
+
+	di->coul_dev_ops->set_low_low_int_val(vol);
+}
+
+/*******************************************************
+  Function:        coul_get_low_vol
+  Description:     get cutoff interrupt vol mv.
+  Input:           struct smartstar_coul_device *di  ---- coul device
+  Output:          NULL
+  Return:          NULL
+********************************************************/
+static int coul_get_low_int_vol_mv(struct smartstar_coul_device *di)
+{
+	int vol;
+
+	if (!di)
+		return 0;
+
+	if (di->v_low_int_value == LOW_INT_STATE_RUNNING)
+		vol = di->v_cutoff;
+	else
+		vol = di->v_cutoff_sleep;
+
+	if (di->batt_temp <= LOW_INT_TEMP_THRED)
+		vol = di->v_cutoff_low_temp < vol ? di->v_cutoff_low_temp : vol;
+
+	coul_core_info("%s v_cut =%d, v_sleep =%d, v_low_temp = %d, temp = %d, vol = %d \n", __func__,
+									di->v_cutoff, di->v_cutoff_sleep, di->v_cutoff_low_temp, di->batt_temp, vol);
+	return vol;
 }
 
 /*******************************************************
@@ -3731,11 +4174,16 @@ static int calculate_delta_rc(struct smartstar_coul_device *di, int soc,
         g_ocv_cali_rbatt_valid_flag = 1;
     }
 
-    ratio = rbatt_calc*100/rbatt_tbl;
-
+    if (0 == rbatt_tbl) {
+        coul_core_err("%s Divisor rbatt_tbl equal zero.\n", __func__);
+        ratio = 0;
+    }else {
+        ratio = rbatt_calc*100/rbatt_tbl;
+        coul_core_info("low_temp_opt: old ratio =%d\n", ratio);
+    }
     if ((2 == di->soc_limit_flag) && (LOW_TEMP_OPT_OPEN == low_temp_opt_flag) && (batt_temp_degc < 15)){
         ratio = ratio > 100 ? ratio : 100;
-        coul_core_info("low_temp_opt: old ratio =%d,new ratio =%d\n",rbatt_calc*100/rbatt_tbl,ratio);
+        coul_core_info("low_temp_opt: new ratio =%d\n", ratio);
     }
 
     di->rbatt_ratio = ratio;
@@ -3763,7 +4211,12 @@ static int calculate_delta_rc(struct smartstar_coul_device *di, int soc,
         delta_rc_final = delta_rc_uah - delta_rc_uah_100;
     }
 
-    soc_new = (rc_new_uah)*100 / (fcc_uah);
+    if (0 == fcc_uah) {
+        coul_core_err("%s Divisor fcc_uah equal zero.\n", __func__);
+        soc_new = 0;
+    }else {
+        soc_new = (rc_new_uah)*100 / (fcc_uah);
+    }
 
     soc_new = bound_soc(soc_new);
 
@@ -4122,7 +4575,6 @@ static int calculate_state_of_charge(struct smartstar_coul_device *di)
     int rbatt;
     int soc_no_uuc, soc_before_adjust, soc_before_limit;
     bool soc_at_term_flag = true ;
-    //unsigned int eco_leak_uah = 0;
 
     if( NULL == di )
     {
@@ -4173,12 +4625,6 @@ static int calculate_state_of_charge(struct smartstar_coul_device *di)
 
 	soc_no_uuc = soc;
 	di->batt_soc_with_uuc = soc;
-
-    /* calculate remaining usable charge */
-    //eco_leak_uah = calculate_eco_leak_uah();
-
-	/* 退出ECO模式后 */
-    //remaining_charge_uah = remaining_charge_uah - eco_leak_uah;
 
     remaining_usable_charge_uah = remaining_charge_uah
                                                 - cc_uah - unusable_charge_uah + delta_rc_uah;
@@ -4574,7 +5020,8 @@ void basp_refresh_fcc(struct smartstar_coul_device *di)
             di->charging_begin_soc, di->fcc_real_mah);
         /* record fcc */
         basp_record_fcc(di);
-        di->basp_level = get_basp_level(di);
+		if (!di->basp_total_level)
+			di->basp_level = get_basp_level(di);
     }
     else
     {
@@ -4603,7 +5050,7 @@ bool basp_check_sum(void)
 
 static BASP_LEVEL_TYPE find_basp_level(void)
 {
-	unsigned int idx;
+	unsigned int idx = 0;
 	unsigned int fcc_thres = 0;
 	bool is_cycle_exceed = false;
 	struct smartstar_coul_device *di = NULL;
@@ -4614,7 +5061,7 @@ static BASP_LEVEL_TYPE find_basp_level(void)
 	}
 
 	di = g_smartstar_coul_dev;
-	for (idx = 0; idx < di->basp_total_level; idx++) {
+	for (idx = 0; idx < di->basp_total_level; idx++) {/*lint !e574*/
 		fcc_thres = di->batt_data->fcc *
 			basp_policy[idx].fcc_ratio / BASP_PARA_SCALE;
 		is_cycle_exceed = di->batt_chargecycles >
@@ -4644,11 +5091,10 @@ static BASP_LEVEL_TYPE get_basp_level(struct smartstar_coul_device *di)
 	unsigned int  records_avg = BASP_DEFAULT_RECORD_FCC_AVG;
 	BASP_LEVEL_TYPE basp_level_ret = BASP_LEVEL_0;
 
-	if (!di)
+	if (!di || !di->basp_total_level)
 		return basp_level_ret;
 
-	if (basp_mask_delay && (!di->basp_batt_matched ||
-		di->basp_need_delay)) {
+	if (!di->basp_batt_matched || di->basp_need_delay) {
 		coul_core_info(BASP_TAG"skip basp, batt_matched %d, need_delay %d",
 			di->basp_batt_matched, di->basp_need_delay);
 		return basp_level_ret;
@@ -4697,6 +5143,38 @@ static BASP_LEVEL_TYPE get_basp_level(struct smartstar_coul_device *di)
 		records_avg);
 
 	return basp_level_ret;
+}
+
+static int coul_get_record_fcc(unsigned int size,
+	unsigned int *records)
+{
+	int i;
+	int records_num = 0;
+	int index;
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di || !records || (size != MAX_RECORDS_CNT))
+		return 0;
+	index = di->nv_info.latest_record_index;
+	if (index >= MAX_RECORDS_CNT)
+		return 0;
+
+	if (!basp_check_sum()) {
+		clear_record_fcc(di);
+		return 0;
+	}
+
+	for (i = 0; i < MAX_RECORDS_CNT; i++) {
+		if (di->nv_info.real_fcc_record[index] == 0)
+			continue;
+
+		records[i] = di->nv_info.real_fcc_record[index];
+		records_num++;
+		index++;
+		if (index >= MAX_RECORDS_CNT)
+			index = 0;
+	}
+	return records_num;
 }
 
 static int get_batt_charge_info(struct smartstar_coul_device *di, char *buff, int size)
@@ -4791,9 +5269,10 @@ static void coul_set_work_interval(struct smartstar_coul_device *di)
             di->soc_work_interval = CALCULATE_SOC_MS/2;
     }
 #ifdef CONFIG_DIRECT_CHARGER
-    if (get_super_charge_flag() && (CHARGING_STATE_CHARGE_START == di->charging_state)
-        && (di->soc_work_interval > (CALCULATE_SOC_MS/4)))
-        di->soc_work_interval = CALCULATE_SOC_MS/4;
+	if (direct_charge_get_super_charging_flag() &&
+		(di->charging_state == CHARGING_STATE_CHARGE_START) &&
+		(di->soc_work_interval > (CALCULATE_SOC_MS / 4)))
+		di->soc_work_interval = CALCULATE_SOC_MS / 4;
 #endif
 }
 
@@ -4903,8 +5382,7 @@ static void coul_imonitor_prepare_basp_basic_info(
         coul_core_info("battery not exist, do not calc soc any more\n");
         return;
     }
-    if(basp_dsm_flag)
-    {
+	if (basp_dsm_flag && (di->basp_total_level > 0)) {
         for (i = 0; i < di->basp_total_level; i++) {
             if (di->basp_level == basp_policy[i].level) {
                 if (basp_policy[i].err_no) {
@@ -4915,11 +5393,13 @@ static void coul_imonitor_prepare_basp_basic_info(
             }
         }
     }
-
+	coul_set_low_vol_int(di, LOW_INT_STATE_RUNNING);
     basp_fcc_learn_evt_handler(di, EVT_PER_CHECK);
-	coul_imonitor_prepare_basp_basic_info(di, &basp_basic_info);
-	coul_imonitor_periodic_report(COUL_IMONITOR_BASP_BASIC_INFO,
-		&basp_basic_info);
+	if (di->basp_total_level > 0) {
+		coul_imonitor_prepare_basp_basic_info(di, &basp_basic_info);
+		coul_imonitor_periodic_report(COUL_IMONITOR_BASP_BASIC_INFO,
+			&basp_basic_info);
+	}
 
     offset_cur_modify_val = di->coul_dev_ops->get_offset_current_mod();
     coul_core_info("offset_cur_modify_val:0x%x\n", offset_cur_modify_val);
@@ -5023,6 +5503,126 @@ static void coul_imonitor_prepare_basp_basic_info(
     		round_jiffies_relative(msecs_to_jiffies(di->soc_work_interval)) );
 
 }
+/*
+ * get supply current with soc
+ */
+int coul_judge_soc_supply_level(struct smartstar_coul_device *di,
+			int soc, int temp_idx)
+{
+	temp_idx = clamp_val(temp_idx, 0, SUPPLY_PARA_LEVEL - 1);
+	coul_core_info("%s:soc:%d,temp_idx:%d", __func__, soc, temp_idx);
+	if (soc > di->supply_info[temp_idx].soc_max)
+		return CURR_AVG_DEFAULT;
+	else if (soc > di->supply_info[temp_idx].soc_min)
+		return di->supply_info[temp_idx].supply_curr2;
+	else
+		return di->supply_info[temp_idx].supply_curr1;
+}
+
+/*
+ * judge if we could update temp level
+ * when report supply current with thermal table
+ * temperature  is in ℃
+ */
+bool coul_judge_update_temp_level(struct smartstar_coul_device *di,
+			int first_run, int temp, int last_temp, int temp_idx)
+{
+	temp_idx = clamp_val(temp_idx, 0, SUPPLY_PARA_LEVEL - 1);
+	coul_core_info("%s:first_run:%d,temp:%d,last_temp:%d,last_i:%d",
+		__func__, first_run, temp, last_temp, temp_idx);
+	if (first_run || (temp <= last_temp) ||
+		(temp - supply_temp_points[temp_idx] >
+			di->supply_info[temp_idx].temp_back))
+		return TRUE;
+	return FALSE;
+}
+
+/*
+ * report supply current with thermal table
+ * temperature is in ℃
+ */
+int coul_get_polar_table_val(int temp, int soc)
+{
+	int i;
+	static int last_i = SUPPLY_PARA_LEVEL - 1;
+	static int last_temp = -20;
+	static int first_run = 1;
+	int ret_val;
+	int temp_max;
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di->supply_enable == 0)
+		return CURR_AVG_DEFAULT;
+
+	for (i = 0; i < SUPPLY_PARA_LEVEL; i++) {
+		if (temp > supply_temp_points[i])
+			break;
+	}
+
+	temp_max = supply_temp_points[0] + di->supply_info[0].temp_back;
+	/*in case polar is disabled or temp > 5℃ when first run*/
+	if ((first_run && i == 0) || temp > temp_max)
+		return CURR_AVG_DEFAULT;
+
+	/*update temp level when temp drop or temp resume back to threshold*/
+	if (coul_judge_update_temp_level(di, first_run, temp,
+				last_temp, last_i - 1)) {
+		ret_val = coul_judge_soc_supply_level(di, soc, i - 1);
+		last_i = i;
+	} else {
+		ret_val = coul_judge_soc_supply_level(di, soc, last_i - 1);
+	}
+	first_run = 0;
+	last_temp = temp;
+	return ret_val;
+}
+
+/*
+ * report avg current as thermal node;
+ * use update_polar_params if need calculate
+ */
+int coul_get_polar_avg(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+	int temp = 0;
+
+	if (di == NULL)
+		return CURR_AVG_DEFAULT;
+#ifdef CONFIG_HISI_COUL_POLAR
+	if (di->batt_temp >= (TEMP_POLAR_REPORT * TENTH))
+		temp = CURR_AVG_DEFAULT;
+	else
+		temp = di->polar.curr_5s;
+#endif
+	/* we use lut value instead, if polar supply is not calculated */
+	if (temp == 0)
+		temp = coul_get_polar_table_val(di->batt_soc,
+					di->batt_temp / TENTH);
+	return temp;
+}
+
+/*
+ * report peak current as thermal node;
+ * use update_polar_params if need calculate
+ */
+int coul_get_polar_peak(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+	int temp = 0;
+
+	if (di == NULL)
+		return CURR_AVG_DEFAULT;
+#ifdef CONFIG_HISI_COUL_POLAR
+	if (di->batt_temp >= (TEMP_POLAR_REPORT * TENTH))
+		temp = CURR_AVG_DEFAULT;
+	else
+		temp = di->polar.curr_peak;
+#endif
+	if (temp == 0)
+		temp = coul_get_polar_table_val(
+			di->batt_soc, di->batt_temp / TENTH);
+	return temp;
+}
 
 static void read_temperature_work(struct work_struct *work)
 {
@@ -5068,107 +5668,69 @@ static void make_cc_no_overload(struct smartstar_coul_device *di)
     int delta_soc = 0;
     int count = LOW_INT_VOL_COUNT;
     char buff[DSM_BUFF_SIZE_MAX] = {0};
+	int cut_off_vol;
 
-    if( NULL == di)
-    {
+    if( NULL == di) {
 	  	coul_core_info("NULL point in [%s]\n", __func__);
      	return;
     }
-    if ( BAT_BOARD_ASIC != is_board_type){
-        return;
-    }
 
-	if (di->v_low_int_value == LOW_INT_STATE_SLEEP){
-		coul_get_battery_voltage_and_current(di, &ibat_ua, &vbat_uv);
-		if ((vbat_uv/1000 - LOW_INT_VOL_OFFSET) < (int)di->v_cutoff_sleep){
-			coul_core_info("IRQ: low_vol_int current_vol is [%d] < [%d],use fifo vol!\n",vbat_uv/1000,di->v_cutoff_sleep);
-		}
-	}
-	else{
-		coul_get_battery_voltage_and_current(di, &ibat_ua, &vbat_uv);
-		if ((vbat_uv/1000 - LOW_INT_VOL_OFFSET) < di->v_cutoff){/*lint !e574*/
-			coul_core_info("IRQ: low_vol_int current_vol is [%d] < [%d],use fifo vol!\n",vbat_uv/1000,di->v_cutoff);
-		}
+    if (BAT_BOARD_ASIC != is_board_type)
+        return;
+
+    /* low_vol_int count according to dts */
+    count = di->low_vol_filter_cnt;
+
+	cut_off_vol = coul_get_low_int_vol_mv(di);
+
+	coul_get_battery_voltage_and_current(di, &ibat_ua, &vbat_uv);
+	if ((vbat_uv/1000 - LOW_INT_VOL_OFFSET) < cut_off_vol){/*lint !e574*/
+		coul_core_info("IRQ: low_vol_int current_vol is [%d] < [%d],use fifo vol!\n",vbat_uv/1000, cut_off_vol);
 	}
 
 	coul_core_err("IRQ: low_vol_int, cur_batt_soc=%d%%, cur_voltage=%dmv, cur_current=%dma, cur_temperature=%d\n", \
 		di->batt_soc, vbat_uv/1000, -(ibat_ua/1000), di->batt_temp/10);
 
-	if (di->batt_exist){
-		coul_core_info("IRQ: COUL_VBAT_LOW_INT, vbat=%duv, last vbat_int=%d\n",
-									vbat_uv, di->v_low_int_value );
-	}
-	else{
+	if (!di->batt_exist) {
         coul_core_err("IRQ: COUL_VBAT_LOW_INT, no battery, error\n");
         return;
-   }
+	}
 
-    if (strstr(saved_command_line, "androidboot.swtype=factory"))
-    {
+    if (strstr(saved_command_line, "androidboot.swtype=factory")) {
         coul_core_err("IRQ: COUL_VBAT_LOW_INT, factory_version, do nothing\n");
         return;
     }
-    if(-1 != vbat_uv)
-	{
-       vbat_uv /= 1000;
-	}
-	/*if BATTERY vol it too low ,it's false ,return*/
-	if ((vbat_uv < BATTERY_VOL_LOW_ERR) && (-1 !=vbat_uv)){
-		coul_core_err("Battery vol too low,low_vol_irq is't ture!\n");
+
+	/* if BATTERY vol it too low ,it's false */
+	if (vbat_uv/1000 < BATTERY_VOL_LOW_ERR)
+		coul_core_err("Battery vol too low!\n");
+
+	if ((vbat_uv/1000 - LOW_INT_VOL_OFFSET) > cut_off_vol) {
+		coul_core_err("false low_int,in sleep!\n");
         /*false low vol int ,next suspend don't cali*/
-
-		/*return;*/
-	}
-    /*Redefine low_vol_int count according to dts*/
-    count = di->low_vol_filter_cnt;
-    if (di->v_low_int_value == LOW_INT_STATE_SLEEP){
-		if ((vbat_uv - LOW_INT_VOL_OFFSET) > (int)di->v_cutoff_sleep){
-			coul_core_err("false low_int,in sleep!\n");
-            /*false low vol int ,next suspend don't cali*/
-			return;
-		} else {
-			while(count--)
-			{
-				msleep(LOW_INT_VOL_SLEEP_TIME);  /*sleep 1s*/
-				coul_get_battery_voltage_and_current(di, &ibat_ua, &vbat_uv);
-				coul_core_err("delay 1000ms get vbat_uv is %duv!\n",vbat_uv);
-				di->coul_dev_ops->show_key_reg();
-				if ((vbat_uv/1000 - LOW_INT_VOL_OFFSET) > (int)di->v_cutoff_sleep){
-					coul_core_err("fifo0 is false,it's got in 32k clk period!\n");
-					/*false low vol int ,next suspend don't cali*/
-					return;
-				}
+		return;
+	} else {
+		while(count--)
+		{
+			msleep(LOW_INT_VOL_SLEEP_TIME);  /*sleep 1s*/
+			coul_get_battery_voltage_and_current(di, &ibat_ua, &vbat_uv);
+			coul_core_err("delay 1000ms get vbat_uv is %duv!\n",vbat_uv);
+			di->coul_dev_ops->show_key_reg();
+			if ((vbat_uv/1000 - LOW_INT_VOL_OFFSET) > cut_off_vol){
+				coul_core_err("fifo0 is false,it's got in 32k clk period!\n");
+				/*false low vol int ,next suspend don't cali*/
+				return;
 			}
+		}
+		if (cut_off_vol >= BATTERY_VOL_2_PERCENT) {
 			delta_soc = di->batt_soc - 2;
-            di->batt_soc = 1;
-            batt_under_voltage_flag = 1; /* under voltage flag */
-		}
-    }
-    else if (di->v_low_int_value == LOW_INT_STATE_RUNNING){
-		if ((vbat_uv - LOW_INT_VOL_OFFSET) > di->v_cutoff){/*lint !e574*/
-			coul_core_err("false low_int,in running!\n");
-            /*false low vol int ,next suspend don't cali*/
-			return;
-
+			di->batt_soc = 1;
 		} else {
-			while(count--)
-			{
-				msleep(LOW_INT_VOL_SLEEP_TIME);  /*sleep 1s*/
-				coul_get_battery_voltage_and_current(di, &ibat_ua, &vbat_uv);
-				coul_core_err("delay 1000ms get vbat_uv is %duv!\n",vbat_uv);
-				di->coul_dev_ops->show_key_reg();
-				if ((vbat_uv/1000 - LOW_INT_VOL_OFFSET) > di->v_cutoff){/*lint !e574*/
-					coul_core_err("fifo0 is false,it's got in 32k clk period!\n");
-					/*false low vol int ,next suspend don't cali*/
-					return;
-				}
-			}
-            delta_soc = di->batt_soc;
-            di->batt_soc = 0;
-            batt_under_voltage_flag = 1; /* under voltage flag */
+			delta_soc = di->batt_soc;
+			di->batt_soc = 0;
 		}
-    }
-
+        batt_under_voltage_flag = 1; /* under voltage flag */
+	}
     if ((delta_soc > ABNORMAL_DELTA_SOC) && (get_temperature_stably(di, USER_COUL) > TEMP_OCV_ALLOW_CLEAR*10)){
         coul_core_info("delta_soc=%d, mark save ocv is invalid\n", delta_soc);
         /*dmd report: current information -- fcc, CC, cur_vol, cur_current, cur_temp, cur_soc, delta_soc*/
@@ -5252,8 +5814,7 @@ static void coul_charging_begin (struct smartstar_coul_device *di)
         return;
     }
     coul_core_info("pre charging state is %d \n",di->charging_state);
-    /* disable coul irq */
-    //smartstar_irq_disable();
+
     if (di->charging_state == CHARGING_STATE_CHARGE_START)
         return;
 
@@ -5274,7 +5835,10 @@ static void coul_charging_begin (struct smartstar_coul_device *di)
     /*record cc value*/
     di->charging_begin_cc = di->coul_dev_ops->calculate_cc_uah();
     di->charging_begin_time = di->coul_dev_ops->get_coul_time();
-
+#ifdef CONFIG_HISI_COUL_POLAR
+	clear_ishort_first_para();
+	di->ishort_info.has_chg_done = 0;
+#endif
     coul_core_info("coul_charging_begin -\n");
     coul_core_info("batt_soc=%d, charging_begin_soc=%d, charging_begin_cc=%d,batt_limit_fcc_begin =%d\n",
                        di->batt_soc, di->charging_begin_soc, di->charging_begin_cc,di->batt_limit_fcc_begin );
@@ -5373,8 +5937,7 @@ static int calculate_real_fcc_uah(struct smartstar_coul_device *di,
                          &unusable_charge_uah,
                          &remaining_charge_uah, &cc_uah, &delta_rc, &rbatt);
     real_fcc_uah = (-(cc_uah - di->charging_begin_cc))/(terminate_soc_real - di->charging_begin_soc)*terminate_soc_real;
-    //real_fcc_uah = remaining_charge_uah - cc_uah;
-    //real_fcc_uah = real_fcc_uah*100/101;
+
     *ret_fcc_uah = fcc_uah;
     coul_core_info("real_fcc=%d, RC=%d CC=%d fcc=%d charging_begin_soc=%d.%d\n",
     				   real_fcc_uah, remaining_charge_uah, cc_uah, fcc_uah, di->charging_begin_soc/10, di->charging_begin_soc);
@@ -5390,9 +5953,11 @@ static int calculate_real_fcc_uah(struct smartstar_coul_device *di,
 ********************************************************/
 static void readjust_fcc_table(struct smartstar_coul_device *di)
 {
-	struct single_row_lut *temp, *now;
+	struct single_row_lut *temp = NULL;
+	struct single_row_lut *now = NULL;
 	int i, fcc, ratio;
 	int real_fcc_mah;
+
 	if( NULL == di )
     {
         coul_core_err("NULL point in [%s]\n", __func__);
@@ -5487,7 +6052,7 @@ static void check_restore_cycles(struct smartstar_coul_device *di, int new_fcc, 
 	int avg_fcc = 0, old_fcc = 0;
 	int cylces2restore = 0;
 	int design_fcc_mah;
-	struct single_row_lut *back_fcc_lut;
+	struct single_row_lut *back_fcc_lut = NULL;
 
 	if (NULL == di || new_fcc <= 0 || last_fcc <= 0) {
 		coul_core_err("[%s]: invalid input\n", __func__);
@@ -5738,6 +6303,9 @@ static void coul_charging_done (struct smartstar_coul_device *di)
         di->iscd->last_sample_time = current_kernel_time();
         hrtimer_start(&di->iscd->timer, ktime_set((s64)di->iscd->sample_time_interval, (unsigned long)0), HRTIMER_MODE_REL);
     }
+#ifdef CONFIG_HISI_COUL_POLAR
+	di->ishort_info.has_chg_done = 1;
+#endif
 }
 
 /*******************************************************
@@ -5839,6 +6407,32 @@ int coul_battery_charger_event_rcv (unsigned int evt)
     return 0;
 }
 
+static void coul_get_last_soc(struct smartstar_coul_device *di)
+{
+	bool flag_soc_valid = false;
+	short soc_temp = 0;
+
+	if (!di)
+		return;
+
+	di->coul_dev_ops->get_last_soc_flag(&flag_soc_valid);
+	di->coul_dev_ops->get_last_soc(&soc_temp);
+	coul_core_info("[%s]:flag=%d,di->batt_soc=%d,soc_temp=%d\n",
+		__func__, flag_soc_valid, di->batt_soc, soc_temp);
+
+	if (flag_soc_valid &&
+		abs(di->batt_soc - soc_temp) < di->startup_delta_soc) {
+		di->last_powerdown_soc = soc_temp;
+		coul_core_info("last_powerdown_soc=%d,flag=%d\n",
+			soc_temp, flag_soc_valid);
+	} else {
+		di->last_powerdown_soc = -1;
+		coul_core_info("last_powerdown_soc invalid\n");
+	}
+
+	di->coul_dev_ops->clear_last_soc_flag();
+}
+
 /*******************************************************
   Function:        coul_smooth_startup_soc
   Description:     smooth first soc to avoid soc jump in startup step
@@ -5848,25 +6442,19 @@ int coul_battery_charger_event_rcv (unsigned int evt)
 ********************************************************/
 static void coul_smooth_startup_soc(struct smartstar_coul_device *di)
 {
-    bool  flag_soc_valid = FALSE;
-    short soc_temp = 0;
+	if (!di)
+		return;
 
-    if(NULL == di) {
-        coul_core_err("NULL point in [%s]\n", __func__);
-        return;
-    }
+	coul_get_last_soc(di);
 
-    if (di->last_soc_enable) {
-        di->coul_dev_ops->get_last_soc_flag(&flag_soc_valid);
-        di->coul_dev_ops->get_last_soc(&soc_temp);
-        coul_core_info("[%s]:flag = %d,di->batt_soc = %d,soc_temp = %d\n",__func__,flag_soc_valid,di->batt_soc,soc_temp);
-        if ((flag_soc_valid) && abs(di->batt_soc - soc_temp) < di->startup_delta_soc) {
-            di->batt_soc = soc_temp;
-            coul_core_info("battery last soc= %d,flag = %d\n", soc_temp , flag_soc_valid);
-        }
-    }
-    di->coul_dev_ops->clear_last_soc_flag();
-    return;
+	if (!di->last_soc_enable)
+		return;
+
+	if (di->last_powerdown_soc < 0)
+		return;
+
+	di->batt_soc = di->last_powerdown_soc;
+	coul_core_info("battery last soc=%d\n", di->last_powerdown_soc);
 }
 
 #ifdef CONFIG_HUAWEI_CHARGER
@@ -5879,11 +6467,15 @@ static void __fatal_isc_chg_prot(struct iscd_info *iscd, const int * capacity)
         if(unlikely(ret)) {
             coul_core_err("Set isc disable flags for charger failed in %s\n.", __func__);
         }
+		power_if_kernel_sysfs_set(POWER_IF_OP_TYPE_ALL,
+			POWER_IF_SYSFS_ENABLE_CHARGER, 0);
     } else if( *capacity <= iscd->fatal_isc_soc_limit[RECHARGE]) {/*lint !e574*/
         ret = set_charger_disable_flags(CHARGER_CLEAR_DISABLE_FLAGS, CHARGER_FATAL_ISC_TYPE);
         if(unlikely(ret)) {
             coul_core_err("Clear isc disable flags for charger failed in %s\n.", __func__);
         }
+		power_if_kernel_sysfs_set(POWER_IF_OP_TYPE_ALL,
+			POWER_IF_SYSFS_ENABLE_CHARGER, 1);
     }
 }
 
@@ -5898,6 +6490,8 @@ static int fatal_isc_chg_limit_soc(struct notifier_block *self,
         if(unlikely(ret)) {
             coul_core_err("Clear charger ISC disable flag failed.\n");
         }
+		power_if_kernel_sysfs_set(POWER_IF_OP_TYPE_ALL,
+			POWER_IF_SYSFS_ENABLE_CHARGER, 0);
         __fatal_isc_chg_prot(iscd, (int *)data);
     }else if(event == ISC_LIMIT_UNDER_MONITOR_STAGE) {
         __fatal_isc_chg_prot(iscd, (int *)data);
@@ -5913,42 +6507,29 @@ static int fatal_isc_chg_limit_soc(struct notifier_block *self,
 #endif
 
 #ifdef CONFIG_DIRECT_CHARGER
-static void __fatal_isc_direct_chg_prot(struct iscd_info *iscd, const int * capacity)
+static void __fatal_isc_direct_chg_prot(struct iscd_info *iscd, const int *capacity)
 {
-    int ret;
-
-    if( *capacity >= iscd->fatal_isc_soc_limit[UPLIMIT]) {/*lint !e574*/
-        ret = set_direct_charger_disable_flags(DIRECT_CHARGER_SET_DISABLE_FLAGS,
-                                               DIRECT_CHARGER_FATAL_ISC_TYPE);
-        if(unlikely(ret)) {
-            coul_core_err("Set isc disable flags for direct charger failed in %s\n.", __func__);
-        }
-    } else if( *capacity <= iscd->fatal_isc_soc_limit[RECHARGE]) {/*lint !e574*/
-        ret = set_direct_charger_disable_flags(DIRECT_CHARGER_CLEAR_DISABLE_FLAGS,
-                                               DIRECT_CHARGER_FATAL_ISC_TYPE);
-        if(unlikely(ret)) {
-            coul_core_err("Clear isc disable flags for direct charger failed in %s\n.", __func__);
-        }
-    }
+	if (*capacity >= iscd->fatal_isc_soc_limit[UPLIMIT])
+		direct_charge_set_disable_flags(DC_SET_DISABLE_FLAGS,
+			DC_DISABLE_FATAL_ISC_TYPE);
+	else if (*capacity <= iscd->fatal_isc_soc_limit[RECHARGE])
+		direct_charge_set_disable_flags(DC_CLEAR_DISABLE_FLAGS,
+			DC_DISABLE_FATAL_ISC_TYPE);
 }
 
 static int fatal_isc_direct_chg_limit_soc(struct notifier_block *self,
-                                                       unsigned long event, void *data)
+		unsigned long event, void *data)
 {
-    struct iscd_info *iscd = container_of(self, struct iscd_info, fatal_isc_direct_chg_limit_soc_nb);
-    int ret;
+	struct iscd_info *iscd = container_of(self, struct iscd_info, fatal_isc_direct_chg_limit_soc_nb);
 
-    if(event == ISC_LIMIT_START_CHARGING_STAGE) {
-        ret = set_direct_charger_disable_flags(DIRECT_CHARGER_CLEAR_DISABLE_FLAGS,
-                                               DIRECT_CHARGER_FATAL_ISC_TYPE);
-        if(unlikely(ret)) {
-            coul_core_err("Clear direct charger ISC disable flag failed.\n");
-        }
-        __fatal_isc_direct_chg_prot(iscd, (int *)data);
-    }else if(event == ISC_LIMIT_UNDER_MONITOR_STAGE) {
-        __fatal_isc_direct_chg_prot(iscd, (int *)data);
-    }
-    return NOTIFY_OK;
+	if (event == ISC_LIMIT_START_CHARGING_STAGE) {
+		direct_charge_set_disable_flags(DC_CLEAR_DISABLE_FLAGS,
+			DC_DISABLE_FATAL_ISC_TYPE);
+		__fatal_isc_direct_chg_prot(iscd, (int *)data);
+	} else if (event == ISC_LIMIT_UNDER_MONITOR_STAGE) {
+		__fatal_isc_direct_chg_prot(iscd, (int *)data);
+	}
+	return NOTIFY_OK;
 }
 #else
 static int fatal_isc_direct_chg_limit_soc(struct notifier_block *self,
@@ -5989,13 +6570,23 @@ static int fatal_isc_uevent_notify(struct notifier_block *self,
     return NOTIFY_OK;
 }
 
+static ssize_t coul_kernel_write(struct file *file, const char *buf,
+				 size_t count, loff_t pos)
+{
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
+	return kernel_write(file, buf, count, pos);
+#else
+	return kernel_write(file, buf, count, &pos);
+#endif /* LINUX_VERSION_CODE */
+}
+
 /*
  *kernel should not op files in the filesystem that managered by user space
  *transplant this function into user space is prefered
  */
 static void isc_splash2_file_sync(struct iscd_info *iscd)
 {
-    struct file * fd;
+    struct file * fd = NULL;
     ssize_t write_size;
 
     if(!iscd) {
@@ -6010,7 +6601,8 @@ static void isc_splash2_file_sync(struct iscd_info *iscd)
             return;
         }
         iscd->fatal_isc_hist.magic_num = iscd->iscd_file_magic_num;
-        write_size = kernel_write(fd, (const void *)&iscd->fatal_isc_hist, sizeof(isc_history), 0);
+        write_size = coul_kernel_write(fd, (const void *)&iscd->fatal_isc_hist,
+				       sizeof(isc_history), 0);
         if(write_size != sizeof(iscd->fatal_isc_hist)) {
             coul_core_err("Write %s failed(wtire:%zd expect:%zu) in %s\n.",
                       ISC_DATA_FILE, write_size, sizeof(iscd->fatal_isc_hist), __func__);
@@ -6024,7 +6616,7 @@ static void isc_splash2_file_sync(struct iscd_info *iscd)
 
 static void isc_config_splash2_file_sync(struct iscd_info *iscd)
 {
-    struct file * fd;
+    struct file * fd = NULL;
     ssize_t write_size;
 
     if (!iscd) {
@@ -6040,7 +6632,8 @@ static void isc_config_splash2_file_sync(struct iscd_info *iscd)
     iscd->fatal_isc_config.delay_cycles = iscd->isc_valid_delay_cycles;
     iscd->fatal_isc_config.has_reported = iscd->has_reported;
     iscd->fatal_isc_config.magic_num = iscd->iscd_file_magic_num;
-    write_size = kernel_write(fd, (const void *)&iscd->fatal_isc_config, sizeof(isc_config), 0);
+    write_size = coul_kernel_write(fd, (const void *)&iscd->fatal_isc_config,
+				   sizeof(isc_config), 0);
     if (write_size != sizeof(iscd->fatal_isc_config))
         coul_core_err("Write %s failed(wtire:%zd expect:%zu) in %s\n.",
                   ISC_CONFIG_DATA_FILE, write_size, sizeof(iscd->fatal_isc_config), __func__);
@@ -6296,14 +6889,14 @@ static int iscd_check_ocv_variance(const int *ocv, int avg_ocv, int n)
 static int iscd_sample_battery_ocv_uv(struct smartstar_coul_device *di, int *ocv_uv)
 {
     int i;
-    unsigned int j;
-    unsigned int fifo_depth;
+    short j;
+    int fifo_depth;
     int current_ua = 0;
     int voltage_uv = 0;
     int total_vol = 0;
     int total_cur = 0;
     int used = 0;
-    int *fifo_volt_uv;
+    int *fifo_volt_uv = NULL;
     int ret = ERROR;
 
     if (!di ||!ocv_uv) {
@@ -6311,7 +6904,7 @@ static int iscd_sample_battery_ocv_uv(struct smartstar_coul_device *di, int *ocv
         return ERROR;
     }
 
-    fifo_depth = (unsigned int)di->coul_dev_ops->get_fifo_depth();
+    fifo_depth = di->coul_dev_ops->get_fifo_depth();
     fifo_volt_uv = (int *)kzalloc((size_t)(sizeof(int) *fifo_depth), GFP_KERNEL);
     if (NULL == fifo_volt_uv) {
         coul_core_err("ISCD fifo_volt_uv alloc fail, try to next loop\n");
@@ -7181,7 +7774,7 @@ static void iscd_work(struct work_struct *work)
 {
     int ret = 0;
     struct smartstar_coul_device *di = g_smartstar_coul_dev;
-    struct iscd_sample_info *sample_info;
+    struct iscd_sample_info *sample_info = NULL;
 
     if (!di) {
         coul_core_info("ISCD %s di is null.\n", __func__);
@@ -7247,29 +7840,68 @@ static enum hrtimer_restart iscd_timer_func(struct hrtimer *timer)
     return HRTIMER_NORESTART;
 }
 #ifdef CONFIG_HISI_COUL_POLAR
-static int enable_eco_sample = 0;
+static int always_eco_sample = 0;
 static int enable_ocv_calc = 0;
 #ifdef CONFIG_HISI_DEBUG_FS
 void test_enable_sample(void)
 {
-struct smartstar_coul_device *di = g_smartstar_coul_dev;
-    if (NULL == di)
-        return;
-    enable_eco_sample = 1;
-    di->coul_dev_ops->set_eco_sample_flag(1);
-    di->coul_dev_ops->clr_eco_data(1);
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di == NULL)
+		return;
+	always_eco_sample = 1;
+	di->coul_dev_ops->set_eco_sample_flag(1);
+	di->coul_dev_ops->clr_eco_data(1);
 }
 void test_enable_ocv_calc(void)
 {
-    enable_ocv_calc = 1;
+	enable_ocv_calc = 1;
 }
 void test_disable_sample(void)
 {
-struct smartstar_coul_device *di = g_smartstar_coul_dev;
-    if (NULL == di)
-        return;
-    enable_eco_sample = 0;
-    di->coul_dev_ops->set_eco_sample_flag(0);
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di == NULL)
+		return;
+	always_eco_sample = 0;
+	di->coul_dev_ops->set_eco_sample_flag(0);
+}
+
+int test_set_ishort_dischg(int num)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di == NULL)
+		return 0;
+	di->ishort_info.dischg_interval = num;
+	return di->ishort_info.dischg_interval;
+}
+
+int test_set_ishort_gap(int time)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di == NULL)
+		return 0;
+	di->ishort_info.time_interval = time;
+	return di->ishort_info.time_interval;
+}
+
+int test_set_ishort_limit(int curr)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di == NULL)
+		return 0;
+	di->ishort_info.report_curr_ma = curr;
+	return di->ishort_info.report_curr_ma;
+}
+
+int test_polar_supply_table(int neg, int temp, int soc)
+{
+	if (neg)
+		temp = -temp;
+	return coul_get_polar_table_val(temp, soc);
 }
 #endif
 static void update_polar_params(struct smartstar_coul_device *di,
@@ -7319,9 +7951,9 @@ static bool could_sample_polar_ocv(struct smartstar_coul_device *di, int time_no
     }
     coul_core_debug("[%s]time_now:%d, chg_stop_time:%d,batt_temp:%d\n",
         __FUNCTION__, time_now, di->charging_stop_time, di->batt_temp);
+	if (di->polar_ocv_enable == 0)
+		goto no_sample;
     if (time_now - di->charging_stop_time < COUL_MINUTES(5))
-        goto no_sample;
-    if (time_now < COUL_MINUTES(60))
         goto no_sample;
     if (di->batt_temp < POLAR_OCV_TEMP_LIMIT)
         goto no_sample;
@@ -7356,6 +7988,181 @@ static bool could_update_polar_ocv(struct smartstar_coul_device *di,
             || di->polar.sr_polar_vol1 < -POLAR_SR_VOL1_LIMIT)
         return FALSE;
     return TRUE;
+}
+
+static void get_polar_ishort_dts(
+	struct smartstar_coul_device *di, struct device_node *np)
+{
+	int ret;
+
+	if (di == NULL || np == NULL)
+		return;
+	ret = of_property_read_u32(
+		np, "ishort_enable", (unsigned int *)&di->ishort_info.enable);
+	if (ret) {
+		di->ishort_info.enable = 0;
+		coul_core_err("get polar_ishort_enable fail\n");
+	}
+
+	if (di->ishort_info.enable == 0)
+		return;
+	ret = of_property_read_u32(np, "ishort_time_interval",
+		(unsigned int *)&di->ishort_info.time_interval);
+	if (ret) {
+		di->ishort_info.time_interval = COUL_MINUTES(60);
+		coul_core_err("get ishort_time_interval fail\n");
+	}
+	ret = of_property_read_u32(np, "ishort_dischg_interval",
+		(unsigned int *)&di->ishort_info.dischg_interval);
+	if (ret) {
+		/* use 10 percent soc as default value */
+		di->ishort_info.dischg_interval = 10;
+		coul_core_err("get ishort_dischg_interval fail\n");
+	}
+	ret = of_property_read_u32(np, "ishort_report_curr",
+		(unsigned int *)&di->ishort_info.report_curr_ma);
+	if (ret) {
+		/* use 50 ma as default report limit */
+		di->ishort_info.report_curr_ma = 50;
+		coul_core_err("get ishort_report_curr fail\n");
+	}
+}
+
+static void save_ishort_first_para(int ocv, s64 cc, int time)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di == NULL)
+		return;
+	if (di->ishort_info.ocv0 != 0 && di->ishort_info.time0 != 0)
+		return;
+	coul_core_info("%s:ocv:%d,cc:%ld,time:%d\n", __func__, ocv, cc, time);
+	di->ishort_info.ocv0 = ocv;
+	di->ishort_info.time0 = time;
+	di->ishort_info.cc0 = cc;
+	di->ishort_info.last_time = time;
+}
+
+static void clear_ishort_first_para(void)
+{
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (di == NULL)
+		return;
+	coul_core_info("%s\n", __func__);
+	di->ishort_info.ocv0 = 0;
+	di->ishort_info.time0 = 0;
+	di->ishort_info.cc0 = 0;
+	di->ishort_info.last_time = 0;
+}
+
+static int calc_ishort(
+	struct smartstar_coul_device *di, int ocv, s64 cc, int time)
+{
+	s64 qmax;
+	int pc0, pc1, delta_pc;
+	int delta_cc;
+	int delta_time_s;
+	int ishort = 0;
+
+	qmax = (s64)coul_get_qmax(di);
+	pc0 = interpolate_pc_high_precision(di->batt_data->pc_temp_ocv_lut,
+		di->batt_temp, di->ishort_info.ocv0 / UVOLT_PER_MVOLT);
+	pc1 = interpolate_pc_high_precision(di->batt_data->pc_temp_ocv_lut,
+		di->batt_temp, ocv / UVOLT_PER_MVOLT);
+	delta_pc = pc0 - pc1;
+	if (delta_pc <= 0) {
+		coul_core_info("delta pc abnormal:pc0:%d,pc1:%d\n", pc0, pc1);
+		return 0;
+	}
+	delta_cc = (int)(qmax * delta_pc / (SOC_FULL * PERMILLAGE));
+	coul_core_info("qmax = %lduAh, delta_pc = %d, delta_cc = %duAh\n", qmax,
+		delta_pc, delta_cc);
+	delta_time_s = time - di->ishort_info.time0;
+	if (delta_time_s > 0)
+		ishort = (s64)(delta_cc - (cc - di->ishort_info.cc0)) *
+			 COUL_MINUTES(60) / delta_time_s;
+	return ishort;
+}
+
+static void update_polar_ishort_dmd(
+	struct smartstar_coul_device *di, char *buff, int buff_len)
+{
+	int ret = -1;
+
+	if (buff_len >= DSM_BUFF_SIZE_MAX || buff == NULL)
+		return;
+
+	if (di->ishort_info.reported == 0) {
+		if ((di->ishort_info.curr_ua / UA_PER_MA) >=
+			di->ishort_info.report_curr_ma)
+			coul_core_info("%s\n", buff);
+		ret = power_dsm_dmd_report(
+			POWER_DSM_BATTERY, ERROR_BATTERY_POLAR_ISHORT, buff);
+	} else if (di->ishort_info.report_urgent) {
+		coul_core_info("%s\n", buff);
+		ret = power_dsm_dmd_report(
+			POWER_DSM_BATTERY, ERROR_BATTERY_POLAR_ISHORT, buff);
+	} else {
+		/* nothing */
+	}
+	/* if reported, change the flag */
+	if (ret == 0) {
+		di->ishort_info.reported = 1;
+		di->ishort_info.report_urgent = 0;
+	}
+}
+static void update_polar_ishort(struct smartstar_coul_device *di)
+{
+	int current_sec;
+	s64 current_cc;
+	char buff[DSM_BUFF_SIZE_MAX] = {0};
+	int buff_len = 0;
+	int cycle_now = coul_battery_cycle_count();
+
+	if (di->ishort_info.enable == 0)
+		return;
+	current_sec = di->coul_dev_ops->get_coul_time();
+	current_cc = di->coul_dev_ops->calculate_cc_uah();
+	current_cc += di->ishort_info.cc_all;
+	/* after charge done more than 20min */
+	if (di->ishort_info.has_chg_done && current_sec > COUL_MINUTES(20)) {
+		save_ishort_first_para(
+			di->polar.polar_ocv, current_cc, current_sec);
+		di->ishort_info.has_chg_done = 0;
+	} else if (di->charging_state == CHARGING_STATE_CHARGE_STOP &&
+		   (di->charging_stop_soc - di->batt_soc_real) >
+			   (di->ishort_info.dischg_interval * TENTH)) {
+		save_ishort_first_para(
+			di->polar.polar_ocv, current_cc, current_sec);
+	}
+	/* time limit to calc ishort */
+	if (di->ishort_info.time0 &&
+		(current_sec - di->ishort_info.time0) >
+			di->ishort_info.time_interval) {
+		di->ishort_info.curr_ua = calc_ishort(
+			di, di->polar.polar_ocv, current_cc, current_sec);
+		/* judege dmd report policy */
+		if ((di->ishort_info.curr_ua - di->ishort_info.last_curr_ua) >=
+			di->ishort_info.report_curr_ma)
+			di->ishort_info.report_urgent = 1;
+		if (cycle_now > di->ishort_info.last_chg_cycle)
+			di->ishort_info.reported = 0;
+		buff_len = snprintf_s(buff, DSM_BUFF_SIZE_MAX,
+			DSM_BUFF_SIZE_MAX - 1,
+			"ishort:%d, last_ishort:%d, ocv0:%d, ocv1:%d, cc0:%ld, cc1:%ld, time0:%d, time1:%d, qmax:%d, last_cycle:%d, cycle:%d, brand:%s\n",
+			di->ishort_info.curr_ua, di->ishort_info.last_curr_ua,
+			di->ishort_info.ocv0, di->polar.polar_ocv,
+			di->ishort_info.cc0, current_cc, di->ishort_info.time0,
+			current_sec, di->qmax, di->ishort_info.last_chg_cycle,
+			cycle_now, di->batt_data->batt_brand);
+		if (buff_len > 0)
+			update_polar_ishort_dmd(di, buff, buff_len);
+		/* update last info */
+		di->ishort_info.last_time = current_sec;
+		di->ishort_info.last_curr_ua = di->ishort_info.curr_ua;
+		di->ishort_info.last_chg_cycle = cycle_now;
+	}
 }
 
 static void update_polar_ocv(struct smartstar_coul_device *di,
@@ -7423,21 +8230,11 @@ static void update_polar_ocv(struct smartstar_coul_device *di,
         curr_ma = -CC_UAS2MA(cc_now, (duration / MSEC_PER_SEC)); //lint !e647
         get_resume_polar_info(0, curr_ma, duration, sample_time, temp, soc);
     }
-    coul_core_info("[%s]polar_ocv:%d, polar_ocv_time:%d,cc_comp:%d\n",
-        __FUNCTION__,  di->polar.polar_ocv,  di->polar.polar_ocv_time, cc_now);
-    #ifdef CONFIG_HISI_DEBUG_FS
+    coul_core_info("[%s]polar_ocv:%d, polar_ocv_time:%d\n",
+        __func__,  di->polar.polar_ocv,  di->polar.polar_ocv_time);
     if (!is_in_capacity_dense_area(di->polar.polar_ocv)) {
-        di->batt_ocv_valid_to_refresh_fcc = 1;
-        di->batt_ocv = di->polar.polar_ocv;
-        di->batt_ocv_temp = temp;
-        di->coul_dev_ops->save_ocv_temp((short)temp);
-        di->coul_dev_ops->save_ocv(di->polar.polar_ocv, IS_UPDATE_FCC);
-    	coul_clear_cc_register();
-        coul_clear_coul_time();
-        clear_polar_err_b();
-        di->coul_dev_ops->save_cc_uah(cc_now);
+		update_polar_ishort(di);
     }
-    #endif
     return;
 }
 static void polar_ipc_init(struct smartstar_coul_device *di)
@@ -7483,9 +8280,6 @@ enum coul_sysfs_type{
 #ifdef CONFIG_HISI_ASW
 	COUL_SYSFS_ASW_PROTECT_VOLTAGE,
 #endif /* CONFIG_HISI_ASW */
-#ifdef CONFIG_HISI_COUL_POLAR
-    COUL_SYSFS_FUTURE_AVG_CURR,
-#endif
 };
 
 #define COUL_SYSFS_FIELD(_name, n, m, store)                \
@@ -7534,9 +8328,6 @@ static struct coul_sysfs_field_info coul_sysfs_field_tbl[] = {
 #ifdef CONFIG_HISI_ASW
 	COUL_SYSFS_FIELD_RW(asw_protect_voltage, ASW_PROTECT_VOLTAGE),
 #endif /* CONFIG_HISI_ASW */
-#ifdef CONFIG_HISI_COUL_POLAR
-    COUL_SYSFS_FIELD_RO(future_avg_curr,         FUTURE_AVG_CURR),
-#endif
 };
 /*lint +e665*/
 static struct attribute *coul_sysfs_attrs[ARRAY_SIZE(coul_sysfs_field_tbl) + 1];
@@ -7628,6 +8419,7 @@ static ssize_t coul_sysfs_show(struct device *dev,
     int temp = 0, voltage = 0, ufcapacity = 0, capacity = 100, afcapacity = 0, rm = 0, fcc = 0, delta_rc = 0;
     int cur = 0,uuc = 0,cc = 0, ocv=0, rbatt, high_pre_qmax;
     unsigned int pd_charge = 0;
+    int charge_time;
     int ret = 0;
 
     info = coul_sysfs_field_lookup(attr->attr.name);
@@ -7638,7 +8430,12 @@ static ssize_t coul_sysfs_show(struct device *dev,
     switch(info->name){
     case COUL_SYSFS_GAUGELOG_HEAD:
 		return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1,
-			"ss_VOL  ss_CUR  ss_ufSOC  ss_SOC  SOC  ss_RM  ss_FCC  Qmax     ss_UUC  ss_CC  ss_dRC  pdFlag Temp  ss_OCV   rbatt  fcc    ocv_level  fcc_flag   ocv_old    p_vol   p_cur    err_a    polar_vol   avg_cur    polar_ocv    asw_stat  asw_vol  ");
+			"ss_VOL  ss_CUR  ss_ufSOC  ss_SOC  SOC  cTime  "
+			"ss_RM  ss_FCC  Qmax     ss_UUC  ss_CC  ss_dRC"
+			"  pdFlag Temp  ss_OCV   rbatt  fcc    ocv_level  "
+			"fcc_flag   ocv_old    p_vol   p_cur    err_a"
+			"    polar_vol   avg_cur    polar_ocv"
+				  "    asw_stat  asw_vol  ishort   btm_msur        ");
     case COUL_SYSFS_GAUGELOG:
         temp       = coul_get_battery_temperature();
         voltage    = coul_get_battery_voltage_mv();
@@ -7654,49 +8451,49 @@ static ssize_t coul_sysfs_show(struct device *dev,
         ocv        = coul_get_battery_ocv();
         rbatt      = coul_get_battery_resistance();
         pd_charge  = get_pd_charge_flag();
-        high_pre_qmax = coul_get_battery_qmax();;
+        high_pre_qmax = coul_get_battery_qmax();
+	charge_time = hisi_chg_time_remaining(0);
+
 		ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1,
-			"%-6d  %-6d  %-8d  %-6d  %-3d  %-5d  %-6d  %-6d  %-7d  %-5d  %-6d  %-5d  %-4d  %-7d  %-5d  %-5d  %-9d   %-8d   %-7d    %-5d    %-5d    %-5d    %-9ld    %-7d    %-9d    %-8d %-8d    ",
+			"%-6d  %-6d  %-8d  %-6d  %-3d  %-5d  %-5d  %-6d  %-6d"
+			"  %-7d  %-5d  %-6d  %-5d  %-4d  %-7d  %-5d  %-5d  "
+				 "%-9d   %-8d   %-7d    %-5d    %-5d    %-5d   %-9ld"
+				 "    %-7d    %-9d    %-8d %-8d   %-8d   %-9d",
 			voltage, (signed short)cur, ufcapacity, capacity,
-			afcapacity, rm, fcc, high_pre_qmax, uuc, cc,
-			delta_rc, pd_charge, temp, ocv, rbatt,
+			afcapacity, charge_time, rm, fcc, high_pre_qmax, uuc,
+			cc, delta_rc, pd_charge, temp, ocv, rbatt,
 			di->batt_limit_fcc/1000, di->last_ocv_level,
 			di->batt_ocv_valid_to_refresh_fcc, di->polar.ocv_old,
 			di->polar.ori_vol, di->polar.ori_cur, di->polar.err_a,
 			di->polar.vol, di->polar.curr_5s, di->polar.polar_ocv,
 			di->hw_nv_info.asw_protect_status,
-			di->hw_nv_info.asw_protect_voltage);
-		if (ret < 0) {
+			di->hw_nv_info.asw_protect_voltage,
+				 di->ishort_info.curr_ua, di->btemp_msur);
+		if (ret < 0)
 			coul_core_err("(%s)snprintf_s fail ret = %d\n",__func__, ret);
-		}
+
         return strlen(buf);
     case COUL_SYSFS_HAND_CHG_CAPACITY_FLAG:
-        return snprintf(buf, PAGE_SIZE, "%d\n", hand_chg_capacity_flag);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", hand_chg_capacity_flag);
     case COUL_SYSFS_INPUT_CAPACITY:
-        return snprintf(buf, PAGE_SIZE, "%d\n", input_capacity);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", input_capacity);
     case COUL_SYSFS_ABS_CC:
         val = di->coul_dev_ops->get_abs_cc() + (di->coul_dev_ops->calculate_cc_uah() / 1000);
-        return snprintf(buf, PAGE_SIZE, "%d\n", val);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", val);
     case COUL_SYSFS_BATTERY_ID_VOLTAGE:
-        return snprintf(buf, PAGE_SIZE, "%d\n",di->batt_id_vol);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n",di->batt_id_vol);
     case COUL_SYSFS_BATTERY_BRAND_NAME:
-        return snprintf(buf, PAGE_SIZE, "%s\n",di->batt_data->batt_brand);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%s\n",di->batt_data->batt_brand);
     case COUL_SYSFS_RBATT:
         rbatt = coul_get_battery_resistance();
-        return snprintf(buf, PAGE_SIZE, "%d\n", rbatt);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", rbatt);
     case COUL_SYSFS_REAL_SOC:
         ufcapacity = coul_battery_unfiltered_capacity();
-        return snprintf(buf, PAGE_SIZE, "%d\n", ufcapacity);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", ufcapacity);
     case COUL_SYSFS_CALI_ADC:
-        return snprintf(buf, PAGE_SIZE, "%d\n", 0);
+        return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", 0);
     case COUL_SYSFS_CURR_CAL_TEMP:
-       return snprintf(buf, PAGE_SIZE, "%d\n",curr_cal_temp);
-#ifdef CONFIG_HISI_COUL_POLAR
-    case COUL_SYSFS_FUTURE_AVG_CURR:
-            update_polar_params(di, FALSE);
-        return snprintf(buf, PAGE_SIZE, "peak:%d avg:%d\n", di->polar.curr_peak,
-                        di->polar.curr_5s);
-#endif
+       return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n",curr_cal_temp);
 #ifdef CONFIG_HISI_ASW
 	/* fall through: if define return asw protect voltage */
 	case COUL_SYSFS_ASW_PROTECT_VOLTAGE:
@@ -7873,6 +8670,7 @@ static ssize_t decress_batt_flag_show(struct device *dev,struct device_attribute
 
 static int decress_vol_clear_battery_data(struct smartstar_coul_device *di)
 {
+     errno_t err = EOK;
      if(di == NULL)
         return 0;
      di->batt_chargecycles = 0;
@@ -7887,8 +8685,14 @@ static int decress_vol_clear_battery_data(struct smartstar_coul_device *di)
      /*clear safe record fcc*/
      di->nv_info.latest_record_index = 0;
      my_nv_info.latest_record_index = 0;
-     memset_s(di->nv_info.real_fcc_record,sizeof(di->nv_info.real_fcc_record),0,sizeof(di->nv_info.real_fcc_record));
-     memset_s(my_nv_info.real_fcc_record,sizeof(my_nv_info.real_fcc_record),0,sizeof(my_nv_info.real_fcc_record));
+     err = memset_s(di->nv_info.real_fcc_record,sizeof(di->nv_info.real_fcc_record),0,sizeof(di->nv_info.real_fcc_record));
+	if(err != EOK) {
+        coul_core_err("[%s]memset_s fail, err=%d\n",__func__, err);
+    }
+     err = memset_s(my_nv_info.real_fcc_record,sizeof(my_nv_info.real_fcc_record),0,sizeof(my_nv_info.real_fcc_record));
+	if(err != EOK) {
+        coul_core_err("[%s]memset_s fail, err=%d\n",__func__, err);
+    }
      coul_core_debug("battery changed, clean charge data!\n");
      return 1;
 }
@@ -8091,7 +8895,7 @@ static int get_ntc_table(struct device_node* np)
 static void coul_sensorhub_init(struct platform_device *pdev, struct smartstar_coul_device *di)
 {
 
-	if (NULL == pdev || NULL == di)
+	if (!pdev || !di || !di->basp_total_level)
 		return;
 	g_di_coul_info_sh = (struct coul_core_info_sh *)devm_kzalloc(&pdev->dev,sizeof(struct coul_core_info_sh), GFP_KERNEL);
 	if (NULL == g_di_coul_info_sh) {
@@ -8112,12 +8916,17 @@ static void coul_sensorhub_init(struct platform_device *pdev, struct smartstar_c
 	memcpy((void*)g_di_coul_info_sh->ntc_temp_compensation_para, (void*)di->ntc_temp_compensation_para,
 		sizeof(struct ntc_temp_compensation_para_data)*COMPENSATION_PARA_LEVEL);
 	coul_core_info("coul_sensorhub:get ntc_compensation_is=%d,basp_learned_fcc=%d,basp_level=%d\n",
-			g_di_coul_info_sh->ntc_compensation_is, g_di_coul_info_sh->basp_learned_fcc, g_di_coul_info_sh->basp_level);
+        				g_di_coul_info_sh->ntc_compensation_is, g_di_coul_info_sh->basp_learned_fcc, g_di_coul_info_sh->basp_level);
 }
 
 extern struct CONFIG_ON_DDR* pConfigOnDDr;
 int update_coul_sensorhub_info(void)
 {
+	struct smartstar_coul_device *di = g_smartstar_coul_dev;
+
+	if (!di || !di->basp_total_level)
+		return 0;
+
 	pConfigOnDDr->g_di_coul_info_sh.basp_level = g_smartstar_coul_dev->basp_level;
 	pConfigOnDDr->g_di_coul_info_sh.basp_learned_fcc = basp_learned_fcc;
 	return 0;
@@ -8183,7 +8992,7 @@ static void basp_config_delay(struct smartstar_coul_device *di)
 	unsigned int basp_delay_cylces = 0;
 	struct bit_delay_config *cfg = NULL;
 
-	if (!di || !di->dev ) {
+	if (!di || !di->dev) {
 		coul_core_err(BASP_TAG"di is null\n");
 		return;
 	}
@@ -8251,12 +9060,16 @@ static void coul_core_get_basp_policy(
 	}
 	coul_core_info(BASP_TAG"basp_ver = %d\n", di->basp_ver);
 
-	if (di->basp_ver == BASP_VERSION_1)
+	if (di->basp_ver == BASP_VERSION_1) {
 		basp_mem_count = basp_v1_mem_count;
-	else
+	} else if (di->basp_ver == BASP_VERSION_2) {
 		basp_mem_count = basp_v2_mem_count;
+	} else {
+		di->basp_total_level = 0;
+		return;
+	}
 
-	basp_tmp = kmalloc(sizeof(unsigned int) *
+	basp_tmp = kzalloc(sizeof(unsigned int) *
 			   basp_mem_count * BASP_PARA_LEVEL, GFP_KERNEL);
 	if (!basp_tmp) {
 		coul_core_err("failed to malloc memory\n");
@@ -8548,8 +9361,11 @@ static void get_cutoff_vol_mv(struct smartstar_coul_device* di,struct device_nod
         di->v_cutoff = BATTERY_NORMAL_CUTOFF_VOL;
     if (of_property_read_u32(np, "sleep_cutoff_vol_mv", &di->v_cutoff_sleep))
         di->v_cutoff_sleep = BATTERY_VOL_2_PERCENT;
+	if (of_property_read_u32(np, "low_temp_cutoff_vol_mv", &di->v_cutoff_low_temp))
+		di->v_cutoff_low_temp = BATTERY_NORMAL_CUTOFF_VOL;
 
-    coul_core_err("get_cutoff_vol_mv: cutoff = %d,cutoff_sleep = %d\n", di->v_cutoff,di->v_cutoff_sleep);
+    coul_core_err("get_cutoff_vol_mv: cutoff = %d,cutoff_sleep = %d, low_temp_vol = %d\n",
+										di->v_cutoff,di->v_cutoff_sleep, di->v_cutoff_low_temp);
 }
 
 static void get_dec_enable_status(struct device_node* np)
@@ -8620,11 +9436,137 @@ static void get_ocv_data_check_flag(struct device_node* np)
     }
     coul_core_info("ocv_data_check_flag is %d\n", check_ocv_data_enable);
 }
+static void get_polar_supply_dts(struct smartstar_coul_device* di,
+    struct device_node* np)
+{
+    int ret = 0;
+    unsigned int len = 0;
+    unsigned int stru_size = sizeof(struct polar_supply_data) / sizeof(int);
+	unsigned long max_size = (unsigned long)stru_size * SUPPLY_PARA_LEVEL;
+    unsigned int  temp_info[max_size];
+	unsigned int i;
 
+    if(di == NULL || np == NULL)
+        return;
+    ret = of_property_read_u32(np, "polar_ocv_enable",
+            (unsigned int *)&di->polar_ocv_enable);
+    if (ret) {
+        di->polar_ocv_enable = 0;
+        coul_core_err("cann't get polar_ocv enable dts\n");
+        return;
+    }
+    ret = of_property_read_u32(np, "supply_enable",
+            (unsigned int *)&di->supply_enable);
+    if (ret) {
+        di->supply_enable = 0;
+        coul_core_err("cann't get supply enable dts\n");
+        return;
+    }
+    len = (unsigned int)of_property_count_u32_elems(np,"supply_table");
+    if (len > max_size) {
+        di->supply_enable = 0;
+        coul_core_err("supply dismatch:%u,size:%lu\n", len, max_size);
+        return;
+    }
+    ret = of_property_read_u32_array(np, "supply_table", temp_info, max_size);
+    if (ret) {
+        di->supply_enable = 0;
+        coul_core_err("cann't get polar supply dts:%d\n", ret);
+        return;
+    }
+    coul_core_info("%s success: flag is %d\n", __func__, di->supply_enable);
+	ret = memcpy_s(di->supply_info, sizeof(di->supply_info),
+		temp_info, sizeof(temp_info));
+	if (ret) {
+		coul_core_err("%s:memcpy fail\n", __func__);
+		return;
+	}
+    for (i = 0; i < SUPPLY_PARA_LEVEL; i++)
+		/* get data of 5 elements with offset from 0 ~ 4*/
+        coul_core_info("supply[%d]:%d~%d:%d\n", i,di->supply_info[i].soc_min,
+			di->supply_info[i].soc_max, di->supply_info[i].temp_back);
+}
+
+static void coul_core_get_ntc_fit_coef(struct device_node *np,
+	struct smartstar_coul_device *di)
+{
+	int ret;
+	int i, r, c;
+	int array_len;
+	long idata_long;
+	const char *idata = NULL;
+
+	array_len = of_property_count_strings(np, "ntc_fit_coef");
+	if ((array_len <= 0) || (array_len % NTC_FIT_COEF_NUM != 0)) {
+		coul_core_err("dts: ntc_fit_coeff wrong num\n");
+		return;
+	}
+	if (array_len > (NTC_FIT_CASE_NUM * NTC_FIT_COEF_NUM)) {
+		array_len = NTC_FIT_CASE_NUM * NTC_FIT_COEF_NUM;
+		coul_core_err("dts: too many ntc_fit_coeff\n");
+	}
+
+	for (i = 0; i < array_len; i++) {
+		r = i / NTC_FIT_COEF_NUM;
+		c = i % NTC_FIT_COEF_NUM;
+		ret = of_property_read_string_index(np, "ntc_fit_coef", i,
+			&idata);
+		if (ret) {
+			coul_core_err("dts: ntc_fit_coeff parse fail\n");
+			return;
+		}
+
+		ret = kstrtol(idata, 10, &idata_long);
+		if (ret) {
+			coul_core_err("dts: kstrtol opreration fail\n");
+			return;
+		}
+		di->ntc_fit_coef[r][c] = (int)idata_long;
+	}
+}
+
+static void coul_core_get_ntc_fit_temp_para(struct device_node *np,
+	struct smartstar_coul_device *di)
+{
+	int ret;
+	int i, r, c;
+	int array_len;
+	long idata_long;
+	const char *idata = NULL;
+
+	array_len = of_property_count_strings(np, "ntc_fit_temp_para");
+	if ((array_len < 0) || (array_len % TEMP_PARA_TOTAL != 0)) {
+		coul_core_err("%s]: fitted temp_para invalid\n", __func__);
+		return;
+	}
+
+	if (array_len > (TEMP_PARA_TOTAL * TEMP_PARA_LEVEL)) {
+		array_len = TEMP_PARA_TOTAL * TEMP_PARA_LEVEL;
+		coul_core_err("dts: too many ntc_fit_temp_para\n");
+	}
+
+	di->ntc_fit_temp_para.temp_len = array_len;
+	for (i = 0; i < array_len; i++) {
+		r = i / TEMP_PARA_TOTAL;
+		c = i % TEMP_PARA_TOTAL;
+		ret = of_property_read_string_index(np, "ntc_fit_temp_para", i,
+			&idata);
+		if (ret) {
+			coul_core_err("get ntc_fit_temp_para failed\n");
+			return;
+		}
+		ret = kstrtol(idata, 10, &idata_long);
+		if (ret) {
+			coul_core_err("dts: kstrtol opreration fail\n");
+			return;
+		}
+		di->ntc_fit_temp_para.temp_data[r][c] = (int)idata_long;
+	}
+}
 static void coul_core_get_dts(struct smartstar_coul_device *di)
 {
-	struct device_node *batt_node;
-    struct device_node* np;
+	struct device_node *batt_node = NULL;
+    struct device_node* np = NULL;
     unsigned int r_pcb = DEFAULT_RPCB;
     unsigned int last_soc_enable = 0;
     unsigned int startup_delta_soc = 0;
@@ -8632,7 +9574,7 @@ static void coul_core_get_dts(struct smartstar_coul_device *di)
     unsigned int soc_monitor_limit = DEFAULT_SOC_MONITOR_LIMIT;
     unsigned int low_vol_filter_cnt = LOW_INT_VOL_COUNT;
     const char *compensation_data_string = NULL;
-    unsigned int ntc_compensation_is =0;
+    unsigned int ntc_compensation_is = 0;
     int ret = 0;
     int i = 0;
     int idata = 0;
@@ -8653,6 +9595,10 @@ static void coul_core_get_dts(struct smartstar_coul_device *di)
     get_dischg_ocv_enable_flag(di,np);
     get_dischg_ocv_soc(di,np);
     get_ocv_data_check_flag(np);
+    get_polar_supply_dts(di, np);
+#ifdef CONFIG_HISI_COUL_POLAR
+	get_polar_ishort_dts(di, np);
+#endif
     if (of_property_read_u32(np, "current_offset_a",(u32 *)&c_offset_a)){
 	    c_offset_a = DEFAULT_C_OFF_A;
 		coul_core_err("error:get current_offset_a value failed!\n");
@@ -8693,6 +9639,25 @@ static void coul_core_get_dts(struct smartstar_coul_device *di)
     di->last_soc_enable = last_soc_enable;
     coul_core_info("dts:get last_soc_enable = %d! \n",last_soc_enable);
 
+	if (of_property_read_u32(np, "ntc_fit", &di->ntc_fit)) {
+		coul_core_err("dts: ntc_fit parse fail\n");
+		di->ntc_fit = 0;
+	}
+	coul_core_info("dts: ntc_fit=%d\n", di->ntc_fit);
+
+	if (di->ntc_fit) {
+		if (of_property_read_u32(np, "ntc_fit_dc_ilimit",
+			&di->ntc_fit_dc_ilimit)) {
+			coul_core_err("dts: ntc_fit_dc_ilimit parse fail\n");
+			di->ntc_fit_dc_ilimit = I_IMPOSSIBLE_LARGE;
+		}
+		coul_core_info("dts:ntc_fit_dc_ilimit=%d\n",
+			di->ntc_fit_dc_ilimit);
+
+		coul_core_get_ntc_fit_coef(np, di);
+
+		coul_core_get_ntc_fit_temp_para(np, di);
+	}
     if (of_property_read_u32(np, "startup_delta_soc",&startup_delta_soc)){
         coul_core_err("dts:can not get delta_soc,use default : %d!\n",startup_delta_soc);
     }
@@ -8711,6 +9676,8 @@ static void coul_core_get_dts(struct smartstar_coul_device *di)
     }else
     {
         di->ntc_compensation_is = ntc_compensation_is;
+	if (di->ntc_fit)
+		ntc_compensation_is_mem = ntc_compensation_is;
         coul_core_info("ntc_compensation_is = %d\n",di->ntc_compensation_is);
 
         memset(di->ntc_temp_compensation_para, 0, COMPENSATION_PARA_LEVEL * sizeof(struct ntc_temp_compensation_para_data));/* reset to 0*/
@@ -8776,12 +9743,6 @@ static void coul_core_get_dts(struct smartstar_coul_device *di)
     }
     coul_core_info("need_restore_cycle_flag = %d\n", need_restore_cycle_flag);
 
-	if(of_property_read_u32(np, "basp_mask_delay", &basp_mask_delay)) {
-		coul_core_err("dts:get basp_mask_delay fail, use default value!\n");
-	} else {
-		coul_core_info("basp_mask_delay = %d\n", basp_mask_delay);
-	}
-
     if (of_property_read_string(np, "batt_temp_too_hot", &batt_temp_too_hot_string))
 	    coul_core_err("error:get batt_temp_too_hot value failed!\n");
     else
@@ -8816,10 +9777,9 @@ static int coul_shutdown_prepare(struct notifier_block *nb, unsigned long event,
 }
 static void battery_para_check(struct smartstar_coul_device *di)
 {
-    if(NULL == di)
-    {
-        return ;
-    }
+	if (!di || !di->basp_total_level)
+		return;
+
     di->basp_level = get_basp_level(di);
     batt_init_level = di->basp_level;
     if( BASP_LEVEL_0 != di->basp_level)/*battery is not new*/
@@ -8840,6 +9800,16 @@ int get_batt_reset_flag(void)
     return g_smartstar_coul_dev->batt_reset_flag;
 }
 
+static int coul_kernel_read(struct file *file, loff_t offset, char *addr,
+			    unsigned long count)
+{
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
+    return kernel_read(file, offset, addr, count);
+#else
+    return (int)kernel_read(file, (void *)addr, count, &offset);
+#endif /* LINUX_VERSION_CODE */
+}
+
 /*
  *kernel should not op files in the filesystem that managered by user space
  *transplant this function into user space is prefered
@@ -8849,13 +9819,14 @@ static void isc_hist_info_init(struct work_struct *work)
     int flags;
     int read_size;
     int whence;
-    struct file *fd;
+    struct file *fd = NULL;
     int file_des;
-    char *buff;
-    char *find_str;
+    char *buff = NULL;
+    char *find_str = NULL;
     mm_segment_t old_fs;
     int ret_s = -1;
     struct iscd_info *iscd = container_of(work, struct iscd_info, isc_splash2_work.work);
+    errno_t err = EOK;
 
     if(iscd->isc_splash2_ready) {
         coul_core_info("ISC splash2 has been initialized, so does not need to be reinitialized.\n");
@@ -8875,7 +9846,8 @@ static void isc_hist_info_init(struct work_struct *work)
         goto isc_splash2_mount_file;
     }
     whence = 0;
-    while((read_size = kernel_read(fd, fd->f_pos, buff + whence, MOUNTS_INFO_FILE_MAX_SIZE - whence)) > 0) {
+    while((read_size = coul_kernel_read(fd, fd->f_pos, buff + whence,
+	  MOUNTS_INFO_FILE_MAX_SIZE - whence)) > 0) {
         find_str = strstr(buff, SPLASH2_MOUNT_INFO);
         if(find_str) {
             break;
@@ -8883,8 +9855,14 @@ static void isc_hist_info_init(struct work_struct *work)
         fd->f_pos += read_size;
         whence += read_size;
         if(whence > (int) strlen(SPLASH2_MOUNT_INFO)) {
-            (void) memmove_s(buff, MOUNTS_INFO_FILE_MAX_SIZE, buff + whence - strlen(SPLASH2_MOUNT_INFO), strlen(SPLASH2_MOUNT_INFO));
-            (void)memset_s(buff + strlen(SPLASH2_MOUNT_INFO), whence - strlen(SPLASH2_MOUNT_INFO), 0, whence - strlen(SPLASH2_MOUNT_INFO));
+            err = memmove_s(buff, MOUNTS_INFO_FILE_MAX_SIZE, buff + whence - strlen(SPLASH2_MOUNT_INFO), strlen(SPLASH2_MOUNT_INFO));
+            if(err) {
+                coul_core_err("%s memmove_s failed.\n", __func__);
+            }
+            err = memset_s(buff + strlen(SPLASH2_MOUNT_INFO), whence - strlen(SPLASH2_MOUNT_INFO), 0, whence - strlen(SPLASH2_MOUNT_INFO));
+            if(err) {
+                coul_core_err("%s memset_s failed.\n", __func__);
+            }
             whence = strlen(SPLASH2_MOUNT_INFO);
         }
     }
@@ -8924,7 +9902,7 @@ static void isc_hist_info_init(struct work_struct *work)
         coul_core_err("Open and create %s failed in %s.\n", ISC_DATA_FILE, __func__);
         goto isc_init_buff_free;
     }
-    read_size = kernel_read(fd, 0, buff, sizeof(isc_history)+1);
+    read_size = coul_kernel_read(fd, 0, buff, sizeof(isc_history) + 1);
     filp_close(fd, NULL);
     if(read_size == sizeof(isc_history)) {
         coul_core_info("fatal isc datum file size was correct.\n");
@@ -8971,7 +9949,7 @@ static void isc_hist_info_init(struct work_struct *work)
         coul_core_err("Open and create %s failed in %s.\n", ISC_CONFIG_DATA_FILE, __func__);
         goto isc_init_buff_free;
     }
-    read_size = kernel_read(fd, 0, buff, sizeof(isc_config)+1);
+    read_size = coul_kernel_read(fd, 0, buff, sizeof(isc_config) + 1);
     filp_close(fd, NULL);
     if (read_size == (int)sizeof(isc_config)) {
         coul_core_info("fatal isc config datum file size was correct.\n");
@@ -8997,14 +9975,12 @@ static void isc_hist_info_init(struct work_struct *work)
 
 isc_init_buff_free:
     kfree(buff);
-    buff = NULL;
     return;
 
 isc_read_proc_mounts:
     filp_close(fd, NULL);
 isc_splash2_mount_file:
     kfree(buff);
-    buff = NULL;
 isc_init_retry:
     if(iscd->isc_datum_init_retry < ISC_SPLASH2_INIT_RETRY) {
         iscd->isc_datum_init_retry++;
@@ -9014,11 +9990,11 @@ isc_init_retry:
 
 static ssize_t isc_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    struct iscd_info *iscd;
+    struct iscd_info *iscd = NULL;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
@@ -9039,15 +10015,15 @@ static ssize_t isc_show(struct device *dev, struct device_attribute *attr, char 
     }
 
     if (iscd->fatal_isc_action == FATAL_ISC_ACTION_DMD_ONLY)
-        return snprintf(buf, sizeof(iscd->isc_status), "%d", 0);
+        return snprintf_s(buf, sizeof(iscd->isc_status), sizeof(iscd->isc_status)-1, "%d", 0);
     else
-        return snprintf(buf, sizeof(iscd->isc_status), "%d", iscd->isc_status);
+        return snprintf_s(buf, sizeof(iscd->isc_status), sizeof(iscd->isc_status)-1, "%d", iscd->isc_status);
 }
 
 static ssize_t isc_shutdown_status_show(struct device *dev, struct device_attribute *attr, char *buf
 )
 {
-    struct iscd_info *iscd;
+    struct iscd_info *iscd = NULL;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9077,15 +10053,15 @@ static ssize_t isc_shutdown_status_show(struct device *dev, struct device_attrib
 }
 static ssize_t isc_limit_support_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    struct iscd_info *iscd;
+    struct iscd_info *iscd = NULL;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    return snprintf(buf, sizeof(iscd->fatal_isc_trigger_type), "%d", iscd->fatal_isc_trigger_type);
+    return snprintf_s(buf, sizeof(iscd->fatal_isc_trigger_type), sizeof(iscd->fatal_isc_trigger_type)-1, "%d", iscd->fatal_isc_trigger_type);
 }
 
 #ifdef CONFIG_HISI_ASW
@@ -9119,17 +10095,17 @@ static ssize_t isc_status_show(struct device *dev, struct device_attribute *attr
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    return snprintf(buf, PAGE_SIZE, "%d\n", iscd->isc_status);
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", iscd->isc_status);
 }
 static ssize_t isc_status_store(struct device *dev, struct device_attribute *attr,
                                        const char *buf, size_t count)
 {
     struct iscd_info *iscd;
-    long val;
+    long val = 0;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9151,18 +10127,18 @@ static ssize_t fatal_isc_show(struct device *dev, struct device_attribute *attr,
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    val = snprintf(buf, PAGE_SIZE, "status:%02x trigger:%02x valid num:%02x dmd:%02x reported:%02x version:%08x\n",
+    val = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "status:%02x trigger:%02x valid num:%02x dmd:%02x reported:%02x version:%08x\n",
                    iscd->fatal_isc_hist.isc_status, iscd->fatal_isc_hist.trigger_type,
                    iscd->fatal_isc_hist.valid_num, iscd->fatal_isc_hist.dmd_report,
                    iscd->fatal_isc_config.has_reported, iscd->fatal_isc_hist.magic_num);
-    val += snprintf(buf + val, PAGE_SIZE, "%11s%11s%11s%11s%11s%6s%6s\n",
+    val += snprintf_s(buf + val, PAGE_SIZE, PAGE_SIZE-1, "%11s%11s%11s%11s%11s%6s%6s\n",
                    "ISC(uA)", "FCC", "RM", "QMAX", "CYCLES", "YEAR", "YDAY");
     for( i = 0; i < MAX_FATAL_ISC_NUM; i++) {
-        val += snprintf(buf + val, PAGE_SIZE, "%11d%11d%11d%11d%11d%6d%6d\n",
+        val += snprintf_s(buf + val, PAGE_SIZE, PAGE_SIZE-1, "%11d%11d%11d%11d%11d%6d%6d\n",
                         iscd->fatal_isc_hist.isc[i], iscd->fatal_isc_hist.fcc[i],
                         iscd->fatal_isc_hist.rm[i], iscd->fatal_isc_hist.qmax[i],
                         iscd->fatal_isc_hist.charge_cycles[i], iscd->fatal_isc_hist.year[i],
@@ -9177,7 +10153,7 @@ static ssize_t fatal_isc_store(struct device *dev, struct device_attribute *attr
                                      const char *buf, size_t count)
 {
     struct iscd_info *iscd;
-    long val;
+    long val = 0;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9203,11 +10179,11 @@ static ssize_t isc_prompt_show(struct device *dev, struct device_attribute *attr
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    val = snprintf(buf, PAGE_SIZE, "%d\n", iscd->isc_prompt);
+    val = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n",iscd->isc_prompt);
     iscd->isc_prompt = 0;
     return val;
 }
@@ -9231,17 +10207,17 @@ static ssize_t isc_dmd_only_show(struct device *dev, struct device_attribute *at
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
-    return snprintf(buf, PAGE_SIZE, "%d\n",
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n",
                     !(iscd->fatal_isc_action & (~BIT(UPLOAD_DMD_ACTION))));
 }
 static ssize_t isc_dmd_only_store(struct device *dev, struct device_attribute *attr,
                                           const char *buf, size_t count)
 {
     struct iscd_info *iscd;
-    long val;
+    long val = 0;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9270,11 +10246,11 @@ static ssize_t isc_trigger_type_show(struct device *dev, struct device_attribute
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    return snprintf(buf, PAGE_SIZE, "%d\n", iscd->fatal_isc_trigger_type);
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", iscd->fatal_isc_trigger_type);
 }
 static ssize_t isc_charge_limit_soc_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -9282,17 +10258,17 @@ static ssize_t isc_charge_limit_soc_show(struct device *dev, struct device_attri
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    return snprintf(buf, PAGE_SIZE, "%d\n", iscd->fatal_isc_soc_limit[UPLIMIT]);
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", iscd->fatal_isc_soc_limit[UPLIMIT]);
 }
 static ssize_t isc_charge_limit_soc_store(struct device *dev, struct device_attribute *attr,
                                                      const char *buf, size_t count)
 {
     struct iscd_info *iscd;
-    long val;
+    long val = 0;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9312,17 +10288,17 @@ static ssize_t isc_recharge_soc_show(struct device *dev, struct device_attribute
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    return snprintf(buf, PAGE_SIZE, "%d\n", iscd->fatal_isc_soc_limit[RECHARGE]);
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", iscd->fatal_isc_soc_limit[RECHARGE]);
 }
 static ssize_t isc_recharge_soc_store(struct device *dev, struct device_attribute *attr,
                                                 const char *buf, size_t count)
 {
     struct iscd_info *iscd;
-    long val;
+    long val = 0;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9342,17 +10318,17 @@ static ssize_t isc_valid_cycles_show(struct device *dev, struct device_attribute
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    return snprintf(buf, PAGE_SIZE, "%d\n", iscd->isc_valid_cycles);
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", iscd->isc_valid_cycles);
 }
 static ssize_t isc_valid_cycles_store(struct device *dev, struct device_attribute *attr,
                                                 const char *buf, size_t count)
 {
     struct iscd_info *iscd;
-    long val;
+    long val = 0;
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9371,11 +10347,11 @@ static ssize_t isc_monitor_show(struct device *dev, struct device_attribute *att
 
     if(!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
-        return snprintf(buf, sizeof("Error"), "%s", "Error");
+        return snprintf_s(buf, sizeof("Error"), sizeof("Error")-1, "%s", "Error");
     }
     iscd = g_smartstar_coul_dev->iscd;
 
-    return snprintf(buf, PAGE_SIZE, "%d\n", iscd->need_monitor);
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE-1, "%d\n", iscd->need_monitor);
 }
 static ssize_t isc_valid_delay_cycles_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -9393,7 +10369,7 @@ static ssize_t isc_valid_delay_cycles_store(struct device *dev, struct device_at
                                                 const char *buf, size_t count)
 {
     struct iscd_info *iscd;
-    long val;
+    long val = 0;
 
     if (!g_smartstar_coul_dev || !g_smartstar_coul_dev->iscd) {
         coul_core_err("g_smartstar_coul_dev is Null found in %s.\n", __func__);
@@ -9572,7 +10548,7 @@ static void fatal_isc_init(struct device_node* np, struct iscd_info *iscd)
         }
         for (i = 0; i < __MAX_FATAL_ISC_ACTION_TYPE; i++){
             if(temp[i]) {
-                iscd->fatal_isc_action_dts |= BIT(i);
+                iscd->fatal_isc_action_dts |= BIT((unsigned int)i);
             }
         }
     }
@@ -9598,8 +10574,8 @@ static void fatal_isc_init(struct device_node* np, struct iscd_info *iscd)
 }
 static void iscd_probe(struct smartstar_coul_device *di)
 {
-    struct device_node *np;
-    struct iscd_info *iscd;
+    struct device_node *np = NULL;
+    struct iscd_info *iscd = NULL;
 
     iscd = kzalloc(sizeof(struct iscd_info), GFP_KERNEL);
     if (NULL == iscd) {
@@ -9779,6 +10755,11 @@ static int  hisi_coul_probe(struct platform_device *pdev)
     di->sr_resume_time     = di->coul_dev_ops->get_coul_time();
 	di->resume_cc = di->coul_dev_ops->calculate_cc_uah();
     sr_cur_state           = SR_DEVICE_WAKEUP;
+	if (di->ntc_fit) {
+		INIT_DELAYED_WORK(&di->wait_tz_ready, coul_set_tz_should_be_ready);
+		schedule_delayed_work(&di->wait_tz_ready,
+			msecs_to_jiffies(WAIT_TZ_READY));
+	}
     di->batt_temp = coul_battery_temperature_tenth_degree(USER_COUL);
     get_battery_id_voltage(di);
     /*check battery is exist*/
@@ -9804,16 +10785,14 @@ static int  hisi_coul_probe(struct platform_device *pdev)
     coul_core_info("%s: batt ID is %d, batt_brand is %s\n",__FUNCTION__,di->batt_id_vol, di->batt_data->batt_brand);
 
 	/* basp match battery and config delay */
-	if (basp_mask_delay) {
-		basp_match_battery(di);
-		basp_config_delay(di);
-	}
+	basp_match_battery(di);
+	basp_config_delay(di);
 
     /*init battery remove check work*/
 	if (battery_is_removable) {
         INIT_DELAYED_WORK(&di->battery_check_delayed_work, battery_check_work);
 	}
-    wake_lock_init(&coul_lock, WAKE_LOCK_SUSPEND, "coul_wakelock");
+    wakeup_source_init(&coul_lock, "coul_wakelock");
     /* Init soc calc work */
     INIT_DELAYED_WORK(&di->calculate_soc_delayed_work, calculate_soc_work);
     INIT_WORK(&di->fault_work, coul_fault_work);
@@ -9919,6 +10898,19 @@ coul_no_battery:
 #ifdef CONFIG_HISI_ASW
 	coul_ops->asw_refresh_fcc = coul_asw_refresh_fcc;
 #endif /* CONFIG_HISI_ASW */
+	coul_ops->get_ocv_by_soc = coul_get_ocv_by_soc;
+	coul_ops->get_soc_by_ocv = coul_get_soc_by_ocv;
+	coul_ops->get_ocv = coul_get_battery_ocv;
+	coul_ops->get_polar_avg               = coul_get_polar_avg;
+	coul_ops->get_polar_peak              = coul_get_polar_peak;
+	coul_ops->update_basp_policy          = coul_update_basp_policy;
+	coul_ops->get_record_fcc              = coul_get_record_fcc;
+	coul_ops->get_last_powerdown_soc      = coul_get_last_powerdown_soc;
+	coul_ops->ntc_fit_supported_iqr       = coul_ntc_fit_supported_iqr;
+	coul_ops->ntc_fitted_dc_ilim          = coul_ntc_fitted_dc_ilim_iqr;
+	coul_ops->get_fitted_temp_data        = coul_get_fitted_temp_data;
+	coul_ops->ntc_fitted_iqr              = coul_temp_do_fit_iqr;
+	coul_ops->ntc_fit_case_iqr            = coul_temp_ntc_fit_case;
     di->ops = coul_ops;
     retval = hisi_coul_ops_register(coul_ops,COUL_HISI);
     if (retval) {
@@ -9929,7 +10921,6 @@ coul_no_battery:
 	coul_sensorhub_init(pdev, di);
 #endif
     /*create sysfs*/
-    //retval = sysfs_create_group(&di->dev->kobj, &coul_attr_group);
     retval = coul_create_sysfs(di);
     if (retval) {
         coul_core_err("%s failed to create sysfs!!!\n", __FUNCTION__);
@@ -9960,6 +10951,10 @@ coul_failed_2:
 	if (battery_is_removable)
 		cancel_delayed_work(&di->battery_check_delayed_work);
 coul_failed_1:
+	if (di->ntc_fit) {
+		if (delayed_work_pending(&di->wait_tz_ready))
+			cancel_delayed_work_sync(&di->wait_tz_ready);
+	}
     platform_set_drvdata(pdev, NULL);
     g_smartstar_coul_dev = 0;
 coul_failed:
@@ -9977,9 +10972,9 @@ coul_failed:
 #ifdef CONFIG_HISI_COUL_POLAR
 int bat_lpm3_ocv_msg_handler(struct notifier_block *nb, unsigned long action,void *msg)
 {
-	struct ipc_msg *p_ipcmsg;
+	struct ipc_msg *p_ipcmsg = NULL;
     int mins;
-	errno_t ret_s;
+	errno_t ret_s = EOK;
     struct smartstar_coul_device *di = container_of(nb,
                                 struct smartstar_coul_device, bat_lpm3_ipc_block);
 	if (!msg || NULL == di) {
@@ -9992,7 +10987,7 @@ int bat_lpm3_ocv_msg_handler(struct notifier_block *nb, unsigned long action,voi
         ret_s = memcpy_s((void *)&di->eco_info, sizeof(struct bat_ocv_info), (void *)&p_ipcmsg->data[1], mins);
 		if (ret_s)
 			coul_core_err("%s:memcpy fail!\n", __func__);
-		coul_core_debug("%s:vbat:0x%x,ibat:0x%x!\n", __func__, di->eco_info.eco_vbat_reg, di->eco_info.eco_ibat_reg);
+		coul_core_info("%s:vbat:0x%x,ibat:0x%x!\n", __func__, di->eco_info.eco_vbat_reg, di->eco_info.eco_ibat_reg);
     }
     return 0;
 }
@@ -10157,7 +11152,7 @@ static int hisi_coul_suspend(struct platform_device *pdev,
 #ifdef CONFIG_HISI_COUL_POLAR
     sync_sample_info();
     stop_polar_sample();
-    if (0 == enable_eco_sample)
+    if (always_eco_sample == 0)
         if (FALSE == could_sample_polar_ocv(di,current_sec))
             coul_core_info("%s:not update polar ocv\n",__func__);
 #endif
@@ -10599,7 +11594,7 @@ static int hisi_coul_resume(struct platform_device *pdev)
         && (current_sec - di->charging_stop_time > 30*60)){
         int old_ocv = di->batt_ocv;
     	coul_core_info("Update ocv for delta_rc(%d)!\n", di->batt_delta_rc);
-        //get_ocv_by_vol(di);
+
         get_ocv_resume(di);
 		di->last_ocv_level =  INVALID_SAVE_OCV_LEVEL;
 		di->coul_dev_ops->save_ocv_level(di->last_ocv_level);
@@ -10734,7 +11729,7 @@ void ss_di_show(void)
 
     coul_core_err("batt_exist = 0x%x\n", di->batt_exist);
     coul_core_err("prev_pc_unusable = %d\n", di->prev_pc_unusable);
-    //coul_core_err("irqs = %d\n", di->irqs);
+
     coul_core_err("batt_ocv = %d\n", di->batt_ocv);
     coul_core_err("batt_changed_flag = %d\n", di->batt_changed_flag);
     coul_core_err("soc_limit_flag = %d\n", di->soc_limit_flag);
@@ -10757,14 +11752,14 @@ void ss_di_show(void)
     coul_core_err("batt_chargecycles = %d\n", di->batt_chargecycles);
     coul_core_err("last_cali_temp = %d\n", di->last_cali_temp);
     coul_core_err("cc_end_value = %d\n", di->cc_end_value);
-    //coul_core_err("cc_start_value = %d\n", di->cc_start_value);
+
     coul_core_err("v_cutoff = %d\n", di->v_cutoff);
     coul_core_err("v_low_int_value = %d\n", di->v_low_int_value);
     coul_core_err("get_cc_end_time = %d\n", di->get_cc_end_time);
     coul_core_err("suspend_time = %d\n", di->suspend_time);
     coul_core_err("charging_begin_cc = %d\n", di->charging_begin_cc);
     coul_core_err("suspend_cc = %d\n", di->suspend_cc);
-	coul_core_err("resume_cc = %d\n", di->resume_cc);
+    coul_core_err("resume_cc = %d\n", di->resume_cc);
     coul_core_err("last_time = %d\n", di->last_time);
     coul_core_err("last_cc = %d\n", di->last_cc);
     coul_core_err("last_iavg_ma = %d\n", di->last_iavg_ma);

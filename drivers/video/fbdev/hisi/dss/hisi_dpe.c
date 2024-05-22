@@ -46,7 +46,8 @@ static int dpe_init(struct hisi_fb_data_type *hisifd, bool fastboot_enable)
 		init_ldi(hisifd, fastboot_enable);
 	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
 		hisifb_activate_vsync(hisifd_list[PRIMARY_PANEL_IDX]);
-		if (hisifd->dss_pxl1_clk) {
+	#if   defined(CONFIG_HISI_FB_3660) || defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501)
+		if (hisifd->dss_pxl1_clk != NULL) {
 			clk_disable(hisifd->dss_pxl1_clk);
 		}
 
@@ -54,13 +55,14 @@ static int dpe_init(struct hisi_fb_data_type *hisifd, bool fastboot_enable)
 			set_reg(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_DSI1_CLK_SEL, 0x1, 1, 0);
 		}
 
-		if (hisifd->dss_pxl1_clk) {
-			clk_enable(hisifd->dss_pxl1_clk);
+		if (hisifd->dss_pxl1_clk != NULL) {
+			(void)clk_enable(hisifd->dss_pxl1_clk);
 		}
 
 		if (!is_dp_panel(hisifd)) {
 			set_reg(hisifd->dss_base + DSS_LDI0_OFFSET + LDI_DSI1_RST_SEL, 0x1, 1, 0);
 		}
+	#endif
 		// dual lcd: dsi_mux_sel=1, dual mipi: dsi_mux_sel=0
 		if (!is_dp_panel(hisifd)) {
 			set_reg(hisifd->dss_base + DSS_MCTRL_SYS_OFFSET + MCTL_DSI_MUX_SEL, 0x1, 1, 0);
@@ -120,7 +122,6 @@ static void dpe_check_itf_status(struct hisi_fb_data_type *hisifd)
 			tmp = inp32(mctl_sys_base + MCTL_MOD17_STATUS + itf_idx * 0x4);
 			if (((tmp & 0x10) == 0x10) || delay_count > 100) {
 				is_timeout = (delay_count > 100) ? true : false;
-				delay_count = 0;
 				break;
 			} else {
 				mdelay(1);
@@ -202,7 +203,6 @@ int dpe_regulator_enable(struct hisi_fb_data_type *hisifd)
 		goto regulator_sem;
 	}
 
-
 	dss_regulator_refcount++;
 	dss_regulator_ref_table[hisifd->index]++;
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
@@ -238,6 +238,12 @@ int dpe_regulator_disable(struct hisi_fb_data_type *hisifd)
 		return -EINVAL;
 	}
 
+	if (hisifd->index >= HISI_FB_MAX_FBI_LIST)
+	{
+		HISI_FB_ERR("hisifd->index exceeds array limit\n");
+		return -EINVAL;
+	}
+
 	down(&hisi_fb_dss_regulator_sem);
 
 	dss_regulator_refcount--;
@@ -247,10 +253,13 @@ int dpe_regulator_disable(struct hisi_fb_data_type *hisifd)
 		goto regulator_sem;
 	}
 
+#if defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V320) || \
+	defined (CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 	dpe_set_pixel_clk_rate_on_pll0(hisifd);
 	if (dss_regulator_refcount == 0) {
 		dpe_set_common_clk_rate_on_pll0(hisifd);
 	}
+#endif
 
 	ret = regulator_disable(hisifd->dpe_regulator->consumer);
 	if (ret != 0) {
@@ -274,18 +283,6 @@ int dpe_regulator_disable(struct hisi_fb_data_type *hisifd)
 			dss_regulator_ref_table[EXTERNAL_PANEL_IDX],
 			dss_regulator_ref_table[AUXILIARY_PANEL_IDX],
 			dss_regulator_ref_table[MEDIACOMMON_PANEL_IDX]);
-	}
-
-	if ((g_dss_version_tag != FB_ACCEL_KIRIN970)
-		&& (g_dss_version_tag != FB_ACCEL_DSSV320)
-		&& (g_dss_version_tag != FB_ACCEL_DSSV501)
-		&& (g_dss_version_tag != FB_ACCEL_DSSV510)
-		&& (g_dss_version_tag != FB_ACCEL_DSSV330)) {
-		ret = regulator_disable(hisifd->mmbuf_regulator->consumer);
-		if (ret != 0) {
-			HISI_FB_ERR("fb%d mmbuf regulator_disable failed, error=%d!\n", hisifd->index, ret);
-			goto regulator_sem;
-		}
 	}
 
 regulator_sem:
@@ -391,7 +388,7 @@ int dpe_common_clk_enable(struct hisi_fb_data_type *hisifd)
 
 	//mmbuf_clk
 	clk_tmp = hisifd->dss_mmbuf_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("fb%d dss_mmbuf_clk clk_prepare failed, error=%d!\n",
@@ -409,7 +406,7 @@ int dpe_common_clk_enable(struct hisi_fb_data_type *hisifd)
 
 	//aclk
 	clk_tmp = hisifd->dss_axi_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("fb%d dss_axi_clk clk_prepare failed, error=%d!\n",
@@ -427,7 +424,7 @@ int dpe_common_clk_enable(struct hisi_fb_data_type *hisifd)
 
 	//pclk
 	clk_tmp = hisifd->dss_pclk_dss_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("fb%d dss_pclk_dss_clk clk_prepare failed, error=%d!\n",
@@ -453,7 +450,7 @@ static int dpe_pxl_clk_enable(struct hisi_fb_data_type *hisifd)
 
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
 		clk_tmp = hisifd->dss_pxl0_clk;
-		if (clk_tmp) {
+		if (clk_tmp != NULL) {
 			ret = clk_prepare(clk_tmp);
 			if (ret) {
 				HISI_FB_ERR("fb%d dss_pxl0_clk clk_prepare failed, error=%d!\n",
@@ -470,7 +467,7 @@ static int dpe_pxl_clk_enable(struct hisi_fb_data_type *hisifd)
 		}
 	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
 		clk_tmp = hisifd->dss_pxl1_clk;
-		if (clk_tmp) {
+		if (clk_tmp != NULL) {
 			ret = clk_prepare(clk_tmp);
 			if (ret) {
 				HISI_FB_ERR("fb%d dss_pxl1_clk clk_prepare failed, error=%d!\n",
@@ -502,7 +499,7 @@ int dpe_inner_clk_enable(struct hisi_fb_data_type *hisifd)
 
 	//edc0_clk
 	clk_tmp = hisifd->dss_pri_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("fb%d dss_pri_clk clk_prepare failed, error=%d!\n",
@@ -527,7 +524,7 @@ int dpe_inner_clk_enable(struct hisi_fb_data_type *hisifd)
 
 	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
 		clk_tmp = hisifd->dss_clk_media_common_clk;
-		if (clk_tmp) {
+		if (clk_tmp != NULL) {
 			ret = clk_prepare(clk_tmp);
 			if (ret) {
 				HISI_FB_ERR("fb%d dss_clk_media_common_clk clk_prepare failed, error=%d!\n",
@@ -560,19 +557,19 @@ int dpe_common_clk_disable(struct hisi_fb_data_type *hisifd)
 
 
 	clk_tmp = hisifd->dss_pclk_dss_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
 
 	clk_tmp = hisifd->dss_axi_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
 
 	clk_tmp = hisifd->dss_mmbuf_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
@@ -591,13 +588,13 @@ void dpe_pxl_clk_disable(struct hisi_fb_data_type *hisifd)
 
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
 		clk_tmp = hisifd->dss_pxl0_clk;
-		if (clk_tmp) {
+		if (clk_tmp != NULL) {
 			clk_disable(clk_tmp);
 			clk_unprepare(clk_tmp);
 		}
 	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
 		clk_tmp = hisifd->dss_pxl1_clk;
-		if (clk_tmp) {
+		if (clk_tmp != NULL) {
 			clk_disable(clk_tmp);
 			clk_unprepare(clk_tmp);
 		}
@@ -618,7 +615,7 @@ int dpe_inner_clk_disable(struct hisi_fb_data_type *hisifd)
 
 	if (hisifd->index == MEDIACOMMON_PANEL_IDX) {
 		clk_tmp = hisifd->dss_clk_media_common_clk;
-		if (clk_tmp) {
+		if (clk_tmp != NULL) {
 			clk_disable(clk_tmp);
 			clk_unprepare(clk_tmp);
 		}
@@ -627,7 +624,7 @@ int dpe_inner_clk_disable(struct hisi_fb_data_type *hisifd)
 	}
 
 	clk_tmp = hisifd->dss_pri_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
@@ -676,7 +673,8 @@ static int dpe_set_fastboot(struct platform_device *pdev)
 	ret = panel_next_set_fastboot(pdev);
 
 	//set inital display region
-	panel_next_tcon_mode(pdev, &hisifd->panel_info);
+	hisifb_panel_display_time_init(hisifd);
+	panel_next_tcon_mode(pdev, hisifd, &hisifd->panel_info);
 
 	if (hisifd->panel_info.vsync_ctrl_type == VSYNC_CTRL_NONE) {
 		dpe_interrupt_mask(hisifd);
@@ -692,9 +690,11 @@ static int dpe_set_fastboot(struct platform_device *pdev)
 	return ret;
 }
 
+#if defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V510) || \
+	defined (CONFIG_HISI_FB_V320) || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 static int dpe_clk_get(struct platform_device *pdev)
 {
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 	int ret = 0;
 
 	if (NULL == pdev) {
@@ -765,6 +765,7 @@ static int dpe_clk_get(struct platform_device *pdev)
 	return ret;
 
 }
+#endif
 
 static int dpe_on(struct platform_device *pdev)
 {
@@ -783,6 +784,8 @@ static int dpe_on(struct platform_device *pdev)
 
 	HISI_FB_DEBUG("fb%d, +.\n", hisifd->index);
 
+#if   defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V510) || \
+	defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 	mediacrg_regulator_enable(hisifd);
 	if (hisifd->index == AUXILIARY_PANEL_IDX) {
 		ret = dpe_common_clk_enable(hisifd);
@@ -837,6 +840,7 @@ static int dpe_on(struct platform_device *pdev)
 	}
 	mdc_regulator_enable(hisifd);
 
+#endif
 
 	dss_inner_clk_common_enable(hisifd, false);
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
@@ -849,10 +853,12 @@ static int dpe_on(struct platform_device *pdev)
 
 	dpe_init(hisifd, false);
 
+#if defined (CONFIG_HISI_FB_3660) || defined (CONFIG_HISI_FB_970)
 	if (dpe_recover_pxl_clock(hisifd)) {
 		HISI_FB_ERR("fb%d failed to recover pixel clock which is larger than 288M!\n", hisifd->index);
 		return -EINVAL;
 	}
+#endif
 
 	if (is_ldi_panel(hisifd)) {
 		hisifd->panel_info.lcd_init_step = LCD_INIT_POWER_ON;
@@ -866,7 +872,7 @@ static int dpe_on(struct platform_device *pdev)
 	ret = panel_next_on(pdev);
 
 	//set inital display region
-	panel_next_tcon_mode(pdev, &hisifd->panel_info);
+	panel_next_tcon_mode(pdev, hisifd, &hisifd->panel_info);
 
 	if (hisifd->panel_info.vsync_ctrl_type == VSYNC_CTRL_NONE) {
 		dpe_interrupt_mask(hisifd);
@@ -927,11 +933,14 @@ static int dpe_off(struct platform_device *pdev)
 	}
 	dss_inner_clk_common_disable(hisifd);
 
+#if defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) ||defined (CONFIG_HISI_FB_V510) || \
+	defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 	mdc_regulator_disable(hisifd);
 	dpe_regulator_disable(hisifd);
 	dpe_inner_clk_disable(hisifd);
 	dpe_common_clk_disable(hisifd);
 	mediacrg_regulator_disable(hisifd);
+#endif
 
 	if (hisifd->vsync_ctrl_type != VSYNC_CTRL_NONE) {
 		if (!is_dss_idle_enable())
@@ -1592,8 +1601,8 @@ static ssize_t dpe_lcd_color_temperature_store(struct platform_device *pdev,
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_panel_info *pinfo = NULL;
 	unsigned int csc_value[100];
-	char *cur;
-	char *token;
+	char *cur = NULL;
+	char *token = NULL;
 	int i = 0;
 
 	if (NULL == pdev) {
@@ -1612,7 +1621,7 @@ static ssize_t dpe_lcd_color_temperature_store(struct platform_device *pdev,
 
 	cur = (char*)buf;
 	token = strsep(&cur, ",");
-	while (token) {
+	while (token != NULL) {
 		csc_value[i++] = simple_strtol(token, NULL, 0);
 		token = strsep(&cur, ",");
 		if (i >= 100) {
@@ -1717,7 +1726,8 @@ static ssize_t dpe_led_rg_lcd_color_temperature_store(struct platform_device *pd
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_panel_info *pinfo = NULL;
 	unsigned int csc_value[100];
-	char *token, *cur;
+	char *token = NULL;
+	char *cur = NULL;
 	int i = 0;
 
 	if (NULL == pdev) {
@@ -1736,7 +1746,7 @@ static ssize_t dpe_led_rg_lcd_color_temperature_store(struct platform_device *pd
 
 	cur = (char*)buf;
 	token = strsep(&cur, ",");
-	while (token) {
+	while (token != NULL) {
 		csc_value[i++] = simple_strtol(token, NULL, 0);
 		token = strsep(&cur, ",");
 		if (i >= 100) {
@@ -2574,7 +2584,7 @@ static ssize_t dpe_lcd_xcc_store(struct platform_device *pdev, const char *buf, 
 
 	cur = (char*)buf;
 	token = strsep(&cur, ",");
-	while (token) {
+	while (token != NULL) {
 		csc_value[i++] = simple_strtol(token, NULL, 0);
 		token = strsep(&cur, ",");
 		if (i >= 100) {
@@ -2626,7 +2636,7 @@ irqreturn_t dss_mmbuf_asc0_isr(int irq, void *ptr)
 static int dpe_isr_fnc_setup(struct hisi_fb_data_type *hisifd)
 {
 	const char *irq_name = NULL;
-	irqreturn_t (*isr_fnc)(int irq, void *ptr);
+	irqreturn_t (*isr_fnc)(int irq, void *ptr) = NULL;
 	int ret = 0;
 
 
@@ -2684,11 +2694,110 @@ static int dpe_regulator_clk_irq_setup(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+#if defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V510) || \
+	defined (CONFIG_HISI_FB_V320) || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 	(void)pxl_clk_rate;
 	if (dpe_clk_get(pdev)) {
 		HISI_FB_ERR("fb%d dpe_clk_get fail\n", hisifd->index);
 		return -EINVAL;
 	}
+#else
+	hisifd->dss_mmbuf_clk = devm_clk_get(&pdev->dev, hisifd->dss_mmbuf_clk_name);
+	if (IS_ERR(hisifd->dss_mmbuf_clk)) {
+		ret = PTR_ERR(hisifd->dss_mmbuf_clk);
+		HISI_FB_ERR("dss_mmbuf_clk error, ret = %d", ret);
+		return ret;
+	}
+
+	hisifd->dss_pclk_mmbuf_clk = devm_clk_get(&pdev->dev, hisifd->dss_pclk_mmbuf_name);
+	if (IS_ERR(hisifd->dss_pclk_mmbuf_clk)) {
+		ret = PTR_ERR(hisifd->dss_pclk_mmbuf_clk);
+		HISI_FB_ERR("dss_pclk_mmbuf_clk error, ret = %d", ret);
+		return ret;
+	}
+
+	hisifd->dss_axi_clk = devm_clk_get(&pdev->dev, hisifd->dss_axi_clk_name);
+	if (IS_ERR(hisifd->dss_axi_clk)) {
+		ret = PTR_ERR(hisifd->dss_axi_clk);
+		HISI_FB_ERR("dss_axi_clk error, ret = %d", ret);
+		return ret;
+	}
+
+	hisifd->dss_pclk_dss_clk = devm_clk_get(&pdev->dev, hisifd->dss_pclk_dss_name);
+	if (IS_ERR(hisifd->dss_pclk_dss_clk)) {
+		ret = PTR_ERR(hisifd->dss_pclk_dss_clk);
+		HISI_FB_ERR("dss_pclk_dss_clk error, ret = %d", ret);
+		return ret;
+	} else {
+
+	}
+
+	hisifd->dss_pri_clk = devm_clk_get(&pdev->dev, hisifd->dss_pri_clk_name);
+	if (IS_ERR(hisifd->dss_pri_clk)) {
+		ret = PTR_ERR(hisifd->dss_pri_clk);
+		HISI_FB_ERR("dss_pri_clk error, ret = %d", ret);
+		return ret;
+	} else {
+		ret = clk_set_rate(hisifd->dss_pri_clk, pdss_vote_cmd->dss_pri_clk_rate);
+		if (ret < 0) {
+			HISI_FB_ERR("fb%d dss_pri_clk clk_set_rate(%llu) failed, error=%d!\n",
+				hisifd->index, pdss_vote_cmd->dss_pri_clk_rate, ret);
+			return -EINVAL;
+		}
+
+		HISI_FB_INFO("dss_pri_clk:[%llu]->[%llu].\n",
+			pdss_vote_cmd->dss_pri_clk_rate, (uint64_t)clk_get_rate(hisifd->dss_pri_clk));
+	}
+
+	if (hisifd->index == PRIMARY_PANEL_IDX) {
+		hisifd->dss_pxl0_clk = devm_clk_get(&pdev->dev, hisifd->dss_pxl0_clk_name);
+		if (IS_ERR(hisifd->dss_pxl0_clk)) {
+			ret = PTR_ERR(hisifd->dss_pxl0_clk);
+			HISI_FB_ERR("dss_pxl0_clk error, ret = %d", ret);
+			return ret;
+		} else {
+			/*if pxl_clk_rate > 288M, LK switch to Kernl clk transition, Display unnormal */
+			//pxl_clk_rate = (pinfo->pxl_clk_rate > DSS_MAX_PXL0_CLK_288M) ? DSS_MAX_PXL0_CLK_288M : pinfo->pxl_clk_rate;
+			pxl_clk_rate = pinfo->pxl_clk_rate;
+			if (pinfo->pxl_clk_rate_adjust > 0) {
+				ret = clk_set_rate(hisifd->dss_pxl0_clk, pinfo->pxl_clk_rate_adjust);
+			} else {
+				ret = clk_set_rate(hisifd->dss_pxl0_clk, pxl_clk_rate);
+			}
+
+			if (ret < 0) {
+				HISI_FB_ERR("fb%d dss_pxl0_clk clk_set_rate(%llu) failed, error=%d!\n",
+					hisifd->index, pinfo->pxl_clk_rate, ret);
+				if (g_fpga_flag == 0)
+					return -EINVAL;
+			}
+
+			HISI_FB_INFO("dss_pxl0_clk:[%llu]->[%llu].\n",
+				pinfo->pxl_clk_rate, (uint64_t)clk_get_rate(hisifd->dss_pxl0_clk));
+		}
+	} else if ((hisifd->index == EXTERNAL_PANEL_IDX) && !hisifd->panel_info.fake_external) {
+		hisifd->dss_pxl1_clk = devm_clk_get(&pdev->dev, hisifd->dss_pxl1_clk_name);
+		if (IS_ERR(hisifd->dss_pxl1_clk)) {
+			ret = PTR_ERR(hisifd->dss_pxl1_clk);
+			HISI_FB_ERR("dss_pxl1_clk error, ret = %d, hisifd->dss_pxl1_clk_name=%s, hisifd->panel_info.fake_external=%d", ret, hisifd->dss_pxl1_clk_name, hisifd->panel_info.fake_external);
+			return ret;
+		} else {
+			ret = clk_set_rate(hisifd->dss_pxl1_clk, pinfo->pxl_clk_rate);
+			if (ret < 0) {
+				HISI_FB_ERR("fb%d dss_pxl1_clk clk_set_rate(%llu) failed, error=%d!\n",
+					hisifd->index, pinfo->pxl_clk_rate, ret);
+
+				if (g_fpga_flag == 0)
+					return -EINVAL;
+			}
+
+			HISI_FB_INFO("dss_pxl1_clk:[%llu]->[%llu].\n",
+				pinfo->pxl_clk_rate, (uint64_t)clk_get_rate(hisifd->dss_pxl1_clk));
+		}
+	} else {
+		;
+	}
+#endif
 	ret = dpe_isr_fnc_setup(hisifd);
 	if (ret) {
 		HISI_FB_ERR("dpe_isr_fnc_setup fail\n");
@@ -2708,6 +2817,8 @@ static int dpe_regulator_clk_irq_setup(struct platform_device *pdev)
 
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
 		if (is_fastboot_display_enable()) {
+		#if defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V320) || \
+			defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V350)
 			mediacrg_regulator_enable(hisifd);
 			ret = dpe_set_clk_rate(pdev);
 			if (ret) {
@@ -2732,6 +2843,11 @@ static int dpe_regulator_clk_irq_setup(struct platform_device *pdev)
 
 
 			dpe_regulator_enable(hisifd);
+		#else
+			dpe_regulator_enable(hisifd);
+			dpe_common_clk_enable(hisifd);
+			dpe_inner_clk_enable(hisifd);
+		#endif
 
 		}
 	}
@@ -2769,7 +2885,7 @@ static int dpe_probe(struct platform_device *pdev)
 
 	/* alloc device */
 	hisi_fb_dev = platform_device_alloc(DEV_NAME_FB, pdev->id);
-	if (!hisi_fb_dev) {
+	if (hisi_fb_dev == NULL) {
 		dev_err(&pdev->dev, "fb%d platform_device_alloc failed, error=%d!\n", hisifd->index, ret);
 		ret = -ENOMEM;
 		goto err_device_alloc;

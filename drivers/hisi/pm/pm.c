@@ -24,11 +24,14 @@
 #include <pm_def.h>
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/wakeup_reason.h>
+#ifdef CONFIG_HISI_SR_DEBUG
 #include <linux/mfd/hisi_pmic.h>
 #include "hisi_lpregs.h"
+#endif
 
+#ifdef CONFIG_HUAWEI_DUBAI
 #include <chipset_common/dubai/dubai.h>
-
+#endif
 
 
 #include <soc_gpio_interface.h>
@@ -54,7 +57,11 @@
 #define FPGA_FLAG		(0x1)
 #define LITTLE_CLUSTER		(0x0)
 
+#ifdef CONFIG_HISI_SR_TICK
 #define PMU_WRITE_SR_TICK(offset, pos)	hisi_pmic_reg_write(offset, pos)
+#else
+#define PMU_WRITE_SR_TICK(offset, pos)
+#endif
 
 
 static void __iomem *g_bbpdrx1_base;
@@ -71,26 +78,6 @@ static unsigned int g_ap_suspend_flag;
 static unsigned int tickmark_s = 0;
 static unsigned int tickmark_r = 0;
 static unsigned int resume_time_ms = 0;
-
-#include <log/log_usertype.h>
-unsigned long g_latt_wakeuptime = 0;
-const char *g_latt_sourcename = NULL;
-int  g_latt_gpio = 0;
-unsigned long get_wakeuptime(void)
-{
-     return g_latt_wakeuptime;
-}
-const char *get_sourcename(void)
-{
-     return g_latt_sourcename;
-}
-int get_gpio(void)
-{
-     return g_latt_gpio;
-}
-EXPORT_SYMBOL(get_wakeuptime);
-EXPORT_SYMBOL(get_sourcename);
-EXPORT_SYMBOL(get_gpio);
 
 typedef struct {
     void __iomem *ao_gpio_base;
@@ -122,11 +109,11 @@ static int pm_ao_gpio_irq_dump(unsigned int irq_num)
 		}
 	}
 
-	data = readl(ao_gpio_info_p[index].ao_gpio_base + SOC_GPIO_GPIOIE_ADDR(0))
-			& readl(ao_gpio_info_p[index].ao_gpio_base + SOC_GPIO_GPIOMIS_ADDR(0));
+	data = (u32)readl(ao_gpio_info_p[index].ao_gpio_base + SOC_GPIO_GPIOIE_ADDR(0))
+			& (u32)readl(ao_gpio_info_p[index].ao_gpio_base + SOC_GPIO_GPIOMIS_ADDR(0));
 
 	for (i = 0; i < 8; i++)
-		if (data & BIT(i))
+		if (data & BIT((u32)i))
 			return (int)((ao_gpio_info_p[index].group_idx) * 8) + i;
 
 	return  -EINVAL;
@@ -167,13 +154,10 @@ void pm_gic_pending_dump(void)
 				if (gpio >= 0) {
 					printk("(gpio-%d)", gpio);
                 }
+#ifdef CONFIG_HUAWEI_DUBAI
 				/* notify dubai module to update wakeup information */
 				dubai_update_wakeup_info("DUBAI_TAG_KERNEL_WAKEUP", "irq=%s gpio=%d", g_ap_irq_name[irq], gpio);
-                                if (BETA_USER == get_logusertype_flag()) {
-                                          g_latt_wakeuptime = hisi_getcurtime() / 1000000;
-                                          g_latt_sourcename = g_ap_irq_name[irq];
-                                          g_latt_gpio = gpio;
-                                }
+#endif
 				printk("\n");
 			}
 		}
@@ -265,11 +249,13 @@ static int hisi_pm_enter(suspend_state_t state)
 	pr_debug("%s: mpidr is 0x%lx, cluster = %d, core = %d.\n", __func__, mpidr, cluster, core);
 
 	pm_gic_dump();
+#ifdef CONFIG_HISI_SR_DEBUG
 	get_ip_regulator_state();
 	dbg_io_status_show();
 	dbg_pmu_status_show();
 	dbg_clk_status_show();
 	pmclk_monitor_enable();
+#endif
 	while (hisi_test_pwrdn_othercores(cluster, core))
 		;
 	PMU_WRITE_SR_TICK(PMUOFFSET_SR_TICK, KERNEL_SUSPEND_SETFLAG);
@@ -282,14 +268,18 @@ static int hisi_pm_enter(suspend_state_t state)
 	cpu_suspend(POWER_STATE_TYPE_SYS_SUSPEND);
 #endif
 	tickmark_s = readl(g_bbpdrx1_base);
+#ifdef CONFIG_HISI_SR_DEBUG
 	debuguart_reinit();
+#endif
 	cpu_cluster_pm_exit();
 	hisi_clear_ap_suspend_flag(cluster);
+#ifdef CONFIG_HISI_SR_DEBUG
 	pr_info("%s tick: 0x%x, 0x%x, 0x%x\n",
 			__func__, tickmark_s, readl(g_bbpdrx1_base),
 			readl(g_bbpdrx1_base) - tickmark_s);
 	pm_gic_pending_dump();
 	pm_status_show(NO_SEQFILE);
+#endif
 	pr_err("%s --\n", __func__);
 	PMU_WRITE_SR_TICK(PMUOFFSET_SR_TICK, KERNEL_RESUME);
 
@@ -456,7 +446,6 @@ static int init_ao_gpio(struct device_node *np)
 	}
 
 	kfree(io_buffer);
-	io_buffer = NULL;
 	pr_info("%s: init ao gpio success.\n", __func__);
 	return ret;
 
@@ -465,7 +454,6 @@ err_free:
 	ao_gpio_info_p = NULL;
 err_free_buffer:
 	kfree(io_buffer);
-	io_buffer = NULL;
 err:
 	return ret;
 }
@@ -498,7 +486,7 @@ static struct notifier_block sr_tick_pm_nb = {
 	.notifier_call = sr_tick_pm_notify,
 };
 
-static __init int hisi_pm_drvinit(void)
+static int hisi_pm_drvinit(void)
 {
 	struct device_node *np = NULL;
 	int ret = 0;
@@ -575,8 +563,6 @@ static __init int hisi_pm_drvinit(void)
 		return -ENODEV;
 	}
 
-	suspend_set_ops(&hisi_pm_ops);
-
 	g_bbpdrx1_base = ioremap(SOC_SCTRL_SCBBPDRXSTAT1_ADDR(SOC_ACPU_SCTRL_BASE_ADDR), 0x4);
 	if (!g_bbpdrx1_base){
 		pr_err("%s: get SCBBPDRXSTAT1_ADDR failed!\n", __func__);
@@ -589,6 +575,27 @@ static __init int hisi_pm_drvinit(void)
 		return -ENODEV;
 	}
 
+	suspend_set_ops(&hisi_pm_ops);
+
 	return 0;
 }
-arch_initcall(hisi_pm_drvinit);
+
+static __init int hisi_pm_init(void)
+{
+	int ret;
+
+	ret = hisi_pm_drvinit();
+	if (ret != 0) {
+		/* if not suspend_set_ops ok, don't support suspend to s2idle */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+		mem_sleep_current = PM_SUSPEND_ON;
+#endif
+		pr_err("%s: hisi_pm_drvinit failed!\n", __func__);
+
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
+arch_initcall(hisi_pm_init);

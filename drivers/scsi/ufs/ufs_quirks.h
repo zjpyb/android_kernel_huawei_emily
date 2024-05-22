@@ -20,6 +20,8 @@
 
 #define UFS_ANY_VENDOR 0xFFFF
 #define UFS_ANY_MODEL  "ANY_MODEL"
+#define UFS_MODEL_THOR920 "THR920"
+#define UFS_MODEL_SS6100 "SS6100"
 
 #define MAX_MODEL_LEN 16
 
@@ -31,24 +33,12 @@
 #define UFS_VENDOR_SANDISK	   0x145
 
 /**
- * ufs_device_info - ufs device details
- * @wmanufacturerid: card details
- * @model: card model
- */
-struct ufs_device_info {
-	u16 wmanufacturerid;
-	u16 wmanufacturer_date;
-	u16 spec_version;	
-	char model[MAX_MODEL_LEN + 1];
-};
-
-/**
  * ufs_dev_fix - ufs device quirk info
  * @card: ufs card details
  * @quirk: device quirk
  */
 struct ufs_dev_fix {
-	struct ufs_device_info card;
+	struct ufs_dev_desc card;
 	unsigned int quirk;
 };
 

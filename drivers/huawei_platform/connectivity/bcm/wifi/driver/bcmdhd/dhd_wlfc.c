@@ -2290,8 +2290,8 @@ _dhd_wlfc_mac_table_update(dhd_pub_t *dhd, uint8* value, uint8 type)
 	uint8 ifid;
 	uint8* ea;
 
-	WLFC_DBGMESG(("%s(), mac [%02x:%02x:%02x:%02x:%02x:%02x],%s,idx:%d,id:0x%02x\n",
-		__FUNCTION__, value[2], value[3], value[4], value[5], value[6], value[7],
+	WLFC_DBGMESG(("%s(), mac [%02x:**:**:**:%02x:%02x],%s,idx:%d,id:0x%02x\n",
+		__FUNCTION__, value[2],  value[6], value[7],
 		((type == WLFC_CTL_TYPE_MACDESC_ADD) ? "ADD":"DEL"),
 		WLFC_MAC_DESC_GET_LOOKUP_INDEX(value[0]), value[0]));
 

@@ -29,8 +29,9 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
+
 #include "hisi_fb.h"
 #include "hisi_dp.h"
 #include "hisi_fb_def.h"
@@ -45,26 +46,31 @@
 
 
 /*lint -save -e* */
+#define EDID_BLOCK_LENGTH 128
 #define EDID_NUM 256
 #define MST_MSG_BUF_LENGTH 256
 #define SAFE_MODE_TIMING_HACTIVE 640
 #define SAFE_MODE_TIMING_PIXEL_CLOCK 2517  /*The pixel clock of 640 * 480 = 25175. The saving pixel clock need 1/10.*/
 #define DPTX_CHECK_TIME_PERIOD 2000
 
+#define CHECK_RET(ret)  \
+	do { if (ret)  \
+		return ret; } while (0)
+
 #define VBLANKING_MAX 255
 
 uint32_t g_bit_hpd_status;
 
-enum dp_event_type
-{
+enum dp_event_type {
 	DP_LINK_STATE_BAD = 0,
 	DP_LINK_STATE_GOOD = 1
 };
 
-extern u16 usb31phy_cr_write(uint32_t addr, u16 value);
 #if CONFIG_DP_ENABLE
 extern void dp_send_event(enum dp_event_type event);
 #endif
+
+
 static enum hrtimer_restart dptx_detect_hrtimer_fnc(struct hrtimer *timer)
 {
 	struct dp_ctrl *dptx = NULL;
@@ -81,7 +87,7 @@ static enum hrtimer_restart dptx_detect_hrtimer_fnc(struct hrtimer *timer)
 		return HRTIMER_NORESTART;
 	}
 
-	if (dptx->dptx_check_wq) {
+	if (dptx->dptx_check_wq != NULL) {
 		queue_work(dptx->dptx_check_wq, &(dptx->dptx_check_work));
 	}
 
@@ -175,7 +181,7 @@ static bool dptx_check_vr_err_count(struct dp_ctrl *dptx)
 static void dptx_err_count_check_wq_handler(struct work_struct *work)
 {
 	struct dp_ctrl *dptx = NULL;
-	bool berr;
+	bool berr = false;
 
 	dptx = container_of(work, struct dp_ctrl, dptx_check_work);
 
@@ -224,7 +230,7 @@ static int dptx_init_detect_work(struct dp_ctrl *dptx)
 
 	if (!dptx->dptx_detect_inited) {
 		dptx->dptx_check_wq = create_singlethread_workqueue("dptx_check");
-		if (!dptx->dptx_check_wq) {
+		if (dptx->dptx_check_wq == NULL) {
 			HISI_FB_ERR("[DP] create dptx_check_wq failed\n");
 			return -1;
 		}
@@ -252,7 +258,7 @@ static int dptx_cancel_detect_work(struct dp_ctrl *dptx)
 	HISI_FB_INFO("[DP] Cancel Detect work \n");
 
 	if (dptx->dptx_detect_inited) {
-		if (dptx->dptx_check_wq) {
+		if (dptx->dptx_check_wq != NULL) {
 			destroy_workqueue(dptx->dptx_check_wq);
 			dptx->dptx_check_wq = NULL;
 		}
@@ -267,13 +273,13 @@ static int dptx_cancel_detect_work(struct dp_ctrl *dptx)
 
 static int dptx_resolution_switch(struct hisi_fb_data_type *hisifd, enum dptx_hot_plug_type etype)
 {
-	struct dtd *mdtd;
-	struct dp_ctrl *dptx;
-	struct hisi_panel_info *pinfo;
-	struct video_params *vparams;
+	struct dtd *mdtd = NULL;
+	struct dp_ctrl *dptx = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	struct video_params *vparams = NULL;
 	int ret;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return -EINVAL;
 	}
@@ -383,8 +389,8 @@ static int handle_test_link_training(struct dp_ctrl *dptx)
 	int retval;
 	uint8_t lanes;
 	uint8_t rate;
-	struct video_params *vparams;
-	struct dtd *mdtd;
+	struct video_params *vparams = NULL;
+	struct dtd *mdtd = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -442,7 +448,7 @@ static int handle_test_link_video_timming(struct dp_ctrl *dptx, int stream)
 	enum video_format_type video_format;
 	uint8_t vmode;
 	uint8_t test_refresh_rate;
-	struct video_params *vparams;
+	struct video_params *vparams = NULL;
 	struct dtd mdtd;
 
 	if (dptx == NULL) {
@@ -520,7 +526,6 @@ static int handle_test_link_video_timming(struct dp_ctrl *dptx, int stream)
 		return retval;
 	hsync_width |= test_hsync_width_lsb;
 	hsync_width |= (test_hsync_width_msb & (~(1 << 7))) << 8;
-	h_sync_pol |= (test_hsync_width_msb & (1 << 7)) >> 8;
 	HISI_FB_INFO("[DP] hsync_width = %d\n", hsync_width);
 	HISI_FB_INFO("[DP] h_sync_pol = %d\n", h_sync_pol);
 
@@ -535,7 +540,6 @@ static int handle_test_link_video_timming(struct dp_ctrl *dptx, int stream)
 		return retval;
 	vsync_width |= test_vsync_width_lsb;
 	vsync_width |= (test_vsync_width_msb & (~(1 << 7))) << 8;
-	v_sync_pol |= (test_vsync_width_msb & (1 << 7)) >> 8;
 	HISI_FB_INFO("[DP] vsync_width = %d\n", vsync_width);
 	HISI_FB_INFO("[DP] v_sync_pol = %d\n", v_sync_pol);
 
@@ -687,7 +691,7 @@ static int handle_test_link_audio_pattern(struct dp_ctrl *dptx)
 	uint8_t test_audio_mode, test_audio_smaple_range, test_audio_ch_count,
 	   audio_ch_count, orig_sample_freq, sample_freq;
 	uint32_t audio_clock_freq;
-	struct audio_params *aparams;
+	struct audio_params *aparams = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -811,8 +815,8 @@ static int handle_test_link_video_pattern(struct dp_ctrl *dptx, int stream)
 	uint8_t misc, pattern, bpc, bpc_map, dynamic_range,
 	   dynamic_range_map, color_format, color_format_map,
 	   ycbcr_coeff,  ycbcr_coeff_map;
-	struct video_params *vparams;
-	struct dtd *mdtd;
+	struct video_params *vparams = NULL;
+	struct dtd *mdtd = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -1110,6 +1114,7 @@ static int handle_sink_request(struct dp_ctrl *dptx)
 {
 	int retval;
 	uint8_t vector;
+	uint8_t bytes[1] = {0};
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -1117,12 +1122,13 @@ static int handle_sink_request(struct dp_ctrl *dptx)
 	}
 
 	retval = dptx_link_check_status(dptx);
-	if (retval)
-		return retval;
+	CHECK_RET(retval);
+
+	retval = dptx_read_bytes_from_dpcd(dptx, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI0, bytes, sizeof(bytes));
+	CHECK_RET(retval);
 
 	retval = dptx_read_dpcd(dptx, DP_DEVICE_SERVICE_IRQ_VECTOR, &vector);
-	if (retval)
-		return retval;
+	CHECK_RET(retval);
 
 	HISI_FB_INFO("[DP] %s: IRQ_VECTOR: 0x%02x\n", __func__, vector);
 	dp_imonitor_set_param(DP_PARAM_IRQ_VECTOR, &vector);
@@ -1131,62 +1137,51 @@ static int handle_sink_request(struct dp_ctrl *dptx)
 	if (!vector)
 		return 0;
 
-	if (vector & DP_REMOTE_CONTROL_COMMAND_PENDING) {
+	if ((vector & DP_REMOTE_CONTROL_COMMAND_PENDING) || (bytes[0] & DP_REMOTE_CONTROL_COMMAND_PENDING)) {
 		/* TODO */
 		HISI_FB_WARNING(
 			  "[DP] %s: DP_REMOTE_CONTROL_COMMAND_PENDING: Not yet implemented",
 			  __func__);
 	}
 
-	if (vector & DP_AUTOMATED_TEST_REQUEST) {
+	if ((vector & DP_AUTOMATED_TEST_REQUEST) || (bytes[0] & DP_AUTOMATED_TEST_REQUEST)) {
 		HISI_FB_INFO("[DP] %s: DP_AUTOMATED_TEST_REQUEST", __func__);
 		retval = handle_automated_test_request(dptx);
 		if (retval) {
 			HISI_FB_ERR("[DP] Automated test request failed\n");
 			if (retval == -ENOTSUPP) {
-				retval = dptx_write_dpcd(dptx, DP_TEST_RESPONSE,
-							 DP_TEST_NAK);
-				if (retval)
-					return retval;
+				retval = dptx_write_dpcd(dptx, DP_TEST_RESPONSE, DP_TEST_NAK);
+				CHECK_RET(retval);
 			}
 		}
 	}
 
-	if (vector & DP_CP_IRQ) {
-		HISI_FB_WARNING("[DP] %s: DP_CP_IRQ", __func__);
+	if ((vector & DP_CP_IRQ) || (bytes[0] & DP_CP_IRQ)) {
+		HISI_FB_WARNING("[DP] DP_CP_IRQ");
 		//retval = dptx_write_dpcd(dptx, DP_DEVICE_SERVICE_IRQ_VECTOR, DP_CP_IRQ);
+#ifdef CONFIG_DP_HDCP_ENABLE
         //dp_imonitor_set_param(DP_PARAM_HDCP_VERSION, &g_hdcp_mode);
         if(dptx->hisifd->secure_ctrl.hdcp_cp_irq)
 			dptx->hisifd->secure_ctrl.hdcp_cp_irq();
-		if (retval)
-			return retval;
+#endif
+		CHECK_RET(retval);
 		/* TODO Check Re-authentication Request and Link integrity
 		 * Failure bits in Bstatus
 		 */
 	}
 
-	if (vector & DP_MCCS_IRQ) {
+	if ((vector & DP_MCCS_IRQ) || (bytes[0] & DP_MCCS_IRQ))  {
 		/* TODO */
 		HISI_FB_WARNING(
 			  "[DP] %s: DP_MCCS_IRQ: Not yet implemented", __func__);
 		retval = -ENOTSUPP;
 	}
 
-	if (vector & DP_DOWN_REP_MSG_RDY) {
-		/* TODO */
-		HISI_FB_WARNING("[DP] %s: DP_DOWN_REP_MSG_RDY: Not yet implemented",
-			  __func__);
-		retval = -ENOTSUPP;
+	if ((vector & DP_UP_REQ_MSG_RDY) || (bytes[0] & DP_UP_REQ_MSG_RDY)) {
+		HISI_FB_WARNING("[DP] DP_UP_REQ_MSG_RDY");
 	}
 
-	if (vector & DP_UP_REQ_MSG_RDY) {
-		/* TODO */
-		HISI_FB_WARNING("[DP] %s: DP_UP_REQ_MSG_RDY: Not yet implemented",
-			  __func__);
-		retval = -ENOTSUPP;
-	}
-
-	if (vector & DP_SINK_SPECIFIC_IRQ) {
+	if ((vector & DP_SINK_SPECIFIC_IRQ) || (bytes[0] & DP_SINK_SPECIFIC_IRQ)) {
 		/* TODO */
 		HISI_FB_WARNING("[DP] %s: DP_SINK_SPECIFIC_IRQ: Not yet implemented",
 			  __func__);
@@ -1197,7 +1192,7 @@ static int handle_sink_request(struct dp_ctrl *dptx)
 }
 static void dptx_notify(struct dp_ctrl *dptx)
 {
-	if (!dptx) {
+	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] dptx is NULL!\n");
 		return;
 	}
@@ -1207,7 +1202,7 @@ static void dptx_notify(struct dp_ctrl *dptx)
 
 void dptx_notify_shutdown(struct dp_ctrl *dptx)
 {
-	if (!dptx) {
+	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] dptx is NULL!\n");
 		return;
 	}
@@ -1218,8 +1213,8 @@ void dptx_notify_shutdown(struct dp_ctrl *dptx)
 
 int dptx_triger_media_transfer(struct dp_ctrl *dptx, bool benable)
 {
-	struct audio_params *aparams;
-	struct video_params *vparams;
+	struct audio_params *aparams = NULL;
+	struct video_params *vparams = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -1247,9 +1242,10 @@ int dptx_triger_media_transfer(struct dp_ctrl *dptx, bool benable)
 
 int handle_hotunplug(struct hisi_fb_data_type *hisifd)
 {
-	struct dp_ctrl *dptx;
+	struct dp_ctrl *dptx = NULL;
+	uint32_t reg;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return -EINVAL;
 	}
@@ -1257,6 +1253,8 @@ int handle_hotunplug(struct hisi_fb_data_type *hisifd)
 	HISI_FB_INFO("[DP] +.\n");
 
 	dptx = &(hisifd->dp);
+
+
 	dptx->video_transfer_enable = false;
 	dptx->max_edid_timing_hactive = 0;
 	dptx->dummy_dtds_present = false;
@@ -1283,17 +1281,22 @@ int handle_hotunplug(struct hisi_fb_data_type *hisifd)
 	atomic_set(&dptx->sink_request, 0);
 	atomic_set(&dptx->aux.event, 0);
 	dptx->link.trained = false;
+	dptx->dsc = false;
+	dptx->fec = false;
 
 	dp_imonitor_set_param(DP_PARAM_TIME_STOP, NULL);
 	HISI_FB_INFO("[DP] -.\n");
-	return 0;
+	reg = 0;
+	return reg;
 }
 
 static int dptx_read_edid_block(struct dp_ctrl *dptx,
 	unsigned int block)
 {
 	int retval;
-	uint8_t offset = block * 128;
+	int retry = 0;
+
+	uint8_t offset = block * EDID_BLOCK_LENGTH;
 	uint8_t segment = block >> 1;
 
 	if (dptx == NULL) {
@@ -1310,7 +1313,7 @@ static int dptx_read_edid_block(struct dp_ctrl *dptx,
 		}
 	}
 	/* TODO Skip if no E-DDC */
-
+again:
 	retval = dptx_write_bytes_to_i2c(dptx, 0x50, &offset, 1);
 	if (retval) {
 		HISI_FB_ERR("[DP] failed to  dptx_write_bytes_to_i2c 2!\n");
@@ -1318,12 +1321,15 @@ static int dptx_read_edid_block(struct dp_ctrl *dptx,
 	}
 
 	retval = dptx_read_bytes_from_i2c(dptx, 0x50,
-		&dptx->edid[block * 128], 128);
-	if (retval) {
+		&dptx->edid[block * EDID_BLOCK_LENGTH], EDID_BLOCK_LENGTH);
+
+	if ((retval == -EINVAL) && !retry) {
 		HISI_FB_ERR("[DP] failed to  dptx_read_bytes_from_i2c 2!\n");
-		return retval;
+		retry = 1;
+		goto again;
 	}
 	dp_imonitor_set_param(DP_PARAM_EDID + block, &(dptx->edid[block * DP_DSM_EDID_BLOCK_SIZE]));
+	dptx_i2c_address_only(dptx, 0x50);
 
 	return 0;
 }
@@ -1331,20 +1337,19 @@ static int dptx_read_edid_block(struct dp_ctrl *dptx,
 bool dptx_check_edid_header(struct dp_ctrl *dptx)
 {
 	int i;
-	uint8_t* edid_t;
+	uint8_t* edid_t = NULL;
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
-	if (!(dptx->edid)) {
+	if (dptx->edid == NULL) {
 		HISI_FB_ERR("[DP] edid is NULL!\n");
 		return -EINVAL;
 	}
 
 	edid_t = dptx->edid;
-	for(i = 0; i < EDID_HEADER_END + 1; i++)
-	{
+	for(i = 0; i < EDID_HEADER_END + 1; i++) {
 		if(edid_t[i] != edid_v1_header[i]) {
 			HISI_FB_INFO("[DP] Invalide edid header\n");
 			return false;
@@ -1359,7 +1364,7 @@ static int dptx_read_edid(struct dp_ctrl *dptx)
 	int i;
 	int retval = 0;
 	unsigned int ext_blocks = 0;
-	uint8_t *first_edid_block;
+	uint8_t *first_edid_block = NULL;
 	unsigned int edid_buf_size = 0;
 	int edid_try_count = 0;
 
@@ -1368,7 +1373,7 @@ static int dptx_read_edid(struct dp_ctrl *dptx)
 		return -EINVAL;
 	}
 
-	if (!(dptx->edid)) {
+	if (dptx->edid == NULL) {
 		HISI_FB_ERR("[DP] edid is NULL!\n");
 		return -EINVAL;
 	}
@@ -1385,51 +1390,47 @@ edid_retry:
 			goto edid_retry;
 		}else{
 			HISI_FB_ERR("[DP] failed to dptx_read_edid_block!\n");
-			edid_try_count = 0;
 			return -EINVAL;
 		}
 	}
 
-	if (dptx->edid[126] > 4)
+	if (dptx->edid[126] > 10)
 		/* Workaround for QD equipment */
 		/* TODO investigate corruptions of EDID blocks */
 		ext_blocks = 2;
 	else
 		ext_blocks = dptx->edid[126];
 
-	if((ext_blocks > MAX_EXT_BLOCKS) || !dptx_check_edid_header(dptx)){
+	if ((ext_blocks > MAX_EXT_BLOCKS) || !dptx_check_edid_header(dptx)) {
 		edid_try_count += 1;
 		if(edid_try_count <= dptx->edid_try_count) {
 			mdelay(dptx->edid_try_delay);
 			HISI_FB_INFO("[DP] Read edid data is not correct, try %d times \n", edid_try_count);
 			goto edid_retry;
 		}else{
-			edid_try_count = 0;
 			if(ext_blocks > MAX_EXT_BLOCKS)
 				ext_blocks = MAX_EXT_BLOCKS;
 		}
 	}
 
-	first_edid_block = kmalloc(128, GFP_KERNEL);
+	first_edid_block = kmalloc(EDID_BLOCK_LENGTH, GFP_KERNEL);
 	if (first_edid_block == NULL) {
 		HISI_FB_ERR("[DP] Allocate buffer error\n");
 		return -EINVAL;
 	}
-	memcpy(first_edid_block, dptx->edid, 128);
+	memset(first_edid_block, 0, EDID_BLOCK_LENGTH);
+	memcpy(first_edid_block, dptx->edid, EDID_BLOCK_LENGTH);
+	kfree(dptx->edid);
+	dptx->edid = NULL;
 
-	if (dptx->edid) {
-		kfree(dptx->edid);
-		dptx->edid = NULL;
-	}
-
-	dptx->edid = kzalloc(128 * ext_blocks + 128, GFP_KERNEL);
-	if (!dptx->edid) {
+	dptx->edid = kzalloc(EDID_BLOCK_LENGTH * ext_blocks + EDID_BLOCK_LENGTH, GFP_KERNEL);
+	if (dptx->edid == NULL) {
 		HISI_FB_ERR("[DP] Allocate edid buffer error!\n");
 		retval = -EINVAL;
 		goto fail;
 	}
 
-	memcpy(dptx->edid, first_edid_block, 128);
+	memcpy(dptx->edid, first_edid_block, EDID_BLOCK_LENGTH);
 	for (i = 1; i <= ext_blocks; i++) {
 		retval = dptx_read_edid_block(dptx, i);
 		if (retval) {
@@ -1437,11 +1438,11 @@ edid_retry:
 		}
 	}
 
-	edid_buf_size = 128 * ext_blocks + 128;
+	edid_buf_size = EDID_BLOCK_LENGTH * ext_blocks + EDID_BLOCK_LENGTH;
 	retval = edid_buf_size;
 
 fail:
-	if (first_edid_block) {
+	if (first_edid_block != NULL) {
 		kfree(first_edid_block);
 		first_edid_block = NULL;
 	}
@@ -1451,12 +1452,15 @@ fail:
 
 int dptx_choose_edid_timing(struct dp_ctrl *dptx, bool *bsafemode)
 {
-	struct timing_info *per_timing_info;
-	struct timing_info *dptx_timing_node, *_node_;
-	struct dtd *mdtd;
+	struct timing_info *per_timing_info = NULL;
+	struct timing_info *per_timing_info_vr = NULL;
+	struct timing_info *dptx_timing_node = NULL, *_node_ = NULL;
+	struct dtd *mdtd = NULL;
 
 	uint32_t default_hactive;
+	uint32_t default_hactive_vr;
 	uint64_t default_pixel_clock;
+	uint8_t m_fps;
 
 	if ((dptx == NULL) || (bsafemode == NULL)) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -1464,23 +1468,37 @@ int dptx_choose_edid_timing(struct dp_ctrl *dptx, bool *bsafemode)
 	}
 
 	mdtd = &dptx->vparams.mdtd;
-	per_timing_info = dptx_timing_node = _node_ = NULL;
+	per_timing_info_vr = per_timing_info = dptx_timing_node = _node_ = NULL;
 
 	if (dptx->edid_info.Video.dptx_timing_list != NULL) {
 		default_hactive = SAFE_MODE_TIMING_HACTIVE;
+		default_hactive_vr = SAFE_MODE_TIMING_HACTIVE;
 		default_pixel_clock = SAFE_MODE_TIMING_PIXEL_CLOCK;
 		list_for_each_entry_safe(dptx_timing_node, _node_, dptx->edid_info.Video.dptx_timing_list, list_node) {
-			if ((dptx_timing_node->hActivePixels >= default_hactive) &&
-				(dptx_timing_node->pixelClock > default_pixel_clock) &&
-				(dptx_timing_node->interlaced != 1) &&
+			if ((dptx_timing_node->interlaced != 1) &&
 				(dptx_timing_node->vBlanking <= VBLANKING_MAX) &&
 				(!dptx_video_ts_calculate(dptx, dptx->link.lanes,
 						 dptx->link.rate, dptx->vparams.bpc,
 						 dptx->vparams.pix_enc, (dptx_timing_node->pixelClock * 10)))) {
+				if ((dptx_timing_node->hActivePixels >= default_hactive) &&
+					(dptx_timing_node->pixelClock > default_pixel_clock)) {
 					default_hactive = dptx_timing_node->hActivePixels;
 					default_pixel_clock = dptx_timing_node->pixelClock;
 					per_timing_info = dptx_timing_node;
 				}
+				m_fps = (uint32_t)(dptx_timing_node->pixelClock * 10000 /
+									((dptx_timing_node->hActivePixels + dptx_timing_node->hBlanking)
+									* (dptx_timing_node->vActivePixels + dptx_timing_node->vBlanking)));
+				if ((dptx->dptx_vr == true) && (m_fps == 70) &&
+					(dptx_timing_node->hActivePixels >= default_hactive_vr)) {
+					default_hactive_vr = dptx_timing_node->hActivePixels;
+					per_timing_info_vr = dptx_timing_node;
+				}
+			}
+		}
+
+		if ((per_timing_info_vr != NULL) && (dptx->dptx_vr == true)){
+			per_timing_info = per_timing_info_vr;
 		}
 
 		if ((SAFE_MODE_TIMING_HACTIVE == default_hactive) || (per_timing_info == NULL)) {
@@ -1541,21 +1559,120 @@ int dptx_choose_edid_timing(struct dp_ctrl *dptx, bool *bsafemode)
 
 	return 0;
 }
+
+static int dptx_get_device_caps(struct dp_ctrl *dptx)
+{
+	uint8_t rev = 0;
+	int retval;
+
+	if (dptx == NULL) {
+		HISI_FB_ERR("NULL Pointer\n");
+		return -EINVAL;
+	}
+
+	retval = dptx_read_dpcd(dptx, DP_DPCD_REV, &rev);
+	if (retval) {
+		/*
+		 * Abort bringup
+		 * Reset core and try again
+		 * Abort all aux, and other work, reset the core
+		 */
+		HISI_FB_ERR("[DP] failed to dptx_read_dpcd DP_DPCD_REV, retval=%d.\n", retval);
+		return retval;
+	}
+	HISI_FB_DEBUG("[DP] Revision %x.%x .\n", (rev & 0xf0) >> 4, rev & 0xf);
+
+	memset(dptx->rx_caps, 0, DPTX_RECEIVER_CAP_SIZE);
+	retval = dptx_read_bytes_from_dpcd(dptx, DP_DPCD_REV,
+		dptx->rx_caps, DPTX_RECEIVER_CAP_SIZE);
+	if (retval) {
+		HISI_FB_ERR("[DP] failed to dptx_read_bytes_from_dpcd DP_DPCD_REV, retval=%d.\n", retval);
+		return retval;
+	}
+	dp_imonitor_set_param(DP_PARAM_DPCD_RX_CAPS, dptx->rx_caps);
+
+
+	return 0;
+}
+
+static int dptx_get_test_request(struct dp_ctrl *dptx)
+{
+	int retval;
+	uint8_t blocks = 0;
+	uint8_t test = 0;
+	uint8_t vector = 0;
+	uint8_t checksum = 0;
+
+	if (dptx == NULL) {
+		HISI_FB_ERR("NULL Pointer\n");
+		return -EINVAL;
+	}
+
+	retval = dptx_read_dpcd(dptx, DP_DEVICE_SERVICE_IRQ_VECTOR, &vector);
+	if (retval) {
+		HISI_FB_ERR("[DP] failed to  dptx_read_dpcd DP_DEVICE_SERVICE_IRQ_VECTOR, retval=%d.", retval);
+		return retval;
+	}
+
+	if (vector & DP_AUTOMATED_TEST_REQUEST) {
+		HISI_FB_INFO("[DP] DP_AUTOMATED_TEST_REQUEST");
+		retval = dptx_read_dpcd(dptx, DP_TEST_REQUEST, &test);
+		if (retval) {
+			HISI_FB_ERR("[DP] failed to dptx_read_dpcd DP_TEST_REQUEST, retval=%d.\n", retval);
+			return retval;
+		}
+
+		if (test & DP_TEST_LINK_EDID_READ) {
+			blocks = dptx->edid[126];
+			checksum = dptx->edid[127 + EDID_BLOCK_LENGTH * blocks];
+
+			retval = dptx_write_dpcd(dptx, DP_TEST_EDID_CHECKSUM, checksum);
+			if (retval) {
+				HISI_FB_ERR("[DP] failed to dptx_write_dpcd DP_TEST_EDID_CHECKSUM, retval=%d.\n", retval);
+				return retval;
+			}
+
+			retval = dptx_write_dpcd(dptx, DP_TEST_RESPONSE, DP_TEST_EDID_CHECKSUM_WRITE);
+			if (retval) {
+				HISI_FB_ERR("[DP] failed to dptx_write_dpcd DP_TEST_RESPONSE, retval=%d.\n", retval);
+				return retval;
+			}
+		}
+	}
+
+	return 0;
+}
+
+void dptx_timing_config(struct dp_ctrl *dptx)
+{
+	/* video data can' be sent before DPTX timing configure. */
+	dptx_triger_media_transfer(dptx, false);
+
+	dptx_video_reset(dptx, 1, 0);
+	mdelay(100);
+	dptx_video_reset(dptx, 0, 0);
+
+	/*Update DP reg configue*/
+	dptx_video_timing_change(dptx, 0); /* dptx video reg depends on dss pixel clock. */
+
+
+	dptx_audio_config(dptx); /* dptx audio reg depends on phy status(P0) */
+
+	dptx_triger_media_transfer(dptx, true);
+}
+
 int handle_hotplug(struct hisi_fb_data_type *hisifd)
 {
 	uint8_t rev = 0;
 	int retval;
-	uint8_t vector;
-	uint8_t checksum = 0;
-	uint8_t blocks = 0;
-	uint8_t test = 0;
 	uint32_t edid_info_size = 0;
-	struct video_params *vparams;
-	struct hdcp_params *hparams;
+	struct video_params *vparams = NULL;
+	struct hdcp_params *hparams = NULL;
 	struct dtd mdtd;
-	struct dp_ctrl *dptx;
-	char *monitor_name_info;
-	bool bsafe_mode;
+	struct dp_ctrl *dptx = NULL;
+	char *monitor_name_info = NULL;
+	bool bsafe_mode = false;
+	int i;
 	if (!hisifd) {
 		HISI_FB_ERR("hisifd is NULL!\n");
 		return -EINVAL;
@@ -1576,7 +1693,6 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd)
 	}
 
 	dp_imonitor_set_param(DP_PARAM_TIME_START, NULL);
-	bsafe_mode = false;
 
 	vparams = &dptx->vparams;
 	hparams = &dptx->hparams;
@@ -1600,85 +1716,48 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd)
 	mdelay(1);
 
 
-	retval = dptx_read_dpcd(dptx, DP_DEVICE_SERVICE_IRQ_VECTOR, &vector);
-	if (retval) {
-		HISI_FB_ERR("[DP] failed to  dptx_read_dpcd DP_DEVICE_SERVICE_IRQ_VECTOR, retval=%d.", retval);
-		return retval;
-	}
+	if (!dptx->mst) {
+		retval = dptx_read_edid(dptx);
+		if (retval < EDID_BLOCK_LENGTH) {
+			HISI_FB_ERR("[DP] failed to  dptx_read_edid, retval=%d.", retval);
+			dp_imonitor_set_param(DP_PARAM_READ_EDID_FAILED, &retval);
+			edid_info_size = 0;
+			bsafe_mode = true;
+		} else {
+			edid_info_size = retval;
+		}
 
-	retval = dptx_read_edid(dptx);
-	if (retval < 128) {
-		HISI_FB_ERR("[DP] failed to  dptx_read_edid, retval=%d.", retval);
-		dp_imonitor_set_param(DP_PARAM_READ_EDID_FAILED, &retval);
-		edid_info_size = 0;
-		bsafe_mode = true;
-	} else {
-		edid_info_size = retval;
-	}
+		retval = parse_edid(dptx, edid_info_size);
+		if (retval) {
+			HISI_FB_ERR("[DP] EDID Parser fail, display safe mode\n");
+			bsafe_mode = true;
+		}
 
-	retval = parse_edid(dptx, edid_info_size);
-	if (retval) {
-		HISI_FB_ERR("[DP] EDID Parser fail, display safe mode\n");
-		bsafe_mode = true;
-	}
-
-	if(dptx->edid_info.Video.dp_monitor_descriptor != NULL) {
-		monitor_name_info = dptx->edid_info.Video.dp_monitor_descriptor;
-		if(!(strncmp("HUAWEIAV02", monitor_name_info, strlen("HUAWEIAV02")))) {
-			dptx->dptx_vr = true;
-			HISI_FB_INFO("[DP] The display is VR.\n");
+		if (dptx->edid_info.Video.dp_monitor_descriptor != NULL) {
+			monitor_name_info = dptx->edid_info.Video.dp_monitor_descriptor;
+			if (!(strncmp("HUAWEIAV02", monitor_name_info, strlen("HUAWEIAV02"))) ||
+				!(strncmp("HUAWEIAV03", monitor_name_info, strlen("HUAWEIAV03")))) {
+				dptx->dptx_vr = true;
+				HISI_FB_INFO("[DP] The display is VR.\n");
+			}
+			dp_set_dptx_vr_status(dptx->dptx_vr);
 		}
 	}
-
 	/* Link Train start */
-	retval = dptx_read_dpcd(dptx, DP_DPCD_REV, &rev);
+	retval = dptx_get_device_caps(dptx);
 	if (retval) {
-		/* Abort bringup */
-		/* Reset core and try again */
-		/* Abort all aux, and other work, reset the core */
-		HISI_FB_ERR("[DP] failed to dptx_read_dpcd DP_DPCD_REV, retval=%d.\n", retval);
+		HISI_FB_ERR("[DP] Check device capability failed.\n");
 		return retval;
 	}
-	HISI_FB_DEBUG("[DP] Revision %x.%x .\n", (rev & 0xf0) >> 4, rev & 0xf);
-
-	memset(dptx->rx_caps, 0, DPTX_RECEIVER_CAP_SIZE);
-	retval = dptx_read_bytes_from_dpcd(dptx, DP_DPCD_REV,
-		dptx->rx_caps, DPTX_RECEIVER_CAP_SIZE);
-	if (retval) {
-		HISI_FB_ERR("[DP] failed to dptx_read_bytes_from_dpcd DP_DPCD_REV, retval=%d.\n", retval);
-		return retval;
-	}
-	dp_imonitor_set_param(DP_PARAM_DPCD_RX_CAPS, dptx->rx_caps);
-
 
 	/*
 	* The TEST_EDID_READ is asserted on HOTPLUG. Check for it and
 	* handle it here.
 	*/
-	if (vector & DP_AUTOMATED_TEST_REQUEST) {
-		HISI_FB_INFO("[DP] DP_AUTOMATED_TEST_REQUEST");
-		retval = dptx_read_dpcd(dptx, DP_TEST_REQUEST, &test);
-		if (retval) {
-			HISI_FB_ERR("[DP] failed to dptx_read_dpcd DP_TEST_REQUEST, retval=%d.\n", retval);
-			return retval;
-		}
-
-		if (test & DP_TEST_LINK_EDID_READ) {
-			blocks = dptx->edid[126];
-			checksum = dptx->edid[127 + 128 * blocks];
-
-			retval = dptx_write_dpcd(dptx, DP_TEST_EDID_CHECKSUM, checksum);
-			if (retval) {
-				HISI_FB_ERR("[DP] failed to dptx_write_dpcd DP_TEST_EDID_CHECKSUM, retval=%d.\n", retval);
-				return retval;
-			}
-
-			retval = dptx_write_dpcd(dptx, DP_TEST_RESPONSE, DP_TEST_EDID_CHECKSUM_WRITE);
-			if (retval) {
-				HISI_FB_ERR("[DP] failed to dptx_write_dpcd DP_TEST_RESPONSE, retval=%d.\n", retval);
-				return retval;
-			}
-		}
+	retval = dptx_get_test_request(dptx);
+	if (retval) {
+		HISI_FB_ERR("[DP] Check test request failed.\n");
+		return retval;
 	}
 
 	/* TODO No other IRQ should be set on hotplug */
@@ -1689,6 +1768,9 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd)
 		dp_imonitor_set_param(DP_PARAM_LINK_TRAINING_FAILED, &retval);
 		return retval;
 	}
+
+	msleep(1);
+
 
 	if (!bsafe_mode) {
 		dptx_choose_edid_timing(dptx, &bsafe_mode);
@@ -1702,7 +1784,7 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd)
 			dp_imonitor_set_param_resolution(&code, &(vparams->video_format));
 			dptx_dtd_fill(&mdtd, code, vparams->refresh_rate, vparams->video_format);/*If edid is parsed error, DP transfer 640*480 firstly!.*/
 		} else {
-			vparams->video_format = DMT;
+			vparams->video_format = VCEA;
 			dptx_dtd_fill(&mdtd, 16, vparams->refresh_rate, vparams->video_format); /*If edid can't be got, DP transfer 1024*768 firstly!*/
 
 			retval = dptx_read_dpcd(dptx, DP_DOWNSTREAMPORT_PRESENT, &rev);
@@ -1728,18 +1810,36 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd)
 	retval = dptx_video_ts_calculate(dptx, dptx->link.lanes,
 		dptx->link.rate, vparams->bpc, vparams->pix_enc, vparams->mdtd.pixel_clock);
 
-	if (retval) {
-		HISI_FB_INFO("[DP] Can't change to the preferred video mode: frequency = %llu\n",
-						vparams->mdtd.pixel_clock);
+	if (dptx->mst) {
+		if ((vparams->mdtd.h_active > FHD_TIMING_H_ACTIVE) || (vparams->mdtd.v_active > FHD_TIMING_V_ACTIVE)) {
+			vparams->video_format = VCEA;
+			for (i = 0; i < dptx->streams; i++) {
+				retval = dptx_video_mode_change(dptx, 16, i);
+				CHECK_RET(retval);
+			}
+		}
 	} else {
-		//vparams->mdtd = mdtd;
-		HISI_FB_DEBUG("[DP] pixel_frequency=%llu.\n", vparams->mdtd.pixel_clock);
+		if (retval) {
+			HISI_FB_INFO("[DP] Can't change to the preferred video mode: frequency = %llu\n",
+							vparams->mdtd.pixel_clock);
+		} else {
+			//vparams->mdtd = mdtd;
+			HISI_FB_DEBUG("[DP] pixel_frequency=%llu.\n", vparams->mdtd.pixel_clock);
 
-		/* MMCM */
+			/* MMCM */
+		}
 	}
+
+
+	// Enable audio SDP
+	dptx_audio_sdp_en(dptx);
+	dptx_audio_timestamp_sdp_en(dptx);
+
+	// enable VCS if YCBCR420 is enabled
+	if (vparams->pix_enc == YCBCR420) {
+	}
+
 	/*DP update device to HWC and configue DSS*/
-
-
 	if (dptx->dptx_vr) {
 		if (dptx_check_low_temperature(dptx)) {
 			HISI_FB_ERR("[DP] VR device can't work on low temperature!\n");
@@ -1762,6 +1862,14 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd)
 		}
 	}
 
+	dptx_timing_config(dptx);
+
+	if (dptx->dptx_vr)
+		dptx_init_detect_work(dptx);
+
+	dptx->current_link_rate = dptx->link.rate;
+	dptx->current_link_lanes= dptx->link.lanes;
+
 #if CONFIG_DP_ENABLE
 	// for factory test
 	if (dp_factory_mode_is_enable()) {
@@ -1776,27 +1884,16 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd)
 	}
 #endif
 
-
-	/*Update DP reg configue*/
-	dptx_video_timing_change(dptx, 0);	/*dptx video reg depends on dss pixel clock.*/
-	//dptx_video_timing_change(dptx, 1);	/*dptx video reg depends on dss pixel clock.*/
-
-	dptx_audio_config(dptx);	/*dptx audio reg depends on phy status(P0)*/
-
-	dptx->current_link_rate = dptx->link.rate;
-	dptx->current_link_lanes= dptx->link.lanes;
-
-	if (dptx->dptx_vr) {
-		dptx_init_detect_work(dptx);
-	}
-
+#ifdef CONFIG_DP_HDCP_ENABLE
 	hparams->auth_fail_count = 0;
+#endif
 
 	HISI_FB_INFO("[DP] -.\n");
 
 	return 0;
 }
 
+#ifdef CONFIG_DP_HDCP_ENABLE
 static void hdcp22_gpio_intr_clear(bool keep_intr, struct dp_ctrl *dptx, uint32_t hdcpobs)
 {
 	uint32_t reg_mask = 0;
@@ -1905,7 +2002,7 @@ static void handle_hdcp_intr(struct dp_ctrl *dptx)
 {
 	uint32_t hdcpintsts;
 	uint32_t hdcpobs;
-	struct hdcp_params *hparams;
+	struct hdcp_params *hparams = NULL;
 	bool keep_intr = false;
 
 	if (dptx == NULL) {
@@ -1934,9 +2031,7 @@ static void handle_hdcp_intr(struct dp_ctrl *dptx)
 		HISI_FB_DEBUG("KSV memory access guaranteed for read, write access\n");
 
 	if (hdcpintsts & DPTX_HDCP_KSV_SHA1)
-	{
 		HISI_FB_DEBUG("SHA1 verification has been done\n");
-	}
 
 	if (hdcpintsts & DPTX_HDCP_AUX_RESP_TIMEOUT) {
 		HDCP_SendNotification((uint32_t)Hot_Plug_HDCP13_TIMEOUT);
@@ -1950,9 +2045,7 @@ static void handle_hdcp_intr(struct dp_ctrl *dptx)
 			HDCP_SendNotification((uint32_t)Hot_Plug_HDCP13_FAIL);
 			keep_intr = true;
 			HISI_FB_ERR("Reach max allowed retries count=%d.\n", hparams->auth_fail_count);
-		}
-		else
-		{
+		} else {
 			HISI_FB_INFO("HDCP authentication process was failed!\n");
 			dp_imonitor_set_param(DP_PARAM_HDCP_KEY_F, NULL);
 		}
@@ -1973,6 +2066,7 @@ static void handle_hdcp_intr(struct dp_ctrl *dptx)
 
 	hdcp_intr_clear(keep_intr, dptx, hdcpintsts);
 }
+#endif
 
 static void handle_aux_reply(struct dp_ctrl *dptx)
 {
@@ -2034,12 +2128,12 @@ static void handle_aux_reply(struct dp_ctrl *dptx)
 irqreturn_t dptx_threaded_irq(int irq, void *dev)
 {
 	int retval = 0;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 	uint32_t hpdsts;
 
 	hisifd = dev;
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return IRQ_HANDLED;
 	}
@@ -2098,14 +2192,14 @@ void dptx_hpd_handler(struct dp_ctrl *dptx, bool plugin, uint8_t dp_lanes)
 {
 	uint32_t reg = 0;
 
-	if (!dptx) {
+	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] dptx is NULL!\n");
 		return;
 	}
 
 	HISI_FB_INFO("[DP] DP Plug Type:(%d), Lanes:(%d)\n", plugin, dp_lanes);
-	/* need to  check dp lanes */
 
+	/* need to check dp lanes */
 	dptx->max_lanes = dp_lanes;
 
 	reg = dptx_readl(dptx, DPTX_CCTL);
@@ -2121,7 +2215,7 @@ void dptx_hpd_handler(struct dp_ctrl *dptx, bool plugin, uint8_t dp_lanes)
 void dptx_hpd_irq_handler(struct dp_ctrl *dptx)
 {
 	int retval = 0;
-	if (!dptx) {
+	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] dptx is NULL!\n");
 		return;
 	}
@@ -2143,14 +2237,14 @@ void dptx_hpd_irq_handler(struct dp_ctrl *dptx)
 irqreturn_t dptx_irq(int irq, void *dev)
 {
 	irqreturn_t retval = IRQ_HANDLED;
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 	struct dp_ctrl *dptx = NULL;
 	uint32_t ists;
 	uint32_t ien;
 	uint32_t hpdsts;
 
 	hisifd = (struct hisi_fb_data_type *)dev;
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] hisifd is NULL!\n");
 		return IRQ_HANDLED;
 	}
@@ -2182,8 +2276,10 @@ irqreturn_t dptx_irq(int irq, void *dev)
 	}
 
 	if (ists & DPTX_ISTS_HDCP) {
+	#ifdef CONFIG_DP_HDCP_ENABLE
 		handle_hdcp_intr(dptx);
 		dptx_writel(dptx, DPTX_ISTS, DPTX_ISTS_HDCP);
+	#endif
 	}
 
 	if (ists & DPTX_ISTS_SDP) {
@@ -2256,4 +2352,41 @@ irqreturn_t dptx_irq(int irq, void *dev)
 
 	return retval;
 }
+
+
+/**
+ * drm_dp_calc_pbn_mode() - Calculate the PBN for a mode.
+ * @clock: dot clock for the mode
+ * @bpp: bpp for the mode.
+ *
+ * This uses the formula in the spec to calculate the PBN value for a mode.
+ */
+int drm_dp_calc_pbn_mode(int clock, int bpp)
+{
+	s64 kbps;
+	s64 peak_kbps;
+	u32 numerator;
+	u32 denominator;
+
+	kbps = (s64)clock * bpp;
+
+	/*
+	 * margin 5300ppm + 300ppm ~ 0.6% as per spec, factor is 1.006
+	 * The unit of 54/64Mbytes/sec is an arbitrary unit chosen based on
+	 * common multiplier to render an integer PBN for all link rate/lane
+	 * counts combinations
+	 * calculate
+	 * peak_kbps *= (1006/1000)
+	 * peak_kbps *= (64/54)
+	 * peak_kbps *= 8    convert to bytes
+	 */
+	numerator = 64 * 1006;
+	denominator = 54 * 8 * 1000 * 1000;
+
+	kbps *= numerator;
+	peak_kbps = drm_fixp_from_fraction(kbps, denominator);
+
+	return drm_fixp2int_ceil(peak_kbps);
+}
+
 /*lint -restore*/

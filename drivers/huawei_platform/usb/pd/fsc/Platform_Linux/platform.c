@@ -343,6 +343,7 @@ void platform_notify_cc_orientation(CC_ORIENTATION orientation)
     else if(orientation == NONE)
     {
         tc_state.new_state = PD_DPM_TYPEC_UNATTACHED;
+	g_vbus_only_reported = FALSE;
     }
 
     // Optional: Notify platform of CC pull-up/pull-down status
@@ -856,15 +857,3 @@ void platform_double_56k_cable(void)
     FSC_PRINT("FUSB %s Enter\n", __func__);
     pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, &typec_state);
 }
-
-#ifdef FSC_HAVE_CUSTOM_SRC2
-void platform_double_22k_cable(void)
-{
-	struct pd_dpm_typec_state typec_state = {
-		.new_state = PD_DPM_TYPEC_ATTACHED_CUSTOM_SRC2,
-	};
-
-	FSC_PRINT("FUSB %s Enter\n", __func__);
-	pd_dpm_handle_pe_event(PD_DPM_PE_EVT_TYPEC_STATE, &typec_state);
-}
-#endif /* FSC_HAVE_CUSTOM_SRC2 */

@@ -432,7 +432,6 @@ int production_test_ms_raw(char *path_limits, int stop_on_fail, TestToDo *todo,
         struct ts_rawdata_info *info, TestResult *result);
 int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
         struct ts_rawdata_info *info, TestResult *result);
-int production_test_ms_cx_lp(char *path_limits, int stop_on_fail,TestToDo *todo);
 int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,struct ts_rawdata_info *info, TestResult *result);
 int production_test_ss_raw_lp(char *path_limits, int stop_on_fail,TestToDo *todo);
 int production_test_ss_ix_cx(char *path_limits, int stop_on_fail,

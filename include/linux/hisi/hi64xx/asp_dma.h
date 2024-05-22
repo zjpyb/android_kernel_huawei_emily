@@ -10,6 +10,8 @@
 #ifndef __ASP_DMA_H__
 #define __ASP_DMA_H__
 
+#include <linux/types.h>
+
 #define ASP_DMA_MAX_CHANNEL_NUM         (16)
 #define ASP_DMA_CPU_NO_AP               (0)
 
@@ -64,7 +66,7 @@
 #define ASP_DMA_INT_ERR2_MASK_AP        (ASP_DMA_INT_ERR2_MASK(ASP_DMA_CPU_NO_AP))
 #define ASP_DMA_INT_ERR3_MASK_AP        (ASP_DMA_INT_ERR3_MASK( ASP_DMA_CPU_NO_AP))
 
-#define ASP_DMA_LLI_LINK(uwAddr)		(((unsigned int)(unsigned long)(uwAddr) & 0xffffffe0UL) | (0x2UL))
+#define ASP_DMA_LLI_LINK(uwAddr)		(((unsigned int)(uintptr_t)(uwAddr) & 0xffffffe0UL) | (0x2UL))
 
 typedef int (*callback_t)(unsigned short int_type, unsigned long param, unsigned int dma_channel);
 

@@ -85,11 +85,14 @@ int arch_has_hw_breakpoint_addr_mask(void)
 /*
  * arch read watchpoint value register
  */
-void arch_read_wvr(u64 *buf)
+void arch_read_wvr(u64 *buf, u32 len)
 {
 	int i;
 	int core_num_wrps = hw_breakpoint_slots(TYPE_DATA);
 
+	if ( len < core_num_wrps ) {
+		pr_err(" buf size out of memory\n");
+	}
 	for (i = 0; i < core_num_wrps; ++i) {
 		buf[i] = read_wb_reg(AARCH64_DBG_REG_WVR, i);
 	}
@@ -98,11 +101,14 @@ void arch_read_wvr(u64 *buf)
 /*
  * arch read watchpoint control register
  */
-void arch_read_wcr(u64 *buf)
+void arch_read_wcr(u64 *buf, u32 len)
 {
 	int i;
 	int core_num_wrps = hw_breakpoint_slots(TYPE_DATA);
 
+	if ( len < core_num_wrps ) {
+		pr_err(" buf size out of memory\n");
+	}
 	for (i = 0; i < core_num_wrps; ++i) {
 		buf[i] = read_wb_reg(AARCH64_DBG_REG_WCR, i);
 	}

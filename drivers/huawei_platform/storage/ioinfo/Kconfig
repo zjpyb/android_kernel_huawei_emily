@@ -4,4 +4,3 @@ config PROC_IO_INFO
 	default n
 	help
 	  get IO information, include disk io stat, io top, io wait.
-	  

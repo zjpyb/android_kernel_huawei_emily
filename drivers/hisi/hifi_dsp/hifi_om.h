@@ -60,6 +60,8 @@ extern "C" {
 #define IMEDIA_PARAMS_KEEP_TWO_DECIMAL   2
 #define IMEDIA_PARAMS_KEEP_ONE_DECIMAL   1
 #define IMEDIA_PARAMS_KEEP_ZERO_DECIMAL  0
+#define SMARTPAKIT_NAME_MAX              64
+
 
 typedef enum {
 	DUMP_DSP_LOG,
@@ -337,7 +339,8 @@ struct pa_status_str {
 	char f0[SOC_SMARTPA_ERR_INFO_MAX_LEN];
 	char tem[SOC_SMARTPA_ERR_INFO_MAX_LEN];
 	char re[SOC_SMARTPA_ERR_INFO_MAX_LEN];
-	char totoal_gain[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+	char total_gain[SOC_SMARTPA_ERR_INFO_MAX_LEN];
+	char scene_id[SOC_SMARTPA_ERR_INFO_MAX_LEN];
 };
 
 struct imedia_dft_report_info {
@@ -349,8 +352,18 @@ struct imedia_dft_report_info {
 	short slsm_re[IMEDIA_SMARTPA_MAX_CHANNEL];
 	short slsm_coiltemp[IMEDIA_SMARTPA_MAX_CHANNEL];
 	short slsm_re_ref[IMEDIA_SMARTPA_MAX_CHANNEL];
-	short spow_target_gain[IMEDIA_SMARTPA_MAX_CHANNEL];
+	short step_current_gain[IMEDIA_SMARTPA_MAX_CHANNEL];
 };
+
+typedef struct {
+	short current_gain[IMEDIA_SMARTPA_MAX_CHANNEL];
+	short coil_tempreature[IMEDIA_SMARTPA_MAX_CHANNEL];
+	short scene_id;
+	unsigned int chip_vendor[IMEDIA_SMARTPA_MAX_CHANNEL];
+	unsigned int box_vendor[IMEDIA_SMARTPA_MAX_CHANNEL];
+	unsigned int calibration_value[IMEDIA_SMARTPA_MAX_CHANNEL];
+	char chip_model[SMARTPAKIT_NAME_MAX];
+} imedia_dft_report_raw_data_t;
 
 struct smartpa_info {
 	unsigned int msg_size;
@@ -361,6 +374,7 @@ struct smartpa_info {
 	unsigned int err_line_num;
 	unsigned int err_chl;
 	unsigned char err_info[MLIB_SMARTPA_DFT_ERRINFO_MAX_LEN];
+	imedia_dft_report_raw_data_t raw_data;
 };
 
 struct smartpa_msg {

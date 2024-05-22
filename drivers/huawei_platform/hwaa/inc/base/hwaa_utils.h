@@ -16,6 +16,8 @@
 	HWAA_PRINT_TAG, ## args)
 #define hwaa_pr_info(fmt, args...) pr_info(" %s: " fmt "\n", \
 	HWAA_PRINT_TAG,  ## args)
+#define hwaa_pr_info_once(fmt, args...) pr_info_once(" %s: " fmt "\n", \
+	HWAA_PRINT_TAG,  ## args)
 #define hwaa_pr_debug(fmt, args...) pr_debug(" %s: " fmt "\n", \
 	HWAA_PRINT_TAG,  ## args)
 #define HWAA_PER_USER_RANGE 100000

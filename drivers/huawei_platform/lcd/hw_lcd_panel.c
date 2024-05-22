@@ -125,7 +125,6 @@ static int hw_lcd_parse_array_data(struct device_node* np, char* name, struct ar
 	}
 
 	//For use byte property: []
-	//memcpy(buf, data, blen);
 
 	//For use cells property: <>
 	for (i = 0; i < blen; i++) {
@@ -176,7 +175,6 @@ static int hw_lcd_parse_dcs_cmds(struct device_node* np, char* cmd_name, struct 
 	}
 
 	//For use byte property: []
-	//memcpy(buf, data, blen);
 
 	//For use cells property: <>
 	for (i = 0; i < blen; i++) {

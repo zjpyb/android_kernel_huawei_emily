@@ -25,37 +25,29 @@
 #include <soc_sctrl_interface.h>
 #include <global_ddr_map.h>
 #include <m3_rdr_ddr_map.h>
+#include <lpmcu_runtime_save_user.h>
 #include <mntn_subtype_exception.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 
-/*lint -e750 -esym(750, M3_WDT_TIMEOUT_IRQ_NUM, AP_WDT_TIMEOUT_IRQ_NUM)*/
-#define M3_WDT_TIMEOUT_IRQ_NUM 206
-#define AP_WDT_TIMEOUT_IRQ_NUM 77
-/*lint -e749 -esym(749, AP_WDT_TIMEOUT, SYSTEM_ERROR_TYPE_MAX)*/
+#define M3_WDT_TIMEOUT_IRQ_NUM		206
+#define AP_WDT_TIMEOUT_IRQ_NUM		77
+
 enum RDR_LPM3_SYSTEM_ERROR_TYPE {
 	M3_WDT_TIMEOUT = HISI_BB_MOD_LPM_START,
 	AP_WDT_TIMEOUT,
 	SYSTEM_ERROR_TYPE_MAX = HISI_BB_MOD_LPM_END,
 };
-/*lint -e749 +esym(749, AP_WDT_TIMEOUT, SYSTEM_ERROR_TYPE_MAX)*/
-#define LPMCU_RESET_OFF_MODID_PANIC     (0x1)
-#define LPMCU_RESET_OFF_MODID_WDT       (0x2)
-/*lint -e750 -esym(750, PSCI_MSG_TYPE_M3_WDTTIMEOUT)*/
-/*
-如下PSCI_MSG_TYPE_M3_WDTTIMEOUT 等宏定义，如下三个文件要保持一致:
-kernel\drivers\watchdog\sp805_wdt.c
-kernel\drivers\hisi\mntn\blackbox\platform_lpm3\rdr_hisi_lpm3.c
-vendor\hisi\confidential\lpmcu\include\psci.h
-*/
-#define PSCI_MSG_TYPE_M3_CTXSAVE IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 0)
-#define PSCI_MSG_TYPE_M3_WDTTIMEOUT IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 1)
-#define PSCI_MSG_TYPE_M3_RDRBUF IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 2)
-#define PSCI_MSG_TYPE_M3_PANIC_OFF IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 3)
-#define PSCI_MSG_TYPE_M3_STAT_DUMP IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 4)
 
-#define LPM3_RDR_SAVE_DONE IPC_CMD(OBJ_LPM3, OBJ_AP, CMD_NOTIFY, TYPE_RESET)
+#define LPMCU_RESET_OFF_MODID_PANIC	0x1
+#define LPMCU_RESET_OFF_MODID_WDT	0x2
+
+#define PSCI_MSG_TYPE_M3_CTXSAVE	IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 0)
+#define PSCI_MSG_TYPE_M3_WDTTIMEOUT	IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 1)
+#define PSCI_MSG_TYPE_M3_RDRBUF		IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 2)
+#define PSCI_MSG_TYPE_M3_PANIC_OFF	IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 3)
+#define PSCI_MSG_TYPE_M3_STAT_DUMP	IPC_CMD(OBJ_AP, OBJ_LPM3, CMD_INQUIRY, 4)
+#define LPM3_RDR_SAVE_DONE		IPC_CMD(OBJ_LPM3, OBJ_AP, CMD_NOTIFY, TYPE_RESET)
 /*lint +esym(750,*)*/
-
 
 static u64 current_core_id = RDR_LPM3;
 static struct rdr_register_module_result current_info;
@@ -73,33 +65,34 @@ static volatile u32 g_modid;
 static char *sctrl_base;
 
 /*lpm3 log cleartext define*/
-typedef int (*cleartext_func_t)(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len);
+typedef int (*cleartext_func_t)(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
 
 typedef struct LOG_LPM3_CLEARTEXT {
-		s8 *file_name;
+		s8 *log_name;
 		u32 log_addr_offset;
 		u32 log_len;
 		cleartext_func_t cleartext_func;
-}log_lpm3_cleartext_t;
+} log_lpm3_cleartext_t;
 
-static int system_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len);
-static int head_info_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len);
-static int lpm3_exc_special_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len);
-static int lpm3_core_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len);
-static int lpm3_nvic_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len);
-static int lpm3_log_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len);
+static int system_reg_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
+static int head_info_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
+static int lpm3_exc_special_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
+static int lpm3_core_reg_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
+static int lpm3_nvic_reg_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
+static int lpm3_log_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
+static int lpmcu_runtime_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len);
 
 log_lpm3_cleartext_t g_lpm3_cleartext[] = {
-		{"HEAD_INFO.txt", M3_RDR_SYS_CONTEXT_HEAD_OFFSET, M3_RDR_SYS_CONTEXT_HEAD_SIZE, head_info_prase},
-		{"LPM3_CORE_REGS.txt", M3_RDR_SYS_CONTEXT_M3_COREREG_OFFSET, M3_RDR_SYS_CONTEXT_M3_COREREG_SIZE, lpm3_core_reg_prase},
-		{"LPM3_EXC_SPECIAL.txt", M3_RDR_SYS_CONTEXT_EXC_SPECIAL_OFFSET, M3_RDR_SYS_CONTEXT_EXC_SPECIAL_SIZE, lpm3_exc_special_prase},
-		{"LPM3_NVIC_REGS.txt", M3_RDR_SYS_CONTEXT_M3_NVICREG_OFFSET, M3_RDR_SYS_CONTEXT_M3_NVICREG_SIZE, lpm3_nvic_reg_prase},
-		{"CRG_PERI.txt", M3_RDR_CRG_PERI_OFFSET, M3_RDR_CRG_PERI_SIZE, system_reg_prase},
-		{"SCTRL.txt", M3_RDR_SCTRL_OFFSET, M3_RDR_SCTRL_SIZE, system_reg_prase},
-		{"PMCTRL.txt", M3_RDR_PMCTRL_OFFSET, M3_RDR_PMCTRL_SIZE, system_reg_prase},
-		{"PCTRL.txt", M3_RDR_PCTRL_OFFSET, M3_RDR_PCTRL_SIZE, system_reg_prase},
-		{"LPM3_LOG.txt", M3_RDR_SYS_CONTEXT_M3_LOG_OFFSET, M3_RDR_SYS_CONTEXT_M3_LOG_SIZE, lpm3_log_prase},
-		{"RUNTIME_VAR.txt", M3_RDR_SYS_CONTEXT_RUNTIME_VAR_OFFSET, M3_RDR_SYS_CONTEXT_RUNTIME_VAR_SIZE, system_reg_prase},
+		{"HEAD_INFO", M3_RDR_SYS_CONTEXT_HEAD_OFFSET, M3_RDR_SYS_CONTEXT_HEAD_SIZE, head_info_prase},
+		{"LPM3_CORE_REGS", M3_RDR_SYS_CONTEXT_M3_COREREG_OFFSET, M3_RDR_SYS_CONTEXT_M3_COREREG_SIZE, lpm3_core_reg_prase},
+		{"LPM3_EXC_SPECIAL", M3_RDR_SYS_CONTEXT_EXC_SPECIAL_OFFSET, M3_RDR_SYS_CONTEXT_EXC_SPECIAL_SIZE, lpm3_exc_special_prase},
+		{"LPM3_NVIC_REGS", M3_RDR_SYS_CONTEXT_M3_NVICREG_OFFSET, M3_RDR_SYS_CONTEXT_M3_NVICREG_SIZE, lpm3_nvic_reg_prase},
+		{"CRG_PERI_REGS", M3_RDR_CRG_PERI_OFFSET, M3_RDR_CRG_PERI_SIZE, system_reg_prase},
+		{"SCTRL_REGS", M3_RDR_SCTRL_OFFSET, M3_RDR_SCTRL_SIZE, system_reg_prase},
+		{"PMCTRL_REGS", M3_RDR_PMCTRL_OFFSET, M3_RDR_PMCTRL_SIZE, system_reg_prase},
+		{"PCTRL_REGS", M3_RDR_PCTRL_OFFSET, M3_RDR_PCTRL_SIZE, system_reg_prase},
+		{"RUNTIME_VAR_INFO", M3_RDR_SYS_CONTEXT_RUNTIME_VAR_OFFSET, M3_RDR_SYS_CONTEXT_RUNTIME_VAR_SIZE, lpmcu_runtime_prase},
+		{"LPM3_LOG", M3_RDR_SYS_CONTEXT_M3_LOG_OFFSET, M3_RDR_SYS_CONTEXT_M3_LOG_SIZE, lpm3_log_prase},
 };
 
 /*lpm3 log cleartext -- head info*/
@@ -191,28 +184,24 @@ static void fn_dump(u32 modid, u32 etype, u64 coreid,
 {
 	s32 ret;
 	u32 msg[2] = {PSCI_MSG_TYPE_M3_CTXSAVE, 0};
-	/*pr_err("[%s] [0x%x 0x%x] start\n", __func__, readl(SOC_SYSCOUNTER_CNTCV_H32_ADDR(counter_base)),
-											readl(SOC_SYSCOUNTER_CNTCV_L32_ADDR(counter_base)));*/
 
 	BB_PRINT_PN("modid:0x%x,etype:0x%x,coreid:0x%llx,%s,pfn_cb:%pK\n", modid, etype, coreid, pathname, pfn_cb);
 	msg[1] = modid;
 	pfn_cb_dumpdone = pfn_cb;
 	g_modid = modid;
-	strncpy(g_lpmcu_ddr_memory_path, pathname, LOG_PATH_LEN-1UL); /* unsafe_function_ignore: strncpy*/
+	ret = strncpy_s(g_lpmcu_ddr_memory_path, LOG_PATH_LEN, pathname, LOG_PATH_LEN-1UL);
+	if (ret != EOK)
+		BB_PRINT_ERR("%s:strncpy_s failed:%d", __func__, ret);
 
 	ret = RPROC_ASYNC_SEND(HISI_RPROC_LPM3_MBX17, (mbox_msg_t *)&msg, 2);
-	if (ret != 0) {
+	if (ret != 0)
 		BB_PRINT_ERR("%s:RPROC_ASYNC_SEND failed! return (0x%x)\n", __func__, ret);
-	}
 
 	BB_PRINT_PN("%s end\n", __func__);
 	return;
 }
 static void fn_reset(u32 modid, u32 etype, u64 coreid)
 {
-	/*pr_err("[%s] [0x%x 0x%x] start\n", __func__, readl(SOC_SYSCOUNTER_CNTCV_H32_ADDR(counter_base)),
-											readl(SOC_SYSCOUNTER_CNTCV_L32_ADDR(counter_base)));
-	pr_err("%s end\n", __func__);*/
 	return;
 }/*lint !e715*/
 
@@ -232,14 +221,20 @@ static int rdr_lpm3_msg_handler(struct notifier_block *nb,
 /* work for rdr lpm3 */
 static int rdr_lpm3_thread_body(void *arg)
 {
+	s32 ret;
 	char *lpmcu_ddr_base = NULL;
+
 	while (1) {
-		if (down_interruptible(&rdr_lpm3_sem)) {
+		if (down_interruptible(&rdr_lpm3_sem))
 			return -1;
-		}
+
 		BB_PRINT_PN(" %s %d pfn_cb_dumpdone:%pK\n", __func__, __LINE__, pfn_cb_dumpdone);
 		if (pfn_cb_dumpdone != NULL) {
-			strncat(g_lpmcu_ddr_memory_path, "/lpmcu_log/lpmcu_ddr_memory.bin", LPMCU_DDR_MEM_PART_PATH_LEN);/* unsafe_function_ignore: strncat*/
+			ret = strncat_s(g_lpmcu_ddr_memory_path, LPMCU_DDR_MEM_PART_PATH_LEN,
+			                "/lpmcu_log/lpmcu_ddr_memory.bin", sizeof("/lpmcu_log/lpmcu_ddr_memory.bin"));
+			if (ret != EOK)
+				BB_PRINT_ERR("%s:strncpy_s failed:%d", __func__, ret);
+
 			lpmcu_ddr_base = (char *)ioremap((phys_addr_t)HISI_RESERVED_LPMX_CORE_PHYMEM_BASE_UNIQUE, HISI_RESERVED_LPMX_CORE_PHYMEM_SIZE);/*lint !e747*/
 			if (lpmcu_ddr_base) {
 				mntn_filesys_write_log(g_lpmcu_ddr_memory_path, lpmcu_ddr_base, HISI_RESERVED_LPMX_CORE_PHYMEM_SIZE, 0);
@@ -301,13 +296,11 @@ int rdr_lpm3_stat_dump(void)
 	return 0;
 }
 
-static int system_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len)
+static int system_reg_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len)
 {
 	u32 i;
-	struct file *fp;
 	bool error = false;
 
-	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
 		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
@@ -318,8 +311,6 @@ static int system_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log
 		rdr_cleartext_print(fp, &error, "0x%03x       0x%08x\n", i, *((u32 volatile *)(uintptr_t)(log_addr + i)));
 	}
 
-	bbox_cleartext_end_filep(fp, dir_path, file_name);
-
 	if (true == error)
 		return -1;
 
@@ -328,25 +319,26 @@ static int system_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log
 
 struct rdr_buf_head {
 	u32 acore_pc[CPU_CORE_NUM * 2];
+#ifdef CONFIG_HISI_MNTN_SP
+	u32 acore_ls0_sp[CPU_CORE_NUM * 2];
+	u32 acore_ls1_sp[CPU_CORE_NUM * 2];
+#endif
 };
 
-static int head_info_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len)
+static int head_info_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len)
 {
 	u8 cpu_idx;
 	s32 ret;
-	struct file *fp;
 	bool error = false;
 	u32 data_low, data_high;
 	s8 pc_info[PC_INFO_STR_MAX_LENGTH];
-	struct rdr_buf_head *head;
+	struct rdr_buf_head *head = NULL;
 
-	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
 		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
-	rdr_cleartext_print(fp, &error, "=================HEAD INFO START================\n");
 
 	head = (struct rdr_buf_head *)(uintptr_t)log_addr;
 	for (cpu_idx = 0; cpu_idx < CPU_CORE_NUM; cpu_idx++) {
@@ -364,8 +356,17 @@ static int head_info_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_
 			ret = snprintf_s(pc_info, PC_INFO_STR_MAX_LENGTH, PC_INFO_STR_MAX_LENGTH - 1,
 					"cpu%d: %s\n", cpu_idx, "LOCK_TIMEOUT");
 		else {
+#ifdef CONFIG_HISI_MNTN_SP
+			ret = snprintf_s(pc_info, PC_INFO_STR_MAX_LENGTH, PC_INFO_STR_MAX_LENGTH - 1,
+					"cpu%d PC: 0x%08x%08x LS0_SP: 0x%08x%08x LS1_SP: 0x%08x%08x\n",
+					cpu_idx, data_high, data_low,
+					head->acore_ls0_sp[2 * cpu_idx + 1], head->acore_ls0_sp[2 * cpu_idx],
+					head->acore_ls1_sp[2 * cpu_idx + 1], head->acore_ls1_sp[2 * cpu_idx]
+			);
+#else
 			ret = snprintf_s(pc_info, PC_INFO_STR_MAX_LENGTH, PC_INFO_STR_MAX_LENGTH - 1,
 					"cpu%d PC: 0x%08x%08x\n", cpu_idx, data_high, data_low);
+#endif
 		}
 
 		if (ret < 0) {
@@ -376,9 +377,6 @@ static int head_info_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_
 		rdr_cleartext_print(fp, &error, pc_info);
 	}
 
-	rdr_cleartext_print(fp, &error, "=================HEAD INFO END--================\n");
-
-	bbox_cleartext_end_filep(fp, dir_path, file_name);
 
 	if (true == error)
 		return -1;
@@ -386,14 +384,12 @@ static int head_info_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_
 	return 0;
 }
 
-static int lpm3_exc_special_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len)
+static int lpm3_exc_special_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len)
 {
 	u8 reason_idx;
-	struct file *fp;
 	bool error = false;
-	EXC_SPECIAL_BACKUP_DATA_STRU *p_lpm3_exc_special;
+	EXC_SPECIAL_BACKUP_DATA_STRU *p_lpm3_exc_special = NULL;
 
-	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
 		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
@@ -401,7 +397,6 @@ static int lpm3_exc_special_prase(char *dir_path, s8 *file_name, u64 log_addr, u
 
 	p_lpm3_exc_special = (EXC_SPECIAL_BACKUP_DATA_STRU *)(uintptr_t)(log_addr);
 
-	rdr_cleartext_print(fp, &error, "==============LPM3 EXC SPECIAL START================\n");
 	rdr_cleartext_print(fp, &error, "\n");
 	for(reason_idx = 0; reason_idx < RDR_REG_BACKUP_IDEX_MAX; reason_idx++)
 		rdr_cleartext_print(fp, &error, "reset_reason[%d]   0x%x\n", reason_idx, p_lpm3_exc_special->reset_reason[reason_idx]);
@@ -419,9 +414,6 @@ static int lpm3_exc_special_prase(char *dir_path, s8 *file_name, u64 log_addr, u
 	rdr_cleartext_print(fp, &error, "ddr_exc           0x%x\n", p_lpm3_exc_special->ddr_exc);
 	rdr_cleartext_print(fp, &error, "task_id           0x%x\n", p_lpm3_exc_special->task_id);
 
-	rdr_cleartext_print(fp, &error, "==============LPM3 EXC SPECIAL  END--================\n");
-
-	bbox_cleartext_end_filep(fp, dir_path, file_name);
 
 	if (true == error)
 		return -1;
@@ -429,20 +421,17 @@ static int lpm3_exc_special_prase(char *dir_path, s8 *file_name, u64 log_addr, u
 	return 0;
 }
 
-static int lpm3_core_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len)
+static int lpm3_core_reg_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len)
 {
 	u8 reason_idx;
-	struct file *fp;
 	bool error = false;
-	RDR_REG_BACKUP_DATA_STRU *p_lpm3_core_reg;
+	RDR_REG_BACKUP_DATA_STRU *p_lpm3_core_reg = NULL;
 
-	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
 		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
 	}
 
-	rdr_cleartext_print(fp, &error, "==============LPM3 CORE REGS START================\n");
 	rdr_cleartext_print(fp, &error, "\n");
 
 	for(reason_idx = 0; reason_idx < RDR_REG_BACKUP_IDEX_MAX; reason_idx++) {
@@ -475,9 +464,7 @@ static int lpm3_core_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 
 		rdr_cleartext_print(fp, &error, "CONTROL:   0x%x\n", p_lpm3_core_reg->CONTROL);
 		rdr_cleartext_print(fp, &error, "\n");
 	}
-	rdr_cleartext_print(fp, &error, "==============LPM3 CORE REGS END--================\n");
 
-	bbox_cleartext_end_filep(fp, dir_path, file_name);
 
 	if (true == error)
 		return -1;
@@ -485,16 +472,15 @@ static int lpm3_core_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 
 	return 0;
 }
 
-static int lpm3_nvic_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len)
+static int lpm3_nvic_reg_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len)
 {
 	u8 i;
-	struct file *fp;
 	bool error = false;
-	NVIC_Type *p_lpm3_nvic_reg;
-	SCB_Type *p_lpm3_scb_reg;
-	CoreDebug_Type *p_lpm3_core_debug_reg;
+	NVIC_Type *p_lpm3_nvic_reg = NULL;
+	SCB_Type *p_lpm3_scb_reg = NULL;
+	CoreDebug_Type *p_lpm3_core_debug_reg = NULL;
 
-	fp = bbox_cleartext_get_filep(dir_path, file_name);
+
 	if (IS_ERR_OR_NULL(fp)) {
 		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
@@ -504,7 +490,6 @@ static int lpm3_nvic_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 
 	p_lpm3_scb_reg = (SCB_Type *)(uintptr_t)(log_addr + SCB_TYPE_OFFSET);
 	p_lpm3_core_debug_reg = (CoreDebug_Type *)(uintptr_t)(log_addr + CORE_DEBUG_TYPE_OFFSET);
 
-	rdr_cleartext_print(fp, &error, "==============LPM3 NVIC REGS START================\n");
 	rdr_cleartext_print(fp, &error, "\n");
 
 	for(i = 0; i < 8; i++)
@@ -540,9 +525,6 @@ static int lpm3_nvic_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 
 	rdr_cleartext_print(fp, &error, "DEMCR      0x%x\n",  p_lpm3_core_debug_reg->DEMCR);
 
 	rdr_cleartext_print(fp, &error, "\n");
-	rdr_cleartext_print(fp, &error, "==============LPM3 NVIC REGS END--================\n");
-
-	bbox_cleartext_end_filep(fp, dir_path, file_name);
 
 	if (true == error)
 		return -1;
@@ -550,15 +532,12 @@ static int lpm3_nvic_reg_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 
 	return 0;
 }
 
-static int lpm3_log_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_len)
+static int lpm3_log_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len)
 {
-	struct file *fp;
-	bool error = false;
-	s8 *log_buff;
+	s8 *log_buff = NULL;
 	u32 log_size = log_len + 1;
 	s32 ret = 0;
 
-	fp = bbox_cleartext_get_filep(dir_path, file_name);
 	if (IS_ERR_OR_NULL(fp)) {
 		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
 		return -1;
@@ -576,37 +555,60 @@ static int lpm3_log_prase(char *dir_path, s8 *file_name, u64 log_addr, u32 log_l
 		goto out;
 	}
 
-	rdr_cleartext_print(fp, &error, "==============LPM3 LOG START================\n");
-
 	ret = vfs_write(fp, log_buff, (size_t)log_len, &(fp->f_pos));/*lint !e613 */
 	if (ret != log_len) {
 		BB_PRINT_ERR("%s():write file exception with ret %d.\n", __func__, ret);
 		ret = -1;
 		goto out;
 	}
-
-	rdr_cleartext_print(fp, &error, "==============LPM3 LOG END--================\n");
-
-	bbox_cleartext_end_filep(fp, dir_path, file_name);
-
 out:
 	kfree(log_buff);
-	log_buff = NULL;
-
-	if (true == error)
-		return -1;
 
 	return ret;
 }
 
+static int lpmcu_runtime_prase(char *dir_path, struct file *fp, u64 log_addr, u32 log_len)
+{
+	u32 i;
+	u32 offset;
+	u32 runtime_offset;
+	bool error = false;
+
+	if (IS_ERR_OR_NULL(fp)) {
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
+		return -1;
+	}
+
+	rdr_cleartext_print(fp, &error, "offset      val\n");
+	for(i = 0; i < sizeof(g_rdr_runtime_save_info) / sizeof(g_rdr_runtime_save_info[0]); i++) {
+		runtime_offset = g_rdr_runtime_save_info[i].offset;
+		for(offset = 0; offset < g_rdr_runtime_save_info[i].size && (offset + runtime_offset) < log_len; offset = offset + 4) {
+			rdr_cleartext_print(fp, &error, "0x%03x       0x%08x\n",
+					    (runtime_offset + offset),
+					    *((u32 volatile *)(uintptr_t)(log_addr + runtime_offset + offset)));
+		}
+	}
+
+	if (true == error)
+		return -1;
+
+	return 0;
+}
 
 static int rdr_hisi_lpm3_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 {
+	bool error = false;
 	u8 idx;
 	u64 log_addr_prase;
 	u32 log_len_prase;
-	s8 *log_name_creat;
 	s32 ret = 0;
+	struct file *fp = NULL;
+
+	fp = bbox_cleartext_get_filep(dir_path, "LPM3.txt");
+	if (IS_ERR_OR_NULL(fp)) {
+		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
+		return -1;
+	}
 
 	if (IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr)) {
 		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n", __func__, dir_path, (void *)(uintptr_t)log_addr);
@@ -619,16 +621,14 @@ static int rdr_hisi_lpm3_cleartext_print(char *dir_path, u64 log_addr, u32 log_l
 	}
 
 	for(idx = 0; idx < sizeof(g_lpm3_cleartext) / sizeof(log_lpm3_cleartext_t); idx++) {
-		log_name_creat = g_lpm3_cleartext[idx].file_name;
-		if (IS_ERR_OR_NULL(log_name_creat)) {
-			BB_PRINT_ERR("lpm3_log_name: %s error.\n", log_name_creat);
-			return -1;
-		}
-
 		log_addr_prase = log_addr + g_lpm3_cleartext[idx].log_addr_offset;
 		log_len_prase = g_lpm3_cleartext[idx].log_len;
-		ret = g_lpm3_cleartext[idx].cleartext_func(dir_path, log_name_creat, log_addr_prase, log_len_prase);
+		rdr_cleartext_print(fp, &error, "=================%s START================\n\n", g_lpm3_cleartext[idx].log_name);
+		ret = g_lpm3_cleartext[idx].cleartext_func(dir_path, fp, log_addr_prase, log_len_prase);
+		rdr_cleartext_print(fp, &error, "=================%s END================\n\n", g_lpm3_cleartext[idx].log_name);
 	}
+	bbox_cleartext_end_filep(fp, dir_path, "LPM3.txt");
+
 	return ret;
 }
 
@@ -641,13 +641,9 @@ int __init rdr_lpm3_init(void)
 	static u32 msg[4] = {0};
 	BB_PRINT_PN("enter %s\n", __func__);
 
-
-	/*counter_base = (char*)ioremap((phys_addr_t)SOC_ACPU_SYS_CNT_BASE_ADDR,0x1000);*/
 	sctrl_base = (char *)ioremap((phys_addr_t)SOC_ACPU_SCTRL_BASE_ADDR, 0x1000UL);
 
-	/*pr_err("counter_base: %p, sctrl_base: %p\n", counter_base, sctrl_base);*/
 	BB_PRINT_PN("sctrl_base: %pK\n", sctrl_base);
-
 
 	rdr_ipc_block.next = NULL;
 	rdr_ipc_block.notifier_call = rdr_lpm3_msg_handler;
@@ -678,7 +674,12 @@ int __init rdr_lpm3_init(void)
 	}
 	BB_PRINT_PN("rdr_register_cleartext_success\n");
 
-	memset(&einfo, 0, sizeof(struct rdr_exception_info_s));/* unsafe_function_ignore: memset*/
+	ret = memset_s(&einfo, sizeof(einfo), 0, sizeof(struct rdr_exception_info_s));
+	if (ret != EOK) {
+		BB_PRINT_ERR("%s:%d, memset_s err:%d\n", __func__, __LINE__, ret);
+		return ret;
+	}
+
 	einfo.e_modid = (unsigned int)M3_WDT_TIMEOUT;
 	einfo.e_modid_end = (unsigned int)M3_WDT_TIMEOUT;
 	einfo.e_process_priority = RDR_ERR;
@@ -688,11 +689,19 @@ int __init rdr_lpm3_init(void)
 	einfo.e_reentrant = (unsigned int)RDR_REENTRANT_DISALLOW;
 	einfo.e_exce_type = LPM3_S_EXCEPTION;
 	einfo.e_from_core = RDR_LPM3;
-	memcpy(einfo.e_from_module, "RDR M3 WDT", sizeof("RDR M3 WDT"));/* unsafe_function_ignore: memcpy*/
-	memcpy(einfo.e_desc, "RDR M3 WDT",/* unsafe_function_ignore: memcpy*/
-			sizeof("RDR M3 WDT"));
-	(void)rdr_register_exception(&einfo);
+	ret = memcpy_s(einfo.e_from_module, sizeof(einfo.e_from_module), "RDR M3 WDT", sizeof("RDR M3 WDT"));
+	if (ret != EOK) {
+		BB_PRINT_ERR("%s:%d, memcpy_s err:%d\n", __func__, __LINE__, ret);
+		return ret;
+	}
 
+	ret = memcpy_s(einfo.e_desc, sizeof(einfo.e_desc), "RDR M3 WDT", sizeof("RDR M3 WDT"));
+	if (ret != EOK) {
+		BB_PRINT_ERR("%s:%d, memcpy_s err:%d\n", __func__, __LINE__, ret);
+		return ret;
+	}
+
+	(void)rdr_register_exception(&einfo);
 
 	rdr_lpm3_buf_addr = address_map(current_info.log_addr);
 	rdr_lpm3_buf_len = current_info.log_len;
@@ -701,8 +710,8 @@ int __init rdr_lpm3_init(void)
 	g_lpmcu_rdr_ddr_addr = (char *)hisi_bbox_map((phys_addr_t)current_info.log_addr, (unsigned long)current_info.log_len);
 
 	if (g_lpmcu_rdr_ddr_addr){
-		BB_PRINT_ERR("rdr_ddr_addr success\n");
-		memset(g_lpmcu_rdr_ddr_addr, 0 , (unsigned long)rdr_lpm3_buf_len);/* unsafe_function_ignore: memset*/
+		BB_PRINT_PN("rdr_ddr_addr success\n");
+		(void)memset_s(g_lpmcu_rdr_ddr_addr, (size_t)rdr_lpm3_buf_len, 0 , (size_t)rdr_lpm3_buf_len);
 	}
 
 	msg[0] = PSCI_MSG_TYPE_M3_RDRBUF;
@@ -714,7 +723,6 @@ int __init rdr_lpm3_init(void)
 
 	if (ret != 0) {
 		BB_PRINT_ERR("RPROC_ASYNC_SEND failed! return 0x%x, &msg:(%pK)\n", ret, msg);
-		/*return ret;*/
 	}
 	BB_PRINT_PN("%s: (ap)->(lpm3) ipc send (0x%x 0x%x 0x%x 0x%x)!\n", __func__, msg[0], msg[1], msg[2], msg[3]);
 
@@ -727,17 +735,6 @@ static void __exit rdr_lpm3_exit(void)
 {
 	return;
 }
-
-
-/* test code start */
-/*
-void test_sys_err()
-{
-    rdr_system_error(M3_WDT_TIMEOUT, 0x505050, 0xa0a0a);
-}
-*/
-/* test code end */
-
 
 /*lint -e528 -esym(528,__initcall_rdr_lpm3_init4,__exitcall_rdr_lpm3_exit)*/
 subsys_initcall(rdr_lpm3_init);

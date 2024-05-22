@@ -29,8 +29,8 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
 
 #include "../hisi_dp.h"
 #include "../hisi_fb.h"
@@ -102,7 +102,9 @@ static void dptx_intr_dis(struct dp_ctrl *dptx, uint32_t bits)
 void dptx_global_intr_en(struct dp_ctrl *dptx)
 {
 	uint32_t hpd_ien;
+#ifdef CONFIG_DP_HDCP_ENABLE
 	uint32_t reg = 0;
+#endif
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -120,6 +122,7 @@ void dptx_global_intr_en(struct dp_ctrl *dptx)
 		    DPTX_HPD_IEN_HOT_UNPLUG_EN);
 	dptx_writel(dptx, DPTX_HPD_IEN, hpd_ien);
 
+#ifdef CONFIG_DP_HDCP_ENABLE
 	if (dptx->hisifd->secure_ctrl.hdcp_dpc_sec_en)
 		dptx->hisifd->secure_ctrl.hdcp_dpc_sec_en();
 
@@ -130,6 +133,7 @@ void dptx_global_intr_en(struct dp_ctrl *dptx)
 
 	if(dptx->hisifd->secure_ctrl.hdcp_int_mask)
 		dptx->hisifd->secure_ctrl.hdcp_int_mask(reg);
+#endif
 }
 
 /**
@@ -141,7 +145,9 @@ void dptx_global_intr_en(struct dp_ctrl *dptx)
 void dptx_global_intr_dis(struct dp_ctrl *dptx)
 {
 	uint32_t hpd_ien;
+#ifdef CONFIG_DP_HDCP_ENABLE
 	uint32_t reg = 0;
+#endif
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -158,6 +164,7 @@ void dptx_global_intr_dis(struct dp_ctrl *dptx)
 		    DPTX_HPD_IEN_HOT_UNPLUG_EN);
 	dptx_writel(dptx, DPTX_HPD_IEN, hpd_ien);
 
+#ifdef CONFIG_DP_HDCP_ENABLE
 	if(dptx->hisifd->secure_ctrl.hdcp_dpc_sec_en)
 		dptx->hisifd->secure_ctrl.hdcp_dpc_sec_en();
 
@@ -168,6 +175,7 @@ void dptx_global_intr_dis(struct dp_ctrl *dptx)
 
 	if(dptx->hisifd->secure_ctrl.hdcp_int_mask)
 		dptx->hisifd->secure_ctrl.hdcp_int_mask(reg);
+#endif
 }
 
 /**
@@ -318,9 +326,12 @@ void dptx_core_init_phy(struct dp_ctrl *dptx)
 */
 bool dptx_sink_enabled_ssc(struct dp_ctrl *dptx)
 {
-	uint8_t byte;
+	uint8_t byte = 0;
+	int retval = 0;
 
-	dptx_read_dpcd(dptx, DP_MAX_DOWNSPREAD, &byte);
+	retval = dptx_read_dpcd(dptx, DP_MAX_DOWNSPREAD, &byte);
+	if (retval)
+		HISI_FB_ERR("[DP] dptx_read_dpcd fail\n");
 
 	return byte & 1;
 }
@@ -432,10 +443,12 @@ void dptx_phy_set_lanes_status(struct dp_ctrl *dptx, bool bopen)
 		phyifctrl |= (3 << 17);
 	}
 	dptx_writel(dptx, DPTX_PHYIF_CTRL, phyifctrl);
+#if CONFIG_DP_SETTING_COMBOPHY && defined(CONFIG_HISI_FB_970)
 	if (bopen) {
 		usb31phy_cr_write(0x4, 0x211);
 		usb31phy_cr_write(0x4, 0);
 	}
+#endif
 }
 
 int dptx_phy_get_lanes(struct dp_ctrl *dptx)
@@ -553,9 +566,11 @@ int dptx_phy_wait_busy(struct dp_ctrl *dptx, uint32_t lanes)
 		return 0;
 	}
 	switch (lanes) {
+	/* This case (value 4) is not terminated by a 'break' statement */
 	case 4:
 		mask |= DPTX_PHYIF_CTRL_BUSY(3);
 		mask |= DPTX_PHYIF_CTRL_BUSY(2);
+	/* This case (value 2) is not terminated by a 'break' statement */
 	case 2:
 		mask |= DPTX_PHYIF_CTRL_BUSY(1);
 	case 1:
@@ -674,9 +689,11 @@ void dptx_phy_enable_xmit(struct dp_ctrl *dptx, uint32_t lanes, bool enable)
 	phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
 
 	switch (lanes) {
+	/* This case (value 4) is not terminated by a 'break' statement */
 	case 4:
 		mask |= DPTX_PHYIF_CTRL_XMIT_EN(3);
 		mask |= DPTX_PHYIF_CTRL_XMIT_EN(2);
+	/* This case (value 2) is not terminated by a 'break' statement */
 	case 2:
 		mask |= DPTX_PHYIF_CTRL_XMIT_EN(1);
 	case 1:

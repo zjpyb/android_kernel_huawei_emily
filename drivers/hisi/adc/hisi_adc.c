@@ -23,7 +23,7 @@
 #include <linux/hisi/hisi_mailbox_dev.h>
 #include <linux/hisi/hisi_adc.h>
 #include <linux/hisi/hisi_rproc.h>
-
+#include <securec.h>
 #define	MODULE_NAME		"hisi_adc"
 /*adc maybe IPC timeout*/
 #define ADC_IPC_TIMEOUT		1500
@@ -109,7 +109,7 @@ static int adc_dev_notifier(struct notifier_block *nb, unsigned long len, void *
 	}
 
 exit:
-	if (!is_complete)
+	if (is_complete == 0)
 		complete(&hisi_adc_dev->completion);
 
 	return 0;
@@ -128,7 +128,7 @@ static int adc_send_ipc_to_lpm3(int channel, int ipc_header)
 		goto err_adc_channel;
 	}
 
-	if (!hisi_adc_dev) {
+	if (hisi_adc_dev == NULL) {
 		pr_err("%s: adc dev is not initialized yet!\n", MODULE_NAME);
 		ret = -ENODEV;
 		goto err_adc_dev;
@@ -247,7 +247,7 @@ exit:
  */
 int hisi_adc_get_adc(int adc_channel)
 {
-	int ret = 0, value = 0;
+	int ret, value;
 
 	mutex_lock(&hisi_adc_dev->mutex);
 
@@ -265,7 +265,7 @@ EXPORT_SYMBOL(hisi_adc_get_adc);
 
 int hisi_adc_get_current(int adc_channel)
 {
-	int ret = 0, value = 0;
+	int ret, value;
 
 	mutex_lock(&hisi_adc_dev->mutex);
 
@@ -295,14 +295,14 @@ static int __init hisi_adc_driver_init(void)
 	int ret = 0;
 
 	hisi_adc_dev = kzalloc(sizeof(*hisi_adc_dev), GFP_KERNEL);
-	if (!hisi_adc_dev) {
+	if (hisi_adc_dev == NULL) {
 		pr_err("%s: fail to alloc adc dev!\n", MODULE_NAME);
 		ret = -ENOMEM;
 		goto err_adc_dev;
 	}
 
 	hisi_adc_dev->nb = kzalloc(sizeof(struct notifier_block), GFP_KERNEL);
-	if (!hisi_adc_dev->nb) {
+	if (hisi_adc_dev->nb == NULL) {
 		pr_err("%s: fail to alloc notifier_block!\n", MODULE_NAME);
 		ret =  -ENOMEM;
 		goto err_adc_nb;
@@ -341,7 +341,7 @@ err_adc_dev:
 /* hisi adc exit function */
 static void __exit hisi_adc_driver_exit(void)
 {
-	if (hisi_adc_dev) {
+	if (hisi_adc_dev != NULL) {
 		kfree(hisi_adc_dev->nb);
 		hisi_adc_dev->nb = NULL;
 

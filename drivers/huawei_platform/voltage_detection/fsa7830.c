@@ -35,38 +35,6 @@ HWLOG_REGIST();
 static int fsa7830_chip_flag;
 int fsa7830_no_exist_flag;
 
-#if 0
-static int fsa7830_check_reg_val(char reg_addr, char *reg_val)
-{
-	char val = *reg_val;
-	int addr = (int)reg_addr;
-	int ret = 0;
-
-	switch (addr) {
-	case FSA7830_CONTROL:
-		val &= FSA7830_REG_CONTROL_MASK;
-		break;
-	case FSA7830_SWCTL:
-		break;
-	case FSA7830_INT_MASK:
-		val &= FSA7830_REG_INT_MASK;
-		break;
-	case FSA7830_OVP:
-		val &= FSA7830_REG_OVP_MASK;
-		break;
-	case FSA7830_DEVICEID:
-	case FSA7830_INT:
-	default:
-		ret = -1;
-		hwlog_err("[%s] invalid addr! addr:0x%x\n", __func__, addr);
-		break;
-	}
-
-	*reg_val = val;
-	return ret;
-}
-#endif
-
 /*
 *	if need try 3 times add in this func
 */
@@ -121,23 +89,6 @@ static int fsa7830_swctl_write(struct fsa7830_data *fdata, u8 val)
 
 	return ret;
 }
-
-#if 0
-static int fsa7830_irq_control(struct fsa7830_data *fdata, char val)
-{
-	u8 reg = 0x05;
-	u8 buf = 0x00;
-	int ret = -1;
-
-	buf = val & 0x80;
-
-	ret = fsa7830_write_reg_val(fdata->client, reg, buf);
-	if (ret < 0)
-		hwlog_err("ret:%d irq control failed !\n", ret);
-
-	return ret;
-}
-#endif
 
 static int fsa7830_enable(void *data, int flag)
 {
@@ -289,35 +240,6 @@ static int fsa7830_switch_enable(void *data, int enable)
 out:
 	return ret;
 }
-
-#if 0
-static void fsa7830_work_function(struct work_struct *work)
-{
-	char buf[2] = {0x00};
-	int mode = 0;
-	int ret = -1;
-
-	struct fsa7830_data *data = container_of(work,
-					struct fsa7830_data, work);
-
-	switch (mode) {
-	case FSA8730_ACTION_ENABLE:
-		break;
-	case FSA8730_ACTION_SWCFG:
-		break;
-	case FSA8730_ACTION_IRQ_ENABLE:
-		break;
-	case FSA8730_ACTION_OVP_VALUE:
-		break;
-	case FSA8730_ACTION_UNDEFINE:
-		hwlog_err("err mode:FSA8730_ACTION_UNDEFINE\n");
-		return;
-	default:
-		hwlog_err("err mode:%d\n", mode);
-		return;
-	}
-}
-#endif
 
 static ssize_t fsa7830_adc_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
@@ -714,10 +636,6 @@ static int fsa7830_probe(struct i2c_client *client,
 	if (ret)
 		goto error;
 
-/*
-	INIT_WORK(&data->work, fsa7830_work_function);
-*/
-
 	ret = fsa7830_create_file(data);
 	if (ret) {
 		hwlog_err("[%s] create file err !\n", __func__);
@@ -737,14 +655,6 @@ fsa7830_no_exist:
 	data->vol_data->hw_voltage_switch_enable = fsa7830_switch_enable;
 
 	i2c_set_clientdata(client, data);
-
-#if 0
-#ifdef CONFIG_HUAWEI_HW_DEV_DCT
-	fsa7830_chip_flag &= ~(1<<(data->chip_data.id));
-	if (!fsa7830_chip_flag)
-		set_hw_dev_flag(DEV_I2C_VOLTAGE_DETECTION);
-#endif
-#endif
 
 	hwlog_info("[%s] fsa7830[%d] probe success !\n", __func__,
 					data->chip_data.id);

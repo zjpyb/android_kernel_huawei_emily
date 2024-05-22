@@ -73,7 +73,7 @@ int dubai_update_gpu_info(unsigned long freq, unsigned long busy_time,
 	struct gpu_info *info = NULL;
 	unsigned long temp = 0;
 
-	if (!atomic_read(&enable_update_gpu_info) || 0 == freq)
+	if (!atomic_read(&enable_update_gpu_info) || !freq || !total_time)
 		return -1;
 
 	spin_lock_bh(&gpu_lock);
@@ -99,7 +99,7 @@ EXPORT_SYMBOL(dubai_update_gpu_info);
 int dubai_set_gpu_enable(void __user *argp)
 {
 	int ret;
-	bool enable;
+	bool enable = false;
 
 	ret = get_enable_value(argp, &enable);
 	if (ret == 0) {
@@ -114,7 +114,7 @@ int dubai_get_gpu_info(void __user *argp)
 {
 	struct dev_transmit_t *stat = NULL;
 	int rc = 0, i = 0;
-	uint8_t *pdata;
+	uint8_t *pdata = NULL;
 	size_t size;
 
 	spin_lock_bh(&gpu_lock);

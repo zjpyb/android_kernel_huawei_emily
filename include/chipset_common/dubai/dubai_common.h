@@ -35,7 +35,6 @@
 
 #define PREFIX_LEN				(32)
 #define NAME_LEN				(PREFIX_LEN + TASK_COMM_LEN)
-#define BINDER_STATS_LIST_LEN	(10)
 
 enum {
 	BUFFERED_LOG_MAGIC_PROC_CPUTIME = 0,
@@ -43,6 +42,7 @@ enum {
 	BUFFERED_LOG_MAGIC_UEVENT,
 	BUFFERED_LOG_MAGIC_BINDER_STATS,
 	BUFFERED_LOG_MAGIC_WS_LASTING_NAME,
+	BUFFERED_LOG_MAGIC_SENSORHUB_TYPE_LIST,
 };
 
 struct process_name {
@@ -111,10 +111,14 @@ int dubai_get_uevent_info(void __user *argp);
 int dubai_set_brightness_enable(void __user *argp);
 int dubai_get_brightness_info(void __user *argp);
 int dubai_get_binder_stats(void __user *argp);
-int dubai_set_binder_list(void __user *argp);
 int dubai_binder_stats_enable(void __user *argp);
 int dubai_get_aod_duration(void __user *argp);
-int dubai_get_battery_rm(void __user *argp);
 int dubai_get_ws_lasting_name(void __user *argp);
+int dubai_get_battery_prop(void __user *argp);
+int dubai_get_sensorhub_type_list(void __user * argp);
+int dubai_get_all_sensor_stats(void __user *argp);
+int dubai_get_fp_icon_stats(void __user *argp);
+int dubai_get_swing_data(void __user *argp);
+int dubai_get_rss(void __user *argp);
 
 #endif

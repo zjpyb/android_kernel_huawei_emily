@@ -111,6 +111,8 @@ void informConfigResult (FSC_BOOL success)
         case DP_CONF_DFP_D:
             pin_assignment = DpPpRequestedConfig.UfpPa & 0xff;
             break;
+	default:
+		break;
         }
 
         if(MODE_DP_PIN_C == pin_assignment || MODE_DP_PIN_E == pin_assignment){

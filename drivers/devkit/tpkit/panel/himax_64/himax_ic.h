@@ -34,7 +34,7 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/buffer_head.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/seq_file.h>
 #include <linux/proc_fs.h>
 #include "himax_platform.h"

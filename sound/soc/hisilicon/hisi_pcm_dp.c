@@ -267,8 +267,10 @@ static irqreturn_t dp_dma_irq_handler(int irq, void *data)
 	asp_int = asp_cfg_get_irq_value();
 	if (!(asp_int & 0x1))
 		return IRQ_HANDLED;
-	/* loge("[%s:%d] dp irp come on!\n", __func__, __LINE__); */
-	WARN_ON(NULL == pcm);
+	if (pcm == NULL) {
+		loge("[%s:%d] pcm is null\n", __func__, __LINE__);
+		return IRQ_HANDLED;
+	}
 	substream = pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream;
 	if (NULL == substream) {
 		loge("substream is NULL\n");
@@ -415,7 +417,8 @@ err_irq:
 	pm_runtime_mark_last_busy(pdata->dev);
 	pm_runtime_put_autosuspend(pdata->dev);
 #else
-	regulator_bulk_disable(1, &prtd->pdata->regu);
+	if (regulator_bulk_disable(1, &prtd->pdata->regu))
+		pr_err("[%s:%d] fail to disable regulator\n", __FUNCTION__, __LINE__);
 err_bulk:
 #endif
 	kfree(prtd);
@@ -425,15 +428,19 @@ err_bulk:
 static int hisi_pcm_dp_close(struct snd_pcm_substream *substream)
 {
 	struct hisi_dp_runtime_data *prtd = substream->runtime->private_data;
+	int ret = 0;
 
 	pr_info("[%s:%d] +\n", __func__, __LINE__);
 
-	if (NULL == prtd) {
+	if (prtd == NULL) {
 		pr_err("[%s:%d] prtd is NULL\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
 
-	WARN_ON(NULL == prtd->pdata);
+	if (prtd->pdata== NULL) {
+		pr_err("[%s:%d] pdata is NULL\n", __func__, __LINE__);
+		return -ENOMEM;
+	}
 
 	free_irq(prtd->pdata->irq, substream->pcm);
 
@@ -453,7 +460,9 @@ static int hisi_pcm_dp_close(struct snd_pcm_substream *substream)
 	pm_runtime_mark_last_busy(prtd->pdata->dev);
 	pm_runtime_put_autosuspend(prtd->pdata->dev);
 #else
-	regulator_bulk_disable(1, &prtd->pdata->regu);
+	ret = regulator_bulk_disable(1, &prtd->pdata->regu);
+	if (ret)
+		pr_err("[%s:%d] fail to disable regulator, ret:%d\n", __FUNCTION__, __LINE__, ret);
 #endif
 
 	kfree(prtd);
@@ -679,8 +688,8 @@ static int hisi_dp_normal_mmap(struct snd_pcm_substream *substream,
 
 int hisi_pcm_preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 {
-	struct snd_pcm_substream	*substream = pcm->streams[stream].substream;
-	struct snd_dma_buffer		*buf;
+	struct snd_pcm_substream *substream = pcm->streams[stream].substream;
+	struct snd_dma_buffer *buf = NULL;
 	size_t size = hisi_pcm_dp_hardware.buffer_bytes_max;
 
 	if (NULL == substream) {
@@ -709,8 +718,8 @@ int hisi_pcm_preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 
 void hisi_pcm_free_dma_buffers(struct snd_pcm *pcm)
 {
-	struct snd_pcm_substream *substream;
-	struct snd_dma_buffer *buf;
+	struct snd_pcm_substream *substream = NULL;
+	struct snd_dma_buffer *buf = NULL;
 	int stream;
 
 	for (stream = 0; stream < 2; stream++) {
@@ -749,8 +758,10 @@ static int hisi_pcm_dp_new(struct snd_soc_pcm_runtime *rtd)
 	struct snd_pcm  *pcm  = rtd->pcm;
 	int ret = 0;
 
-	WARN_ON(NULL == card);
-	WARN_ON(NULL == pcm);
+	if (pcm == NULL) {
+		pr_err("[%s:%d] pcm is null\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	if(!card || !card->dev)
 	{
@@ -777,7 +788,10 @@ static int hisi_pcm_dp_new(struct snd_soc_pcm_runtime *rtd)
 
 static void hisi_pcm_dp_free(struct snd_pcm *pcm)
 {
-	WARN_ON(NULL == pcm);
+	if (pcm == NULL) {
+		pr_err("[%s:%d] pcm is null\n", __func__, __LINE__);
+		return;
+	}
 
 	hisi_pcm_free_dma_buffers(pcm);
 }
@@ -877,12 +891,15 @@ static int hisi_pcm_dp_remove(struct platform_device *pdev)
 int hisi_dp_runtime_suspend(struct device *dev)
 {
 	struct hisi_dp_data *pdata = dev_get_drvdata(dev);
+	int ret = 0;
 
 	WARN_ON(NULL == pdata);
 
 	dev_info(dev, "[%s:%d]  +\n", __func__, __LINE__);
 
-	regulator_bulk_disable(1, &pdata->regu);
+	ret = regulator_bulk_disable(1, &pdata->regu);
+	if (ret)
+		pr_err("[%s:%d] fail to disable regulator, ret:%d\n", __FUNCTION__, __LINE__, ret);
 
 	dev_info(dev, "[%s:%d]  -\n", __func__, __LINE__);
 

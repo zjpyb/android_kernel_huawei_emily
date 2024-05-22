@@ -59,13 +59,11 @@ static char *big_data_str_map[] = {
 };
 
 
-static uint64_t iomcu_big_data_fetch(uint32_t event_id)
+static int iomcu_big_data_fetch(uint32_t event_id, void *data, uint32_t length)
 {
 	write_info_t pkg_ap;
 	read_info_t pkg_mcu;
-	uint64_t *data;
-	uint64_t res = 0;
-	int ret= -1;
+	int ret;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
@@ -76,30 +74,37 @@ static uint64_t iomcu_big_data_fetch(uint32_t event_id)
 	pkg_ap.wr_len = sizeof(event_id);
 
 	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-
-	if (ret != 0)
-	{
-		hwlog_err("send big data fetch req type = %d fail \n", event_id);
-	}else if (pkg_mcu.errno != 0)
-	{
-		hwlog_err("big data fetch req to mcu fail errno = %d \n", pkg_mcu.errno);
-	}else{
-		data = (uint64_t*)&pkg_mcu.data;
-		hwlog_info("big data fetch get response: type = %d, data = hi: %d , low: %d\n", (uint32_t)event_id, (uint32_t) (*data >> 32), (uint32_t) (*data));
-		res = *data;
+	if (ret != 0) {
+		hwlog_err("send big data fetch req type = %d fail\n",
+			event_id);
+		return -1;
 	}
-	return res;
+
+	if (pkg_mcu.errno != 0) {
+		hwlog_err("big data fetch req to mcu fail errno = %d\n",
+			pkg_mcu.errno);
+		return -1;
+	}
+
+	if (length < MAX_PKT_LENGTH)
+		memcpy(data, pkg_mcu.data, length);
+	else
+		memcpy(data, pkg_mcu.data, MAX_PKT_LENGTH);
+
+	return 0;
 }
 
-uint64_t iomcu_dubai_log_fetch(uint8_t event_type)
+int iomcu_dubai_log_fetch(uint32_t event_type, void *data, uint32_t length)
 {
-	uint64_t res = 0;
-	if(event_type > DUBAI_EVENT_END || event_type < DUBAI_EVENT_NULL){
-		hwlog_err("dubai log fetch event_type: %d illegal!\n", event_type);
-		return res;
+	int ret = -1;
+
+	if (event_type > DUBAI_EVENT_END || event_type < DUBAI_EVENT_NULL) {
+		hwlog_err("dubai log fetch event_type: %d illegal!\n",
+			event_type);
+		return ret;
 	}
-	res = iomcu_big_data_fetch((uint32_t)event_type);
-	return res;
+	ret = iomcu_big_data_fetch(event_type, data, length);
+	return ret;
 }
 
 static int process_big_data(uint32_t event_id, void* data)
@@ -187,10 +192,11 @@ static int iomcu_big_data_process(const pkt_header_t *head)
 	return 0;
 }
 
-static void iomcu_big_data_init(void)
+static int iomcu_big_data_init(void)
 {
 	register_mcu_event_notifier(TAG_BIG_DATA, CMD_BIG_DATA_SEND_TO_AP_RESP, iomcu_big_data_process);
 	hwlog_info("iomcu_big_data_init success\n");
+	return 0;
 }
 
 late_initcall_sync(iomcu_big_data_init);

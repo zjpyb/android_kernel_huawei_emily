@@ -18,6 +18,7 @@
 #include <linux/interrupt.h>
 #include <linux/pci.h>
 #include "hisi_dss_ion.h"
+#include "hisi_dss.h"
 #if CONFIG_DP_ENABLE
 #include <linux/switch.h>
 #endif
@@ -33,7 +34,9 @@
 
 
 #define PARSE_EST_TIMINGS_FROM_BYTE3
-
+#define DPTX_COMBO_PHY
+#define DPTX_TYPE_C
+#define DPTX_DEBUG_REG
 
 #define CONFIG_DP_HDCP_ENABLE
 //#define CONFIG_DP_GENERATOR_REF
@@ -50,6 +53,45 @@
 #define DPTX_SDP_LEN	(0x9)
 #define DPTX_SDP_SIZE	(9 * 4)
 #define DPTX_DEFAULT_EDID_BUFLEN	(128UL)
+
+#define INFOFRAME_PACKET_TYPE_HDR 0x07
+#define MAX_INFOFRAME_LENGTH 27
+#define INFOFRAME_REGISTER_SIZE 32
+#define INFOFRAME_DATA_SIZE 8
+#define DATA_NUM_PER_REG (INFOFRAME_REGISTER_SIZE / INFOFRAME_DATA_SIZE)
+#define HDR_INFOFRAME_VERSION 0x01
+#define HDR_INFOFRAME_LENGTH 26
+#define HDR_INFOFRAME_EOTF_BYTE_NUM 0
+#define HDR_INFOFRAME_SMPTE_ST_2084 2
+#define STATIC_MATADATA_TYPE_1 0
+#define HDR_INFOFRAME_METADATA_ID_BYTE_NUM 1
+#define HDR_INFOFRAME_DISP_PRI_X_0_LSB 2
+#define HDR_INFOFRAME_DISP_PRI_X_0_MSB 3
+#define HDR_INFOFRAME_DISP_PRI_Y_0_LSB 4
+#define HDR_INFOFRAME_DISP_PRI_Y_0_MSB 5
+#define HDR_INFOFRAME_DISP_PRI_X_1_LSB 6
+#define HDR_INFOFRAME_DISP_PRI_X_1_MSB 7
+#define HDR_INFOFRAME_DISP_PRI_Y_1_LSB 8
+#define HDR_INFOFRAME_DISP_PRI_Y_1_MSB 9
+#define HDR_INFOFRAME_DISP_PRI_X_2_LSB 10
+#define HDR_INFOFRAME_DISP_PRI_X_2_MSB 11
+#define HDR_INFOFRAME_DISP_PRI_Y_2_LSB 12
+#define HDR_INFOFRAME_DISP_PRI_Y_2_MSB 13
+#define HDR_INFOFRAME_WHITE_POINT_X_LSB 14
+#define HDR_INFOFRAME_WHITE_POINT_X_MSB 15
+#define HDR_INFOFRAME_WHITE_POINT_Y_LSB 16
+#define HDR_INFOFRAME_WHITE_POINT_Y_MSB 17
+#define HDR_INFOFRAME_MAX_LUMI_LSB 18
+#define HDR_INFOFRAME_MAX_LUMI_MSB 19
+#define HDR_INFOFRAME_MIN_LUMI_LSB 20
+#define HDR_INFOFRAME_MIN_LUMI_MSB 21
+#define HDR_INFOFRAME_MAX_LIGHT_LEVEL_LSB 22
+#define HDR_INFOFRAME_MAX_LIGHT_LEVEL_MSB 23
+#define HDR_INFOFRAME_MAX_AVERAGE_LEVEL_LSB 24
+#define HDR_INFOFRAME_MAX_AVERAGE_LEVEL_MSB 25
+#define LSB_MASK 0x00FF
+#define MSB_MASK 0xFF00
+#define SHIFT_8BIT 8
 
 /* The max rate and lanes supported by the core */
 #define DPTX_MAX_LINK_RATE		DPTX_PHYIF_CTRL_RATE_HBR2
@@ -71,6 +113,35 @@
 
 #define DEFAULT_AUXCLK_DPCTRL_RATE	16000000UL
 #define DEFAULT_ACLK_DPCTRL_RATE_ES	288000000UL
+
+//DSC definitions coming from RC files of DSC C model
+#define RC_MODEL_SIZE 8192
+#define INITIAL_OFFSET 6144
+#define INITIAL_DELAY 512
+#define PIXELS_PER_GROUP 3
+#define PIXEL_HOLD_DELAY 5
+#define PIXEL_GROUP_DELAY 3
+#define MUXER_INITIAL_BUFFERING_DELAY 9
+#define DSC_MAX_AUX_ORIG_WIDTH 24
+#define PIXEL_FLATNESSBUF_DELAY DSC_MAX_AUX_ORIG_WIDTH
+#define FLATNESS_MIN_QP 3
+#define FLATNESS_MAX_QP 12
+#define RC_EDGE_FACTOR 6
+#define RC_QUANT_INCR_LIMIT0 11
+#define RC_QUANT_INCR_LIMIT1 11
+#define RC_TGT_OFFSET_HIGH	 3
+#define RC_TGT_OFFSET_LOW 3
+#define INITIAL_SCALE_VALUE_SHIFT 3
+#define DSC_DEFAULT_DECODER 2
+
+struct rc_range_param {
+	uint32_t minQP     :5;
+	uint32_t maxQP    :5;
+	uint32_t offset      :6;
+};
+
+// Rounding up to the nearest multiple of a number
+#define ROUND_UP_TO_NEAREST(numToRound, mult) (((numToRound+(mult)-1) / (mult)) * (mult))
 
 #ifdef CONFIG_HISI_FB_V510
 #define DEFAULT_ACLK_DPCTRL_RATE 207500000UL
@@ -266,6 +337,13 @@ struct sdp_full_data {
 	uint8_t cont;
 } __packed;
 
+struct hdr_infoframe {
+	uint8_t type_code;
+	uint8_t version_number;
+	uint8_t length;
+	uint8_t data[HDR_INFOFRAME_LENGTH];
+};
+
 struct hdcp_aksv {
 	uint32_t lsb;
 	uint32_t msb;
@@ -287,7 +365,7 @@ struct hdcp_params {
 };
 
 typedef struct hdcp13_int_params {
-	u8 auth_fail_count;
+	uint8_t auth_fail_count;
 	int hdcp13_is_en;
 }hdcp13_int_params_t;
 
@@ -316,9 +394,9 @@ enum audio_sample_freq {
 
 struct audio_short_desc
 {
-	u8 max_num_of_channels;
+	uint8_t max_num_of_channels;
 	enum audio_sample_freq max_sampling_freq;
-	u8 max_bit_per_sample;
+	uint8_t max_bit_per_sample;
 };
 
 struct audio_params {
@@ -367,6 +445,20 @@ struct video_params {
 	uint32_t refresh_rate;
 	uint8_t video_format;
 	uint8_t m_fps;
+
+	// DSC staff here TODO: move to special DSC struct
+	uint8_t encoders;
+	uint8_t first_line_bpg_offset;
+	uint16_t slice_width;
+	uint16_t chunk_size;
+	uint16_t slice_height;
+	uint16_t dsc_bpp;
+	uint16_t dsc_bpc;
+	uint16_t initial_scale_value;
+	uint32_t hrddelay;
+	uint32_t initial_dec_delay;
+	uint32_t minRateBufferSize;
+	uint32_t scale_decrement_interval;
 };
 
 /*edid info*/
@@ -474,8 +566,8 @@ struct dp_ctrl {
 	struct mutex dptx_mutex; /* generic mutex for dptx */
 
 	struct {
-		u8 multipixel;
-		u8 streams;
+		uint8_t multipixel;
+		uint8_t streams;
 		bool gen2phy;
 		bool dsc;
 	} hwparams;
@@ -484,22 +576,39 @@ struct dp_ctrl {
 	uint32_t irq;
 
 	uint32_t version;
+	uint8_t bstatus;
+	uint8_t streams;
+	uint8_t multipixel;
 	uint8_t max_rate;
 	uint8_t max_lanes;
+	uint8_t dsc_decoders;
 
-	bool ycbcr420;
-	u8 streams;
+	/*mst*/
+	uint8_t rad_port;
+	uint8_t port[2];
+	uint16_t pbn;
+	int active_mst_links;
+
+	int vcp_id;
+
 	bool mst;
-
-	bool cr_fail;// harutk need to remove
-
-	u8 multipixel;
-	u8 bstatus;
-
+	bool fec;
+	bool dsc;
+	bool ycbcr420;
+	bool cr_fail;
 	bool ssc_en;
+	bool need_rad;
+	bool logic_port;
 
 	bool dummy_dtds_present;
-	enum established_timings selected_est_timing;
+
+	bool dptx_vr;
+	bool dptx_gate;
+	bool dptx_enable;
+	bool dptx_plug_type;
+	bool dptx_detect_inited;
+	bool same_source;
+	bool video_transfer_enable;
 
 	struct device *dev;
 #if CONFIG_DP_ENABLE
@@ -512,8 +621,11 @@ struct dp_ctrl {
 	struct audio_params aparams;
 	struct hdcp_params hparams;
 	struct audio_short_desc audio_desc;
+	struct hdr_metadata hdr_metadata;
+	struct hdr_infoframe hdr_infoframe;
 
 	struct edid_information edid_info;
+	struct drm_dp_mst_topology_mgr mst_mgr;
 
 	wait_queue_head_t dptxq;
 	wait_queue_head_t waitq;
@@ -533,14 +645,6 @@ struct dp_ctrl {
 	struct dptx_aux aux;
 	struct dptx_link link;
 
-	bool dptx_vr;
-	bool dptx_gate;
-	bool dptx_enable;
-	bool dptx_plug_type;
-	bool dptx_detect_inited;
-	bool same_source;
-	bool video_transfer_enable;
-
 	uint8_t detect_times;
 	uint8_t current_link_rate;
 	uint8_t current_link_lanes;
@@ -549,6 +653,8 @@ struct dp_ctrl {
 	uint32_t combophy_pree_swing[DPTX_COMBOPHY_PARAM_NUM];
 	uint32_t max_edid_timing_hactive;
 	enum video_format_type user_mode_format;
+	enum established_timings selected_est_timing;
+
 	int sysfs_index;
 	struct attribute *sysfs_attrs[DP_SYSFS_ATTRS_NUM];
 	struct attribute_group sysfs_attr_group;

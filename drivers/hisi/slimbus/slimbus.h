@@ -84,8 +84,6 @@ struct slimbus_device_ops {
 	int (*slimbus_track_soundtrigger_deactivate)(uint32_t track);
 	bool (*slimbus_track_is_fast_soundtrigger)(uint32_t track);
 
-	void (*slimbus_check_st_conflict)(uint32_t track, slimbus_track_param_t *params);
-
 	int (*slimbus_check_scenes)(
 				uint32_t track,
 				uint32_t scenes,
@@ -111,7 +109,7 @@ typedef struct slimbus_device_ops slimbus_device_ops_t;
  */
 extern int slimbus_element_read(
 				slimbus_device_info_t *dev,
-				int32_t byte_address,
+				uint32_t byte_address,
 				slimbus_slice_size_t slice_size,
 				void *value);
 
@@ -127,7 +125,7 @@ extern int slimbus_element_read(
  */
 extern int slimbus_element_write(
 				slimbus_device_info_t *dev,
-				int32_t byte_address,
+				uint32_t byte_address,
 				slimbus_slice_size_t slice_size,
 				void *value);
 
@@ -194,4 +192,5 @@ extern slimbus_device_type_t slimbus_debug_get_device_type(void);
 extern uint32_t slimbus_trackstate_get(void);
 extern void slimbus_trackstate_set(uint32_t track, bool state);
 extern bool track_state_is_on(uint32_t track);
+extern bool get_slimbus_freq_update_status(void);
 #endif /* __SLIMBUS_H__ */

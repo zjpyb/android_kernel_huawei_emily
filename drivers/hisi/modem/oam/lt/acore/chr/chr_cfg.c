@@ -6,6 +6,7 @@
 #include <mdrv_diag_system.h>
 #include "msp_diag.h"
 #define    THIS_FILE_ID        PS_FILE_ID_OM_ERRORLOG_C
+#if (FEATURE_ON == FEATURE_PTM)
 /*保存黑名单的全局变量*/
 CHR_ACPU_BLACK_SAVE_STRU g_stChrBlack;
 
@@ -769,3 +770,4 @@ VOS_VOID OM_AcpuPeriodShow(VOS_VOID)
     } 
     return ;
 }
+#endif

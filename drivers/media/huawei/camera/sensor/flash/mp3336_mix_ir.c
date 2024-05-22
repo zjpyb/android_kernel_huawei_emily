@@ -11,7 +11,8 @@
  */
 
 #include "hw_flash.h"
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/gpio.h>
@@ -153,7 +154,7 @@ typedef enum {
 
 /* Internal data struct define */
 struct hw_mp3336_mix_ir_private_data_t {
-    struct wake_lock  mp3336_mix_ir_wakelock;
+    struct wakeup_source  mp3336_mix_ir_wakelock;
     unsigned int need_wakelock;
     /* flash control pin */
     mp3336_mix_ir_pin_t pin[MAX_PIN];
@@ -284,7 +285,7 @@ static int hw_mp3336_mix_ir_init(struct hw_flash_ctrl_t *flash_ctrl)
     }
 
     if(WAKE_LOCK_ENABLE == pdata->need_wakelock) {
-        wake_lock_init(&pdata->mp3336_mix_ir_wakelock,WAKE_LOCK_SUSPEND,"mp3336_mix_ir");
+        wakeup_source_init(&pdata->mp3336_mix_ir_wakelock,"mp3336_mix_ir");
     }
 
     return rc;
@@ -460,35 +461,35 @@ static int hw_mp3336_mix_ir_flash_mode_regs_cfg(struct hw_flash_ctrl_t *flash_ct
     i2c_func->i2c_read(i2c_client, REG_FAULT_INDICATION_B, &reg_fault_clean);
 
     //current limit 2.5A
-    rc |= i2c_func->i2c_read(i2c_client, REG_PEAK_CURRENT, &reg_peak_cur_val);
+    rc += i2c_func->i2c_read(i2c_client, REG_PEAK_CURRENT, &reg_peak_cur_val);
     reg_peak_cur_val &= ~(0x3 << 3); //clear bit3,bit4
     reg_peak_cur_val |= (0x1 << 3);  //set 2.5A(0x1)
-    rc |= i2c_func->i2c_write(i2c_client, REG_PEAK_CURRENT, reg_peak_cur_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_PEAK_CURRENT, reg_peak_cur_val);
 
     //input DC Current limit 3A
-    rc |= i2c_func->i2c_read(i2c_client, REG_VBL, &reg_lbv_val);
+    rc += i2c_func->i2c_read(i2c_client, REG_VBL, &reg_lbv_val);
     reg_lbv_val &= 0xF0; //clear bit 0~3
     reg_lbv_val |= 0x08; //set 3A(0x8)
-    rc |= i2c_func->i2c_write(i2c_client, REG_VBL, reg_lbv_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_VBL, reg_lbv_val);
 
-    rc |= i2c_func->i2c_read(i2c_client, REG_MODE, &reg_mode_debug);
+    rc += i2c_func->i2c_read(i2c_client, REG_MODE, &reg_mode_debug);
     cam_info("%s reg_mode debug before config:0x%x", __func__, reg_mode_debug);
 
-    rc |= i2c_func->i2c_read(i2c_client,  REG_INDICATOR, &reg_indicator);
-    rc |= i2c_func->i2c_write(i2c_client, REG_INDICATOR, (reg_indicator | TUP_MIN));
+    rc += i2c_func->i2c_read(i2c_client,  REG_INDICATOR, &reg_indicator);
+    rc += i2c_func->i2c_write(i2c_client, REG_INDICATOR, (reg_indicator | TUP_MIN));
     //set flash timeout
-    rc |= i2c_func->i2c_read(i2c_client,  REG_FLASH_TIMER, &reg_timer);
-    rc |= i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER, (reg_timer&(~LED_SD))| FLASH_TIMEOUT_TIME);
+    rc += i2c_func->i2c_read(i2c_client,  REG_FLASH_TIMER, &reg_timer);
+    rc += i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER, (reg_timer&(~LED_SD))| FLASH_TIMEOUT_TIME);
 
     //set TX current
-    rc |= i2c_func->i2c_write(i2c_client, REG_L1_TX, MAX_TX_CURRENT);
-    rc |= i2c_func->i2c_write(i2c_client, REG_L2_TX, MAX_TX_CURRENT);
+    rc += i2c_func->i2c_write(i2c_client, REG_L1_TX, MAX_TX_CURRENT);
+    rc += i2c_func->i2c_write(i2c_client, REG_L2_TX, MAX_TX_CURRENT);
 
     //set flash levels and reg mode
-    rc |= i2c_func->i2c_write(i2c_client, REG_L1_FL, led1_val);
-    rc |= i2c_func->i2c_write(i2c_client, REG_L2_FL, led2_val);
-    rc |= i2c_func->i2c_write_block(i2c_client, REG_MODE, mode_buf, 2);//total size is 2
-    //rc |= i2c_func->i2c_writex(i2c_client, msgs, 2);//total size is 2
+    rc += i2c_func->i2c_write(i2c_client, REG_L1_FL, led1_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_L2_FL, led2_val);
+    rc += i2c_func->i2c_write_block(i2c_client, REG_MODE, mode_buf, 2);//total size is 2
+    //rc += i2c_func->i2c_writex(i2c_client, msgs, 2);//total size is 2
 
     cam_info("%s config flash1 = 0x%02x, flash2 = 0x%02x, reg_mode = 0x%02x",
         __func__, led1_val, led2_val, reg_mode);
@@ -535,27 +536,27 @@ static int hw_mp3336_mix_ir_torch_mode_regs_cfg(struct hw_flash_ctrl_t *flash_ct
     i2c_func->i2c_read(i2c_client, REG_FAULT_INDICATION_B, &reg_fault_clean);
 
     //current limit 2.5A
-    rc |= i2c_func->i2c_read(i2c_client, REG_PEAK_CURRENT, &reg_peak_cur_val);
+    rc += i2c_func->i2c_read(i2c_client, REG_PEAK_CURRENT, &reg_peak_cur_val);
     reg_peak_cur_val &= ~(0x3 << 3); //clear bit3,bit4
     reg_peak_cur_val |= (0x1 << 3);  //set 2.5A(0x1)
-    rc |= i2c_func->i2c_write(i2c_client, REG_PEAK_CURRENT, reg_peak_cur_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_PEAK_CURRENT, reg_peak_cur_val);
 
     //input DC Current limit 3A
-    rc |= i2c_func->i2c_read(i2c_client, REG_VBL, &reg_lbv_val);
+    rc += i2c_func->i2c_read(i2c_client, REG_VBL, &reg_lbv_val);
     reg_lbv_val &= 0xF0; //clear bit 0~3
     reg_lbv_val |= 0x08; //set 3A(0x8)
-    rc |= i2c_func->i2c_write(i2c_client, REG_VBL, reg_lbv_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_VBL, reg_lbv_val);
 
-    rc |= i2c_func->i2c_read(i2c_client, REG_MODE, &reg_mode_debug);
+    rc += i2c_func->i2c_read(i2c_client, REG_MODE, &reg_mode_debug);
     cam_info("%s reg_mode before config:0x%x", __func__, reg_mode_debug);
 
-    rc |= i2c_func->i2c_read(i2c_client,  REG_INDICATOR, &reg_indicator);
-    rc |= i2c_func->i2c_write(i2c_client, REG_INDICATOR, (reg_indicator | TUP_MIN));
+    rc += i2c_func->i2c_read(i2c_client,  REG_INDICATOR, &reg_indicator);
+    rc += i2c_func->i2c_write(i2c_client, REG_INDICATOR, (reg_indicator | TUP_MIN));
     //set torch current and reg mode
-    rc |= i2c_func->i2c_write(i2c_client, REG_L1_TOR, led1_val);
-    rc |= i2c_func->i2c_write(i2c_client, REG_L2_TOR, led2_val);
-    rc |= i2c_func->i2c_write_block(i2c_client, REG_MODE, mode_buf, 2);//total size is 2
-    //rc |= i2c_func->i2c_writex(i2c_client, msgs, 2);//total size is 2
+    rc += i2c_func->i2c_write(i2c_client, REG_L1_TOR, led1_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_L2_TOR, led2_val);
+    rc += i2c_func->i2c_write_block(i2c_client, REG_MODE, mode_buf, 2);//total size is 2
+    //rc += i2c_func->i2c_writex(i2c_client, msgs, 2);//total size is 2
 
     cam_info("%s config torch1 = 0x%02x, torch2 = 0x%02x, reg_mode = 0x%02x",
         __func__, led1_val, led2_val, reg_mode);
@@ -599,23 +600,23 @@ static int hw_mp3336_mix_ir_action_ic_standby(struct hw_flash_ctrl_t *flash_ctrl
     cam_info("%s Fault and Flag Indication Reg E 0x%x Reg F 0x%x", __func__,
         fault_val_a, fault_val_b);
 
-    rc |= i2c_func->i2c_read(i2c_client, REG_IFL_ACT, &flash_act_cur);
-    rc |= i2c_func->i2c_read(i2c_client, REG_IFL_MIN, &flash_min_cur);
+    rc += i2c_func->i2c_read(i2c_client, REG_IFL_ACT, &flash_act_cur);
+    rc += i2c_func->i2c_read(i2c_client, REG_IFL_MIN, &flash_min_cur);
     cam_info("%s IFL ACT current 0x%x MIN Current 0x%x", __func__,
         flash_act_cur, flash_min_cur);
 
-    rc |= i2c_func->i2c_read(i2c_client,  REG_MODE, &mode_val);
-    rc |= i2c_func->i2c_read(i2c_client,  REG_FLASH_TIMER, &timeout_val);
-    rc |= i2c_func->i2c_write(i2c_client, REG_MODE,
+    rc += i2c_func->i2c_read(i2c_client,  REG_MODE, &mode_val);
+    rc += i2c_func->i2c_read(i2c_client,  REG_FLASH_TIMER, &timeout_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_MODE,
         (mode_val & (~LED1_EN) & (~LED2_EN) & (~ASIST_MODE) & (~STR_FLASH_MODE)));
-    rc |= i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER, (timeout_val & (~LED_SD)));
+    rc += i2c_func->i2c_write(i2c_client, REG_FLASH_TIMER, (timeout_val & (~LED_SD)));
 
     if (rc < 0) {
         report_dsm();
     }
 
-    rc |= hw_mp3336_mix_ir_set_pin(flash_ctrl, STROBE, LOW);
-    rc |= hw_mp3336_mix_ir_set_pin(flash_ctrl, TORCH, LOW);
+    hw_mp3336_mix_ir_set_pin(flash_ctrl, STROBE, LOW);
+    hw_mp3336_mix_ir_set_pin(flash_ctrl, TORCH, LOW);
 
     if(pdata->need_wakelock == WAKE_LOCK_ENABLE) {
         /**
@@ -623,7 +624,7 @@ static int hw_mp3336_mix_ir_action_ic_standby(struct hw_flash_ctrl_t *flash_ctrl
          * doing the unlock operation, so there is no dangers for the mutex being
          * unlocked before locked.
          */
-        wake_unlock(&pdata->mp3336_mix_ir_wakelock);/*lint !e455*/
+        __pm_relax(&pdata->mp3336_mix_ir_wakelock);/*lint !e455*/
     }
 
     return rc;
@@ -739,8 +740,8 @@ static int hw_mp3336_mix_ir_get_work_mode_strategy(struct hw_flash_ctrl_t *flash
                                                    mp3336_mix_ir_entire_ic_mode_t *ic_work_mode)
 {
     struct hw_mp3336_mix_ir_private_data_t *pdata = NULL;
-    mp3336_mix_ir_single_mode_t front_mode = SINGLE_STANDBY_MODE;
-    mp3336_mix_ir_single_mode_t back_mode  = SINGLE_STANDBY_MODE;
+    unsigned int front_mode = SINGLE_STANDBY_MODE;
+    unsigned int back_mode  = SINGLE_STANDBY_MODE;
 
     RETURN_ERROR_ON_NULL(flash_ctrl);
     RETURN_ERROR_ON_NULL(ic_work_mode);
@@ -864,7 +865,7 @@ static int hw_mp3336_mix_ir_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
          * 'wake_lock' will just add the event_count of the wake lock source,
          * and will not cause evil effects.
          */
-        wake_lock(&pdata->mp3336_mix_ir_wakelock);
+        __pm_stay_awake(&pdata->mp3336_mix_ir_wakelock);
     }
 
     rc = hw_mp3336_mix_ir_update_work_mode(flash_ctrl,cdata);

@@ -5,12 +5,14 @@
 #include <linux/errno.h>          /* Linux kernel error definitions */
 #include <linux/hrtimer.h>        /* hrtimer */
 #include <linux/workqueue.h>      /* work_struct, delayed_work */
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/of_irq.h>
+#include <uapi/linux/sched/types.h>
+#include <linux/sched.h>
 #include <linux/version.h>
 #include "fusb3601_global.h"      /* Chip structure access */
 #include "../core/core.h"         /* Core access */
@@ -47,6 +49,8 @@ const char* FUSB3601_DT_INTERRUPT_INTN =    "fsc_interrupt_int_n";
 #endif  /* FSC_DEBUG */
 extern struct workqueue_struct *system_highpri_wq;
 extern int state_machine_need_resched;
+
+#define FUSB_FORCE_ROLESWAP_TIMEOUT  500 * 1000
 
 /* Internal forward declarations */
 static irqreturn_t FUSB3601__fusb_isr_intn(int irq, void *dev_id);
@@ -103,7 +107,8 @@ static void FUSB3601_force_source(struct dual_role_phy_instance *dual_role)
 	}
 	hwlog_info("FUSB  %s - Force State Source\n",__func__);
 	FUSB3601_ConfigurePortType(0x95,&chip->port);
-	FUSB3601_fusb_StartTimer(&chip->timer_force_timeout, 1500*1000);
+	FUSB3601_fusb_StartTimer(&chip->timer_force_timeout,
+					FUSB_FORCE_ROLESWAP_TIMEOUT);
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 	if(dual_role){
@@ -122,7 +127,8 @@ static void FUSB3601_force_sink(struct dual_role_phy_instance *dual_role)
 	}
 	hwlog_info("FUSB  %s - Force State Sink\n",__func__);
 	FUSB3601_ConfigurePortType(0x90,&chip->port);
-	FUSB3601_fusb_StartTimer(&chip->timer_force_timeout, 1500*1000);
+	FUSB3601_fusb_StartTimer(&chip->timer_force_timeout,
+					FUSB_FORCE_ROLESWAP_TIMEOUT);
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 	if(dual_role){
 		dual_role_instance_changed(dual_role);
@@ -539,7 +545,7 @@ void FUSB3601_fusb_GPIO_Cleanup(void)
         devm_free_irq(&chip->client->dev, chip->gpio_IntN_irq, chip);
     }
 
-    wake_lock_destroy(&chip->fusb3601_wakelock);
+    wakeup_source_trash(&chip->fusb3601_wakelock);
 
     if (gpio_is_valid(chip->gpio_IntN) >= 0)
     {
@@ -1456,7 +1462,7 @@ FSC_S32 FUSB3601_fusb_EnableInterrupts(void)
         return -ENOMEM;
     }
 
-    wake_lock_init(&chip->fusb3601_wakelock, WAKE_LOCK_SUSPEND,
+    wakeup_source_init(&chip->fusb3601_wakelock,
         "fusb3601wakelock");
 
     /* Set up IRQ for INT_N GPIO */
@@ -1497,7 +1503,7 @@ FSC_S32 FUSB3601_fusb_EnableInterrupts(void)
     enable_irq_wake(chip->gpio_IntN_irq);
 
     /* Run the state machines to initialize everything. */
-    wake_lock(&chip->fusb3601_wakelock);
+    __pm_stay_awake(&chip->fusb3601_wakelock);
     queue_work(chip->highpri_wq, &chip->sm_worker);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
     kthread_init_worker(&chip->set_drp_worker);
@@ -1581,7 +1587,7 @@ static irqreturn_t FUSB3601__fusb_isr_intn(FSC_S32 irq, void *dev_id)
     //if(!chip->queued)
 	{
 		//chip->queued = TRUE;
-		wake_lock(&chip->fusb3601_wakelock);
+		__pm_stay_awake(&chip->fusb3601_wakelock);
 		queue_work(chip->highpri_wq, &chip->sm_worker);
 	}
 
@@ -1608,7 +1614,7 @@ static enum hrtimer_restart FUSB3601_fusb_sm_timer_callback(struct hrtimer *time
      //if(!chip->queued)
 	{
 		//chip->queued = TRUE;
-		wake_lock(&chip->fusb3601_wakelock);
+		__pm_stay_awake(&chip->fusb3601_wakelock);
 		queue_work(chip->highpri_wq, &chip->sm_worker);
 	}
 
@@ -1678,5 +1684,5 @@ static void FUSB3601_work_function(struct work_struct *work)
     pr_err("FUSB DONE\n");
 
     up(&chip->suspend_lock);
-    wake_unlock(&chip->fusb3601_wakelock);
+    __pm_relax(&chip->fusb3601_wakelock);
 }

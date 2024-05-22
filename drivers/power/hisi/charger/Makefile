@@ -5,4 +5,3 @@ obj-$(CONFIG_SCHARGER_V300)	    += schargerV300/
 obj-$(CONFIG_SCHARGER_V600)	    += schargerV600/
 obj-$(CONFIG_HI6523_CHARGER_SENSORHUB)           += schargerV300_sh/
 obj-$(CONFIG_HISI_CHARGER_SYS_WDG)           += hisi_charging_watchdog.o
-EXTRA_CFLAGS += -Idrivers/hisi/tzdriver/libhwsecurec/

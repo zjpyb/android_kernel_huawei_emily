@@ -159,7 +159,7 @@ static inline void *pcalloc(struct gen_pool *pool, size_t n,
 static inline char *pstrdup(struct gen_pool *pool, const char *s, gfp_t gfp)
 {
 	size_t len;
-	char *buf;
+	char *buf = NULL;
 
 	if (unlikely(pool == NULL || s == NULL))
 		return NULL;

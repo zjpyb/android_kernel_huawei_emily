@@ -12,9 +12,12 @@
 #ifndef LINUX_MMC_CQ_HCI_H
 #define LINUX_MMC_CQ_HCI_H
 #include <linux/mmc/core.h>
+#include <linux/irqreturn.h>
 #ifdef CONFIG_EMMC_FAULT_INJECT
 #include <linux/mmc/emmc_fault_inject.h>
 #endif
+#include <linux/version.h>
+#include <linux/platform_device.h>
 #ifdef CONFIG_MMC_SDHCI_OF_ARASAN
 /*fix the soc bug that the qbr task can't be cleared*/
 #define CMDQ_FIX_CLEAR_QBRTASK

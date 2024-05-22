@@ -113,8 +113,8 @@
 #define  BIT_RST_SDIO_CAPRICORN	(0x1 << 1)
 #define MMC0_CRG_SD_HRST 0x20
 #define MMC0_CRG_SD_HURST 0x24
-#define BIT_RST_SD_TAURUS (0x1 << 0)
-#define BIT_URST_SD_TAURUS (0x1 << 0)
+#define BIT_HRST_SD_TAURUS 0x1
+#define BIT_RST_SD_TAURUS (0x1 << 1)
 /* mmc1 sys ctrl end*/
 
 /* hsdt crg */
@@ -190,6 +190,11 @@ struct dw_mci_hs_priv_data {
 	int				old_power_mode;
 	unsigned int		priv_bus_hz;
 	unsigned int		cd_vol;
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+	int				set_sd_io;
+	int				set_sd_io2;
+	int				set_sd_gpio167_low;
+#endif
        unsigned int sd_slot_ldo10_status;
 #ifdef CONFIG_MMC_DW_MUX_SDSIM
 	int				mux_sdsim;	/*if enabled as 1,sd and sim module with be used alternately by switching mux io config*/
@@ -208,8 +213,10 @@ struct dw_mci_hs_priv_data {
 	void __iomem *    ioc_off;
 };
 
-extern void dw_mci_set_cd(struct dw_mci *host);
 
+extern void dw_mci_set_cd(struct dw_mci *host);
+extern void dw_mci_put_regulator(struct dw_mci *host);
+extern void dw_mci_get_regulator(struct dw_mci *host);
 struct dw_mci_tuning_data{
     const u8 *blk_pattern;
     unsigned int blksz;
@@ -231,5 +238,7 @@ struct dw_mci_tuning_data{
 #define DW_MCI_ERROR_FLAGS	(DW_MCI_DATA_ERROR_FLAGS | \
 				 DW_MCI_CMD_ERROR_FLAGS  | SDMMC_INT_HLE)
 
-
+#ifdef CONFIG_HUAWEI_DSM
+extern void dsm_wifi_client_notify(int dsm_id, const char *format, ...);
+#endif
 #endif /* _DW_MMC_HISI_ */

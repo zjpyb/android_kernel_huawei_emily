@@ -110,7 +110,7 @@ static void himos_udp_stats_cb(unsigned long arg)
 
 	struct sk_buff *skb;
 	size_t size = 0;
-	void *reply;
+	void *reply = NULL;
 	struct genlmsghdr *genlhdr;
 
 	spin_lock_bh(&stats_info_lock);

@@ -102,7 +102,8 @@ static struct fault_impl *args2fault(int args, char *argv[])
 	if (type == FAULT_NONE)
 		return NULL;
 	if (type >= FAULT_READ_DELAY && args >= 2) {
-		ras_atoll(&delay, argv[1], strlen(argv[1]), 0);
+		if(ras_atoll(&delay, argv[1], strlen(argv[1]), 0) != 0)
+			return NULL;
 		if (delay <= 0)
 			return NULL;
 	}

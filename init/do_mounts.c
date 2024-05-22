@@ -38,21 +38,12 @@
 int __initdata rd_doload;	/* 1 = load RAM disk, 0 = don't load */
 
 int root_mountflags = MS_RDONLY | MS_SILENT;
-
 static char * __initdata root_device_name;
 static char __initdata saved_root_name[64];
 static int root_wait;
 
 dev_t ROOT_DEV;
 
-#ifdef CONFIG_HISI_ENGINEER_MODE
-extern void engineer_mode_mount(void);
-#endif
-
-extern dev_t begin_oae_dm(dev_t orginal_dev,
-			  char *saved_root_name,
-			  char *root_device_name);
-extern void end_oae_dm(void);
 
 static int __init load_ramdisk(char *str)
 {
@@ -383,15 +374,14 @@ static int __init do_mount_root(char *name, char *fs, int flags, void *data)
 	printk(KERN_INFO
 	       "VFS: Mounted root (%s filesystem)%s on device %u:%u.\n",
 	       s->s_type->name,
-	       s->s_flags & MS_RDONLY ?  " readonly" : "",
+	       sb_rdonly(s) ? " readonly" : "",
 	       MAJOR(ROOT_DEV), MINOR(ROOT_DEV));
 	return 0;
 }
 
 void __init mount_block_root(char *name, int flags)
 {
-	struct page *page = alloc_page(GFP_KERNEL |
-					__GFP_NOTRACK_FALSE_POSITIVE);
+	struct page *page = alloc_page(GFP_KERNEL);
 	char *fs_names = page_address(page);
 	char *p;
 #ifdef CONFIG_BLOCK
@@ -430,8 +420,8 @@ retry:
 #endif
 		panic("VFS: Unable to mount root fs on %s", b);
 	}
-	if (!(flags & MS_RDONLY)) {
-		flags |= MS_RDONLY;
+	if (!(flags & SB_RDONLY)) {
+		flags |= SB_RDONLY;
 		goto retry;
 	}
 
@@ -448,7 +438,7 @@ retry:
 out:
 	put_page(page);
 }
-
+ 
 #ifdef CONFIG_ROOT_NFS
 
 #define NFSROOT_TIMEOUT_MIN	5
@@ -544,22 +534,12 @@ void __init mount_root(void)
 #endif
 #ifdef CONFIG_BLOCK
 	{
-		int err;
-
-		ROOT_DEV = begin_oae_dm(ROOT_DEV, saved_root_name,
-					root_device_name);
-
-		err = create_dev("/dev/root", ROOT_DEV);
+		int err = create_dev("/dev/root", ROOT_DEV);
 
 		if (err < 0)
 			pr_emerg("Failed to create /dev/root: %d\n", err);
 		mount_block_root("/dev/root", root_mountflags);
-
-		end_oae_dm();
 	}
-#endif
-#ifdef CONFIG_HISI_ENGINEER_MODE
-	engineer_mode_mount();
 #endif
 }
 
@@ -569,13 +549,13 @@ void __init mount_root(void)
 void __init prepare_namespace(void)
 {
 	int is_floppy;
-
+#ifndef CONFIG_HYBRID_FEATURE
 	if (root_delay) {
 		printk(KERN_INFO "Waiting %d sec before mounting root device...\n",
 		       root_delay);
 		ssleep(root_delay);
 	}
-
+#endif
 	/*
 	 * wait for the known devices to complete their probing
 	 *
@@ -609,7 +589,7 @@ void __init prepare_namespace(void)
 			saved_root_name);
 		while (driver_probe_done() != 0 ||
 			(ROOT_DEV = name_to_dev_t(saved_root_name)) == 0)
-			msleep(100);
+			msleep(5);
 		async_synchronize_full();
 	}
 

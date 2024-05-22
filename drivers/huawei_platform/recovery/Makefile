@@ -4,3 +4,5 @@
 
 obj-$(CONFIG_HUAWEI_DSM)  += dsm_recovery.o
 obj-$(CONFIG_HUAWEI_DSM)  += recovery_misc.o
+
+EXTRA_CFLAGS := -Idrivers/hisi/tzdriver/libhwsecurec

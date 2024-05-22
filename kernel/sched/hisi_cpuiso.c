@@ -58,7 +58,7 @@ int do_isolation_work_cpu_stop(void *data)
 
 	sched_ttwu_pending();
 
-	raw_spin_lock(&iso_rq->lock);
+	rq_lock(iso_rq, &rf);
 
 	/*
 	 * Temporarily mark the rq as offline. This will allow us to
@@ -77,7 +77,8 @@ int do_isolation_work_cpu_stop(void *data)
 
 	if (iso_rq->rd)
 		set_rq_online(iso_rq);
-	raw_spin_unlock(&iso_rq->lock);
+
+	rq_unlock(iso_rq, &rf);
 
 	local_irq_enable();
 	return 0;

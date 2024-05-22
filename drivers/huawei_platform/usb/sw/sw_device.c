@@ -83,8 +83,6 @@ static int sw_bus_match(struct device *dev, struct device_driver *drv)
 	struct sw_driver *sdrv = container_of(drv, struct sw_driver, driver);
 	struct sw_device *sdev = container_of(dev, struct sw_device, dev);
 
-	if (sdrv == NULL)
-		return -1;
 	return sw_match_device(sdrv->id_table, sdev);
 }
 
@@ -131,8 +129,6 @@ static int sw_device_remove(struct device *dev)
 {
 	struct sw_device *sdev = container_of(dev, struct sw_device, dev);
 
-	if (sdev == NULL)
-		return FAILURE;
 
 	sw_disconnect_driver(sdev);
 	return 0;

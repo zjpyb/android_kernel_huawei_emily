@@ -24,7 +24,7 @@
  * <mountpoint>/devices contains USB topology, device, config, class,
  * interface, & endpoint data.
  *
- * I considered using /proc/bus/usb/devices/device# for each device
+ * I considered using /dev/bus/usb/device# for each device
  * as it is attached or detached, but I didn't like this for some
  * reason -- maybe it's just too deep of a directory structure.
  * I also don't like looking in multiple places to gather and view
@@ -40,7 +40,7 @@
  *   Converted the whole proc stuff to real
  *   read methods. Now not the whole device list needs to fit
  *   into one page, only the device list for one bus.
- *   Added a poll method to /proc/bus/usb/devices, to wake
+ *   Added a poll method to /sys/kernel/debug/usb/devices, to wake
  *   up an eventual usbd
  * 2000-01-04: Thomas Sailer <sailer@ife.ee.ethz.ch>
  *   Turned into its own filesystem
@@ -60,6 +60,8 @@
 #include <linux/uaccess.h>
 
 #include "usb.h"
+
+#include "hisi-usb-core.h"
 
 /* Define ALLOW_SERIAL_NUMBER if you want to see the serial number of devices */
 #define ALLOW_SERIAL_NUMBER
@@ -182,14 +184,8 @@ static char *usb_dump_endpoint_descriptor(int speed, char *start, char *end,
 
 	dir = usb_endpoint_dir_in(desc) ? 'I' : 'O';
 
-	if (speed == USB_SPEED_HIGH) {
-		switch (usb_endpoint_maxp(desc) & (0x03 << 11)) {
-		case 1 << 11:
-			bandwidth = 2; break;
-		case 2 << 11:
-			bandwidth = 3; break;
-		}
-	}
+	if (speed == USB_SPEED_HIGH)
+		bandwidth = usb_endpoint_maxp_mult(desc);
 
 	/* this isn't checking for illegal values */
 	switch (usb_endpoint_type(desc)) {
@@ -233,7 +229,7 @@ static char *usb_dump_endpoint_descriptor(int speed, char *start, char *end,
 
 	start += sprintf(start, format_endpt, desc->bEndpointAddress, dir,
 			 desc->bmAttributes, type,
-			 (usb_endpoint_maxp(desc) & 0x07ff) *
+			 usb_endpoint_maxp(desc) *
 			 bandwidth,
 			 interval, unit);
 	return start;
@@ -612,7 +608,6 @@ static ssize_t usb_device_read(struct file *file, char __user *buf,
 	ssize_t ret, total_written = 0;
 	loff_t skip_bytes = *ppos;
 	int id;
-	unsigned long jiffies_expire = jiffies + HZ;
 
 	if (*ppos < 0)
 		return -EINVAL;
@@ -621,46 +616,36 @@ static ssize_t usb_device_read(struct file *file, char __user *buf,
 	if (!access_ok(VERIFY_WRITE, buf, nbytes))
 		return -EFAULT;
 
-	/* mutex_lock(&usb_bus_idr_lock); */
-	while (!mutex_trylock(&usb_bus_idr_lock)) {
-
-		/* If we can't acquire the lock after waiting one second,
-		 * we're probably deadlocked */
-		if (time_after(jiffies, jiffies_expire)) {
-			pr_err("%s:get usb_bus_idr_lock timeout, probably deadlocked\n",
-					__func__);
-			return -EFAULT;
-		}
-		msleep(20);
-	}
-
+#ifndef USB_DEVICE_READ_TRY_LOCK
+	mutex_lock(&usb_bus_idr_lock);
+#else
+	if (usb_device_read_mutex_trylock())
+		return -EFAULT;
+#endif
 	/* print devices for all busses */
 	idr_for_each_entry(&usb_bus_idr, bus, id) {
 		/* recurse through all children of the root hub */
 		if (!bus_to_hcd(bus)->rh_registered)
 			continue;
 
-		jiffies_expire = jiffies + HZ;
-		while (!usb_trylock_device(bus->root_hub)) {
-
-			/* If we can't acquire the lock after waiting one second,
-			 * we're probably deadlocked */
-			if (time_after(jiffies, jiffies_expire)) {
-				mutex_unlock(&usb_bus_idr_lock);/*lint !e455*/
-				return -EFAULT;
-			}
-			msleep(20);
+#ifndef USB_DEVICE_READ_TRY_LOCK
+		usb_lock_device(bus->root_hub);
+#else
+		if (usb_device_read_usb_trylock_device(bus->root_hub)) {
+			mutex_unlock(&usb_bus_idr_lock);
+			return -EFAULT;
 		}
+#endif
 		ret = usb_device_dump(&buf, &nbytes, &skip_bytes, ppos,
 				      bus->root_hub, bus, 0, 0, 0);
 		usb_unlock_device(bus->root_hub);
 		if (ret < 0) {
-			mutex_unlock(&usb_bus_idr_lock);/*lint !e455*/
+			mutex_unlock(&usb_bus_idr_lock);
 			return ret;
 		}
 		total_written += ret;
 	}
-	mutex_unlock(&usb_bus_idr_lock);/*lint !e455*/
+	mutex_unlock(&usb_bus_idr_lock);
 	return total_written;
 }
 

@@ -566,9 +566,6 @@ void set_device_clk(struct ufs_hba *hba)
 	/* 0: 19.2M, 1: 38.4M */
 	int ufs_refclk_val = 0;
 
-	if (hba->ufs_device_spec_version >= 0x0300)
-		ufs_refclk_val = 1;
-
 	dev_info(hba->dev, "ref clk %s\n", ufs_refclk_val ? "38.4M" : "19.2M");
 
 	/* close the device clk */
@@ -622,27 +619,37 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 	return 0;
 }
 
-void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
+void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba, struct ufs_pa_layer_attr *dev_req_params)
 {
 	uint32_t value;
+	u32 equalizer;
 	struct ufs_kirin_host *host = hba->priv;
 
 	pr_info("%s ++\n", __func__);
 #ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
 #endif
+
+	equalizer = (dev_req_params->gear_tx == 4) ? 0 : 35;
+	sel_equalizer_by_device(hba, &equalizer);
+	if (host->tx_equalizer != equalizer) {
+		host->tx_equalizer = equalizer;
+		if (likely(!hba->host->is_emulator))
+			mphy_amplitude_glitch_workaround(hba);
+	}
+
 	/*ARIES platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1554), 0x4f); /* g2 sync length */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1556), 0x4f); /* g3 sync length */
-	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a7), 0xA); /* PA_Hibern8Time */
+
+	ufshcd_dme_get(hba, UIC_ARG_MIB(0x15A7), &value);
+	if (value < 0xA)
+		ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a7),
+			0xA); /* PA_Hibern8Time */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a8), 0xA); /* PA_Tactivate */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xd085, 0x0), 0x01);
-
-	ufshcd_dme_get(hba, UIC_ARG_MIB(0x15A8), &value);
-	if (value < 0x7)
-		ufshcd_dme_set(hba, UIC_ARG_MIB(0x15A8), 0x7); /* update PaTactive */
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0x155c), 0x0); /* PA_TxSkip */
 

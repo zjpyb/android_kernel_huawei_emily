@@ -53,10 +53,6 @@
 #define BATT_BRAND_STRING_MAX        (32)
 #define BATT_BRAND_NUM_MAX           (5)
 
-#define CCAFC_RUN_DEFAULT	0
-#define CCAFC_RUN_FIRST		1
-#define CCAFC_RUN_ALREADY	2
-
 /*************************struct define area***************************/
 enum vdpm_para_info {
 	VDPM_PARA_CAP_MIN = 0,
@@ -120,6 +116,7 @@ enum {
 };
 struct charge_core_info {
 	struct device *dev;
+	struct charge_temp_data ntc_fit_temp_para[TEMP_PARA_LEVEL];
 	struct charge_temp_data temp_para[TEMP_PARA_LEVEL];
 	struct charge_volt_data volt_para[VOLT_PARA_LEVEL];
 	struct charge_vdpm_data vdpm_para[VDPM_PARA_LEVEL];

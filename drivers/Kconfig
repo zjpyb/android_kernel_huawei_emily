@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 menu "Device Drivers"
 
 source "drivers/amba/Kconfig"
@@ -5,7 +6,7 @@ source "drivers/amba/Kconfig"
 source "drivers/bootdevice/Kconfig"
 
 source "drivers/base/Kconfig"
-source "drivers/bootdevice/Kconfig"
+
 source "drivers/bus/Kconfig"
 
 source "drivers/connector/Kconfig"
@@ -56,6 +57,8 @@ source "drivers/char/Kconfig"
 
 source "drivers/i2c/Kconfig"
 
+source "drivers/i3c/Kconfig"
+
 source "drivers/spi/Kconfig"
 
 source "drivers/spmi/Kconfig"
@@ -92,10 +95,6 @@ source "drivers/media/Kconfig"
 
 source "drivers/vcodec/hi_vcodec/Kconfig"
 
-source "drivers/vcodec/imagination/D5500/Kconfig"
-
-source "drivers/vcodec/imagination/D5500_DRM/Kconfig"
-
 source "drivers/video/Kconfig"
 
 source "sound/Kconfig"
@@ -107,6 +106,8 @@ source "drivers/usb/Kconfig"
 source "drivers/uwb/Kconfig"
 
 source "drivers/mmc/Kconfig"
+
+source "drivers/iomt_host/Kconfig"
 
 source "drivers/memstick/Kconfig"
 
@@ -214,7 +215,11 @@ source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
 
+source "drivers/fsi/Kconfig"
+
 source "drivers/tee/Kconfig"
+
+source "drivers/mux/Kconfig"
 
 source "drivers/hisi/Kconfig"
 
@@ -222,43 +227,41 @@ source "drivers/huawei_platform/Kconfig"
 
 source "drivers/dsm/Kconfig"
 
-source "drivers/wpa_dmd/Kconfig"
-
 source "drivers/log/Kconfig"
-
-source "drivers/connectivity/Kconfig"
-
-source "drivers/contexthub/Kconfig"
-
-source "drivers/hwusb/Kconfig"
 
 source "drivers/hwbfm/Kconfig"
 
 source "drivers/hwzerohung/Kconfig"
-source "drivers/hwfdleak/Kconfig"
-source "drivers/hwerecovery/Kconfig"
+
+source "drivers/hwusb/Kconfig"
+
+source "drivers/contexthub/Kconfig"
+
 source "drivers/hwnet/Kconfig"
+
+source "drivers/hwfdleak/Kconfig"
+
+source "drivers/hwerecovery/Kconfig"
+source "drivers/hwmemcheck/Kconfig"
 
 source "drivers/devkit/audiokit/Kconfig"
 
 source "drivers/spmi_hisi/Kconfig"
 
 source "drivers/devkit/lcdkit/Kconfig"
-
-source "drivers/devkit/tpkit/Kconfig"
-
 source "drivers/dubai/Kconfig"
-
-source "drivers/cpuload/Kconfig"
-
-source "drivers/mmonitor/Kconfig"
 
 source "drivers/cfi/Kconfig"
 
+source "drivers/cpuload/Kconfig"
+
+source "drivers/devkit/tpkit/Kconfig"
+
+source "drivers/connectivity/Kconfig"
+
 source "drivers/storage_rofa/Kconfig"
 
-source "drivers/oases/Kconfig"
+source "drivers/mmonitor/Kconfig"
 
-source "drivers/oae_fw_patch/Kconfig"
-
+source "drivers/hwxcollie/Kconfig"
 endmenu

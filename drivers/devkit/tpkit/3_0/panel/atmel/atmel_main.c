@@ -55,6 +55,8 @@
 #define NEW_IC_ADDRESS_DELTA 0x24
 #define OLD_IC_ADDRESS_DELTA 0x26
 
+#define ATMEL_FILE_NAME_LEN 128
+
 #define ATMEL_VENDER_NAME  "atmel"
 
 #ifdef ROI
@@ -163,7 +165,7 @@ static void atmel_status_resume(void);
 static int atmel_parse_threshold_file(void);
 static int atmel_parse_threshold_file_method(const char *buf, uint32_t file_size);
 static int atmel_get_one_value(const char *buf, uint32_t *offset);
-static int atmel_ctoi(char *buf, uint32_t count);
+static int atmel_ctoi(const char *buf, uint32_t count);
 static void atmel_chip_touch_switch(void);
 extern void ts_i2c_error_dmd_report(u8* reg_addr);
 
@@ -395,8 +397,6 @@ retry_read:
 				return -EIO;
 			}
 		}
-		if (!test_flag(I2C_ACCESS_NO_CACHE, &flag))
-			memcpy(val + transferred, r_cache, xfer[1].len);
 		transferred += xfer[1].len;
 
 		TS_LOG_DEBUG
@@ -713,14 +713,13 @@ int atmel_lookup_bootloader_address(struct mxt_data *data, bool retry)
 		bootloader = appmode - OLD_IC_ADDRESS_DELTA;
 		break;
 	default:
-		TS_LOG_ERR("Appmode i2c address 0x%02x not found\n", appmode);
+		TS_LOG_ERR("Appmode 0x%02x not found\n", appmode);
 		return -EINVAL;
 	}
 
 	data->bootloader_addr = bootloader;
-
-	TS_LOG_INFO("Appmode i2c address 0x%02x, bootloader 0x%02x\n", appmode,
-		    bootloader);
+	TS_LOG_INFO("Appmode 0x%02x, bootloader 0x%02x\n",
+		appmode, bootloader);
 
 	return 0;
 }
@@ -1363,7 +1362,8 @@ static int mxt_parse_object_table(struct mxt_data *data,
 	u8 reportid = 0;
 	u16 end_address= 0;
 	struct mxt_object *object = NULL;
-	u8 min_id = 0, max_id = 0;
+	u8 min_index;
+	u8 max_index;
 
 	if(!data || !data->info || !object_table) {
 		TS_LOG_ERR("%s, param invalid\n", __func__);
@@ -1378,21 +1378,20 @@ static int mxt_parse_object_table(struct mxt_data *data,
 		le16_to_cpus(&object->start_address);
 
 		if (object->num_report_ids) {
-			min_id = reportid;
+			min_index = reportid;
 			reportid += object->num_report_ids *
-			    mxt_obj_instances(object);
-			max_id = reportid - 1;	/*min reportid is 1*/
+				mxt_obj_instances(object);
+			max_index = reportid - 1; /* min reportid is 1 */
 		} else {
-			min_id = 0;
-			max_id = 0;
+			min_index = 0;
+			max_index = 0;
 		}
 
-		TS_LOG_DEBUG
-		    ("T%u Start:%u Size:%u Instances:%u Report IDs:%u-%u\n",
-		     object->type, object->start_address, mxt_obj_size(object),
-		     mxt_obj_instances(object), min_id, max_id);
+		TS_LOG_DEBUG("T%u Size:%d Instances:%d Report index:%u-%u\n",
+			object->type, mxt_obj_size(object),
+			mxt_obj_instances(object), min_index, max_index);
 
-		mxt_parse_each_object_table(object, min_id, max_id);
+		mxt_parse_each_object_table(object, min_index, max_index);
 
 		end_address = object->start_address
 		    + mxt_obj_size(object) * mxt_obj_instances(object) - 1;
@@ -2115,7 +2114,7 @@ static int atmel_init_chip(void)
 		return -ENODEV;
 	}
 	data->do_calibration = true;
-	wake_lock_init(&data->ts_flash_wake_lock, WAKE_LOCK_SUSPEND, ATMEL_VENDER_NAME);
+	wakeup_source_init(&data->ts_flash_wake_lock, ATMEL_VENDER_NAME);
 
 	error = mxt_initialize(data);
 	if (error) {
@@ -2584,7 +2583,8 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	id = message[0] - data->T100_reportid_min - 2;
 	/* ignore SCRSTATUS events */
 	if (id < 0 || id >= TS_MAX_FINGER) {
-		TS_LOG_DEBUG("T100 [%d] SCRSTATUS : 0x%x\n", id, message[1]);	/*message[1]:touch_status */
+		TS_LOG_DEBUG("T100 index out of bounds, SCRSTATUS: 0x%x\n",
+			message[1]); /* message[1]: touch_status */
 		return;
 	}
 	/***********************************
@@ -2610,19 +2610,6 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	}
 
 	atmel_parse_t100_ext_message(message, data->tchcfg, &info);
-	TS_LOG_DEBUG(
-		"[%u] status:%02X x:%u y:%u [amp]:%02X [vec]:%02X [area]:%02X [peak]:%02X [width]:%02X [height]:%02X [xboundry]:%d [yboundry]:%d\n",
-		id,
-		status,
-		x, y,
-		info.amp,
-		info.vec,
-		info.area,
-		info.peak,
-		info.width,
-		info.height,
-		info.xboundary,
-		info.yboundary);
 
 	memset(&cache->fingers[id], 0, sizeof(cache->fingers[id]));
 
@@ -2702,12 +2689,6 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 			(MXT_T100_TCHAUX_PEAK, &data->tchcfg[MXT_T100_TCHAUX]))
 			cache->fingers[id].pressure = info.peak;
 	}
-
-	TS_LOG_DEBUG
-	    ("finger[%u] status:%02X, x:%u, y:%u, pressure:%u, cur_finger_number:%u\n",
-	     id, cache->fingers[id].status, cache->fingers[id].x,
-	     cache->fingers[id].y, cache->fingers[id].pressure,
-	     cache->cur_finger_number);
 
 out:
 #ifdef ROI
@@ -2975,7 +2956,7 @@ static void mxt_proc_T93_messages(struct mxt_data *data, u8 *msg)
 static void mxt_proc_t15_messages(struct mxt_data *data, u8 *msg)
 {
 	struct ts_fingers *cache = data->ts_cache;
-	int key= 0;
+	unsigned int i;
 	bool curr_state = false, new_state = false;
 	bool sync = false;
 	unsigned long keystates = le32_to_cpu(msg[2]);
@@ -2994,21 +2975,21 @@ static void mxt_proc_t15_messages(struct mxt_data *data, u8 *msg)
 
 	num_keys = data->pdata->num_keys[T15_T97_KEY];
 	keymap = data->pdata->keymap[T15_T97_KEY];
-	for (key = 0; key < num_keys; key++) {
-		curr_state = test_bit(key, &data->t15_keystatus);
-		new_state = test_bit(key, &keystates);
+	for (i = 0; i < num_keys; i++) {
+		curr_state = test_bit(i, &data->t15_keystatus);
+		new_state = test_bit(i, &keystates);
 
 		if (!curr_state && new_state) {
-			TS_LOG_DEBUG("T15 key press: %u\n", key);
-			__set_bit(key, &data->t15_keystatus);
+			TS_LOG_DEBUG("T15 button press: %u\n", i);
+			__set_bit(i, &data->t15_keystatus);
 			cache->special_button_flag = 1;
-			cache->special_button_key = keymap[key];
+			cache->special_button_key = keymap[i];
 			sync = true;
 		} else if (curr_state && !new_state) {
-			TS_LOG_DEBUG("T15 key release: %u\n", key);
-			__clear_bit(key, &data->t15_keystatus);
+			TS_LOG_DEBUG("T15 button release: %u\n", i);
+			__clear_bit(i, &data->t15_keystatus);
 			cache->special_button_flag = 0;
-			cache->special_button_key = keymap[key];
+			cache->special_button_key = keymap[i];
 
 			sync = true;
 		}
@@ -3231,7 +3212,7 @@ static void mxt_proc_t24_messages(struct mxt_data *data, u8 *msg)
 
 static void mxt_proc_t100_message_number(struct mxt_data *data, u8 *message)
 {
-	int id= 0;
+	int index;
 	u8 status = 0;
 	u8 val[1] = {0};
 	u16 addr = 0;
@@ -3252,10 +3233,10 @@ static void mxt_proc_t100_message_number(struct mxt_data *data, u8 *message)
 		return;
 	}
 
-	id = message[0] - data->T100_reportid_min - 2;
+	index = message[0] - data->T100_reportid_min - 2;
 
-	if (id != -2) { //make sure currunt msg reportid is 43
-		TS_LOG_DEBUG("T100 [%d] msg : 0x%x\n", id, message[1]);
+	if (index != -2) { /* make sure currunt msg reportid is 43 */
+		TS_LOG_DEBUG("T100 [%d] msg : 0x%x\n", index, message[1]);
 		return;
 	}
 
@@ -4485,7 +4466,7 @@ static int atmel_get_one_value(const char *buf, uint32_t *offset)
 	return value;
 }
 
-static int atmel_ctoi(char *buf, uint32_t count)
+static int atmel_ctoi(const char *buf, uint32_t count)
 {
 	int value = 0;
 	uint32_t index = 0;
@@ -4575,7 +4556,7 @@ static int atmel_get_rawdata(struct ts_rawdata_info *info,
 	}
 
 	atomic_set(&atmel_mmi_test_status, 1);
-	wake_lock(&data->ts_flash_wake_lock);
+	__pm_stay_awake(&data->ts_flash_wake_lock);
 	retval = mxt_dualX_disable(data, dualX_status);
 	if (retval) {
 		TS_LOG_ERR("mxt_dualX_disable error\n");
@@ -4758,7 +4739,7 @@ static int atmel_get_rawdata(struct ts_rawdata_info *info,
 		strncat(info->result, "-atmel_touch", strlen("-atmel_touch"));
 
 out:
-	wake_unlock(&data->ts_flash_wake_lock);
+	__pm_relax(&data->ts_flash_wake_lock);
 	atomic_set(&atmel_mmi_test_status, 0);
 
 	if (data->T37_buf) {
@@ -4902,29 +4883,32 @@ static void mxt_get_feature_file_name(char *feature_file_name, bool from_sd)
 {
 	int offset = 0;
 	struct mxt_data *data = mxt_core_data;
+	char *product_name = NULL;
 
 	if(!data || !feature_file_name || !data->atmel_chip_data || !data->atmel_chip_data->ts_platform_data) {
 		TS_LOG_ERR("%s, param invalid\n", __func__);
 		return;
 	}
+
+	product_name = data->atmel_chip_data->ts_platform_data->product_name;
 	if (!from_sd) {
-		offset = snprintf(feature_file_name, PAGE_SIZE, "ts/atmel/");
-		if (data->description[0] != '\0') {
-			offset +=
-			    snprintf(feature_file_name + offset,
-				     PAGE_SIZE - offset, data->description);
-		} else {
-			offset +=
-			    snprintf(feature_file_name + offset,
-				     PAGE_SIZE - offset,
-				     data->atmel_chip_data->ts_platform_data->product_name);
-		}
-		snprintf(feature_file_name + offset, PAGE_SIZE - offset,
-			 "_config_feature.raw");
+		offset = snprintf(feature_file_name, ATMEL_FILE_NAME_LEN,
+			"ts/atmel/");
+		if (data->description[0] != '\0')
+			offset += snprintf(feature_file_name + offset,
+				ATMEL_FILE_NAME_LEN - offset,
+				data->description);
+		else
+			offset += snprintf(feature_file_name + offset,
+				ATMEL_FILE_NAME_LEN - offset,
+				product_name);
+
+		snprintf(feature_file_name + offset,
+			ATMEL_FILE_NAME_LEN - offset,
+			"_config_feature.raw");
 	} else {
-		offset =
-		    snprintf(feature_file_name, PAGE_SIZE,
-			     "ts/atmel_config_feature.raw");
+		offset = snprintf(feature_file_name, ATMEL_FILE_NAME_LEN,
+			"ts/atmel_config_feature.raw");
 	}
 	TS_LOG_INFO("%s: feature_file_name is %s\n", __func__,
 		    feature_file_name);
@@ -5206,7 +5190,7 @@ static void mxt_init_mxt_feature_list(void)
 static int mxt_read_feature_file(bool from_sd)
 {
 	struct mxt_data *data = mxt_core_data;
-	char feature_file_name[128] = {0};
+	char feature_file_name[ATMEL_FILE_NAME_LEN] = {0};
 	const struct firmware *cfg = NULL;
 	int ret = NO_ERR;
 

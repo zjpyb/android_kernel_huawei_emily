@@ -55,6 +55,9 @@
 #include  "MnMsgApi.h"
 #include  "MnMsgTs.h"
 #include "TafStdlib.h"
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+#include  "NasMultiInstanceApi.h"
+#endif
 
 
 
@@ -2244,6 +2247,11 @@ VOS_UINT32 MN_MSG_GetSubmitInfoForStk(
     MN_MSG_SUBMIT_STRU                 *pstSmsSubmitInfo;
     VOS_UINT8                           ucUdl;
     VOS_UINT8                           ucUdhl;
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    MODEM_ID_ENUM_UINT16                enModemId;
+
+    enModemId = NAS_MULTIINSTANCE_GetCurrInstanceModemId(WUEPS_PID_TAF);
+#endif
 
     if ((VOS_NULL_PTR == pstTpdu)
      || (VOS_NULL_PTR == pstTpdu->pucTpdu)
@@ -2257,8 +2265,13 @@ VOS_UINT32 MN_MSG_GetSubmitInfoForStk(
 
     MN_NORM_LOG1("MN_MSG_GetSubmitInfoForStk: pstTpdu->ulLen is ", (VOS_INT32)pstTpdu->ulLen);
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     pstSmsSubmitInfo = (MN_MSG_SUBMIT_STRU *)PS_MEM_ALLOC(WUEPS_PID_TAF,
                                                 sizeof(MN_MSG_SUBMIT_STRU));
+#else
+    pstSmsSubmitInfo = (MN_MSG_SUBMIT_STRU *)NAS_MULTIINSTANCE_MemAlloc(enModemId, WUEPS_PID_TAF,
+                                                sizeof(MN_MSG_SUBMIT_STRU));
+#endif
     if (VOS_NULL_PTR == pstSmsSubmitInfo)
     {
         MN_WARN_LOG("MN_MSG_GetSubmitInfoForStk: fail to alloc memory. ");
@@ -2285,7 +2298,11 @@ VOS_UINT32 MN_MSG_GetSubmitInfoForStk(
     if (MN_ERR_NO_ERROR != ulRet)
     {
         /*lint -save -e516 */
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
         PS_MEM_FREE(WUEPS_PID_TAF, pstSmsSubmitInfo);
+#else
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSmsSubmitInfo);
+#endif
         /*lint -restore */
         return ulRet;
     }
@@ -2302,7 +2319,11 @@ VOS_UINT32 MN_MSG_GetSubmitInfoForStk(
     if (MN_ERR_NO_ERROR != ulRet)
     {
         /*lint -save -e516 */
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
         PS_MEM_FREE(WUEPS_PID_TAF, pstSmsSubmitInfo);
+#else
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSmsSubmitInfo);
+#endif
         /*lint -restore */
         return ulRet;
     }
@@ -2316,7 +2337,11 @@ VOS_UINT32 MN_MSG_GetSubmitInfoForStk(
     if (MN_ERR_NO_ERROR != ulRet)
     {
         /*lint -save -e516 */
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
         PS_MEM_FREE(WUEPS_PID_TAF, pstSmsSubmitInfo);
+#else
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSmsSubmitInfo);
+#endif
         return ulRet;
         /*lint -restore */
     }
@@ -2348,7 +2373,11 @@ VOS_UINT32 MN_MSG_GetSubmitInfoForStk(
     *penMsgCoding = pstSmsSubmitInfo->stDcs.enMsgCoding;
 
     /*lint -save -e516 */
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
         PS_MEM_FREE(WUEPS_PID_TAF, pstSmsSubmitInfo);
+#else
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSmsSubmitInfo);
+#endif
     /*lint -restore */
     return MN_ERR_NO_ERROR;
 }

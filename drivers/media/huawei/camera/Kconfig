@@ -13,6 +13,7 @@ source "drivers/media/huawei/camera/fpga/Kconfig"
 source "drivers/media/huawei/camera/driver_ic/Kconfig"
 source "drivers/media/huawei/camera/dot/Kconfig"
 
+
 menuconfig HISI_CAMERA_LASER
     bool "Huawei laser support"
     default n
@@ -101,3 +102,10 @@ config HUAWEI_CAMERA_PMIC
     default n
     ---help---
         Support Camera PMIC chip
+
+config HUAWEI_CAMERA_BUCK
+    tristate "Support Camera BUCK"
+    depends on HUAWEI_CAMERA
+    default n
+    ---help---
+        Support Camera BUCK chip

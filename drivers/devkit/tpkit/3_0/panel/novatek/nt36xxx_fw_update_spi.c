@@ -21,7 +21,7 @@
 #include <linux/delay.h>
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -463,7 +463,7 @@ return:
 static int32_t nvt_write_firmware(const u8 *fwdata, size_t fwsize)
 {
 	uint32_t list = 0;
-	char *name;
+	char *name = NULL;
 	uint32_t BIN_addr, SRAM_addr, size;
 	uint32_t i = 0;
 	int32_t len = 0;

@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/export.h>
+#include <securec.h>
 
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/hisi_log.h>
@@ -41,13 +42,17 @@ void __rdr_register_exception(struct rdr_exception_info_s *e)
  *	char *logpath
  */
 void rdr_callback(struct rdr_exception_info_s *p_exce_info, u32 mod_id,
-		  char *logpath)
+		  char *logpath, u32 logpathLen)
 {
 	struct rdr_exception_info_s *e_type_info = NULL;
 	struct list_head *cur = NULL;
 	struct list_head *next = NULL;
 	u64 e_from_core;
 	rdr_e_callback e_callback;
+
+	if (logpathLen < PATH_MAXLEN) {
+		BB_PRINT_ERR("%s: logpathLen is too small.\n", __func__);
+	}
 
 	spin_lock(&__rdr_exception_list_lock);
 	list_for_each_safe(cur, next, &__rdr_exception_list) {
@@ -176,7 +181,11 @@ u32 rdr_register_exception(struct rdr_exception_info_s *e)
 		BB_PRINT_ERR("kmalloc failed for e_tpye_info\n");
 		return 0;
 	}
-	memset(e_type_info, 0, sizeof(struct rdr_exception_info_s));
+
+	if (EOK != memset_s(e_type_info, sizeof(struct rdr_exception_info_s), 0, sizeof(struct rdr_exception_info_s))) {
+		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
+	}
+
 	/*check modid & modid_end region */
 
 	memcpy(e_type_info, e, sizeof(struct rdr_exception_info_s));
@@ -224,7 +233,7 @@ int rdr_unregister_exception(u32 modid)
 	spin_unlock(&__rdr_exception_list_lock);
 
 	BB_PRINT_END();
-	/*return e_type_info->e_modid_end; */
+
 	return 0;
 }
 EXPORT_SYMBOL(rdr_unregister_exception);

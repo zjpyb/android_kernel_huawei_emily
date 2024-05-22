@@ -48,7 +48,6 @@ typedef enum monitor_states
 	MONITOR_STATE_INTERFACE_DELETED = 0x4
 } monitor_states_t;
 int dhd_add_monitor(char *name, struct net_device **new_ndev);
-extern int dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
 int dhd_del_monitor(struct net_device *ndev);
 int dhd_monitor_init(void *dhd_pub);
 int dhd_monitor_uninit(void);
@@ -177,13 +176,13 @@ static int dhd_mon_if_subif_start_xmit(struct sk_buff *skb, struct net_device *n
 	int qos_len = 0;
 	int dot11_hdr_len = 24;
 	int snap_len = 6;
-	unsigned char *pdata;
+	unsigned char *pdata = NULL;
 	unsigned short frame_ctl;
 	unsigned char src_mac_addr[6];
 	unsigned char dst_mac_addr[6];
-	struct ieee80211_hdr *dot11_hdr;
-	struct ieee80211_radiotap_header *rtap_hdr;
-	monitor_interface* mon_if;
+	struct ieee80211_hdr *dot11_hdr = NULL;
+	struct ieee80211_radiotap_header *rtap_hdr = NULL;
+	monitor_interface* mon_if = NULL;
 
 	MON_PRINT("enter\n");
 
@@ -236,7 +235,7 @@ static int dhd_mon_if_subif_start_xmit(struct sk_buff *skb, struct net_device *n
 		MON_PRINT("if name: %s, matched if name %s\n", ndev->name, mon_if->real_ndev->name);
 
 		/* Use the real net device to transmit the packet */
-		ret = dhd_start_xmit(skb, mon_if->real_ndev);
+		ret = (int)dhd_start_xmit(skb, mon_if->real_ndev);
 
 		return ret;
 	}

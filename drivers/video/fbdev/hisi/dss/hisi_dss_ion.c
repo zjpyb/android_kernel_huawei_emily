@@ -20,32 +20,33 @@
  * and make them to scatter lista.
  * table is global .
  */
- /*lint -e574 -e737*/
+ /*lint -e574 -e737 -e570  -e613 -e647*/
 static struct iommu_page_info *__hisifb_dma_create_node(void)
 {
+	/* alloc 8kb each time */
+	unsigned int order = 1;
 	struct iommu_page_info *info = NULL;
 	struct page *page = NULL ;
 	info = kzalloc(sizeof(struct iommu_page_info), GFP_KERNEL);
 	if (!info) {
-		HISI_FB_INFO("kzalloc info failed! \n");
+		HISI_FB_INFO("kzalloc info failed\n");
 		return NULL;
 	}
-	/* alloc 8kb each time */
-	page = alloc_pages(GFP_KERNEL, 1);
+	page = alloc_pages(GFP_KERNEL, order);
 	if (!page) {
-		HISI_FB_INFO("alloc page error. \n");
+		HISI_FB_INFO("alloc page error\n");
 		kfree(info);
 		return NULL;
 	}
 	info->page = page;
-	info->order = 0;
+	info->order = order;
 	INIT_LIST_HEAD(&info->list);
 	return info;
 }
 
 static struct sg_table *__hisifb_dma_alloc_memory(unsigned int size)
 {
-	int map_size = 0;
+	unsigned int map_size;
 	unsigned int sum = 0;
 	struct list_head pages;
 	struct iommu_page_info *info, *tmp_info;
@@ -53,14 +54,12 @@ static struct sg_table *__hisifb_dma_alloc_memory(unsigned int size)
 	struct sg_table *table = NULL;
 	struct scatterlist *sg = NULL;
 
-	INIT_LIST_HEAD(&pages);
-
-	map_size  = size;
-	if (map_size < 0) {
+	if ((size > SZ_512M) || (size == 0)) {
 		return NULL;
 	}
+	map_size = size;
 
-	HISI_FB_INFO("map_size = 0x%x \n", map_size);
+	INIT_LIST_HEAD(&pages);
 	do {
 		info = __hisifb_dma_create_node();
 		if (!info)
@@ -90,7 +89,7 @@ static struct sg_table *__hisifb_dma_alloc_memory(unsigned int size)
 		kfree(info);
 	}
 
-	HISI_FB_INFO("get alloc sg_table success.\n");
+	HISI_FB_INFO("alloc total memory size 0x%x\n", sum);
 	return table;
 
 error:
@@ -115,7 +114,7 @@ static int __hisifb_dma_free_memory(struct sg_table *table)
 		sg_free_table(table);
 		kfree(table);
 	}
-	HISI_FB_INFO("free total memory 0x%x.\n", mem_size);
+	HISI_FB_INFO("free total memory size 0x%x\n", mem_size);
 	table = NULL;
 	return 0;
 }
@@ -128,32 +127,31 @@ unsigned long hisifb_alloc_fb_buffer(struct hisi_fb_data_type *hisifd)
 	struct sg_table *sg = NULL;
 	struct fb_info *fbi = NULL;
 
-
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL.\n");
-		return -EINVAL;
+		HISI_FB_ERR("hisifd is NULL\n");
+		return 0;
 	}
 
 	fbi = hisifd->fbi;
 	if (NULL == fbi) {
-		HISI_FB_ERR("fbi is NULL.\n");
-		return -EINVAL;
+		HISI_FB_ERR("fbi is NULL\n");
+		return 0;
 	}
 
 	buf_len = fbi->fix.smem_len; // align to PAGE_SIZE
 	sg = __hisifb_dma_alloc_memory(buf_len);
 	if (!sg) {
 		HISI_FB_ERR("__hdss_dma_alloc_memory failed!\n");
-		return -ENOMEM;
+		return 0;
 	}
 
 	buf_addr = hisi_iommu_map_sg(__hdss_get_dev(), sg->sgl, 0, &buf_size);
 	if (!buf_addr) {
 		HISI_FB_ERR("hisi_iommu_map_sg failed!\n");
 		__hisifb_dma_free_memory(sg);
-		return -ENOMEM;
+		return 0;
 	}
-	HISI_FB_INFO("fb%d alloc framebuffer map sg 0x%zxB succuss.\n",
+	HISI_FB_INFO("fb%d alloc framebuffer map sg 0x%zxB succuss\n",
 		 hisifd->index, buf_size);
 
 	fbi->screen_base = hisifb_iommu_map_kernel(sg, buf_len);
@@ -161,15 +159,12 @@ unsigned long hisifb_alloc_fb_buffer(struct hisi_fb_data_type *hisifd)
 		HISI_FB_ERR("hisifb_iommu_map_kernel failed!\n");
 		hisi_iommu_unmap_sg(__hdss_get_dev(), sg->sgl, buf_addr);
 		__hisifb_dma_free_memory(sg);
-		return -ENOMEM;
+		return 0;
 	}
 
 	fbi->fix.smem_start = buf_addr;
 	fbi->screen_size = buf_len;
 	hisifd->fb_sg_table = sg;
-
-	HISI_FB_INFO("fb%d alloc framebuffer 0x%zxB @ (0x%pK virt) (%pa iova).\n",
-		 hisifd->index, fbi->screen_size, fbi->screen_base, &fbi->fix.smem_start);
 
 	return buf_addr;
 }
@@ -179,18 +174,16 @@ void hisifb_free_fb_buffer(struct hisi_fb_data_type *hisifd)
 	struct fb_info *fbi = NULL;
 
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL.\n");
+		HISI_FB_ERR("hisifd is NULL\n");
 		return;
 	}
 	fbi = hisifd->fbi;
 	if (NULL == fbi) {
-		HISI_FB_ERR("fbi is NULL.\n");
+		HISI_FB_ERR("fbi is NULL\n");
 		return;
 	}
 
 	if ((hisifd->fb_sg_table) && (fbi->screen_base != 0)) {
-		HISI_FB_INFO("fb%d free frame buffer 0x%zxB @ (0x%pK virt) (%pa dmaAddr).\n",
-			hisifd->index, fbi->screen_size, fbi->screen_base, &fbi->fix.smem_start);
 		hisifb_iommu_unmap_kernel(fbi->screen_base);
 		hisi_iommu_unmap_sg(__hdss_get_dev(), hisifd->fb_sg_table->sgl, fbi->fix.smem_start);
 		__hisifb_dma_free_memory(hisifd->fb_sg_table);
@@ -212,8 +205,15 @@ void *hisifb_iommu_map_kernel(struct sg_table *sg_table, size_t size)
 	struct page **pages = vmalloc(sizeof(struct page *) * npages);
 	struct page **tmp = pages;
 
-	if (!pages) {
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR_OR_NULL(pages)) {
+		pr_err("%s: vmalloc failed. \n", __func__);
+		return NULL;
+	}
+
+	if (table == NULL) {
+		pr_err("%s: table is NULL \n", __func__);
+		vfree(pages);
+		return NULL;
 	}
 	pgprot = pgprot_writecombine(PAGE_KERNEL);
 
@@ -226,18 +226,17 @@ void *hisifb_iommu_map_kernel(struct sg_table *sg_table, size_t size)
 			*(tmp++) = page++;
 		}
 	}
-
 	vaddr = vmap(pages, npages, VM_MAP, pgprot);
 	vfree(pages);
-
-	if (!vaddr) {
-		return ERR_PTR(-ENOMEM);
+	if (vaddr == NULL) {
+		pr_err("%s: vmap failed.\n", __func__);
+		return NULL;
 	}
 
 	return vaddr;
 }
 
-void hisifb_iommu_unmap_kernel(void *vaddr)
+void hisifb_iommu_unmap_kernel(const void *vaddr)
 {
 	vunmap(vaddr);
 }
@@ -259,7 +258,7 @@ static struct sg_table *hisifb_get_fb_sg_table(struct device *dev,
 
 	buf = dma_buf_get(shared_fd);
 	if (IS_ERR(buf)) {
-		HISI_FB_ERR("Invalid file handle(%d).\n", shared_fd);
+		HISI_FB_ERR("Invalid file handle(%d)\n", shared_fd);
 		sys_close(shared_fd);
 		return NULL;
 	}
@@ -292,14 +291,14 @@ unsigned long hisifb_alloc_fb_buffer(struct hisi_fb_data_type *hisifd)
 	unsigned long buf_addr = 0;
 	struct iommu_map_format iommu_format;
 
-	if (NULL == hisifd || !(hisifd->pdev)) {
-		HISI_FB_ERR("hisifd is NULL.\n");
+	if (NULL == hisifd || hisifd->pdev == NULL) {
+		HISI_FB_ERR("hisifd is NULL\n");
 		goto err_return;
 	}
 
 	fbi = hisifd->fbi;
 	if (NULL == fbi) {
-		HISI_FB_ERR("fbi is NULL.\n");
+		HISI_FB_ERR("fbi is NULL\n");
 		goto err_return;
 	}
 
@@ -356,12 +355,12 @@ void hisifb_free_fb_buffer(struct hisi_fb_data_type *hisifd)
 	struct fb_info *fbi = NULL;
 
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL.\n");
+		HISI_FB_ERR("hisifd is NULL\n");
 		return;
 	}
 	fbi = hisifd->fbi;
 	if (NULL == fbi) {
-		HISI_FB_ERR("fbi is NULL.\n");
+		HISI_FB_ERR("fbi is NULL\n");
 		return;
 	}
 
@@ -384,11 +383,16 @@ int hisifb_get_ion_phys(struct fb_info *info, void __user *arg)
 	size_t size = 0;
 	int ret = 0;
 	struct hisi_fb_data_type *hisifd = NULL;
-	struct ion_handle *handle;
+	struct ion_handle *handle = NULL;
+
+	if (arg == NULL) {
+		HISI_FB_ERR("arg is null.\n");
+		return -EFAULT;
+	}
 
 	hisifd = (struct hisi_fb_data_type *)info->par;
-	if (NULL == hisifd || !(hisifd->pdev)) {
-		HISI_FB_ERR("hisifd NULL Pointer.\n");
+	if (hisifd == NULL || hisifd->pdev == NULL) {
+		HISI_FB_ERR("hisifd NULL Pointer\n");
 		return -EFAULT;
 	}
 
@@ -397,7 +401,7 @@ int hisifb_get_ion_phys(struct fb_info *info, void __user *arg)
 	}
 
 	if (NULL == hisifd->buffer_client) {
-		HISI_FB_ERR("Failed to get the buffer_client.\n");
+		HISI_FB_ERR("Failed to get the buffer_client\n");
 		return -EFAULT;
 	}
 
@@ -408,7 +412,7 @@ int hisifb_get_ion_phys(struct fb_info *info, void __user *arg)
 	ret = hisifb_ion_phys(hisifd->buffer_client, handle, &(hisifd->pdev->dev), (unsigned long *)&phys_addr, &size);
 	if (ret) {
 		ion_free(hisifd->buffer_client, handle);
-		HISI_FB_ERR("hisifb_ion_phys:failed to get phys addr.\n");
+		HISI_FB_ERR("hisifb_ion_phys:failed to get phys addr\n");
 		return -EFAULT;
 	}
 
@@ -433,7 +437,7 @@ int hisifb_ion_phys(struct ion_client *client, struct ion_handle *handle,
 	struct dma_buf_attachment *attach = NULL;
 
 	if (NULL == client || NULL == handle) {
-		HISI_FB_ERR("hisifb_ion_phys NULL Pointer.\n");
+		HISI_FB_ERR("hisifb_ion_phys NULL Pointer\n");
 		return -EFAULT;
 	}
 
@@ -445,7 +449,7 @@ int hisifb_ion_phys(struct ion_client *client, struct ion_handle *handle,
 
 	buf = dma_buf_get(shared_fd);
 	if (IS_ERR(buf)) {
-		HISI_FB_ERR("Invalid file handle(%d).\n", shared_fd);
+		HISI_FB_ERR("Invalid file handle(%d)\n", shared_fd);
 		sys_close(shared_fd);
 		return -EFAULT;
 	}
@@ -493,7 +497,7 @@ int hisifb_create_buffer_client(struct hisi_fb_data_type *hisifd)
 void hisifb_destroy_buffer_client(struct hisi_fb_data_type *hisifd)
 {
 #if CONFIG_ION_ALLOC_BUFFER
-	if (hisifd->buffer_client) {
+	if (hisifd->buffer_client != NULL) {
 		ion_client_destroy(hisifd->buffer_client);
 		hisifd->buffer_client = NULL;
 	}
@@ -515,13 +519,13 @@ int hisi_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 	int ret = 0;
 
 	if (NULL == info) {
-		HISI_FB_ERR("NULL Pointer.\n");
+		HISI_FB_ERR("NULL Pointer\n");
 		return -EINVAL;
 	}
 
 	hisifd = (struct hisi_fb_data_type *)info->par;
-	if (NULL == hisifd || !(hisifd->pdev)) {
-		HISI_FB_ERR("NULL Pointer.\n");
+	if (hisifd == NULL || hisifd->pdev == NULL) {
+		HISI_FB_ERR("NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -531,6 +535,7 @@ int hisi_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 				HISI_FB_ERR("fb%d, hisifb_alloc_buffer failed!\n", hisifd->index);
 				return -ENOMEM;
 			}
+			hisifd->fb_mem_free_flag = false;
 		}
 	} else {
 		HISI_FB_ERR("fb%d, no fb buffer!\n", hisifd->index);
@@ -555,7 +560,7 @@ int hisi_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 		return -EFAULT;
 	}
 
-	for_each_sg(table->sgl, sg, table->nents, i) {
+	for_each_sg(table->sgl, sg, table->nents, i) {/*lint !e574*/
 		page = sg_page(sg);
 		remainder = vma->vm_end - addr;
 		len = sg->length;
@@ -586,17 +591,17 @@ int hisi_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 
 void hisifb_free_logo_buffer(struct hisi_fb_data_type *hisifd)
 {
-	int i;
+	uint32_t i;
 	struct fb_info *fbi = NULL;
 	uint32_t logo_buffer_base_temp = 0;
 
 	if (NULL == hisifd) {
-		HISI_FB_ERR("hisifd is NULL.\n");
+		HISI_FB_ERR("hisifd is NULL\n");
 		return;
 	}
 	fbi = hisifd->fbi;//lint !e838
 	if (NULL == fbi) {
-		HISI_FB_ERR("fbi is NULL.\n");
+		HISI_FB_ERR("fbi is NULL\n");
 		return;
 	}
 
@@ -610,4 +615,4 @@ void hisifb_free_logo_buffer(struct hisi_fb_data_type *hisifd)
 	g_logo_buffer_size = 0;
 	g_logo_buffer_base = 0;
 }
-/*lint +e574 +e737*/
+/*lint +e574 +e737 -e570  -e613 -e647*/

@@ -114,7 +114,11 @@ void ipf_rd_h2s(IPF_RD_DESC_S* param, void* rd_base, unsigned int index)
 	param->u16PktLen	= rd[index].u16PktLen;
 	param->u16Result	= rd[index].u16Result;
 	param->InPtr		= (modem_phy_addr)(unsigned long)rd[index].u32InPtr;
+#ifdef CONFIG_PSAM
 	param->OutPtr	= U32_TO_ADDR(rd[index].u32UsrField3);
+#else
+	param->OutPtr	= U32_TO_ADDR(rd[index].OutPtr);
+#endif
 	param->u16UsrField1	= rd[index].u16UsrField1;
 	param->u32UsrField2	= rd[index].u32UsrField2;
 	param->u32UsrField3	= rd[index].u32UsrField3;
@@ -123,6 +127,58 @@ void ipf_rd_h2s(IPF_RD_DESC_S* param, void* rd_base, unsigned int index)
 	rd[index].u16Attribute.bits.dl_direct_set?g_ipf_ctx.stax.direct_bd++:g_ipf_ctx.stax.indirect_bd++;
 }
 
+#ifndef CONFIG_PSAM
+int ipf32_ad_s2h(IPF_AD_TYPE_E type, unsigned int n, IPF_AD_DESC_S * param)
+{
+	unsigned int i;
+	u32 wptr;
+	unsigned int offset;
+	unsigned int size;
+	ipf_ad_s* ad;
+
+	ad = 	(IPF_AD_0==type)?
+			(ipf_ad_s*)g_ipf_ctx.dl_info.pstIpfADQ0:
+			(ipf_ad_s*)g_ipf_ctx.dl_info.pstIpfADQ1;
+			
+	offset = (IPF_AD_0==type)?
+			 HI_IPF32_CH1_ADQ0_WPTR_OFFSET:
+			 HI_IPF32_CH1_ADQ1_WPTR_OFFSET;
+
+	size = (IPF_AD_0==type)?
+			 IPF_DLAD0_DESC_SIZE:
+			 IPF_DLAD1_DESC_SIZE;
+
+	/*读出写指针*/
+	wptr = ipf_readl(offset);
+	
+	for(i=0; i < n; i++)
+	{
+		if(0 == param->OutPtr1)
+		{
+			pr_err("%s the %d short ad outptr is null\n", __func__, i);
+			g_ipf_ctx.status->ad_out_ptr_null[type]++;
+			return BSP_ERR_IPF_INVALID_PARA;
+		}
+		ad[wptr].u32OutPtr0	= ADDR_TO_U32(param[i].OutPtr0);
+		ad[wptr].u32OutPtr1	= ADDR_TO_U32(param[i].OutPtr1);
+		wptr = ((wptr + 1) < size)? (wptr + 1) : 0;
+	}
+	g_ipf_ctx.status->cfg_ad_cnt[type] += n;
+	/* 更新AD0写指针*/
+	ipf_writel(wptr, offset);
+
+	if(IPF_AD_0==type)
+	{
+	    g_ipf_ctx.last_ad0 = &ad[wptr];
+	}
+	else
+	{
+	    g_ipf_ctx.last_ad1 = &ad[wptr];
+	}
+	
+	return 0;
+}
+#endif
 
 void ipf_ad_h2s(IPF_AD_DESC_S* param, void* ad_base, unsigned int index)
 {
@@ -145,6 +201,11 @@ void ipf32_config(void)
 
 	ipf_writel((unsigned int)g_ipf_ctx.dl_info.pstIpfPhyRDQ, HI_IPF32_CH1_RDQ_BADDR_OFFSET);
 				
+#ifndef CONFIG_PSAM
+    ipf_writel((unsigned int)g_ipf_ctx.dl_info.pstIpfPhyADQ0, HI_IPF32_CH1_ADQ0_BASE_OFFSET);
+
+	ipf_writel((unsigned int)g_ipf_ctx.dl_info.pstIpfPhyADQ1, HI_IPF32_CH1_ADQ1_BASE_OFFSET);
+#endif            
 
     sm->ipf_acore_reg_size = sizeof(ipf32_save_table)/sizeof(ipf32_save_table[0]);
 	return;
@@ -300,6 +361,9 @@ struct ipf_desc_handler_s ipf_desc_handler = {
 	.bd_s2h = ipf_bd_s2h,
 	.bd_h2s = ipf_bd_h2s,
 	.rd_h2s = ipf_rd_h2s,
+#ifndef CONFIG_PSAM
+	.ad_s2h = ipf32_ad_s2h,
+#endif
 	.ad_h2s = ipf_ad_h2s,
 	.cd_last_get = ipf_last_get,
 	.get_bd_num = ipf32_get_ulbd_num,

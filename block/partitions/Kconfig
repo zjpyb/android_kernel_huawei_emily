@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Partition configuration
 #
@@ -269,12 +270,7 @@ config CMDLINE_PARTITION
 	  The format for the command line is just like mtdparts.
 
 config HISI_STORAGE_UFS_PARTITION
-	bool "UFS storage support"
-	default n
-	help
-	  Say Y here if storage uses ufs partition table.
-config HISI_AB_PARTITION
-	bool "AB partition support"
-	default n
-	help
-	  Say Y here if storage uses ab partition table.
+    bool "UFS storage support"
+    default n
+    help
+      Say Y here if storage uses ufs partition table.

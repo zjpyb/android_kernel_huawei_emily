@@ -32,6 +32,15 @@ struct ioctl_para {
 		};
 	};
 };
+
+#define SENSORHUB_TAG_NUM_MAX      (8)
+struct app_link_info {
+	int hal_sensor_type;
+	int tag;
+	int used_sensor_cnt;
+	int used_sensor[SENSORHUB_TAG_NUM_MAX];
+};
+
 /*
   * Warning notes:
   * The below sensor values  is used by mcu and hal sensorhub module,
@@ -94,4 +103,5 @@ enum {
 extern int getSensorMcuMode(void);
 /*end huangwen 20120706*/
 extern int set_backlight_brightness(int brightness);
+extern const struct app_link_info *get_app_link_info(int type);
 #endif /* __LINUX_SENSORHUB_H__ */

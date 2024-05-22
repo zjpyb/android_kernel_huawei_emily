@@ -3,7 +3,7 @@
  *
  * power common include file for sensorhub or inputhub
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,9 +21,10 @@
 
 #ifdef CONFIG_INPUTHUB
 #include <protocol.h>
+#include <inputhub_bridge.h>
 
 extern sys_status_t iom3_sr_status;
 extern atomic_t iom3_rec_state;
-#endif
+#endif /* CONFIG_INPUTHUB */
 
 #endif /* _POWER_COMMON_SH_H_ */

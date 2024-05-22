@@ -217,8 +217,8 @@ void hisi_mphy_V200_updata_vswing_fsm(
 	/* Unipro VS_mphy_disable */
 	value |= (1 << 3);
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd0f0, 0x0), value);
-	/*Set to max value 0xf*/
-	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd0f4, 0x0), 0xf);
+	/*Set to max value 0x6*/
+	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL((u32)0xd0f4, 0x0), 0x6);
 	ufshcd_dme_set(
 		hba, UIC_ARG_MIB_SEL((u32)0xd085, 0x0), 0x1); /* update */
 }
@@ -355,6 +355,7 @@ void hisi_mphy_V200_pwr_change_pre_config(
 {
 	if (hba->pwr_info.pwr_rx == FAST_MODE ||
 		hba->pwr_info.pwr_rx == FASTAUTO_MODE) {
+		/* for HS Gear 1 (max HS gear 1 on FPGA) only */
 		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0050, 0x0), 0x0);
 		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0050, 0x1), 0x0);
 		ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0x0051, 0x0), 0x0);
@@ -503,6 +504,7 @@ void adapt_pll_to_power_mode(struct ufs_hba *hba)
 }
 /*lint -save -e845*/
 
+/* modify different from fastbooo */
 void deemphasis_config(struct ufs_kirin_host *host, struct ufs_hba *hba,
 				struct ufs_pa_layer_attr *dev_req_params)
 {

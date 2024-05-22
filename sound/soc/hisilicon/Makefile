@@ -14,9 +14,9 @@ endif
 EXTRA_CFLAGS +=	-Idrivers/hisi/slimbus/
 EXTRA_CFLAGS +=	-Iinclude/linux/hisi/hi64xx/
 # HI3630 Platform Support
-snd-soc-hi3630-objs := hisi_pcm_hifi.o hisi_pcm_ion.o
-snd-soc-hi3650-objs := hisi_pcm_hifi.o slimbus_dai.o hi3xxx_asp_dma.o hisi_pcm_ion.o
-snd-soc-hi3660-objs := hisi_pcm_hifi.o slimbus_dai.o hi3xxx_asp_dma.o asp_cfg.o hisi_pcm_ion.o
+snd-soc-hi3630-objs := hisi_pcm_hifi.o
+snd-soc-hi3650-objs := hisi_pcm_hifi.o slimbus_dai.o hi3xxx_asp_dma.o
+snd-soc-hi3660-objs := hisi_pcm_hifi.o slimbus_dai.o hi3xxx_asp_dma.o asp_cfg.o
 #ifeq ($(CONFIG_HISI_DEBUG_FS),y)
 #snd-soc-hi3660-objs += pcm_debug.o
 #endif
@@ -38,27 +38,16 @@ obj-$(CONFIG_SND_SOC_PCM_HI6210) += snd-soc-hi6210.o
 snd-soc-hi6250-hi6402-objs += hi6250_hi6402.o
 # HI6250-HI6555c Machine Support
 snd-soc-hi6250-hi6555c-objs += hi6250_hi6555c.o
-# HI3650-HI6402 Machine Support
-snd-soc-hi3650-hi6402-objs := hi3650_hi6402.o
-# HI3650-HI6403 Machine Support
-snd-soc-hi3650-hi6403-objs := hi3650_hi6403.o
-# HI3650-HI6403ES Machine Support
-
-# HI3660-HI6402 Machine Support
-snd-soc-hi3660-hi6402-objs := hi3660_hi6402.o
 # HI3660-HI6403 Machine Support
 snd-soc-hi3660-hi6403-objs := hi3660_hi6403.o
 # HI3XXX-HI6405 Machine Support
 snd-soc-hi3xxx-hi6405-objs := hi3xxx_hi6405.o
-snd-soc-hi3xxx-hicodecless-objs := hi3xxx_hicodecless.o
+snd-soc-hi3xxx-asp-codec-objs := hi3xxx_asp_codec.o
 
-obj-$(CONFIG_SND_HI3650_HI6402) += snd-soc-hi3650-hi6402.o
-obj-$(CONFIG_SND_HI3650_HI6403) += snd-soc-hi3650-hi6403.o
 obj-$(CONFIG_SND_HI6250_HI6555C) +=snd-soc-hi6250-hi6555c.o
 obj-$(CONFIG_SND_HI6250_HI6402) += snd-soc-hi6250-hi6402.o
-obj-$(CONFIG_SND_HI3660_HI6402) += snd-soc-hi3660-hi6402.o
 obj-$(CONFIG_SND_HI3660_HI6403) += snd-soc-hi3660-hi6403.o
 obj-$(CONFIG_SND_HI3XXX_HI6405) += snd-soc-hi3xxx-hi6405.o
-obj-$(CONFIG_SND_HI3xxx_HICODECLESS) += snd-soc-hi3xxx-hicodecless.o
+obj-$(CONFIG_SND_HI3XXX_ASP_CODEC) += snd-soc-hi3xxx-asp-codec.o
 obj-$(CONFIG_SND_SOC_DP_AUDIO) += snd-soc-dp.o
 obj-$(CONFIG_SND_AUTO_TEST) += auto_test/

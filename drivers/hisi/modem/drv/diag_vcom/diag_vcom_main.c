@@ -102,6 +102,8 @@ void __exit diag_vcom_exit(void)
 }
 
 
+#if (FEATURE_OFF == FEATURE_LOGCAT_SINGLE_CHANNEL)
 module_init(diag_vcom_init);
 module_exit(diag_vcom_exit);
+#endif
 

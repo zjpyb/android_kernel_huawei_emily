@@ -48,7 +48,7 @@ unsigned int DRV_MAILBOX_REGISTERRECVFUNC(
 
 
 unsigned int DRV_MAILBOX_READMAILDATA(
-                void                   *MailHandle,
+                struct mb_queue *MailHandle,
                 unsigned char          *pData,
                 unsigned int          *pSize)
 {

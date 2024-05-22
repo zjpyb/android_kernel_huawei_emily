@@ -77,11 +77,13 @@
  */
 #define RSCAN_DEBUG "[DEBUG]"
 #define RSLogDebug(tag, fmt, args...) \
-	printk_ratelimited(KERN_DEBUG "%s[%s][%s] " fmt "\n", RSCAN_DEBUG,\
+	printk_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_DEBUG,\
 							tag, __func__, ##args)
 #else
 #define RSLogDebug(tag, fmt, args...) no_printk(fmt, ##args)
 #endif
 
 #endif
+
+
 

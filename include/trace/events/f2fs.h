@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM f2fs
 
@@ -19,6 +20,9 @@ TRACE_DEFINE_ENUM(INMEM_INVALIDATE);
 TRACE_DEFINE_ENUM(INMEM_REVOKE);
 TRACE_DEFINE_ENUM(IPU);
 TRACE_DEFINE_ENUM(OPU);
+TRACE_DEFINE_ENUM(HOT);
+TRACE_DEFINE_ENUM(WARM);
+TRACE_DEFINE_ENUM(COLD);
 TRACE_DEFINE_ENUM(CURSEG_HOT_DATA);
 TRACE_DEFINE_ENUM(CURSEG_WARM_DATA);
 TRACE_DEFINE_ENUM(CURSEG_COLD_DATA);
@@ -34,7 +38,7 @@ TRACE_DEFINE_ENUM(LFS);
 TRACE_DEFINE_ENUM(SSR);
 TRACE_DEFINE_ENUM(__REQ_RAHEAD);
 TRACE_DEFINE_ENUM(__REQ_SYNC);
-TRACE_DEFINE_ENUM(__REQ_NOIDLE);
+TRACE_DEFINE_ENUM(__REQ_IDLE);
 TRACE_DEFINE_ENUM(__REQ_PREFLUSH);
 TRACE_DEFINE_ENUM(__REQ_FUA);
 TRACE_DEFINE_ENUM(__REQ_PRIO);
@@ -59,6 +63,12 @@ TRACE_DEFINE_ENUM(CP_TRIMMED);
 		{ IPU,		"IN-PLACE" },				\
 		{ OPU,		"OUT-OF-PLACE" })
 
+#define show_block_temp(temp)						\
+	__print_symbolic(temp,						\
+		{ HOT,		"HOT" },				\
+		{ WARM,		"WARM" },				\
+		{ COLD,		"COLD" })
+
 #define F2FS_OP_FLAGS (REQ_RAHEAD | REQ_SYNC | REQ_META | REQ_PRIO |	\
 			REQ_PREFLUSH | REQ_FUA)
 #define F2FS_BIO_FLAG_MASK(t)	(t & F2FS_OP_FLAGS)
@@ -70,9 +80,13 @@ TRACE_DEFINE_ENUM(CP_TRIMMED);
 	__print_symbolic(op,						\
 		{ REQ_OP_READ,			"READ" },		\
 		{ REQ_OP_WRITE,			"WRITE" },		\
+		{ REQ_OP_FLUSH,			"FLUSH" },		\
 		{ REQ_OP_DISCARD,		"DISCARD" },		\
+		{ REQ_OP_ZONE_REPORT,		"ZONE_REPORT" },	\
 		{ REQ_OP_SECURE_ERASE,		"SECURE_ERASE" },	\
-		{ REQ_OP_WRITE_SAME,		"WRITE_SAME" })
+		{ REQ_OP_ZONE_RESET,		"ZONE_RESET" },		\
+		{ REQ_OP_WRITE_SAME,		"WRITE_SAME" },		\
+		{ REQ_OP_WRITE_ZEROES,		"WRITE_ZEROES" })
 
 #define show_bio_op_flags(flags)					\
 	__print_flags(F2FS_BIO_FLAG_MASK(flags), "|",			\
@@ -83,21 +97,15 @@ TRACE_DEFINE_ENUM(CP_TRIMMED);
 		{ REQ_PREFLUSH,		"PF" },				\
 		{ REQ_FUA,		"FUA" })
 
-#define show_block_temp(temp)						\
-	__print_symbolic(temp,						\
-		{ HOT,		"HOT" },				\
-		{ WARM,		"WARM" },				\
-		{ COLD,		"COLD" })
-
 #define show_data_type(type)						\
 	__print_symbolic(type,						\
-		{ CURSEG_HOT_DATA, 	"Hot DATA" },			\
-		{ CURSEG_WARM_DATA, 	"Warm DATA" },			\
-		{ CURSEG_COLD_DATA, 	"Cold DATA" },			\
-		{ CURSEG_HOT_NODE, 	"Hot NODE" },			\
-		{ CURSEG_WARM_NODE, 	"Warm NODE" },			\
-		{ CURSEG_COLD_NODE, 	"Cold NODE" },			\
-		{ NO_CHECK_TYPE, 	"No TYPE" })
+		{ CURSEG_HOT_DATA,	"Hot DATA" },			\
+		{ CURSEG_WARM_DATA,	"Warm DATA" },			\
+		{ CURSEG_COLD_DATA,	"Cold DATA" },			\
+		{ CURSEG_HOT_NODE,	"Hot NODE" },			\
+		{ CURSEG_WARM_NODE,	"Warm NODE" },			\
+		{ CURSEG_COLD_NODE,	"Cold NODE" },			\
+		{ NO_CHECK_TYPE,	"No TYPE" })
 
 #define show_file_type(type)						\
 	__print_symbolic(type,						\
@@ -139,7 +147,8 @@ TRACE_DEFINE_ENUM(CP_TRIMMED);
 		{ CP_NO_SPC_ROLL,	"no space roll forward" },	\
 		{ CP_NODE_NEED_CP,	"node needs cp" },		\
 		{ CP_FASTBOOT_MODE,	"fastboot mode" },		\
-		{ CP_SPEC_LOG_NUM,	"log type is 2" })
+		{ CP_SPEC_LOG_NUM,	"log type is 2" },		\
+		{ CP_RECOVER_DIR,	"dir needs recovery" })
 
 struct f2fs_io_info;
 struct extent_info;
@@ -576,6 +585,41 @@ TRACE_EVENT(f2fs_background_gc,
 		__entry->prefree,
 		__entry->free)
 );
+
+#ifdef CONFIG_F2FS_TURBO_ZONE
+TRACE_EVENT(f2fs_background_turbo_gc,
+
+	TP_PROTO(struct super_block *sb, unsigned int wait_ms,
+			unsigned int prefree, unsigned int free,
+			unsigned int tz_free),
+
+	TP_ARGS(sb, wait_ms, prefree, free, tz_free),
+
+	TP_STRUCT__entry(
+		__field(dev_t,	dev)
+		__field(unsigned int,	wait_ms)
+		__field(unsigned int,	prefree)
+		__field(unsigned int,	free)
+		__field(unsigned int,	tz_free)
+	),
+
+	TP_fast_assign(
+		__entry->dev		= sb->s_dev;
+		__entry->wait_ms	= wait_ms;
+		__entry->prefree	= prefree;
+		__entry->free		= free;
+		__entry->tz_free	= tz_free;
+	),
+
+	TP_printk("dev = (%d,%d), wait_ms = %u, "
+		"prefree = %u, free = %u, turbo_free = %u",
+		show_dev(__entry->dev),
+		__entry->wait_ms,
+		__entry->prefree,
+		__entry->free,
+		__entry->tz_free)
+);
+#endif
 
 TRACE_EVENT(f2fs_gc_begin,
 
@@ -1029,7 +1073,7 @@ DECLARE_EVENT_CLASS(f2fs__bio,
 
 	TP_fast_assign(
 		__entry->dev		= sb->s_dev;
-		__entry->target		= bio->bi_bdev->bd_dev;
+		__entry->target		= bio_dev(bio);
 		__entry->op		= bio_op(bio);
 		__entry->op_flags	= bio->bi_opf;
 		__entry->type		= type;
@@ -1610,6 +1654,7 @@ DEFINE_EVENT(f2fs_sync_dirty_inodes, f2fs_sync_dirty_inodes_exit,
 
 	TP_ARGS(sb, type, count)
 );
+
 
 TRACE_EVENT(f2fs_skip_log_writeback,
 

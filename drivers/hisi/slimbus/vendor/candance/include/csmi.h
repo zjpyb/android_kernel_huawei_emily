@@ -76,19 +76,19 @@ typedef enum
 typedef enum
 {
 	/** Low Priority Messages */
-	CSMI_AP_LOW = 1,
+	CSMI_AP_LOW = 1u,
 	/** Default Messages */
-	CSMI_AP_DEFAULT = 2,
+	CSMI_AP_DEFAULT = 2u,
 	/** High Priority Messages */
-	CSMI_AP_HIGH = 3,
+	CSMI_AP_HIGH = 3u,
 	/** Manager assigned only */
-	CSMI_AP_MANAGER_1 = 4,
+	CSMI_AP_MANAGER_1 = 4u,
 	/** Manager assigned only */
-	CSMI_AP_MANAGER_2 = 5,
+	CSMI_AP_MANAGER_2 = 5u,
 	/** Manager assigned only */
-	CSMI_AP_MANAGER_3 = 6,
+	CSMI_AP_MANAGER_3 = 6u,
 	/** Maximum Priority, for test and debug only */
-	CSMI_AP_MAXIMUM = 7,
+	CSMI_AP_MAXIMUM = 7u,
 } CSMI_ArbitrationPriority;
 
 typedef enum
@@ -108,11 +108,11 @@ typedef enum
 typedef enum
 {
 	/** Destination is a Logical Address */
-	CSMI_DT_LOGICAL_ADDRESS = 0,
+	CSMI_DT_LOGICAL_ADDRESS = 0u,
 	/** Destination is an Enumeration Address */
-	CSMI_DT_ENUMERATION_ADDRESS = 1,
+	CSMI_DT_ENUMERATION_ADDRESS = 1u,
 	/** All Devices are Destinations, no Destination Address included in Header */
-	CSMI_DT_BROADCAST = 3,
+	CSMI_DT_BROADCAST = 3u,
 } CSMI_DestinationType;
 
 typedef enum
@@ -129,116 +129,116 @@ typedef enum
 typedef enum
 {
 	/** Isochronous Protocol (Multicast). */
-	CSMI_TP_ISOCHRONOUS = 0,
+	CSMI_TP_ISOCHRONOUS = 0u,
 	/** Pushed Protocol (Multicast). */
-	CSMI_TP_PUSHED = 1,
+	CSMI_TP_PUSHED = 1u,
 	/** Pulled Protocol (Unicast). */
-	CSMI_TP_PULLED = 2,
+	CSMI_TP_PULLED = 2u,
 	/** Locked Protocol (Multicast). */
-	CSMI_TP_LOCKED = 3,
+	CSMI_TP_LOCKED = 3u,
 	/** Asynchronous Protocol - Simplex (Unicast). */
-	CSMI_TP_ASYNC_SIMPLEX = 4,
+	CSMI_TP_ASYNC_SIMPLEX = 4u,
 	/** Asynchronous Protocol - Half-duplex (Unicast). */
-	CSMI_TP_ASYNC_HALF_DUPLEX = 5,
+	CSMI_TP_ASYNC_HALF_DUPLEX = 5u,
 	/** Extended Asynchronous Protocol - Simplex (Unicast). */
-	CSMI_TP_EXT_ASYNC_SIMPLEX = 6,
+	CSMI_TP_EXT_ASYNC_SIMPLEX = 6u,
 	/** Extended Asynchronous Protocol - Half-duplex (Unicast). */
-	CSMI_TP_EXT_ASYNC_HALF_DUPLEX = 7,
+	CSMI_TP_EXT_ASYNC_HALF_DUPLEX = 7u,
 	/** User Defined 1. */
-	CSMI_TP_USER_DEFINED_1 = 14,
+	CSMI_TP_USER_DEFINED_1 = 14u,
 	/** User Defined 2. */
-	CSMI_TP_USER_DEFINED_2 = 15,
+	CSMI_TP_USER_DEFINED_2 = 15u,
 } CSMI_TransportProtocol;
 
 /** Presence Rates. */
 typedef enum
 {
-	CSMI_PR_12K = 1,
-	CSMI_PR_24K = 2,
-	CSMI_PR_48K = 3,
-	CSMI_PR_96K = 4,
-	CSMI_PR_192K = 5,
-	CSMI_PR_384K = 6,
-	CSMI_PR_768K = 7,
-	CSMI_PR_11025 = 9,
-	CSMI_PR_22050 = 10,
-	CSMI_PR_44100 = 11,
-	CSMI_PR_88200 = 12,
-	CSMI_PR_176400 = 13,
-	CSMI_PR_352800 = 14,
-	CSMI_PR_705600 = 15,
-	CSMI_PR_4K = 16,
-	CSMI_PR_8K = 17,
-	CSMI_PR_16K = 18,
-	CSMI_PR_32K = 19,
-	CSMI_PR_64K = 20,
-	CSMI_PR_128K = 21,
-	CSMI_PR_256K = 22,
-	CSMI_PR_512K = 23,
+	CSMI_PR_12K = 1u,
+	CSMI_PR_24K = 2u,
+	CSMI_PR_48K = 3u,
+	CSMI_PR_96K = 4u,
+	CSMI_PR_192K = 5u,
+	CSMI_PR_384K = 6u,
+	CSMI_PR_768K = 7u,
+	CSMI_PR_11025 = 9u,
+	CSMI_PR_22050 = 10u,
+	CSMI_PR_44100 = 11u,
+	CSMI_PR_88200 = 12u,
+	CSMI_PR_176400 = 13u,
+	CSMI_PR_352800 = 14u,
+	CSMI_PR_705600 = 15u,
+	CSMI_PR_4K = 16u,
+	CSMI_PR_8K = 17u,
+	CSMI_PR_16K = 18u,
+	CSMI_PR_32K = 19u,
+	CSMI_PR_64K = 20u,
+	CSMI_PR_128K = 21u,
+	CSMI_PR_256K = 22u,
+	CSMI_PR_512K = 23u,
 } CSMI_PresenceRate;
 
 /** Data types. */
 typedef enum
 {
 	/** Not indicated. */
-	CSMI_DF_NOT_INDICATED = 0,
+	CSMI_DF_NOT_INDICATED = 0u,
 	/** LPCM audio. */
-	CSMI_DF_LPCM = 1,
+	CSMI_DF_LPCM = 1u,
 	/** IEC61937 Compressed audio. */
-	CSMI_DF_IEC61937 = 2,
+	CSMI_DF_IEC61937 = 2u,
 	/** Packed PDM audio. */
-	CSMI_DF_PACKED_PDM_AUDIO = 3,
+	CSMI_DF_PACKED_PDM_AUDIO = 3u,
 	/** User Defined 1. */
-	CSMI_DF_USER_DEFINED_1 = 14,
+	CSMI_DF_USER_DEFINED_1 = 14u,
 	/** User Defined 2. */
-	CSMI_DF_USER_DEFINED_2 = 15,
+	CSMI_DF_USER_DEFINED_2 = 15u,
 } CSMI_DataType;
 
 /** Auxilary Field formats formats. */
 typedef enum
 {
 	/** Not applicable. */
-	CSMI_AF_NOT_APPLICABLE = 0,
+	CSMI_AF_NOT_APPLICABLE = 0u,
 	/** ZCUV for tunneling IEC60958. */
-	CSMI_AF_ZCUV = 1,
+	CSMI_AF_ZCUV = 1u,
 	/** User defined. */
-	CSMI_AF_USER_DEFINED = 11,
+	CSMI_AF_USER_DEFINED = 11u,
 } CSMI_AuxFieldFormat;
 
 /** SLIMbus interrupts. */
 typedef enum
 {
 	/** Generation of any interrupts, regardless of setting of the other interrupt enable bits. */
-	CSMI_INT_EN = 1,
+	CSMI_INT_EN = 1u,
 	/** Generation of interrupt when RX_FIFO is not empty. */
-	CSMI_INT_RX = 2,
+	CSMI_INT_RX = 2u,
 	/** Generation of interrupt when TX_FIFO becomes empty (after transmitting all messages). */
-	CSMI_INT_TX = 4,
+	CSMI_INT_TX = 4u,
 	/** Generation of interrupt when any message from TX_FIFO is not transmitted successfully. */
-	CSMI_INT_TX_ERR = 8,
+	CSMI_INT_TX_ERR = 8u,
 	/** Generation of interrupt when any of main synchronization bits (F_SYNC, SF_SYNC, M_SYNC) toggles into LOW, and the IP is not detached due to REPORT_ABSENT message. */
-	CSMI_INT_SYNC_LOST = 16,
+	CSMI_INT_SYNC_LOST = 16u,
 	/** Generation of interrupt at the reconfiguration boundary. */
-	CSMI_INT_RCFG = 32,
+	CSMI_INT_RCFG = 32u,
 	/** Generation of interrupt when usage of message channel exceeded 75 percent in 'MCH_LAPSE+1' superframes in a row. */
-	CSMI_INT_MCH = 64,
+	CSMI_INT_MCH = 64u,
 } CSMI_Interrupt;
 
 /** Data Port interrupts. */
 typedef enum
 {
 	/** Channel activation. */
-	CSMI_DP_INT_ACT = 1,
+	CSMI_DP_INT_ACT = 1u,
 	/** Channel content definition. */
-	CSMI_DP_INT_CON = 2,
+	CSMI_DP_INT_CON = 2u,
 	/** Channel definition. */
-	CSMI_DP_INT_CHAN = 4,
+	CSMI_DP_INT_CHAN = 4u,
 	/** Data Port DMA request. */
-	CSMI_DP_INT_DMA = 8,
+	CSMI_DP_INT_DMA = 8u,
 	/** Data Port FIFO overflow. */
-	CSMI_DP_INT_OVF = 16,
+	CSMI_DP_INT_OVF = 16u,
 	/** Data Port FIFO underrun. */
-	CSMI_DP_INT_UND = 32,
+	CSMI_DP_INT_UND = 32u,
 } CSMI_DataPortInterrupt;
 
 /** Quality of the CLK signal that is generated by the Framer. */
@@ -305,97 +305,97 @@ typedef enum
 /** Subframe Mode Codings. CSW - Control Space Width (Slots), SL - Subframe Length (Slots) */
 typedef enum
 {
-	CSMI_SM_24_CSW_32_SL = 31,
-	CSMI_SM_16_CSW_32_SL = 29,
-	CSMI_SM_16_CSW_24_SL = 28,
-	CSMI_SM_12_CSW_32_SL = 27,
-	CSMI_SM_12_CSW_24_SL = 26,
-	CSMI_SM_8_CSW_32_SL = 25,
-	CSMI_SM_8_CSW_24_SL = 24,
-	CSMI_SM_6_CSW_32_SL = 23,
-	CSMI_SM_6_CSW_24_SL = 22,
-	CSMI_SM_6_CSW_8_SL = 21,
-	CSMI_SM_4_CSW_32_SL = 19,
-	CSMI_SM_4_CSW_24_SL = 18,
-	CSMI_SM_4_CSW_8_SL = 17,
-	CSMI_SM_4_CSW_6_SL = 16,
-	CSMI_SM_3_CSW_32_SL = 15,
-	CSMI_SM_3_CSW_24_SL = 14,
-	CSMI_SM_3_CSW_8_SL = 13,
-	CSMI_SM_3_CSW_6_SL = 12,
-	CSMI_SM_2_CSW_32_SL = 11,
-	CSMI_SM_2_CSW_24_SL = 10,
-	CSMI_SM_2_CSW_8_SL = 9,
-	CSMI_SM_2_CSW_6_SL = 8,
-	CSMI_SM_1_CSW_32_SL = 7,
-	CSMI_SM_1_CSW_24_SL = 6,
-	CSMI_SM_1_CSW_8_SL = 5,
-	CSMI_SM_1_CSW_6_SL = 4,
+	CSMI_SM_24_CSW_32_SL = 31u,
+	CSMI_SM_16_CSW_32_SL = 29u,
+	CSMI_SM_16_CSW_24_SL = 28u,
+	CSMI_SM_12_CSW_32_SL = 27u,
+	CSMI_SM_12_CSW_24_SL = 26u,
+	CSMI_SM_8_CSW_32_SL = 25u,
+	CSMI_SM_8_CSW_24_SL = 24u,
+	CSMI_SM_6_CSW_32_SL = 23u,
+	CSMI_SM_6_CSW_24_SL = 22u,
+	CSMI_SM_6_CSW_8_SL = 21u,
+	CSMI_SM_4_CSW_32_SL = 19u,
+	CSMI_SM_4_CSW_24_SL = 18u,
+	CSMI_SM_4_CSW_8_SL = 17u,
+	CSMI_SM_4_CSW_6_SL = 16u,
+	CSMI_SM_3_CSW_32_SL = 15u,
+	CSMI_SM_3_CSW_24_SL = 14u,
+	CSMI_SM_3_CSW_8_SL = 13u,
+	CSMI_SM_3_CSW_6_SL = 12u,
+	CSMI_SM_2_CSW_32_SL = 11u,
+	CSMI_SM_2_CSW_24_SL = 10u,
+	CSMI_SM_2_CSW_8_SL = 9u,
+	CSMI_SM_2_CSW_6_SL = 8u,
+	CSMI_SM_1_CSW_32_SL = 7u,
+	CSMI_SM_1_CSW_24_SL = 6u,
+	CSMI_SM_1_CSW_8_SL = 5u,
+	CSMI_SM_1_CSW_6_SL = 4u,
 	/** 100% Control Space, 0% Data Space */
-	CSMI_SM_8_CSW_8_SL = 0,
+	CSMI_SM_8_CSW_8_SL = 0u,
 } CSMI_SubframeMode;
 
 /** SLIMbus Frequencies and Clock Gear Codings. */
 typedef enum
 {
 	/** Not Indicated, Min: 0 MHz, Max: 28.8 MHz */
-	CSMI_CG_0 = 0,
+	CSMI_CG_0 = 0u,
 	/** Min: 0.025 MHz, Max: 0.05625 MHz */
-	CSMI_CG_1 = 1,
+	CSMI_CG_1 = 1u,
 	/** Min: 0.05 MHz, Max: 0.1125 MHz */
-	CSMI_CG_2 = 2,
+	CSMI_CG_2 = 2u,
 	/** Min: 0.1 MHz, Max: 0.225 MHz */
-	CSMI_CG_3 = 3,
+	CSMI_CG_3 = 3u,
 	/** Min: 0.2 MHz, Max: 0.45 MHz */
-	CSMI_CG_4 = 4,
+	CSMI_CG_4 = 4u,
 	/** Min: 0.4 MHz, Max: 0.9 MHz */
-	CSMI_CG_5 = 5,
+	CSMI_CG_5 = 5u,
 	/** Min: 0.8 MHz, Max: 1.8 MHz */
-	CSMI_CG_6 = 6,
+	CSMI_CG_6 = 6u,
 	/** Min: 1.6 MHz, Max: 3.6 MHz */
-	CSMI_CG_7 = 7,
+	CSMI_CG_7 = 7u,
 	/** Min: 3.2 MHz, Max: 7.2 MHz */
-	CSMI_CG_8 = 8,
+	CSMI_CG_8 = 8u,
 	/** Min: 6.4 MHz, Max: 14.4 MHz */
-	CSMI_CG_9 = 9,
+	CSMI_CG_9 = 9u,
 	/** Min: 12.8 MHz, Max: 28.8 MHz */
-	CSMI_CG_10 = 10,
+	CSMI_CG_10 = 10u,
 } CSMI_ClockGear;
 
 /** SLIMbus Root Frequency (RF) and Phase Modulus (PM) Codings. */
 typedef enum
 {
 	/** RF: Not Indicated, PM: 160 */
-	CSMI_RF_0 = 0,
+	CSMI_RF_0 = 0u,
 	/** RF: 24.576 MHz, PM: 160 */
-	CSMI_RF_1 = 1,
+	CSMI_RF_1 = 1u,
 	/** RF: 22.5792 MHz, PM: 147 */
-	CSMI_RF_2 = 2,
+	CSMI_RF_2 = 2u,
 	/** RF: 15.36 MHz, PM: 100 */
-	CSMI_RF_3 = 3,
+	CSMI_RF_3 = 3u,
 	/** RF: 16.8 MHz, PM: 875 */
-	CSMI_RF_4 = 4,
+	CSMI_RF_4 = 4u,
 	/** RF: 19.2 MHz, PM: 125 */
-	CSMI_RF_5 = 5,
+	CSMI_RF_5 = 5u,
 	/** RF: 24 MHz, PM: 625 */
-	CSMI_RF_6 = 6,
+	CSMI_RF_6 = 6u,
 	/** RF: 25 MHz, PM: 15625 */
-	CSMI_RF_7 = 7,
+	CSMI_RF_7 = 7u,
 	/** RF: 26 MHz, PM: 8125 */
-	CSMI_RF_8 = 8,
+	CSMI_RF_8 = 8u,
 	/** RF: 27 MHz, PM: 5625 */
-	CSMI_RF_9 = 9,
+	CSMI_RF_9 = 9u,
 } CSMI_RootFrequency;
 
 /** Restart Time Values. */
 typedef enum
 {
 	/** After a restart request, the active Framer shall resume toggling the CLK line within four cycles of the CLK line frequency (as indicated by the Clock Gear and Root Frequency) used for the upcoming Frame. Optional. */
-	CSMI_RT_FAST_RECOVERY = 0,
+	CSMI_RT_FAST_RECOVERY = 0u,
 	/** After the restart request, the active Framer shall resume toggling the CLK line so the duration of the Pause is an integer number of Superframes in the upcoming Clock Gear. Optional. */
-	CSMI_RT_CONSTANT_PHASE_RECOVERY = 1,
+	CSMI_RT_CONSTANT_PHASE_RECOVERY = 1u,
 	/** After a restart request, the active Framer shall resume toggling the CLK line after an unspecified delay. Mandatory */
-	CSMI_RT_UNSPECIFIED_DELAY = 2,
+	CSMI_RT_UNSPECIFIED_DELAY = 2u,
 } CSMI_RestartTime;
 
 /** Information Element category. */

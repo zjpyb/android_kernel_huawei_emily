@@ -149,19 +149,19 @@ static void release_resources(esm_device *esm)
 		return;
 	}
 
-	if (esm->code)
+	if (esm->code != NULL)
 	{
 		iounmap(esm->code);
 		esm->code = NULL;
 	}
 
-	if (esm->data)
+	if (esm->data != NULL)
 	{
 		iounmap(esm->data);
 		esm->code = NULL;
 	}
 
-	if (esm->hpi)
+	if (esm->hpi != NULL)
 	{
 		iounmap(esm->hpi);
 		esm->code = NULL;
@@ -680,168 +680,69 @@ Exit:
 //
 static long cmd_esm_open(struct file *f, esm_hld_ioctl_esm_open *request)
 {
-	int i;
 	esm_device *esm = esm_devices;
 	int ret_val = HL_DRIVER_SUCCESS;
 	esm_hld_ioctl_esm_open krequest;
-	long ret = 0;
+	long ret;
+	char region_name[20] = "ESM-FF350000"; // use fixed value for sc check
 
-	if((f == NULL) || (request == NULL)){
+	if ((f == NULL) || (request == NULL)) {
 		HISI_FB_ERR("f or request is null pointer\n");
 		return -1;
 	}
 
 	memset(&krequest, 0, sizeof(esm_hld_ioctl_esm_open));
-	ret = copy_from_user(&krequest, request, sizeof(esm_hld_ioctl_esm_open));
-	if (ret) {
-		HISI_FB_ERR( "copy_from_user failed!ret = %ld\n", ret);
-		krequest.returned_status = ret;
-		goto Exit;
-	}
-
 	f->private_data = NULL;
 
-	// Look for a matching ESM device (based on HPI address)
-	for (i = 0; i<MAX_ESM_DEVICES; i++)
-	{
-		if (esm->allocated && (krequest.hpi_base == esm->hpi_base))
-		{
-			// Found it
-			f->private_data = esm;
-			break;
-		}
-		esm++;
-	}
-
-	if (!f->private_data)
-	{
-		// Not found. Allocate a new ESM device.
-		esm = esm_devices;
-
-		for (i = 0; i<MAX_ESM_DEVICES; i++)
-		{
-			if (!esm->allocated)
-			{
-				//dma_addr_t dh=0;
-				char region_name[20] = "ESM-FF350000";	//use fixed value for sc check
-
-				esm->allocated = 1;
-				esm->hpi_base  = HPI_ADDRESS_ESM0; //krequest.hpi_base;
-				esm->hpi_size  = HPI_REG_SIZE; // this can be static since the HPI interface will not change
-				esm->code_base = HDCP_FW_ADDRESS;//krequest.code_base;
-				esm->code_size = HDCP_FW_SIZE; //krequest.code_size;
-				esm->data_base = HDCP_DATA_ADDRESS; //krequest.data_base;
-				esm->data_size = HDCP_DATA_SIZE; //krequest.data_size;
-
-				/*HISI_FB_INFO( "%sNew ESM device:\n\n", MY_TAG);
-				HISI_FB_INFO( "    hpi_base: 0x%lx\n",   esm->hpi_base);
-				HISI_FB_INFO( "    hpi_size: 0x%lx\n",   esm->hpi_size);
-				HISI_FB_INFO( "   code_base: 0x%lx\n",   esm->code_base);
-				HISI_FB_INFO( "   code_size: 0x%lx\n",   esm->code_size);
-				HISI_FB_INFO( "   data_base: 0x%lx\n",   esm->data_base);
-				HISI_FB_INFO( "   data_size: 0x%lx\n\n", esm->data_size);*/
-				//
-				// Initialize the code memory
-				//
-				if (esm->code_base != HL_DRIVER_ALLOCATE_DYNAMIC_MEM)
-				{
-					esm->code_is_phys_mem = 1;
-					//esm->code = phys_to_virt(esm->code_base);
-					esm->code = ioremap_wc(esm->code_base, esm->code_size);
-					//HISI_FB_INFO( "Code is at virtual address 0x%lx\n", (ulong)(esm->code));
-					if (!esm->code)
-					{
-						ret_val = HL_DRIVER_NO_MEMORY;
-						goto ErrorExit;
-					}
-				}
-				/*else
-				{
-					esm->code = dma_alloc_coherent(device, esm->code_size, &dh, GFP_KERNEL);
-
-					if (!esm->code)
-					{
-						HISI_FB_ERR( "%sFailed to allocate code DMA region (%ld bytes)\n",
-									MY_TAG, esm->code_size);
-						ret_val = HL_DRIVER_NO_MEMORY;
-						goto ErrorExit;
-					}
-
-					esm->code_base = dh;
-					HISI_FB_INFO( "%sBase address of allocated code region: phys=0x%lx virt=%pK\n",
-									MY_TAG, esm->code_base, esm->code);
-				}*/
-
-				//
-				// Initialize the data memory
-				//
-				if (esm->data_base != HL_DRIVER_ALLOCATE_DYNAMIC_MEM)
-				{
-					esm->data_is_phys_mem = 1;
-					//esm->data = phys_to_virt(esm->data_base);
-					esm->data = ioremap_wc(esm->data_base, esm->data_size);
-					//HISI_FB_INFO( "Data is at virtual address 0x%lx\n", (ulong)(esm->data));
-					if (!esm->data)
-					{
-						ret_val = HL_DRIVER_NO_MEMORY;
-						goto ErrorExit;
-					}
-				}
-				/*else
-				{
-					esm->data = dma_alloc_coherent(device, esm->data_size, &dh, GFP_KERNEL);
-
-					if (!esm->data)
-					{
-						HISI_FB_ERR( "%sFailed to allocate data DMA region (%ld bytes)\n",
-									MY_TAG, esm->data_size);
-						ret_val = HL_DRIVER_NO_MEMORY;
-						break;
-					}
-
-					esm->data_base = dh;
-					HISI_FB_INFO( "%sBase address of allocated data region: phys=0x%lx virt=%pK\n",
-									MY_TAG, esm->data_base, esm->data);
-				}*/
-
-				/*if (randomize_mem)
-				{
-					prandom_bytes(esm->code, esm->code_size);
-					prandom_bytes(esm->data, esm->data_size);
-				}*/
-
-				//
-				// Init HPI access
-				//
-
-				//sprintf(region_name, "ESM-%lX", esm->hpi_base);		//dangrous function
-				request_mem_region(esm->hpi_base, esm->hpi_size, region_name);
-				//HISI_FB_INFO("%s request_mem_region over\n", MY_TAG);
-				esm->hpi_mem_region_requested = 1;
-				esm->hpi = ioremap_nocache(esm->hpi_base, esm->hpi_size);
-				HISI_FB_INFO("%s ioremap_nocache over; esm->hpi =%pK \n", MY_TAG, esm->hpi);
-				if (!esm->hpi)
-				{
-					ret_val = HL_DRIVER_NO_MEMORY;
-					goto ErrorExit;
-				}
-
-				// Associate the Linux file to the ESM device
-				f->private_data = esm;
-				break;
-			}
-			esm++;
-		}
-	}
-
-	if (!f->private_data)
-	{
-		HISI_FB_ERR( "%scmd_esm_open: Too many ESM devices.\n", MY_TAG);
-		ret_val = HL_DRIVER_TOO_MANY_ESM_DEVICES;
+	// Look for a matching ESM device (fixed HPI address)
+	HISI_FB_INFO("%s esm->allocated: %d\n", MY_TAG, esm->allocated);
+	if (esm->allocated) {
+		f->private_data = esm;
+		esm_opened = 1;
+		HISI_FB_INFO("%s open esm again success\n", MY_TAG);
 		goto Exit;
 	}
 
+	esm->allocated = 1;
+	esm->hpi_base  = HPI_ADDRESS_ESM0;
+	esm->hpi_size  = HPI_REG_SIZE; // static value, HPI interface not change
+	esm->code_base = HDCP_FW_ADDRESS;
+	esm->code_size = HDCP_FW_SIZE;
+	esm->data_base = HDCP_DATA_ADDRESS;
+	esm->data_size = HDCP_DATA_SIZE;
+
+	// Initialize the code memory
+	esm->code_is_phys_mem = 1;
+	esm->code = ioremap_wc(esm->code_base, esm->code_size);
+	if (esm->code == NULL) {
+		HISI_FB_ERR("%s Code virtual addr map fail\n", MY_TAG);
+		ret_val = HL_DRIVER_NO_MEMORY;
+		goto ErrorExit;
+	}
+
+	// Initialize the data memory
+	esm->data_is_phys_mem = 1;
+	esm->data = ioremap_wc(esm->data_base, esm->data_size);
+	if (esm->data == NULL) {
+		HISI_FB_ERR("%s Data virtual addr map fail\n", MY_TAG);
+		ret_val = HL_DRIVER_NO_MEMORY;
+		goto ErrorExit;
+	}
+
+	// Init HPI access
+	request_mem_region(esm->hpi_base, esm->hpi_size, region_name);
+	esm->hpi_mem_region_requested = 1;
+	esm->hpi = ioremap_nocache(esm->hpi_base, esm->hpi_size);
+	if (esm->hpi == NULL) {
+		HISI_FB_ERR("%s HPI virtual addr map fail\n", MY_TAG);
+		ret_val = HL_DRIVER_NO_MEMORY;
+		goto ErrorExit;
+	}
+
+	// Associate the Linux file to the ESM device
+	f->private_data = esm;
 	esm_opened = 1;
+	HISI_FB_INFO("%s open esm first success\n", MY_TAG);
 	goto Exit;
 
 ErrorExit:
@@ -851,7 +752,7 @@ Exit:
 	krequest.returned_status = ret_val;
 	ret = copy_to_user(request, &krequest, sizeof(esm_hld_ioctl_esm_open));
 	if (ret) {
-		HISI_FB_ERR( "copy_to_user failed!ret = %ld\n", ret);
+		HISI_FB_ERR("copy_to_user failed!ret = %ld\n", ret);
 		return ret;
 	}
 
@@ -1085,19 +986,19 @@ static long useless_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	{
 		case ESM_HLD_IOCTL_LOAD_CODE:
 			ret = cmd_load_code((esm_device *)f->private_data,
-		                  (esm_hld_ioctl_load_code *)arg);
+		                  (esm_hld_ioctl_load_code *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_GET_CODE_PHYS_ADDR:
 			ret = cmd_get_code_phys_addr((esm_device *)f->private_data,
-		                           (esm_hld_ioctl_get_code_phys_addr *)arg);
+		                           (esm_hld_ioctl_get_code_phys_addr *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_GET_DATA_PHYS_ADDR:
 			ret = cmd_get_data_phys_addr((esm_device *)f->private_data,
-		                           (esm_hld_ioctl_get_data_phys_addr *)arg);
+		                           (esm_hld_ioctl_get_data_phys_addr *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_GET_DATA_SIZE:
 			ret = cmd_get_data_size((esm_device *)f->private_data,
-		                      (esm_hld_ioctl_get_data_size *)arg);
+		                      (esm_hld_ioctl_get_data_size *)(uintptr_t)arg);
 			break;
 		default:
 			HISI_FB_ERR( "%sUnknown IOCTL request %d.\n", MY_TAG, cmd);
@@ -1138,35 +1039,35 @@ static long device_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 			break;*/
 		case ESM_HLD_IOCTL_HPI_READ:
 			ret = cmd_hpi_read((esm_device *)f->private_data,
-		                 (esm_hld_ioctl_hpi_read *)arg);
+		                 (esm_hld_ioctl_hpi_read *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_HPI_WRITE:
 			ret = cmd_hpi_write((esm_device *)f->private_data,
-		                  (esm_hld_ioctl_hpi_write *)arg);
+		                  (esm_hld_ioctl_hpi_write *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_DATA_READ:
 			ret = cmd_data_read((esm_device *)f->private_data,
-		                  (esm_hld_ioctl_data_read *)arg);
+		                  (esm_hld_ioctl_data_read *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_DATA_WRITE:
 			ret = cmd_data_write((esm_device *)f->private_data,
-		                   (esm_hld_ioctl_data_write *)arg);
+		                   (esm_hld_ioctl_data_write *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_DATA_SET:
 			ret = cmd_data_set((esm_device *)f->private_data,
-		                 (esm_hld_ioctl_data_set *)arg);
+		                 (esm_hld_ioctl_data_set *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_ESM_OPEN:
-			ret = cmd_esm_open(f, (esm_hld_ioctl_esm_open *)arg);
+			ret = cmd_esm_open(f, (esm_hld_ioctl_esm_open *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_ESM_START:
-			ret = cmd_esm_start((esm_device *)f->private_data, (esm_hld_ioctl_esm_start *)arg);
+			ret = cmd_esm_start((esm_device *)f->private_data, (esm_hld_ioctl_esm_start *)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_GET_TE_INFO:
-			ret = cmd_get_te_info((esm_device *)f->private_data, (esm_hld_ioctl_get_te_info*)arg);
+			ret = cmd_get_te_info((esm_device *)f->private_data, (esm_hld_ioctl_get_te_info*)(uintptr_t)arg);
 			break;
 		case ESM_HLD_IOCTL_STATE_SET:
-			ret = cmd_set_hdcp_state((esm_device *)f->private_data, (esm_hld_ioctl_state_set*)arg);
+			ret = cmd_set_hdcp_state((esm_device *)f->private_data, (esm_hld_ioctl_state_set*)(uintptr_t)arg);
 			break;
 		default:
 			ret = useless_ioctl(f, cmd, arg);

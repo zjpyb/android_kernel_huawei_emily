@@ -55,7 +55,9 @@
 #include "ATCmdProc.h"
 #include "AtMtaInterface.h"
 
+#if (FEATURE_ON == FEATURE_LTE)
 #include "msp_diag.h"
+#endif
 
 #include "AtTestParaCmd.h"
 
@@ -1675,16 +1677,20 @@ VOS_UINT32 AT_RcvMtaSetNetMonSCellCnf(
             AT_NetMonFmtUtranFddSCellData(pstSetCnf, &usLength);
             break;
         }
+#if (FEATURE_ON == FEATURE_UE_MODE_TDS)
         case MTA_AT_NETMON_CELL_INFO_UTRAN_TDD:
         {
             AT_NetMonFmtUtranTddSCellData(pstSetCnf, &usLength);
             break;
         }
+#endif
+#if (FEATURE_ON == FEATURE_LTE)
         case MTA_AT_NETMON_CELL_INFO_LTE:
         {
             AT_NetMonFmtEutranSCellData(pstSetCnf, &usLength);
             break;
         }
+#endif
         default:
             usLength += (TAF_UINT16)At_sprintf( AT_CMD_MAX_LEN,
                                                (VOS_CHAR *)pgucAtSndCodeAddr,
@@ -1764,20 +1770,24 @@ VOS_UINT32 AT_RcvMtaSetNetMonNCellCnf(
     {
         AT_NetMonFmtUtranFddNCellData(pstSetCnf, usLengthTemp, &usLength);
     }
+#if (FEATURE_ON == FEATURE_UE_MODE_TDS)
     else if (MTA_NETMON_UTRAN_TDD_TYPE == pstSetCnf->stNCellInfo.enCellMeasTypeChoice)
     {
         AT_NetMonFmtUtranTddNCellData(pstSetCnf, usLengthTemp, &usLength);
     }
+#endif
     else
     {
         /*类型不对，不进行任何处理*/
         ;
     }
 
+#if (FEATURE_ON == FEATURE_LTE)
     /* LTE邻区显示 */
     usLengthTemp = usLength;
 
     AT_NetMonFmtEutranNCellData(pstSetCnf, usLengthTemp, &usLength);
+#endif
 
     /* 无邻区，返回NONE */
     if ( 0 == ( pstSetCnf->stNCellInfo.ucGsmNCellCnt +
@@ -1796,6 +1806,7 @@ VOS_UINT32 AT_RcvMtaSetNetMonNCellCnf(
     return VOS_OK;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_TDS)
 
 VOS_VOID AT_NetMonFmtUtranTddSCellData(
     MTA_AT_NETMON_CELL_INFO_STRU       *pstSCellInfo,
@@ -1885,7 +1896,9 @@ VOS_VOID AT_NetMonFmtUtranTddNCellData(
 
     return;
 }
+#endif
 
+#if (FEATURE_ON == FEATURE_LTE)
 
 VOS_VOID AT_NetMonFmtEutranSCellData(
     MTA_AT_NETMON_CELL_INFO_STRU       *pstSCellInfo,
@@ -2204,6 +2217,7 @@ VOS_VOID AT_FormatRsrq(
     return;
 }
 /*lint -restore*/
+#endif
 
 
 VOS_VOID AT_FormatGasAtCmdRslt(

@@ -64,8 +64,19 @@ int hhee_check_enable(void)
 }
 EXPORT_SYMBOL(hhee_check_enable);
 
-#define CPU_MASK		(0xF)
+#define CPU_MASK         0xF
+static void reset_hhee_irq_counters(void)
+{
+	struct arm_smccc_res res;
+	arm_smccc_hvc((unsigned long)HHEE_MONITORLOG_RESET_COUNTERS,
+		0ul, 0ul, 0ul, 0ul, 0ul, 0ul, 0ul, &res);
+}
 
+void hkip_clean_counters(void)
+{
+	reset_hkip_irq_counters();
+	reset_hhee_irq_counters();
+}
 static int hisi_hhee_probe(struct platform_device *pdev)
 {
 	int ret, irq;

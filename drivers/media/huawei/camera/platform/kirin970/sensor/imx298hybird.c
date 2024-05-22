@@ -431,8 +431,6 @@ imx298_config(
 			break;
 		case SEN_CONFIG_DISABLE_CSI:
 			break;
-		/* case SEN_CONFIG_MATCH_ID_EXT: */
-			/* break; */
 		case SEN_CONFIG_MATCH_ID:
 			ret = si->vtbl->match_id(si,argp);
 			break;

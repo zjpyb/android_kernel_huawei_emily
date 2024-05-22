@@ -13,6 +13,6 @@ struct clk_mbox_context {
 };
 
 int hisi_clkmbox_is_ready(void);
-int hisi_clkmbox_send_msg(mbox_msg_t *msg);
+int hisi_clkmbox_send_msg(mbox_msg_t *msg, int length);
 int hisi_clkmbox_send_msg_sync(mbox_msg_t *msg);
 #endif

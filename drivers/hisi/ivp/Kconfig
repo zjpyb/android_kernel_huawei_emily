@@ -53,6 +53,10 @@ config IVP_IVPV210
 config IVP_IVPV250
 	bool "ivpv250"
 	depends on HISI_IVP
+
+config IVP_IVPV310
+	bool "ivpv310"
+	depends on HISI_IVP
 endchoice
 endmenu
 

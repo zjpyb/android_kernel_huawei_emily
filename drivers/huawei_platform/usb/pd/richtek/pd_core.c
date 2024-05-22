@@ -123,8 +123,10 @@ static const struct {
 static int dpm_alt_mode_parse_svid_data(
 	pd_port_t *pd_port, svdm_svid_data_t *svid_data)
 {
-	struct device_node *np, *ufp_np, *dfp_np;
-	const char *connection;
+	struct device_node *np = NULL;
+	struct device_node *ufp_np = NULL;
+	struct device_node *dfp_np = NULL;
+	const char *connection = NULL;
 	uint32_t ufp_d_pin_cap = 0;
 	uint32_t dfp_d_pin_cap = 0;
 	uint32_t signal = MODE_DP_V13;
@@ -321,13 +323,15 @@ static const struct {
 
 static void pd_core_power_flags_init(pd_port_t *pd_port)
 {
-	uint32_t src_flag, snk_flag, val;
+	uint32_t src_flag, snk_flag;
+	uint32_t val = 0;
 	struct device_node *np;
 	int i;
 	pd_port_power_caps *snk_cap = &pd_port->local_snk_cap;
 	pd_port_power_caps *src_cap = &pd_port->local_src_cap_default;
 
-	np = of_find_node_by_name(pd_port->tcpc_dev->dev.of_node, "dpm_caps");
+	np = of_find_node_by_name(pd_port->tcpc_dev->dev.parent->of_node,
+		"dpm_caps");
 
 	for (i = 0; i < ARRAY_SIZE(supported_dpm_caps); i++) {
 		if (of_property_read_bool(np,
@@ -336,6 +340,15 @@ static void pd_core_power_flags_init(pd_port_t *pd_port)
 				supported_dpm_caps[i].val;
 			pr_info("dpm_caps: %s\n",
 				supported_dpm_caps[i].prop_name);
+	}
+
+	if (of_property_read_u32(np, "local_vconn_supply", &val) == 0) {
+		if (val == 0) {
+			pd_port->dpm_caps &= (~DPM_CAP_LOCAL_VCONN_SUPPLY);
+			pr_info("dpm_caps: rm local_vconn_supply\n");
+		}
+	} else {
+		pr_err("%s get local_vconn_supply fail\n", __func__);
 	}
 
 	pd_port->dpm_caps |= DPM_CAP_ATTEMP_DISCOVER_CABLE_DFP;
@@ -420,8 +433,10 @@ void pd_extract_rdo_power(uint32_t rdo, uint32_t pdo,
 		op_power = RDO_BATT_EXTRACT_OP_POWER(rdo);
 		max_power = RDO_BATT_EXTRACT_MAX_POWER(rdo);
 
-		*op_curr = op_power / vmin;
-		*max_curr = max_power / vmin;
+		if (vmin != 0) {
+			*op_curr = op_power / vmin;
+			*max_curr = max_power / vmin;
+		}
 		break;
 
 	default:
@@ -508,7 +523,7 @@ uint32_t pd_extract_cable_curr(uint32_t vdo)
 void pd_reset_svid_data(pd_port_t *pd_port)
 {
 	uint8_t i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
@@ -649,7 +664,7 @@ int pd_set_vconn(pd_port_t *pd_port, int enable)
 static inline int pd_reset_modal_operation(pd_port_t *pd_port)
 {
 	uint8_t i;
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
@@ -676,6 +691,7 @@ int pd_reset_local_hw(pd_port_t *pd_port)
 	pd_port->pd_connected  = false;
 	pd_port->pe_ready = false;
 	pd_port->dpm_ack_immediately = false;
+	pd_port->dpm_flags &= ~DPM_FLAGS_CHECK_CABLE_ID_DFP;
 
 #ifdef CONFIG_USB_PD_RESET_CABLE
 	pd_port->reset_cable = false;

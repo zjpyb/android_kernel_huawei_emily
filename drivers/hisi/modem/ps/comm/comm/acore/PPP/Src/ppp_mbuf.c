@@ -41,6 +41,7 @@
     协议栈打印打点方式下的.C文件宏定义
 *****************************************************************************/
 #define    THIS_FILE_ID        PS_FILE_ID_PPP_MBUF_C
+#if(FEATURE_ON == FEATURE_PPP)
 
 
 static struct memmap {
@@ -522,5 +523,6 @@ VOS_VOID ppp_m_init_data(struct ppp_mbuf *bp)
 }
 
 
+#endif /*#if(FEATURE_ON == FEATURE_PPP)*/
 
 

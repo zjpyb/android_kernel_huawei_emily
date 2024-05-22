@@ -106,7 +106,7 @@ static const struct net_device_ops wl_cfgp2p_if_ops = {
 #endif
 bool wl_cfgp2p_is_pub_action(void *frame, u32 frame_len)
 {
-	wifi_p2p_pub_act_frame_t *pact_frm;
+	wifi_p2p_pub_act_frame_t *pact_frm = NULL;
 
 	if (frame == NULL)
 		return false;
@@ -126,7 +126,7 @@ bool wl_cfgp2p_is_pub_action(void *frame, u32 frame_len)
 
 bool wl_cfgp2p_is_p2p_action(void *frame, u32 frame_len)
 {
-	wifi_p2p_action_frame_t *act_frm;
+	wifi_p2p_action_frame_t *act_frm = NULL;
 
 	if (frame == NULL)
 		return false;
@@ -178,7 +178,7 @@ bool wl_cfgp2p_find_gas_subtype(u8 subtype, u8* data, u32 len)
 bool wl_cfgp2p_is_gas_action(void *frame, u32 frame_len)
 {
 
-	wifi_p2psd_gas_pub_act_frame_t *sd_act_frm;
+	wifi_p2psd_gas_pub_act_frame_t *sd_act_frm = NULL;
 
 	if (frame == NULL)
 		return false;
@@ -218,7 +218,7 @@ bool wl_cfgp2p_is_gas_action(void *frame, u32 frame_len)
 bool wl_cfgp2p_is_p2p_gas_action(void *frame, u32 frame_len)
 {
 
-	wifi_p2psd_gas_pub_act_frame_t *sd_act_frm;
+	wifi_p2psd_gas_pub_act_frame_t *sd_act_frm = NULL;
 
 	if (frame == NULL)
 		return false;
@@ -239,9 +239,9 @@ bool wl_cfgp2p_is_p2p_gas_action(void *frame, u32 frame_len)
 #endif
 void wl_cfgp2p_print_actframe(bool tx, void *frame, u32 frame_len, u32 channel)
 {
-	wifi_p2p_pub_act_frame_t *pact_frm;
-	wifi_p2p_action_frame_t *act_frm;
-	wifi_p2psd_gas_pub_act_frame_t *sd_act_frm;
+	wifi_p2p_pub_act_frame_t *pact_frm = NULL;
+	wifi_p2p_action_frame_t *act_frm = NULL;
+	wifi_p2psd_gas_pub_act_frame_t *sd_act_frm = NULL;
 	if (!frame || frame_len <= 2)
 		return;
 
@@ -1074,9 +1074,9 @@ wl_cfgp2p_escan(struct bcm_cfg80211 *cfg, struct net_device *dev, u16 active,
 	s32 memsize;
 	s32 eparams_size;
 	u32 i;
-	s8 *memblk;
-	wl_p2p_scan_t *p2p_params;
-	wl_escan_params_t *eparams;
+	s8 *memblk = NULL;
+	wl_p2p_scan_t *p2p_params = NULL;
+	wl_escan_params_t *eparams = NULL;
 	wlc_ssid_t ssid;
 	/* Scan parameters */
 #define P2PAPI_SCAN_NPROBES 1
@@ -1300,9 +1300,9 @@ wl_cfgp2p_parse_vndr_ies(u8 *parse, u32 len,
 	struct parsed_vndr_ies *vndr_ies)
 {
 	s32 err = BCME_OK;
-	vndr_ie_t *vndrie;
-	bcm_tlv_t *ie;
-	struct parsed_vndr_ie_info *parsed_info;
+	vndr_ie_t *vndrie = NULL;
+	bcm_tlv_t *ie = NULL;
+	struct parsed_vndr_ie_info *parsed_info = NULL;
 	u32	count = 0;
 	s32 remained_len;
 
@@ -1379,7 +1379,7 @@ wl_cfgp2p_set_management_ie(struct bcm_cfg80211 *cfg, struct net_device *ndev, s
 	struct parsed_vndr_ies old_vndr_ies;
 	struct parsed_vndr_ies new_vndr_ies;
 	s32 i;
-	u8 *ptr;
+	u8 *ptr = NULL;
 	s32 type = -1;
 	s32 remained_buf_len;
 #define IE_TYPE(type, bsstype) (wl_to_p2p_bss_saved_ie(cfg, bsstype).p2p_ ## type ## _ie)
@@ -2336,7 +2336,7 @@ wl_cfg80211_change_ifaddr(u8* buf, struct ether_addr *p2p_int_addr, u8 element_i
 {
 	wifi_p2p_ie_t *ie = (wifi_p2p_ie_t*) buf;
 	u16 len = ie->len;
-	u8 *subel;
+	u8 *subel = NULL;
 	u8 subelt_id;
 	u16 subelt_len;
 	CFGP2P_DBG((" Enter\n"));
@@ -2616,7 +2616,7 @@ s32
 wl_cfgp2p_get_p2p_noa(struct bcm_cfg80211 *cfg, struct net_device *ndev, char* buf, int buf_len)
 {
 
-	wifi_p2p_noa_desc_t *noa_desc;
+	wifi_p2p_noa_desc_t *noa_desc = NULL;
 	int len = 0, i;
 	char _buf[200];
 
@@ -2776,7 +2776,7 @@ wl_cfgp2p_retreive_p2pattrib(void *buf, u8 element_id)
 {
 	wifi_p2p_ie_t *ie = NULL;
 	u16 len = 0;
-	u8 *subel;
+	u8 *subel = NULL;
 	u8 subelt_id;
 	u16 subelt_len;
 
@@ -2827,8 +2827,8 @@ wl_cfgp2p_retreive_p2pattrib(void *buf, u8 element_id)
 u8*
 wl_cfgp2p_find_attrib_in_all_p2p_Ies(u8 *parse, u32 len, u32 attrib)
 {
-	bcm_tlv_t *ie;
-	u8* pAttrib;
+	bcm_tlv_t *ie = NULL;
+	u8* pAttrib = NULL;
 
 	CFGP2P_INFO(("Starting parsing parse %p attrib %d remaining len %d ", parse, attrib, len));
 	while ((ie = bcm_parse_tlvs(parse, (int)len, DOT11_MNG_VS_ID))) {
@@ -3309,7 +3309,7 @@ wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev, struct bcm_cfg80211 *cfg)
 void
 wl_cfgp2p_need_wait_actfrmae(struct bcm_cfg80211 *cfg, void *frame, u32 frame_len, bool tx)
 {
-	wifi_p2p_pub_act_frame_t *pact_frm;
+	wifi_p2p_pub_act_frame_t *pact_frm = NULL;
 	int status = 0;
 
 	if (!frame || (frame_len < (sizeof(*pact_frm) + WL_P2P_AF_STATUS_OFFSET - 1))) {

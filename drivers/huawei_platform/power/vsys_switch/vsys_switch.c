@@ -3,7 +3,7 @@
  *
  * vsys switch driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,7 +24,7 @@
 #include <linux/of_device.h>
 #include <linux/of_address.h>
 #include <linux/of_gpio.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/notifier.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
@@ -71,9 +71,9 @@ int vsys_buck_ops_register(struct vsys_buck_device_ops *ops)
 {
 	int ret = 0;
 
-	if (ops != NULL) {
+	if (ops) {
 		g_buck_ops = ops;
-		hwlog_info("buck ops (%s) register ok\n", ops->chip_name);
+		hwlog_info("%s buck ops register ok\n", ops->chip_name);
 	} else {
 		hwlog_err("buck ops register fail\n");
 		ret = -EPERM;
@@ -86,9 +86,9 @@ int vsys_sc_ops_register(struct vsys_sc_device_ops *ops)
 {
 	int ret = 0;
 
-	if (ops != NULL) {
+	if (ops) {
 		g_sc_ops = ops;
-		hwlog_info("sc ops (%s) register ok\n", ops->chip_name);
+		hwlog_info("%s sc ops register ok\n", ops->chip_name);
 	} else {
 		hwlog_err("sc ops register fail\n");
 		ret = -EPERM;
@@ -101,9 +101,9 @@ int vsys_ovp_switch_ops_register(struct vsys_ovp_switch_device_ops *ops)
 {
 	int ret = 0;
 
-	if (ops != NULL) {
+	if (ops) {
 		g_ovp_switch_ops = ops;
-		hwlog_info("ovpsw ops (%s) register ok\n", ops->chip_name);
+		hwlog_info("%s ovpsw ops register ok\n", ops->chip_name);
 	} else {
 		hwlog_err("ovpsw ops register fail\n");
 		ret = -EPERM;
@@ -112,10 +112,22 @@ int vsys_ovp_switch_ops_register(struct vsys_ovp_switch_device_ops *ops)
 	return ret;
 }
 
+int vsys_switch_set_sc_frequency_mode(u8 mode)
+{
+	struct vsys_switch_device_info *di = g_vsys_switch_di;
+
+	if (!di || !di->sc_ops || !di->sc_ops->set_frequency_mode) {
+		hwlog_err("di or ops is null\n");
+		return -1;
+	}
+
+	return di->sc_ops->set_frequency_mode(mode);
+}
+
 static void vsys_switch_calc_avg_vbatt(struct vsys_switch_device_info *di,
 	int vbatt_sample)
 {
-	int index = 0;
+	int index;
 
 	index = di->batt_para.vbatt_maf_count % MAF_BUFFER_LEN;
 
@@ -132,7 +144,7 @@ static void vsys_switch_calc_avg_vbatt(struct vsys_switch_device_info *di,
 static void vsys_switch_calc_avg_ibatt(struct vsys_switch_device_info *di,
 	int ibatt_sample)
 {
-	int index = 0;
+	int index;
 
 	index = di->batt_para.ibatt_maf_count % MAF_BUFFER_LEN;
 
@@ -149,7 +161,7 @@ static void vsys_switch_calc_avg_ibatt(struct vsys_switch_device_info *di,
 static void vsys_switch_calc_avg_rbatt(struct vsys_switch_device_info *di,
 	int rbatt_sample)
 {
-	int index = 0;
+	int index;
 
 	index = di->batt_para.rbatt_maf_count % MAF_BUFFER_LEN;
 
@@ -273,8 +285,6 @@ static void vsys_switch_get_vsys_volt(struct vsys_switch_device_info *di)
 		di->state_info.vsys_volt = di->buck_ops->get_vout();
 	} else if (di->state_info.curr_vsys_chnl == VSYS_SC_OPEN) {
 		di->state_info.vsys_volt = hw_battery_voltage(BAT_ID_ALL) / 2;
-	} else {
-		/* do nothing */
 	}
 }
 
@@ -282,13 +292,13 @@ static void vsys_switch_wake_lock(void)
 {
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
 
-	if (!wake_lock_active(&di->wakelock)) {
-		wake_lock(&di->wakelock);
+	if (!di->wakelock.active) {
+		__pm_stay_awake(&di->wakelock);
 		hwlog_info("wake_lock\n");
 	}
 }
@@ -297,38 +307,29 @@ static void vsys_switch_wake_unlock(void)
 {
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
 
-	if (wake_lock_active(&di->wakelock)) {
-		wake_unlock(&di->wakelock);
+	if (di->wakelock.active) {
+		__pm_relax(&di->wakelock);
 		hwlog_info("wake_unlock\n");
 	}
 }
 
 static int vsys_switch_enable_sc_channel(struct vsys_switch_device_info *di)
 {
-	int ret = 0;
-
-	ret = di->buck_ops->set_vout(BUCK_VOUT_LOW);
-	if (ret) {
-		hwlog_err("enable_sc_chnl: set buck vout 3500 fail\n");
-		goto enable_sc_fail_0;
-	}
-
-	/* wait for 10ms */
-	usleep_range(10000, 11000);
+	int ret;
 
 	ret = di->sc_ops->set_state(SC_CHNL_ENABLE);
 	if (ret) {
 		hwlog_err("enable_sc_chnl: enable sc fail\n");
-		if (ret == VSYS_SC_SET_TEST_REGS_FAIL ||
-			ret == VSYS_SC_NOT_PG)
-			goto enable_sc_fail_2;
-		else
+		if ((ret == VSYS_SC_SET_TEST_REGS_FAIL) ||
+			(ret == VSYS_SC_NOT_PG))
 			goto enable_sc_fail_1;
+		else
+			goto enable_sc_fail_0;
 	}
 
 	/* wait for 10ms to enable ovp switch */
@@ -337,24 +338,21 @@ static int vsys_switch_enable_sc_channel(struct vsys_switch_device_info *di)
 	ret = di->ovp_ops->set_state(SC_CHNL_ENABLE);
 	if (ret) {
 		hwlog_err("enable_sc_chnl: enable ovp switch fail\n");
-		goto enable_sc_fail_2;
+		goto enable_sc_fail_1;
 	}
 
 	hwlog_info("enable sc channel succeed\n");
+	return 0;
 
-	return ret;
-
-enable_sc_fail_2:
-	di->sc_ops->set_state(SC_CHNL_DISABLE);
 enable_sc_fail_1:
-	di->buck_ops->set_vout(BUCK_VOUT_HIGH);
+	di->sc_ops->set_state(SC_CHNL_DISABLE);
 enable_sc_fail_0:
-	return -1;
+	return ret;
 }
 
 static int vsys_switch_enable_buck_channel(struct vsys_switch_device_info *di)
 {
-	int ret = 0;
+	int ret;
 
 	ret = di->buck_ops->set_vout(BUCK_VOUT_HIGH);
 	if (ret) {
@@ -362,28 +360,16 @@ static int vsys_switch_enable_buck_channel(struct vsys_switch_device_info *di)
 		goto enable_buck_fail_0;
 	}
 
-	/* wait for 2ms */
-	usleep_range(2000, 3000);
-
-	ret = di->buck_ops->set_state(BUCK_CHNL_ENABLE);
-	if (ret) {
-		hwlog_err("enable_buck_chnl: enable buck failed\n");
-		goto enable_buck_fail_1;
-	}
-
 	hwlog_info("enable buck channel succeed\n");
+	return 0;
 
-	return ret;
-
-enable_buck_fail_1:
-	di->buck_ops->set_vout(BUCK_VOUT_LOW);
 enable_buck_fail_0:
-	return -1;
+	return ret;
 }
 
 static int vsys_switch_disable_sc_channel(struct vsys_switch_device_info *di)
 {
-	int ret = 0;
+	int ret;
 
 	ret = di->ovp_ops->set_state(SC_CHNL_DISABLE);
 	if (ret) {
@@ -404,20 +390,21 @@ static int vsys_switch_disable_sc_channel(struct vsys_switch_device_info *di)
 	}
 
 	hwlog_info("disable sc channel succeed\n");
-
-	return ret;
+	return 0;
 
 disable_sc_fail_2:
 	di->sc_ops->set_state(SC_CHNL_ENABLE);
+	/* wait for 10ms to enable ovp switch */
+	usleep_range(10000, 11000);
 disable_sc_fail_1:
 	di->ovp_ops->set_state(SC_CHNL_ENABLE);
 disable_sc_fail_0:
-	return -1;
+	return ret;
 }
 
 static int vsys_switch_disable_buck_channel(struct vsys_switch_device_info *di)
 {
-	int ret = 0;
+	int ret;
 
 	ret = di->buck_ops->set_vout(BUCK_VOUT_LOW);
 	if (ret) {
@@ -425,29 +412,17 @@ static int vsys_switch_disable_buck_channel(struct vsys_switch_device_info *di)
 		goto disable_buck_fail_0;
 	}
 
-	/* wait for 2ms */
-	usleep_range(2000, 3000);
-
-	ret = di->buck_ops->set_state(BUCK_CHNL_DISABLE);
-	if (ret) {
-		hwlog_err("disable_buck_chnl: disable buck failed\n");
-		goto disable_buck_fail_1;
-	}
-
 	hwlog_info("disable buck channel succeed\n");
+	return 0;
 
-	return ret;
-
-disable_buck_fail_1:
-	di->buck_ops->set_vout(BUCK_VOUT_HIGH);
 disable_buck_fail_0:
-	return -1;
+	return ret;
 }
 
 static int vsys_switch_enable_sc_channel_only(
 	struct vsys_switch_device_info *di)
 {
-	int ret = 0;
+	int ret;
 
 	vsys_switch_wake_lock();
 
@@ -457,12 +432,12 @@ static int vsys_switch_enable_sc_channel_only(
 		goto enable_sc_only_fail_0;
 	}
 
-	/* wait for 10ms */
-	usleep_range(10000, 11000);
+	/* wait for 50ms */
+	usleep_range(50000, 51000);
 
-	ret = di->buck_ops->set_state(BUCK_CHNL_DISABLE);
+	ret = di->buck_ops->set_vout(BUCK_VOUT_LOW);
 	if (ret) {
-		hwlog_err("disable buck failed\n");
+		hwlog_err("set buck vout 3500 failed\n");
 		goto enable_sc_only_fail_1;
 	}
 
@@ -470,12 +445,13 @@ static int vsys_switch_enable_sc_channel_only(
 	hwlog_info("enable_sc_channel_only succeed\n");
 	vsys_switch_wake_unlock();
 
-	return ret;
+	return 0;
 
 enable_sc_only_fail_1:
 	di->ovp_ops->set_state(SC_CHNL_DISABLE);
+	/* wait for 20ms */
+	msleep(20);
 	di->sc_ops->set_state(SC_CHNL_DISABLE);
-	di->buck_ops->set_vout(BUCK_VOUT_HIGH);
 enable_sc_only_fail_0:
 	vsys_switch_wake_unlock();
 	return -1;
@@ -507,10 +483,11 @@ static int vsys_switch_enable_buck_channel_only(
 	hwlog_info("enable_buck_channel_only succeed\n");
 	vsys_switch_wake_unlock();
 
-	return ret;
+	return 0;
 
 enable_buck_only_fail_1:
-	di->buck_ops->set_state(BUCK_CHNL_DISABLE);
+	/* wait for 50ms */
+	usleep_range(50000, 51000);
 	di->buck_ops->set_vout(BUCK_VOUT_LOW);
 enable_buck_only_fail_0:
 	vsys_switch_wake_unlock();
@@ -529,8 +506,6 @@ static int vsys_switch_set_sc_channel(struct vsys_switch_device_info *di)
 		ret = vsys_switch_disable_sc_channel(di);
 		if (ret)
 			hwlog_err("set_sc_chnl: disable sc chnl failed\n");
-	} else {
-		/* do nothing */
 	}
 
 	return ret;
@@ -548,8 +523,6 @@ static int vsys_switch_set_buck_channel(struct vsys_switch_device_info *di)
 		ret = vsys_switch_disable_buck_channel(di);
 		if (ret)
 			hwlog_err("set_buck_chnl: disable buck chnl fail\n");
-	} else {
-		/* do nothing */
 	}
 
 	return ret;
@@ -560,6 +533,8 @@ static bool vsys_switch_can_open_buck_chnl(
 {
 	bool ret = false;
 	int calc_val;
+
+	di->batt_para.ibatt_avg = 0;
 
 	calc_val = di->batt_para.vbatt_avg +
 		(di->batt_para.ibatt_avg - di->ctrl_para.dischg_curr_max) *
@@ -578,12 +553,14 @@ static bool vsys_switch_can_open_sc_chnl(
 	bool ret = false;
 	int calc_val;
 
+	di->batt_para.ibatt_avg = 0;
+
 	calc_val = di->batt_para.vbatt_avg +
 		(di->batt_para.ibatt_avg - di->ctrl_para.dischg_curr_max) *
 		(di->batt_para.comp_res * TEN + di->batt_para.rbatt_avg) /
 		TEN / THOUSAND;
 
-	if (calc_val > di->ctrl_para.vbatt_base + di->ctrl_para.vbatt_gap)
+	if (calc_val > (di->ctrl_para.vbatt_base + di->ctrl_para.vbatt_gap))
 		ret = true;
 
 	return ret;
@@ -594,6 +571,9 @@ static int vsys_switch_set_vsys_channel(struct vsys_switch_device_info *di)
 	int ret = 0;
 
 	if (di->cancel_ctrl_work_flag)
+		return 0;
+
+	if (!di->support_sc_chnl)
 		return 0;
 
 	if (di->state_info.sc_not_pg) {
@@ -608,6 +588,10 @@ static int vsys_switch_set_vsys_channel(struct vsys_switch_device_info *di)
 		if (di->switch_sc_retry_num < SWITCH_SC_RETRY_MAX) {
 			if (vsys_switch_can_open_sc_chnl(di) &&
 				di->state_info.curr_vsys_chnl != VSYS_SC_OPEN) {
+				hwlog_info("vbat=%d ibatt=%d rbatt=%d\n",
+					di->batt_para.vbatt_avg,
+					di->batt_para.ibatt_avg,
+					di->batt_para.rbatt_avg/TEN);
 				ret = vsys_switch_enable_sc_channel_only(di);
 				if (ret)
 					di->switch_sc_retry_num++;
@@ -619,13 +603,20 @@ static int vsys_switch_set_vsys_channel(struct vsys_switch_device_info *di)
 		}
 
 		if (vsys_switch_can_open_buck_chnl(di)) {
-			if (di->state_info.curr_vsys_chnl != VSYS_BUCK_OPEN)
+			if (di->state_info.curr_vsys_chnl != VSYS_BUCK_OPEN) {
+				hwlog_info("vbat=%d ibatt=%d rbatt=%d\n",
+					di->batt_para.vbatt_avg,
+					di->batt_para.ibatt_avg,
+					di->batt_para.rbatt_avg/TEN);
 				return vsys_switch_enable_buck_channel_only(di);
+			}
 		}
 	} else if (di->ctrl_para.switch_vsys_chnl == SWITCH_VSYS_SC) {
 		if (di->switch_sc_retry_num < SWITCH_SC_RETRY_MAX) {
-			if (hw_battery_voltage(BAT_ID_ALL) <
-				di->ctrl_para.vbatt_th) {
+			if ((hw_battery_voltage(BAT_ID_ALL) <
+				di->ctrl_para.vbatt_th) &&
+				(di->state_info.curr_vsys_chnl !=
+				VSYS_SC_OPEN)) {
 				hwlog_info("vbatt is low, can't switch sc\n");
 				return ret;
 			}
@@ -642,8 +633,6 @@ static int vsys_switch_set_vsys_channel(struct vsys_switch_device_info *di)
 	} else if (di->ctrl_para.switch_vsys_chnl == SWITCH_VSYS_BUCK) {
 		if (di->state_info.curr_vsys_chnl != VSYS_BUCK_OPEN)
 			return vsys_switch_enable_buck_channel_only(di);
-	} else {
-		/* do nothing */
 	}
 
 	return ret;
@@ -653,13 +642,13 @@ static void vsys_switch_control_work(struct work_struct *work)
 {
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
-	if (di->cancel_ctrl_work_flag)
-		return;
-
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
+
+	if (di->cancel_ctrl_work_flag)
+		return;
 
 	vsys_switch_calc_avg_batt_para(di);
 	vsys_switch_set_vsys_channel(di);
@@ -673,10 +662,15 @@ static void vsys_switch_control_work(struct work_struct *work)
 
 static void vsys_switch_sc_event_work(struct work_struct *work)
 {
-	struct vsys_switch_device_info *di;
+	struct vsys_switch_device_info *di = NULL;
+
+	if (!work) {
+		hwlog_err("work is null\n");
+		return;
+	}
 
 	di = container_of(work, struct vsys_switch_device_info, sc_event_work);
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
@@ -688,13 +682,17 @@ static void vsys_switch_sc_event_work(struct work_struct *work)
 }
 
 static int vsys_switch_sc_event_notifier_call(
-	struct notifier_block *sc_event_nb, unsigned long event, void *data)
+	struct notifier_block *nb, unsigned long event, void *data)
 {
-	struct vsys_switch_device_info *di;
+	struct vsys_switch_device_info *di = NULL;
 
-	di = container_of(sc_event_nb, struct vsys_switch_device_info,
-		sc_event_nb);
-	if (di == NULL) {
+	if (!nb) {
+		hwlog_err("nb is null\n");
+		return NOTIFY_OK;
+	}
+
+	di = container_of(nb, struct vsys_switch_device_info, sc_event_nb);
+	if (!di) {
 		hwlog_err("di is null\n");
 		return NOTIFY_OK;
 	}
@@ -704,16 +702,53 @@ static int vsys_switch_sc_event_notifier_call(
 	return NOTIFY_OK;
 }
 
+static int vsys_switch_check_support_sc_chnl(
+	struct vsys_switch_device_info *di)
+{
+	int device_id;
+	int ret;
+
+	di->ovp_ops->set_state(SC_CHNL_ENABLE);
+
+	/* wait for 50ms */
+	usleep_range(50000, 51000);
+
+	ret = di->ovp_ops->get_id(&device_id);
+	if (ret) {
+		di->support_sc_chnl = false;
+		di->ovp_ops->set_state(SC_CHNL_DISABLE);
+		return ret;
+	}
+
+	di->ovp_ops->set_state(SC_CHNL_DISABLE);
+
+	if (device_id != VSYS_OVP_SWITCH_FPF2283) {
+		di->support_sc_chnl = false;
+		hwlog_info("support_sc_chnl false\n");
+	}
+
+	return ret;
+}
+
 static void vsys_switch_para_reset(struct vsys_switch_device_info *di)
 {
+	int i;
+	int vbat_sample;
+
 	di->ctrl_para.enable_sc = 0;
 	di->ctrl_para.enable_buck = 0;
-	di->state_info.sc_not_pg = false;
 	di->cancel_ctrl_work_flag = false;
-	di->ctrl_para.switch_vsys_chnl = SWITCH_VSYS_AUTO;
-	vsys_switch_reset_avg_vbatt(di);
 	vsys_switch_reset_avg_ibatt(di);
 	vsys_switch_reset_avg_rbatt(di);
+
+	vbat_sample = hw_battery_voltage(BAT_ID_ALL);
+
+	for (i = 0; i < MAF_BUFFER_LEN; i++)
+		vbatt_samples[i] = vbat_sample;
+
+	di->batt_para.vbatt_avg = vbat_sample;
+	di->batt_para.vbatt_sum = vbat_sample * MAF_BUFFER_LEN;
+	di->batt_para.vbatt_maf_count = 0;
 }
 
 static void vsys_switch_para_init(struct vsys_switch_device_info *di)
@@ -725,6 +760,7 @@ static void vsys_switch_para_init(struct vsys_switch_device_info *di)
 	di->ctrl_para.enable_buck = 0;
 	di->ctrl_para.switch_vsys_chnl = SWITCH_VSYS_AUTO;
 	di->cancel_ctrl_work_flag = false;
+	di->support_sc_chnl = true;
 	di->switch_sc_retry_num = 0;
 	vsys_switch_reset_avg_vbatt(di);
 	vsys_switch_reset_avg_ibatt(di);
@@ -743,6 +779,7 @@ static int vsys_switch_check_ops(struct vsys_switch_device_info *di)
 		(!di->sc_ops->get_state) ||
 		(!di->sc_ops->set_state) ||
 		(!di->sc_ops->get_id) ||
+		(!di->sc_ops->set_frequency_mode) ||
 		(!di->ovp_ops->set_state) ||
 		(!di->ovp_ops->get_state) ||
 		(!di->ovp_ops->get_id)) {
@@ -757,13 +794,13 @@ static int vsys_switch_check_ops(struct vsys_switch_device_info *di)
 static ssize_t vsys_switch_dbg_show_switch_vsys(
 	void *dev_data, char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
+		return scnprintf(buf, size, "buf or dev_p or di is null\n");
 	}
 
 	return scnprintf(buf, size, "switch_vsys_chnl = %d\n",
@@ -773,13 +810,13 @@ static ssize_t vsys_switch_dbg_show_switch_vsys(
 static ssize_t vsys_switch_dbg_store_switch_vsys(
 	void *dev_data, char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 	int val = 0;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
 		return -EINVAL;
 	}
 
@@ -789,12 +826,6 @@ static ssize_t vsys_switch_dbg_store_switch_vsys(
 	}
 
 	di->ctrl_para.switch_vsys_chnl = val;
-	if (val == SWITCH_VSYS_BUCK)
-		vsys_switch_enable_buck_channel_only(di);
-	else if (val == SWITCH_VSYS_SC)
-		vsys_switch_enable_sc_channel_only(di);
-	else
-		/* do nothing */
 
 	hwlog_info("set switch_vsys = %d\n",
 		di->ctrl_para.switch_vsys_chnl);
@@ -805,13 +836,13 @@ static ssize_t vsys_switch_dbg_store_switch_vsys(
 static ssize_t vsys_switch_dbg_show_enable_sc(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
+		return scnprintf(buf, size, "dev_p or buf or di is null\n");
 	}
 
 	return scnprintf(buf, size, "enable_sc = %d\n",
@@ -821,13 +852,13 @@ static ssize_t vsys_switch_dbg_show_enable_sc(void *dev_data,
 static ssize_t vsys_switch_dbg_store_enable_sc(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 	int val = 0;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
 		return -EINVAL;
 	}
 
@@ -837,10 +868,7 @@ static ssize_t vsys_switch_dbg_store_enable_sc(void *dev_data,
 	}
 
 	di->ctrl_para.enable_sc = val;
-	if (val)
-		vsys_switch_enable_sc_channel(di);
-	else
-		vsys_switch_disable_sc_channel(di);
+	vsys_switch_set_sc_channel(di);
 
 	hwlog_info("set enable_sc = %d\n", di->ctrl_para.enable_sc);
 
@@ -850,13 +878,13 @@ static ssize_t vsys_switch_dbg_store_enable_sc(void *dev_data,
 static ssize_t vsys_switch_dbg_show_enable_buck(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
+		return scnprintf(buf, size, "dev_p or buf or di is null\n");
 	}
 
 	return scnprintf(buf, size, "enable_buck = %d\n",
@@ -866,13 +894,13 @@ static ssize_t vsys_switch_dbg_show_enable_buck(void *dev_data,
 static ssize_t vsys_switch_dbg_store_enable_buck(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 	int val = 0;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
 		return -EINVAL;
 	}
 
@@ -882,10 +910,7 @@ static ssize_t vsys_switch_dbg_store_enable_buck(void *dev_data,
 	}
 
 	di->ctrl_para.enable_buck = val;
-	if (val)
-		vsys_switch_enable_buck_channel(di);
-	else
-		vsys_switch_disable_buck_channel(di);
+	vsys_switch_set_buck_channel(di);
 
 	hwlog_info("set enable_buck = %d\n",
 		di->ctrl_para.enable_buck);
@@ -896,13 +921,13 @@ static ssize_t vsys_switch_dbg_store_enable_buck(void *dev_data,
 static ssize_t vsys_switch_dbg_show_vbatt_threshold(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
+		return scnprintf(buf, size, "dev_p or buf or di is null\n");
 	}
 
 	return scnprintf(buf, size, "vbatt_threshold = %d\n",
@@ -912,13 +937,13 @@ static ssize_t vsys_switch_dbg_show_vbatt_threshold(void *dev_data,
 static ssize_t vsys_switch_dbg_store_vbatt_threshold(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 	int val = 0;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
 		return -EINVAL;
 	}
 
@@ -943,13 +968,13 @@ static ssize_t vsys_switch_dbg_store_vbatt_threshold(void *dev_data,
 static ssize_t vsys_switch_dbg_show_vsys_volt(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
+		return scnprintf(buf, size, "dev_p or buf or di is null\n");
 	}
 
 	vsys_switch_get_vsys_volt(di);
@@ -960,12 +985,12 @@ static ssize_t vsys_switch_dbg_show_vsys_volt(void *dev_data,
 static ssize_t vsys_switch_dbg_store_vsys_volt(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	int val = 0;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
 		return -EINVAL;
 	}
 
@@ -982,13 +1007,13 @@ static ssize_t vsys_switch_dbg_store_vsys_volt(void *dev_data,
 static ssize_t vsys_switch_dbg_show_vsys_chnl(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	struct vsys_switch_device_info *di = g_vsys_switch_di;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p || !di) {
+		hwlog_err("buf or dev_p or di is null\n");
+		return scnprintf(buf, size, "buf or dev_p or di is null\n");
 	}
 
 	return scnprintf(buf, size, "current vsys_chnl is %d\n",
@@ -998,12 +1023,12 @@ static ssize_t vsys_switch_dbg_show_vsys_chnl(void *dev_data,
 static ssize_t vsys_switch_dbg_store_vsys_chnl(void *dev_data,
 	char *buf, size_t size)
 {
-	struct vsys_switch_device_info *dev_p;
+	struct vsys_switch_device_info *dev_p = NULL;
 	int val = 0;
 
 	dev_p = (struct vsys_switch_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
 		return -EINVAL;
 	}
 
@@ -1031,10 +1056,10 @@ static ssize_t vsys_switch_dbg_store_vsys_chnl(void *dev_data,
 	.name = VSYS_SWITCH_SYSFS_##n, \
 }
 #define VSYS_SWITCH_SYSFS_FIELD_RW(_name, n) \
-	VSYS_SWITCH_SYSFS_FIELD(_name, n, 0644, vsys_switch_sysfs_store)
+	VSYS_SWITCH_SYSFS_FIELD(_name, n, 0640, vsys_switch_sysfs_store)
 
 #define VSYS_SWITCH_SYSFS_FIELD_RO(_name, n) \
-	VSYS_SWITCH_SYSFS_FIELD(_name, n, 0444, NULL)
+	VSYS_SWITCH_SYSFS_FIELD(_name, n, 0440, NULL)
 
 static ssize_t vsys_switch_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
@@ -1065,7 +1090,8 @@ static const struct attribute_group vsys_switch_sysfs_attr_group = {
 
 static void vsys_switch_sysfs_init_attrs(void)
 {
-	int i, limit = ARRAY_SIZE(vsys_switch_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(vsys_switch_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++)
 		vsys_switch_sysfs_attrs[i] =
@@ -1078,7 +1104,8 @@ static void vsys_switch_sysfs_init_attrs(void)
 static struct vsys_switch_sysfs_field_info *vsys_switch_sysfs_field_lookup(
 	const char *name)
 {
-	int i, limit = ARRAY_SIZE(vsys_switch_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(vsys_switch_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++) {
 		if (!strncmp(name,
@@ -1101,7 +1128,7 @@ static ssize_t vsys_switch_sysfs_show(struct device *dev,
 	int len = 0;
 
 	info = vsys_switch_sysfs_field_lookup(attr->attr.name);
-	if (info == NULL) {
+	if (!info) {
 		hwlog_err("get sysfs entries failed\n");
 		return -EINVAL;
 	}
@@ -1111,35 +1138,29 @@ static ssize_t vsys_switch_sysfs_show(struct device *dev,
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			di->ctrl_para.switch_vsys_chnl);
 		break;
-
 	case VSYS_SWITCH_SYSFS_ENABLE_SC:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			di->ctrl_para.enable_sc);
 		break;
-
 	case VSYS_SWITCH_SYSFS_ENABLE_BUCK:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			di->ctrl_para.enable_buck);
 		break;
-
 	case VSYS_SWITCH_SYSFS_VBATT_TH:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			di->ctrl_para.vbatt_th);
 		break;
-
 	case VSYS_SWITCH_SYSFS_VSYS_VOLT:
 		vsys_switch_get_vsys_volt(di);
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			di->state_info.vsys_volt);
 		break;
-
 	case VSYS_SWITCH_SYSFS_VSYS_CHNL:
 		len = snprintf(buf, PAGE_SIZE, "%d\n",
 			di->state_info.curr_vsys_chnl);
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name (%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -1154,7 +1175,7 @@ static ssize_t vsys_switch_sysfs_store(struct device *dev,
 	long val = 0;
 
 	info = vsys_switch_sysfs_field_lookup(attr->attr.name);
-	if (info == NULL || di == NULL) {
+	if (!info || !di) {
 		hwlog_err("get sysfs entries failed\n");
 		return -EINVAL;
 	}
@@ -1167,30 +1188,25 @@ static ssize_t vsys_switch_sysfs_store(struct device *dev,
 	switch (info->name) {
 	case VSYS_SWITCH_SYSFS_SWITCH_VSYS:
 		di->ctrl_para.switch_vsys_chnl = val;
-		vsys_switch_set_vsys_channel(di);
 		hwlog_info("set switch_vsys = %d\n",
 			di->ctrl_para.switch_vsys_chnl);
 		break;
-
 	case VSYS_SWITCH_SYSFS_ENABLE_SC:
 		di->ctrl_para.enable_sc = val;
 		vsys_switch_set_sc_channel(di);
 		hwlog_info("set enable_sc = %d\n", di->ctrl_para.enable_sc);
 		break;
-
 	case VSYS_SWITCH_SYSFS_ENABLE_BUCK:
 		di->ctrl_para.enable_buck = val;
 		vsys_switch_set_buck_channel(di);
 		hwlog_info("set enable_buck = %d\n", di->ctrl_para.enable_buck);
 		break;
-
 	case VSYS_SWITCH_SYSFS_VBATT_TH:
 		di->ctrl_para.vbatt_th = val;
 		hwlog_info("set vbatt_th = %d\n", di->ctrl_para.vbatt_th);
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name (%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -1200,7 +1216,6 @@ static ssize_t vsys_switch_sysfs_store(struct device *dev,
 static int vsys_switch_sysfs_create_group(struct vsys_switch_device_info *di)
 {
 	vsys_switch_sysfs_init_attrs();
-
 	return sysfs_create_group(&di->dev->kobj,
 		&vsys_switch_sysfs_attr_group);
 }
@@ -1215,6 +1230,7 @@ static int vsys_switch_sysfs_create_group(struct vsys_switch_device_info *di)
 {
 	return 0;
 }
+
 static inline void vsys_switch_sysfs_remove_group(
 	struct vsys_switch_device_info *di)
 {
@@ -1223,7 +1239,7 @@ static inline void vsys_switch_sysfs_remove_group(
 
 static int vsys_switch_create_sysfs(struct vsys_switch_device_info *di)
 {
-	int ret = 0;
+	int ret;
 	struct class *power_class = NULL;
 
 	ret = vsys_switch_sysfs_create_group(di);
@@ -1234,7 +1250,7 @@ static int vsys_switch_create_sysfs(struct vsys_switch_device_info *di)
 
 	power_class = hw_power_get_class();
 	if (power_class) {
-		if (vsys_switch_dev == NULL) {
+		if (!vsys_switch_dev) {
 			vsys_switch_dev = device_create(power_class,
 				NULL, 0, NULL, "vsys_switch");
 			if (IS_ERR(vsys_switch_dev)) {
@@ -1243,7 +1259,7 @@ static int vsys_switch_create_sysfs(struct vsys_switch_device_info *di)
 			}
 		}
 
-		if (vsys_switch_dev != NULL) {
+		if (vsys_switch_dev) {
 			ret = sysfs_create_link(&vsys_switch_dev->kobj,
 				&di->dev->kobj, "vsys_switch_data");
 			if (ret) {
@@ -1259,9 +1275,9 @@ static int vsys_switch_create_sysfs(struct vsys_switch_device_info *di)
 static int vsys_switch_parse_rbatt_sf_lut(struct device_node *np,
 	struct vsys_switch_device_info *di)
 {
-	int ret = 0;
-	int i = 0;
-	int j = 0;
+	int ret;
+	int i;
+	int j;
 	long idata = 0;
 	const char *data_string = NULL;
 
@@ -1318,8 +1334,8 @@ static int vsys_switch_parse_rbatt_sf_lut(struct device_node *np,
 				j * di->rbatt_sf_lut->cols + i,
 			(unsigned int *)(&(di->rbatt_sf_lut->sf[j][i])));
 			if (ret) {
-				hwlog_err("rbatt_sf_sf[%d][%d] dts "
-					"read failed\n", j, i);
+				hwlog_err("rbatt_sf_sf[%d][%d] dts read failed\n",
+					j, i);
 				return -EINVAL;
 			}
 			hwlog_info("rbatt_sf_sf[%d][%d]=%d\n", j, i,
@@ -1333,9 +1349,9 @@ static int vsys_switch_parse_rbatt_sf_lut(struct device_node *np,
 static int vsys_switch_parse_rbatt_aging_para(struct device_node *np,
 	struct vsys_switch_device_info *di)
 {
-	int ret = 0;
-	int i = 0;
-	int string_len = 0;
+	int ret;
+	int i;
+	int string_len;
 	long idata = 0;
 	const char *data_string = NULL;
 
@@ -1446,13 +1462,16 @@ static int vsys_switch_parse_dts(struct device_node *np,
 	if (ret) {
 		hwlog_err("dischg_curr_max dts read failed\n");
 		di->ctrl_para.dischg_curr_max = DISCHG_CURR_MAX;
-	}
-	if (kstrtol(data_string, 10, &idata) < 0) {
-		hwlog_err("unable to parse %s\n", data_string);
-		di->ctrl_para.dischg_curr_max = DISCHG_CURR_MAX;
 	} else {
-		di->ctrl_para.dischg_curr_max = (int)idata;
+		if (kstrtol(data_string, 10, &idata) < 0) {
+			hwlog_err("unable to parse %s\n", data_string);
+			di->ctrl_para.dischg_curr_max = DISCHG_CURR_MAX;
+		} else {
+			di->ctrl_para.dischg_curr_max = (int)idata;
+		}
 	}
+
+	di->ctrl_para.dischg_curr_max = 0;
 	hwlog_info("dischg_curr_max=%d\n",
 		di->ctrl_para.dischg_curr_max);
 
@@ -1469,22 +1488,27 @@ static int vsys_switch_parse_dts(struct device_node *np,
 
 static void vsys_switch_device_info_free(struct vsys_switch_device_info *di)
 {
-	kfree(di->rbatt_sf_lut);
-	di->rbatt_sf_lut = NULL;
-	kfree(di->rbatt_aging_data.rbatt_aging_para);
-	di->rbatt_aging_data.rbatt_aging_para = NULL;
+	if (di) {
+		kfree(di->rbatt_sf_lut);
+		di->rbatt_sf_lut = NULL;
+		kfree(di->rbatt_aging_data.rbatt_aging_para);
+		di->rbatt_aging_data.rbatt_aging_para = NULL;
+	}
 }
 
 static int vsys_switch_probe(struct platform_device *pdev)
 {
-	int ret = 0;
+	int ret;
 	struct vsys_switch_device_info *di = NULL;
 	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_vsys_switch_di = di;
@@ -1494,7 +1518,8 @@ static int vsys_switch_probe(struct platform_device *pdev)
 	di->sc_ops = g_sc_ops;
 	di->ovp_ops = g_ovp_switch_ops;
 	platform_set_drvdata(pdev, di);
-	wake_lock_init(&di->wakelock, WAKE_LOCK_SUSPEND,
+
+	wakeup_source_init(&di->wakelock,
 		"vsys_switch_wakelock");
 
 	ret = vsys_switch_check_ops(di);
@@ -1512,10 +1537,11 @@ static int vsys_switch_probe(struct platform_device *pdev)
 		&di->sc_event_nb);
 	if (ret < 0) {
 		hwlog_err("register sc_event notifier failed\n");
-		goto  vsys_switch_fail_0;
+		goto vsys_switch_fail_0;
 	}
 
 	vsys_switch_para_init(di);
+	vsys_switch_check_support_sc_chnl(di);
 	schedule_delayed_work(&di->ctrl_work, msecs_to_jiffies(0));
 
 	ret = vsys_switch_create_sysfs(di);
@@ -1524,24 +1550,24 @@ static int vsys_switch_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
 	power_dbg_ops_register("vsys_switch", platform_get_drvdata(pdev),
-		(power_dgb_show)vsys_switch_dbg_show_switch_vsys,
-		(power_dgb_store)vsys_switch_dbg_store_switch_vsys);
+		(power_dbg_show)vsys_switch_dbg_show_switch_vsys,
+		(power_dbg_store)vsys_switch_dbg_store_switch_vsys);
 	power_dbg_ops_register("vsys_en_sc", platform_get_drvdata(pdev),
-		(power_dgb_show)vsys_switch_dbg_show_enable_sc,
-		(power_dgb_store)vsys_switch_dbg_store_enable_sc);
+		(power_dbg_show)vsys_switch_dbg_show_enable_sc,
+		(power_dbg_store)vsys_switch_dbg_store_enable_sc);
 	power_dbg_ops_register("vsys_en_buck", platform_get_drvdata(pdev),
-		(power_dgb_show)vsys_switch_dbg_show_enable_buck,
-		(power_dgb_store)vsys_switch_dbg_store_enable_buck);
+		(power_dbg_show)vsys_switch_dbg_show_enable_buck,
+		(power_dbg_store)vsys_switch_dbg_store_enable_buck);
 	power_dbg_ops_register("vbatt_th", platform_get_drvdata(pdev),
-		(power_dgb_show)vsys_switch_dbg_show_vbatt_threshold,
-		(power_dgb_store)vsys_switch_dbg_store_vbatt_threshold);
+		(power_dbg_show)vsys_switch_dbg_show_vbatt_threshold,
+		(power_dbg_store)vsys_switch_dbg_store_vbatt_threshold);
 	power_dbg_ops_register("vsys_vol", platform_get_drvdata(pdev),
-		(power_dgb_show)vsys_switch_dbg_show_vsys_volt,
-		(power_dgb_store)vsys_switch_dbg_store_vsys_volt);
+		(power_dbg_show)vsys_switch_dbg_show_vsys_volt,
+		(power_dbg_store)vsys_switch_dbg_store_vsys_volt);
 	power_dbg_ops_register("vsys_chnl", platform_get_drvdata(pdev),
-		(power_dgb_show)vsys_switch_dbg_show_vsys_chnl,
-		(power_dgb_store)vsys_switch_dbg_store_vsys_chnl);
-#endif
+		(power_dbg_show)vsys_switch_dbg_show_vsys_chnl,
+		(power_dbg_store)vsys_switch_dbg_store_vsys_chnl);
+#endif /* CONFIG_HUAWEI_POWER_DEBUG */
 
 	hwlog_info("probe end\n");
 	return 0;
@@ -1554,10 +1580,11 @@ vsys_switch_fail_0:
 	di->sc_ops = NULL;
 	di->ovp_ops = NULL;
 	vsys_switch_device_info_free(di);
-	wake_lock_destroy(&di->wakelock);
+	wakeup_source_trash(&di->wakelock);
 	devm_kfree(&pdev->dev, di);
 	g_vsys_switch_di = NULL;
 	platform_set_drvdata(pdev, NULL);
+
 	return ret;
 }
 
@@ -1565,11 +1592,10 @@ static int vsys_switch_remove(struct platform_device *pdev)
 {
 	struct vsys_switch_device_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("vsys_switch_remove ++\n");
-	if (di == NULL) {
-		hwlog_err("di is null\n");
-		return 0;
-	}
+	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	atomic_notifier_chain_unregister(&vsys_sc_event_nh, &di->sc_event_nb);
 	cancel_delayed_work_sync(&di->ctrl_work);
@@ -1591,12 +1617,12 @@ static int vsys_switch_remove(struct platform_device *pdev)
 	}
 
 	vsys_switch_device_info_free(di);
-	wake_lock_destroy(&di->wakelock);
+	wakeup_source_trash(&di->wakelock);
+	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);
 	g_vsys_switch_di = NULL;
 
-	hwlog_info("vsys_switch_remove --\n");
-
+	hwlog_info("remove end\n");
 	return 0;
 }
 
@@ -1604,8 +1630,9 @@ static void vsys_switch_shutdown(struct platform_device *pdev)
 {
 	struct vsys_switch_device_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("vsys_switch_shutdown ++\n");
-	if (di == NULL) {
+	hwlog_info("shutdown begin\n");
+
+	if (!di) {
 		hwlog_err("di is null\n");
 		return;
 	}
@@ -1618,7 +1645,7 @@ static void vsys_switch_shutdown(struct platform_device *pdev)
 	if (di->state_info.curr_vsys_chnl != VSYS_BUCK_OPEN)
 		vsys_switch_enable_buck_channel_only(di);
 
-	hwlog_info("vsys_switch_shutdown --\n");
+	hwlog_info("shutdown end\n");
 }
 
 #ifdef CONFIG_PM
@@ -1627,17 +1654,14 @@ static int vsys_switch_suspend(struct platform_device *pdev,
 {
 	struct vsys_switch_device_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("vsys_switch_suspend ++\n");
+	hwlog_info("suspend begin\n");
 
-	di->ctrl_para.switch_vsys_chnl = SWITCH_VSYS_BUCK;
-	di->cancel_ctrl_work_flag = true;
+	if (!di)
+		return 0;
+
 	cancel_delayed_work_sync(&di->ctrl_work);
 
-	if (di->state_info.curr_vsys_chnl != VSYS_BUCK_OPEN)
-		vsys_switch_enable_buck_channel_only(di);
-
-	hwlog_info("vsys_switch_suspend --\n");
-
+	hwlog_info("suspend end\n");
 	return 0;
 }
 
@@ -1645,13 +1669,15 @@ static int vsys_switch_resume(struct platform_device *pdev)
 {
 	struct vsys_switch_device_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("vsys_switch_resume ++\n");
+	hwlog_info("resume begin\n");
+
+	if (!di)
+		return 0;
 
 	vsys_switch_para_reset(di);
 	schedule_delayed_work(&di->ctrl_work, msecs_to_jiffies(0));
 
-	hwlog_info("vsys_switch_resume --\n");
-
+	hwlog_info("resume end\n");
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -1670,7 +1696,7 @@ static struct platform_driver vsys_switch_driver = {
 #ifdef CONFIG_PM
 	.suspend = vsys_switch_suspend,
 	.resume = vsys_switch_resume,
-#endif
+#endif /* CONFIG_PM */
 	.shutdown = vsys_switch_shutdown,
 	.driver = {
 		.name = "huawei,vsys_switch",

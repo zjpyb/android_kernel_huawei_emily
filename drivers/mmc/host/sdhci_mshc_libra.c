@@ -41,6 +41,7 @@
 #include <linux/mmc/dsm_emmc.h>
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/sd.h>
+#include <linux/hisi/rpmb.h>
 #include "sdhci-dwc-mshc.h"
 
 #define DRIVER_NAME "sdhci-mshc"
@@ -297,7 +298,7 @@ static void sdhci_mshc_hardware_reset(struct sdhci_host *host)
 	/* eMMC reset */
 	count = 0;
 	sdhci_sctrl_writel(host, IP_RST_EMMC, SCTRL_SCPERRSTEN0);
-	while(!(IP_RST_EMMC & sdhci_sctrl_readl(host, SCTRL_SCPERRSTSTAT0))) {
+	while(!((unsigned int)IP_RST_EMMC & sdhci_sctrl_readl(host, SCTRL_SCPERRSTSTAT0))) {
 		if (count > 0xFFF) {
 			pr_err("emmc reset timeout\n");
 			break;
@@ -331,7 +332,7 @@ static void sdhci_mshc_hardware_disreset(struct sdhci_host *host)
 	/* eMMC dis-reset */
 	count = 0;
 	sdhci_sctrl_writel(host, IP_RST_EMMC, SCTRL_SCPERRSTDIS0);
-	while(IP_RST_EMMC & sdhci_sctrl_readl(host, SCTRL_SCPERRSTSTAT0)) {
+	while((unsigned int)IP_RST_EMMC & sdhci_sctrl_readl(host, SCTRL_SCPERRSTSTAT0)) {
 		if (count > 0xFFF) {
 			pr_err("emmc dis-reset timeout\n");
 			break;
@@ -457,7 +458,6 @@ static void sdhci_combo_phy_zq_cal(struct sdhci_host *host)
 	u32 count;
 	u32 reg_val;
 
-	//sdhci_mshc_pinctrl_init(host);
 
 	reg_val = sdhci_phy_readl(host, COMBO_PHY_IMPCTRL);
 	/*zcom_rsp_dly set as d'60*/
@@ -642,7 +642,7 @@ int sdhci_mshc_enable_dma(struct sdhci_host *host)
 
 	ctrl = (u16)sdhci_readb(host, SDHCI_HOST_CONTROL);
 	ctrl &= ~SDHCI_CTRL_DMA_MASK;
-	if (host->flags & SDHCI_USE_ADMA)
+	if ((unsigned int)(host->flags) & SDHCI_USE_ADMA)
 		ctrl |= SDHCI_CTRL_ADMA2;
 	else
 		ctrl |= SDHCI_CTRL_SDMA;
@@ -661,7 +661,7 @@ static void sdhci_mshc_restore_transfer_para(struct sdhci_host *host)
 
 	mode = SDHCI_TRNS_BLK_CNT_EN;
 	mode |= SDHCI_TRNS_MULTI;
-	if (host->flags & SDHCI_REQ_USE_DMA)
+	if ((unsigned int)(host->flags) & SDHCI_REQ_USE_DMA)
 		mode |= SDHCI_TRNS_DMA;
 	sdhci_writew(host, mode, SDHCI_TRANSFER_MODE);
 	/* Set the DMA boundary value and block size */
@@ -776,7 +776,7 @@ static void sdhci_mshc_set_tuning_phase(struct sdhci_host *host, u32 val)
 	reg_val |= val;
 	sdhci_writel(host, reg_val, SDHCI_AT_STAT_R);
 
-	if (!(host->flags & SDHCI_EXE_SOFT_TUNING)) {
+	if (!((unsigned int)(host->flags) & SDHCI_EXE_SOFT_TUNING)) {
 		reg_val = (u16)sdhci_readw(host, SDHCI_AT_CTRL_R);
 		reg_val &= ~SW_TUNE_EN;
 		sdhci_writew(host, (u16)reg_val, SDHCI_AT_CTRL_R);
@@ -1322,7 +1322,6 @@ static int sdhci_mshc_resume(struct device *dev)
 		sdhci_mshc_set_tuning_strobe_phase(host,sdhci_mshc->tuning_strobe_move_phase);
 
 		pr_err("resume,host_clock = %d, mmc_clock = %d\n", host->clock, host->mmc->ios.clock);
-		//sdhci_set_clock(host, host->mmc->ios.clock);
 	}
 
 	dev_info(dev, "%s: resume -\n", __func__);
@@ -1640,7 +1639,7 @@ void sdhci_dsm_set_host_status(struct sdhci_host *host, u32 error_bits)
 
 static void sdhci_dsm_work(struct work_struct *work)
 {
-	struct mmc_card *card;
+	struct mmc_card *card = NULL;
 	struct sdhci_mshc_data *sdhci_mshc = container_of(work, struct sdhci_mshc_data, dsm_work);
 	struct sdhci_host *host = (struct sdhci_host *)sdhci_mshc->data;
 	u32 error_bits, opcode;
@@ -1706,9 +1705,9 @@ void sdhci_dsm_report(struct mmc_host *host, struct mmc_request *mrq)
 static int sdhci_mshc_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct sdhci_host *host;
-	struct sdhci_pltfm_host *pltfm_host;
-	struct sdhci_mshc_data *sdhci_mshc;
+	struct sdhci_host *host = NULL;
+	struct sdhci_pltfm_host *pltfm_host = NULL;
+	struct sdhci_mshc_data *sdhci_mshc = NULL;
 
 	if (get_bootdevice_type() != BOOT_DEVICE_EMMC) {
 		pr_err("not boot from emmc\n");
@@ -1770,6 +1769,10 @@ static int sdhci_mshc_probe(struct platform_device *pdev)
 	ret = sdhci_rename(pdev);
 	if (ret)
 		goto clk_disable_all;
+
+#ifdef CONFIG_HISI_RPMB_MMC
+	(void)rpmb_mmc_init();
+#endif
 
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 	sdhci_mshc->data = (void *)host;

@@ -1,61 +1,48 @@
-/*
- * Encryption policy functions for per-f2fs sdp file encryption support.
- *
- * Copyright (C) 2017, Huawei, Ltd..
- *
- * Written by Li minfeng, 2017.
- *
- */
+
 #include <linux/fs.h>
 #include <linux/f2fs_fs.h>
 #include "f2fs.h"
 #include "xattr.h"
-#include "f2fs_sdp.h"
+#include "sdp_internal.h"
 
-#if DEFINE_F2FS_FS_SDP_ENCRYPTION
-static int f2fs_get_sdp_context(struct inode *inode, void *ctx,
-		size_t len, void *fs_data)
+#if F2FS_FS_SDP_ENCRYPTION
+static int f2fs_get_sdp_context(struct inode *inode, void *ctx, size_t len,
+				void *fs_data)
 {
 	return f2fs_getxattr(inode, F2FS_XATTR_INDEX_ECE_ENCRYPTION,
-				F2FS_XATTR_NAME_ENCRYPTION_CONTEXT,
-				ctx, len, fs_data, 0);
+			     F2FS_XATTR_NAME_ENCRYPTION_CONTEXT, ctx, len,
+			     fs_data);
 }
 
 static int f2fs_set_sdp_context(struct inode *inode, const void *ctx,
-		size_t len, void *fs_data)
+				size_t len, void *fs_data)
 {
-	pr_sdp_info("f2fs_sdp %s :inode(%lu) set sdp context\n",
-		__func__, inode->i_ino);
 	return f2fs_setxattr(inode, F2FS_XATTR_INDEX_ECE_ENCRYPTION,
-			F2FS_XATTR_NAME_ENCRYPTION_CONTEXT,
-			ctx, len, fs_data, XATTR_CREATE);
+			     F2FS_XATTR_NAME_ENCRYPTION_CONTEXT, ctx, len,
+			     fs_data, XATTR_CREATE);
 }
 
 static int f2fs_update_sdp_context(struct inode *inode, const void *ctx,
-		size_t len, void *fs_data)
+				   size_t len, void *fs_data)
 {
-	pr_sdp_info("f2fs_sdp %s :inode(%lu) update sdp context\n",
-		__func__, inode->i_ino);
 	return f2fs_setxattr(inode, F2FS_XATTR_INDEX_ECE_ENCRYPTION,
-			F2FS_XATTR_NAME_ENCRYPTION_CONTEXT,
-			ctx, len, fs_data, XATTR_REPLACE);
+			     F2FS_XATTR_NAME_ENCRYPTION_CONTEXT, ctx, len,
+			     fs_data, XATTR_REPLACE);
 }
 
 static int f2fs_update_context(struct inode *inode, const void *ctx,
-		size_t len, void *fs_data)
+			       size_t len, void *fs_data)
 {
-	pr_sdp_info("f2fs_sdp %s :inode(%lu) set ce key info to all 0\n",
-		__func__, inode->i_ino);
 	return f2fs_setxattr(inode, F2FS_XATTR_INDEX_ENCRYPTION,
-			F2FS_XATTR_NAME_ENCRYPTION_CONTEXT,
-			ctx, len, fs_data, XATTR_REPLACE);
+			     F2FS_XATTR_NAME_ENCRYPTION_CONTEXT, ctx, len,
+			     fs_data, XATTR_REPLACE);
 }
 
 static int f2fs_get_sdp_encrypt_flags(struct inode *inode, void *fs_data,
-		u32 *flags)
+				      u32 *flags)
 {
-	struct f2fs_xattr_header *hdr;
-	struct page *xpage;
+	struct f2fs_xattr_header *hdr = NULL;
+	struct page *xpage = NULL;
 	int err = -EINVAL;
 
 	if (!fs_data)
@@ -78,10 +65,10 @@ out_unlock:
 }
 
 static int f2fs_set_sdp_encrypt_flags(struct inode *inode, void *fs_data,
-		u32 *flags)
+				      u32 *flags)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
-	struct f2fs_xattr_header *hdr;
+	struct f2fs_xattr_header *hdr = NULL;
 	struct page *xpage = NULL;
 	int err = 0;
 
@@ -125,3 +112,4 @@ const struct f2fs_sdp_fscrypt_operations f2fs_sdp_cryptops = {
 	.set_sdp_encrypt_flags = f2fs_set_sdp_encrypt_flags,
 };
 #endif
+

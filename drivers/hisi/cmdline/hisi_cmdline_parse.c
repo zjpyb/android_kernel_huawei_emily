@@ -57,9 +57,15 @@ static int __init early_parse_enterrecovery_cmdline(char *p)
 	int ret = 0;
 	char enter_recovery[HEX_STRING_MAX + 1];
 
-	memset(enter_recovery, 0, HEX_STRING_MAX + 1);
+	if (EOK != memset_s(enter_recovery, HEX_STRING_MAX + 1, 0, HEX_STRING_MAX + 1)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
-	memcpy(enter_recovery, p, HEX_STRING_MAX);
+	if (EOK != memcpy_s(enter_recovery, HEX_STRING_MAX + 1, p, HEX_STRING_MAX)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 	enter_recovery[HEX_STRING_MAX] = '\0';
 
 	ret = kstrtouint(enter_recovery, TRANSFER_BASE, &enter_recovery_flag);
@@ -89,9 +95,15 @@ static int __init early_parse_recovery_update_cmdline(char *p)
 	int ret = 0;
 	char recovery_update[HEX_STRING_MAX + 1];
 
-	memset(recovery_update, 0, HEX_STRING_MAX + 1);
+	if (EOK != memset_s(recovery_update, HEX_STRING_MAX + 1, 0, HEX_STRING_MAX + 1)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
-	memcpy(recovery_update, p, HEX_STRING_MAX);
+	if (EOK != memcpy_s(recovery_update, HEX_STRING_MAX + 1, p, HEX_STRING_MAX)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 	recovery_update[HEX_STRING_MAX] = '\0';
 
 	ret = kstrtouint(recovery_update, TRANSFER_BASE, &recovery_update_flag);
@@ -123,9 +135,15 @@ static int __init early_parse_logctl_cmdline(char *p)
 		return 0;
 	}
 
-	memset(logctl, 0, HEX_STRING_MAX + 1);
+	if (EOK != memset_s(logctl, HEX_STRING_MAX + 1, 0, HEX_STRING_MAX + 1)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
-	memcpy(logctl, p, HEX_STRING_MAX);
+	if (EOK != memcpy_s(logctl, HEX_STRING_MAX + 1, p, HEX_STRING_MAX)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	ret = kstrtoint(logctl, TRANSFER_BASE, &logctl_flag);
 	if (ret)
@@ -167,8 +185,14 @@ static int __init early_parse_lowpower_cmdline(char *p)
 		return 0;
 	}
 
-	memset(clow, 0, HEX_STRING_MAX + 1);
-	memcpy(clow, p, HEX_STRING_MAX);
+	if (EOK != memset_s(clow, HEX_STRING_MAX + 1, 0, HEX_STRING_MAX + 1)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
+	if (EOK != memcpy_s(clow, HEX_STRING_MAX + 1, p, HEX_STRING_MAX)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
 	ret = kstrtoint(clow, TRANSFER_BASE, &g_lowbattery);
 	if (ret)
@@ -189,8 +213,8 @@ EXPORT_SYMBOL(get_dsm_notify_flag);
 
 static int __init early_parse_dsm_notify_cmdline(char *p)
 {
-	int ret = 0;
-	char clow[HEX_STRING_MAX + 1] = {'\0'};
+	int ret;
+	char clow[HEX_STRING_MAX + 1];
 
 	if (p == NULL) {
 		need_dsm_notify = 1;       /* error parameter, dsm notify */
@@ -198,8 +222,17 @@ static int __init early_parse_dsm_notify_cmdline(char *p)
 		return 0;
 	}
 
-	memset(clow, 0, HEX_STRING_MAX + 1);
-	memcpy_s(clow, HEX_STRING_MAX, p, HEX_STRING_MAX);
+	ret = memset_s(clow, HEX_STRING_MAX + 1, 0, HEX_STRING_MAX + 1);
+	if (ret != EOK) {
+		pr_err("%s clow set 0 fail:%d\n", __func__, ret);
+		return ret;
+	}
+
+	ret = memcpy_s(clow, HEX_STRING_MAX + 1, p, HEX_STRING_MAX);
+	if (ret != EOK) {
+		pr_err("%s clow copy fail:%d\n", __func__, ret);
+		return ret;
+	}
 
 	ret = kstrtoint(clow, TRANSFER_BASE, &need_dsm_notify);
 	if (ret)
@@ -240,6 +273,7 @@ unsigned int get_pd_charge_flag(void)
 }
 EXPORT_SYMBOL(get_pd_charge_flag);
 
+#if CONFIG_HISI_NVE_WHITELIST
 static unsigned int userlock = 0;
 static int __init early_parse_userlock_cmdline(char *p)
 {
@@ -263,6 +297,7 @@ unsigned int get_userlock(void)
 	return userlock;
 }
 EXPORT_SYMBOL(get_userlock);
+#endif /* CONFIG_HISI_NVE_WHITELIST */
 
 unsigned int bsp_need_loadmodem(void)
 {
@@ -299,9 +334,10 @@ static int __init early_parse_product_id(char *p)
     char input_id[HEX_STRING_MAX + 1] = {0};
 
     if (p) {
-        if (EOK != memcpy_s(input_id, HEX_STRING_MAX, p, HEX_STRING_MAX)) {
-            pr_err("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
-        }
+        if (EOK != memcpy_s(input_id, HEX_STRING_MAX + 1, p, HEX_STRING_MAX)) {
+		pr_err("%s:%d Err\n", __func__, __LINE__);
+		return -EINVAL;
+	}
 
         ret = kstrtouint(input_id, TRANSFER_BASE, &hisi_platform_product_id);
         if (ret){

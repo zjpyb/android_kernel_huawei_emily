@@ -13,7 +13,7 @@
 #include <linux/slab.h>
 #include <linux/err.h>
 #include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include "../rdr_print.h"
 #include <linux/hisi/hisi_log.h>
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
@@ -42,7 +42,9 @@ int hisiap_ringbuffer_init(struct hisiap_ringbuffer_s *q, u32 bytes,
 	q->is_full = 0;
 	q->field_count = fieldcnt;	/* How many u8 in ONE record. */
 
-	memset(q->keys, 0, HISIAP_KEYS_MAX + 1);
+	if (EOK != memset_s(q->keys, HISIAP_KEYS_MAX + 1, 0, HISIAP_KEYS_MAX + 1)) {
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	if (keys)
 		strncpy(q->keys, keys, HISIAP_KEYS_MAX);/*lint !e747 */
 	return 0;
@@ -58,8 +60,10 @@ void hisiap_ringbuffer_write(struct hisiap_ringbuffer_s *q, u8 *element)
 	}
 
 /*lint -e737 -e679*/
-	memcpy((void *)&q->data[(q->rear - 1) * q->field_count],
-	       (void *)element, q->field_count * sizeof(u8));
+	if (EOK != memcpy_s((void *)&q->data[(q->rear - 1) * q->field_count],
+		q->field_count * sizeof(u8), (void *)element, q->field_count * sizeof(u8))) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	}
 /*lint +e737 +e679*/
 
 	q->count ++;

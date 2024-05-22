@@ -18,7 +18,7 @@
 #include <linux/device.h>
 #include <linux/hrtimer.h>
 #include <linux/workqueue.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/err.h>
 #include <linux/cpu.h>
 #include <linux/delay.h>
@@ -515,7 +515,7 @@ void FUSB3601_informConfigResult(struct Port *port, FSC_BOOL success)
 		dp_aux_switch_op(fsc_polarity);
 		dp_aux_uart_switch_enable();
 
-		if (channel_type == channel_superswitch) {
+		if (channel_type == CHANNEL_SUPERSWITCH) {
 			if(!fsc_polarity) {
 				FUSB3601_set_sbu_switch(port, Sbu_Close_Aux);
 			} else {

@@ -49,6 +49,10 @@
 #include <linux/power/hisi/hisi_bci_battery.h>
 #endif
 
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <uapi/linux/sched/types.h>
+#endif
 #define SCHEDULE_DELAY_MILLiSECOND      200
 #define PROJECT_ID_LEN  10
 #if defined (CONFIG_HUAWEI_DSM)
@@ -1392,7 +1396,7 @@ static irqreturn_t ts_irq_handler(int irq, void* dev_id)
     int error = NO_ERR;
     struct ts_cmd_node cmd;
 
-    wake_lock_timeout(&g_ts_kit_platform_data.ts_wake_lock, HZ);
+    __pm_wakeup_event(&g_ts_kit_platform_data.ts_wake_lock, jiffies_to_msecs(HZ));
 
     if (g_ts_kit_platform_data.chip_data->ops->chip_irq_top_half)
     { error = g_ts_kit_platform_data.chip_data->ops->chip_irq_top_half(&cmd); }
@@ -2844,7 +2848,7 @@ static int ts_kit_chip_init(void)
 {
 	int error = NO_ERR;
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
-	
+
 	TS_LOG_INFO("ts_chip_init called\n");
 	mutex_init(&ts_kit_easy_wake_guesure_lock);
 	if(g_ts_kit_platform_data.chip_data->is_direct_proc_cmd == 0){
@@ -4061,7 +4065,7 @@ static int ts_kit_init(void *data)
     TS_LOG_INFO("ts_kit_init\n");
     g_ts_kit_platform_data.edge_wideth = EDGE_WIDTH_DEFAULT;
     TS_LOG_DEBUG("ts init: cmd queue size : %d\n", TS_CMD_QUEUE_SIZE);
-    wake_lock_init(&g_ts_kit_platform_data.ts_wake_lock, WAKE_LOCK_SUSPEND, "ts_wake_lock");
+    wakeup_source_init(&g_ts_kit_platform_data.ts_wake_lock, "ts_wake_lock");
 	g_ts_kit_platform_data.panel_id = 0xFF;
    
     error = ts_kit_parse_config();
@@ -4188,7 +4192,7 @@ err_remove_sysfs:
 err_out:
     atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
     atomic_set(&g_ts_kit_platform_data.power_state, TS_UNINIT);
-    wake_lock_destroy(&g_ts_kit_platform_data.ts_wake_lock);
+    wakeup_source_trash(&g_ts_kit_platform_data.ts_wake_lock);
 out:
     TS_LOG_INFO("ts_init, g_ts_kit_platform_data.state : %d\n", atomic_read(&g_ts_kit_platform_data.state));
     if (error) {
@@ -4226,7 +4230,7 @@ static void ts_kit_exit(void)
     misc_deregister(&g_aft_set_info_misc_device);
     sysfs_remove_link(NULL, "touchscreen");
     sysfs_remove_group(&g_ts_kit_platform_data.ts_dev->dev.kobj, &ts_attr_group);
-    wake_lock_destroy(&g_ts_kit_platform_data.ts_wake_lock);
+    wakeup_source_trash(&g_ts_kit_platform_data.ts_wake_lock);
     platform_device_unregister(g_ts_kit_platform_data.ts_dev);
     ts_destory_client();
 #if defined(HUAWEI_CHARGER_FB)

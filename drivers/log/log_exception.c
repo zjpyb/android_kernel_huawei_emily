@@ -1,29 +1,36 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2012-2018. All rights reserved.
+ * log_exception.c
  *
- * Description: drivers to write messages to exception node
- *      Author: wangtanyun <wangtanyun@huawei.com>
+ * drivers to write messages to exception node
+ *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
+#include <log/log_exception.h>
 
 #include <linux/fs.h>
 #include <linux/uaccess.h>
-#include <linux/version.h>
 #include <linux/uio.h>
+#include <linux/version.h>
 
 #include <log/hw_log.h>
-#include <log/log_exception.h>
 
 #define HWLOG_TAG	log_exception
 HWLOG_REGIST();
 
 static int CHECK_CODE = 0x7BCDABCD;
 
-/*
- * log_to_exception - write command to /dev/log/exception
- * @tag: tag of the command
- * @msg: command string to write
- * Returns number of bytes written or error code
- */
+/* Description: write command to /dev/log/exception */
 int log_to_exception(char *tag, char *msg)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
@@ -31,13 +38,13 @@ int log_to_exception(char *tag, char *msg)
 #else
 	mm_segment_t oldfs;
 #endif
-	struct file *filp;
-	unsigned char prio_err = 6;	//ANDROID_ERROR
-	int ret = 0;
+	struct file *filp = NULL;
+	unsigned char prio_err = 6;	/* ANDROID_ERROR */
+	int ret;
 	struct iovec vec[5];
 	unsigned long vcount = 0;
 
-	if (tag == NULL || msg == NULL) {
+	if ((!tag) || (!msg)) {
 		hwlog_err("%s: invalid arguments\n", __func__);
 		return -EINVAL;
 	}
@@ -45,13 +52,11 @@ int log_to_exception(char *tag, char *msg)
 	hwlog_info("%s: exception tag '%s' msg '%s'", __func__, tag, msg);
 
 	filp = filp_open(LOG_EXCEPTION_FS, O_RDWR, 0);
-	if (filp == NULL || IS_ERR(filp)) {
-		hwlog_err("%s: access '%s' failed.\n",
-				__func__, LOG_EXCEPTION_FS);
+	if ((!filp) || IS_ERR(filp)) {
+		hwlog_err("%s: access '%s' failed\n", __func__, LOG_EXCEPTION_FS);
 		return -ENODEV;
 	}
 
-	vcount = 0;
 	vec[vcount].iov_base  = &CHECK_CODE;
 	vec[vcount++].iov_len = sizeof(CHECK_CODE);
 	vec[vcount].iov_base  = &prio_err;
@@ -93,12 +98,12 @@ int logbuf_to_exception(char category, int level, char log_type,
 	mm_segment_t oldfs;
 #endif
 	struct file *filp = NULL;
-	int ret = 0;
+	int ret;
 	struct idapheader idaphdr;
 	struct iovec vec[5];
 	unsigned long vcount = 0;
 
-	if (msg == NULL || msglen < 0) {
+	if ((!msg) || (msglen < 0)) {
 		hwlog_err("%s: invalid arguments\n", __func__);
 		return -EINVAL;
 	}
@@ -107,9 +112,8 @@ int logbuf_to_exception(char category, int level, char log_type,
 
 	filp = filp_open(LOG_EXCEPTION_FS, O_RDWR, 0);
 
-	if (filp == NULL || IS_ERR(filp)) {
-		hwlog_err("%s: access '%s' failed.\n",
-				__func__, LOG_EXCEPTION_FS);
+	if ((!filp) || IS_ERR(filp)) {
+		hwlog_err("%s: access '%s' failed\n", __func__, LOG_EXCEPTION_FS);
 		return -ENODEV;
 	}
 
@@ -118,7 +122,6 @@ int logbuf_to_exception(char category, int level, char log_type,
 	idaphdr.log_type = log_type;
 	idaphdr.sn       = sn;
 
-	vcount = 0;
 	vec[vcount].iov_base  = &CHECK_CODE;
 	vec[vcount++].iov_len = sizeof(CHECK_CODE);
 	vec[vcount].iov_base  = (void *)&idaphdr;
@@ -149,4 +152,3 @@ int logbuf_to_exception(char category, int level, char log_type,
 	return ret;
 }
 EXPORT_SYMBOL(logbuf_to_exception);
-

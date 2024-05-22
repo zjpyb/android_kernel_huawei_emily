@@ -7,13 +7,6 @@
 #include "inc/base/hwaa_utils.h"
 #include "inc/tee/base_alg.h"
 
-static const u8 HWAA_KDF_PHASE1_PHARSE[] = {
-	'H', 'W', 'A', 'A', 'P', 'H', 'A', 'S', 'E', '1', '!' };
-static const u32 HWAA_KDF_PHASE1_LEN = sizeof(HWAA_KDF_PHASE1_PHARSE);
-static const u8 HWAA_KDF_PHASE2_PHARSE[] = {
-	'H', 'W', 'A', 'A', 'P', 'H', 'A', 'S', 'E', '2', '!' };
-static const u32 HWAA_KDF_PHASE2_LEN = sizeof(HWAA_KDF_PHASE2_PHARSE);
-
 static bool hwaa_kdf_encrypt_keygen_checkpara(const u8 *phase1_key,
 	u32 phase1_key_len, const u8 *cached_aad,
 	u32 cached_aad_len, u8 *out_index, u32 *out_index_len,

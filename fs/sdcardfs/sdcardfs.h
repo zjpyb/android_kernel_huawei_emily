@@ -155,9 +155,7 @@ extern struct inode *sdcardfs_iget(struct super_block *sb,
 extern int sdcardfs_interpose(struct dentry *dentry, struct super_block *sb,
 			    struct path *lower_path, userid_t id);
 
-/* xattr.c */
-extern const struct xattr_handler *sdcardfs_xattr_handlers[];
-extern ssize_t sdcardfs_listxattr(struct dentry *dentry,
+ssize_t sdcardfs_listxattr(struct dentry *dentry,
 		char *list, size_t size);
 
 /* file private data */
@@ -206,6 +204,7 @@ struct sdcardfs_mount_options {
 	bool multiuser;
 	bool gid_derivation;
 	bool default_normal;
+	bool unshared_obb;
 	unsigned int reserved_mb;
 	bool nocache;
 };
@@ -237,6 +236,10 @@ struct sdcardfs_sb_info {
 
 #ifdef SDCARDFS_PLUGIN_PRIVACY_SPACE
 	int blocked_userid, appid_excluded;
+#endif
+
+#ifdef CONFIG_SDCARD_FS_SHARE_PRIMARY_OBB
+	bool obbpath_empty;
 #endif
 };
 
@@ -538,6 +541,10 @@ extern int need_graft_path(struct dentry *dentry);
 extern int is_base_obbpath(struct dentry *dentry);
 extern int is_obbpath_invalid(struct dentry *dentry);
 extern int setup_obb_dentry(struct dentry *dentry, struct path *lower_path);
+
+#ifdef CONFIG_SDCARD_FS_SHARE_PRIMARY_OBB
+bool is_empty_dir(const char *obbpath_s);
+#endif
 
 /* locking helpers */
 static inline struct dentry *lock_parent(struct dentry *dentry)

@@ -18,4 +18,11 @@ config HISI_GEOFENCE_TRAJECTORY_FEATURE
 	---help---
 	  Enable support for GEOFENCE TRAJECTORY driver
 
+config CONTEXTHUB_UNIFORM_INTERVAL
+	bool "HISI CONTEXTHUB_UNIFORM_INTERVAL support"
+	depends on  CONTEXTHUB
+	default n
+	---help---
+	  Enable support for CONTEXTHUB_UNIFORM_INTERVAL driver
+
 endmenu

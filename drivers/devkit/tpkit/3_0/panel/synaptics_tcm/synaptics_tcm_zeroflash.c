@@ -31,7 +31,6 @@
  */
 
 #include <linux/gpio.h>
-#include <linux/crc32.h>
 #include <linux/firmware.h>
 #include "synaptics_tcm_core.h"
 
@@ -254,32 +253,31 @@ int syna_tcm_write_hdl_message(struct syna_tcm_hcd *tcm_hcd,
 			tcm_hcd->out.buf[2] = (unsigned char)(length >> 8);
 
 			if (xfer_length > 2) {
-				retval = secure_memcpy(&tcm_hcd->out.buf[3],
-						tcm_hcd->out.buf_size - 3,
-						payload,
-						remaining_length - 2,
-						xfer_length - 2);
-				if (retval < 0) {
+				if (((xfer_length - MSG_STATUS_SIZE) >
+					(tcm_hcd->out.buf_size - 3)) ||
+					(xfer_length > remaining_length)) {
 					TS_LOG_ERR("Failed to copy payload\n");
 					UNLOCK_BUFFER(tcm_hcd->out);
-					//mutex_unlock(&tcm_hcd->rw_ctrl_mutex);
+					retval = -EINVAL;
 					goto exit;
 				}
+				memcpy(&tcm_hcd->out.buf[3],
+					payload,
+					xfer_length - MSG_STATUS_SIZE);
 			}
 		} else {
 			tcm_hcd->out.buf[0] = CMD_CONTINUE_WRITE;
 
-			retval = secure_memcpy(&tcm_hcd->out.buf[1],
-					tcm_hcd->out.buf_size - 1,
-					&payload[idx * chunk_space - 2],
-					remaining_length,
-					xfer_length);
-			if (retval < 0) {
+			if ((xfer_length > tcm_hcd->out.buf_size - 1) ||
+				(xfer_length > remaining_length)) {
 				TS_LOG_ERR("Failed to copy payload\n");
 				UNLOCK_BUFFER(tcm_hcd->out);
-			//	mutex_unlock(&tcm_hcd->rw_ctrl_mutex);
+				retval = -EINVAL;
 				goto exit;
 			}
+			memcpy(&tcm_hcd->out.buf[1],
+				&payload[idx * chunk_space - MSG_STATUS_SIZE],
+				xfer_length);
 		}
 
 		retval = syna_tcm_write(tcm_hcd,
@@ -374,7 +372,7 @@ static int zeroflash_parse_fw_image(void)
 	unsigned int offset = 0;
 	unsigned int length = 0;
 	unsigned int checksum = 0;
-	unsigned int flash_addr = 0;
+	unsigned int flash_offset;
 	unsigned int magic_value = 0;
 	unsigned int num_of_areas = 0;
 	struct image_header *header = NULL;
@@ -409,66 +407,71 @@ static int zeroflash_parse_fw_image(void)
 
 		length = le4_to_uint(descriptor->length);
 		content = (unsigned char *)descriptor + sizeof(*descriptor);
-		flash_addr = le4_to_uint(descriptor->flash_addr_words) * 2;
+		/* 1 word contains 2 bytes */
+		flash_offset = le4_to_uint(descriptor->flash_addr_words) * 2;
 		checksum = le4_to_uint(descriptor->checksum);
 
 		if (0 == strncmp((char *)descriptor->id_string,
 				BOOT_CONFIG_ID,
 				strlen(BOOT_CONFIG_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR("Boot config checksum error\n");
 				return -EINVAL;
 			}
 			image_info->boot_config.size = length;
 			image_info->boot_config.data = content;
-			image_info->boot_config.flash_addr = flash_addr;
-			TS_LOG_INFO("Boot config size = %d\n",
-					length);
-			TS_LOG_INFO("Boot config flash address = 0x%08x\n",
-					flash_addr);
+			image_info->boot_config.flash_addr = flash_offset;
+			TS_LOG_INFO("Boot config size = %u\n", length);
+			TS_LOG_INFO("Boot config flash offset = 0x%08x\n",
+				flash_offset);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				F35_APP_CODE_ID,
 				strlen(F35_APP_CODE_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
+
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR("Application firmware checksum error\n");
 				return -EINVAL;
 			}
 			image_info->app_firmware.size = length;
 			image_info->app_firmware.data = content;
-			image_info->app_firmware.flash_addr = flash_addr;
-			TS_LOG_INFO("Application firmware size = %d\n",
-					length);
-			TS_LOG_INFO("Application firmware flash address = 0x%08x\n",
-					flash_addr);
+			image_info->app_firmware.flash_addr = flash_offset;
+			TS_LOG_INFO("Application FW size = %u\n", length);
+			TS_LOG_INFO("Application FW flash offset: 0x%08x\n",
+				flash_offset);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				APP_CONFIG_ID,
 				strlen(APP_CONFIG_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
+
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+					content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR("Application config checksum error\n");
 				return -EINVAL;
 			}
 			image_info->app_config.size = length;
 			image_info->app_config.data = content;
-			image_info->app_config.flash_addr = flash_addr;
+			image_info->app_config.flash_addr = flash_offset;
 			image_info->packrat_number = le4_to_uint(&content[14]);
 			TS_LOG_INFO("Application config size = %d  image_info->packrat_number = %d\n",
 					length,image_info->packrat_number);
-			TS_LOG_INFO("Application config flash address = 0x%08x\n",
-					flash_addr);
+			TS_LOG_INFO("Application config flash offset: 0x%08x\n",
+					flash_offset);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				DISP_CONFIG_ID,
 				strlen(DISP_CONFIG_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
+
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR("Display config checksum error\n");
 				return -EINVAL;
 			}
 			image_info->disp_config.size = length;
 			image_info->disp_config.data = content;
-			image_info->disp_config.flash_addr = flash_addr;
-			TS_LOG_INFO("Display config size = %d\n",
-					length);
-			TS_LOG_INFO("Display config flash address = 0x%08x\n",
-					flash_addr);
+			image_info->disp_config.flash_addr = flash_offset;
+			TS_LOG_INFO("Display config size = %u\n", length);
+			TS_LOG_INFO("Display config flash offset: 0x%08x\n",
+				length);
 		}
 	}
 
@@ -478,7 +481,7 @@ static int zeroflash_parse_fw_image(void)
 int zeroflash_get_fw_image(char *file_name)
 {
 	int retval = NO_ERR;
-	char fw_name[MAX_STR_LEN * 4] = {0};
+	char fw_name[MAX_STR_LEN * 4 + 1] = {0};
 	struct syna_tcm_hcd *tcm_hcd = NULL;
 
 	if (!zeroflash_hcd || !zeroflash_hcd->tcm_hcd)
@@ -544,15 +547,14 @@ static int zeroflash_download_disp_config(void)
 
 	zeroflash_hcd->out.buf[0] = 1;
 	zeroflash_hcd->out.buf[1] = HDL_DISPLAY_CONFIG_TO_PMEM; // 4320 ramless, write to PMEM //HDL_DISPLAY_CONFIG_TO_RAM;  HDL_DISPLAY_CONFIG_TO_PMEM
-	retval = secure_memcpy(&zeroflash_hcd->out.buf[2],
-			zeroflash_hcd->out.buf_size - 2,
-			image_info->disp_config.data,
-			image_info->disp_config.size,
-			image_info->disp_config.size);
-	if (retval < 0) {
+	if (image_info->disp_config.size > zeroflash_hcd->out.buf_size - 2) {
 		TS_LOG_ERR("Failed to copy display config data\n");
+		retval = -EINVAL;
 		goto unlock_out;
 	}
+	memcpy(&zeroflash_hcd->out.buf[2],
+		image_info->disp_config.data,
+		image_info->disp_config.size);
 
 	zeroflash_hcd->out.data_length = image_info->disp_config.size + 2;
 
@@ -620,15 +622,14 @@ static int zeroflash_download_app_config(void)
 	zeroflash_hcd->out.buf[0] = 1;
 	zeroflash_hcd->out.buf[1] = HDL_TOUCH_CONFIG_TO_PMEM;
 
-	retval = secure_memcpy(&zeroflash_hcd->out.buf[2],
-			zeroflash_hcd->out.buf_size - 2,
-			image_info->app_config.data,
-			image_info->app_config.size,
-			image_info->app_config.size);
-	if (retval < 0) {
+	if (image_info->app_config.size > zeroflash_hcd->out.buf_size - 2) {
 		TS_LOG_ERR("Failed to copy application config data\n");
+		retval = -EINVAL;
 		goto unlock_out;
 	}
+	memcpy(&zeroflash_hcd->out.buf[2],
+		image_info->app_config.data,
+		image_info->app_config.size);
 
 	zeroflash_hcd->out.data_length = image_info->app_config.size + 2;
 
@@ -693,16 +694,14 @@ static int zeroflash_download_app_fw(void)
 		return retval;
 	}
 
-	retval = secure_memcpy(zeroflash_hcd->out.buf,
-			zeroflash_hcd->out.buf_size,
-			image_info->app_firmware.data,
-			image_info->app_firmware.size,
-			image_info->app_firmware.size);
-	if (retval < 0) {
+	if (image_info->app_firmware.size > zeroflash_hcd->out.buf_size) {
 		TS_LOG_ERR("Failed to copy application firmware data\n");
 		UNLOCK_BUFFER(zeroflash_hcd->out);
-		return retval;
+		return -EINVAL;
 	}
+	memcpy(zeroflash_hcd->out.buf,
+		image_info->app_firmware.data,
+		image_info->app_firmware.size);
 
 	zeroflash_hcd->out.data_length = image_info->app_firmware.size;
 
@@ -886,7 +885,8 @@ int zeroflash_download(char *file_name, struct syna_tcm_hcd *tcm_hcd)
 	char retry = 5;
 
 	if(tcm_hcd->use_dma_download_firmware) {
-		g_ts_kit_platform_data.spidev0_chip_info.com_mode = DMA_MODE;
+		g_ts_kit_platform_data.spidev0_chip_info.com_mode =
+			(enum ssp_mode)DMA_MODE;
 		tcm_hcd->spi_comnunicate_frequency = tcm_hcd->downmload_firmware_frequency;
 	}
 	retval = zeroflash_download_app_firmware(file_name);
@@ -920,7 +920,8 @@ int zeroflash_download(char *file_name, struct syna_tcm_hcd *tcm_hcd)
 exit:
 	if(tcm_hcd->use_dma_download_firmware) {
 		tcm_hcd->spi_comnunicate_frequency = SPI_DEFLAUT_SPEED;
-		g_ts_kit_platform_data.spidev0_chip_info.com_mode = POLLING_MODE;
+		g_ts_kit_platform_data.spidev0_chip_info.com_mode =
+			(enum ssp_mode)POLLING_MODE;
 	}
 	return retval;
 }

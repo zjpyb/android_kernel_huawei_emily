@@ -414,6 +414,7 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 	char *data_file;
 	const struct firmware *fw = NULL;
 	struct device * dev = NULL;
+	int ret;
 
 	if (path == NULL)
 		return 0;
@@ -458,7 +459,8 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 					}
 					else {
 						TS_LOG_ERR( "%s 1: ERROR %02X\n", __func__, ERROR_FILE_PARSE);
-						return ERROR_FILE_PARSE;
+						ret = ERROR_FILE_PARSE;
+						goto release;
 					}
 					token = strsep(&line, ",");
 					if (token != NULL) {
@@ -467,7 +469,8 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 					}
 					else {
 						TS_LOG_ERR( "%s 2: ERROR %02X\n", __func__, ERROR_FILE_PARSE);
-						return ERROR_FILE_PARSE;
+						ret = ERROR_FILE_PARSE;
+						goto release;
 					}
 
 					*data = (int *)kmalloc(((*row)*(*column))*sizeof(int), GFP_KERNEL);				//allocate the memory for containing the data
@@ -484,7 +487,8 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 						line =  buf;
 						if (readLine(&data_file[pointer], &line, size-pointer, &n) < 0) {
 							TS_LOG_ERR( "%s : ERROR %02X\n", __func__, ERROR_FILE_READ);
-							return ERROR_FILE_READ;
+							ret = ERROR_FILE_READ;
+							goto release;
 						}
 						pointer+=n;
 						//TS_LOG_INFO( "%s Pointer= %d riga = %s \n", __func__, pointer, line);
@@ -500,22 +504,30 @@ int parseProductionTestLimits(char * path, char *label, int **data, int *row, in
 					}
 					if (j == ((*row)*(*column))) {												//check that all the data are read
 						TS_LOG_INFO( "%s READ DONE!\n", __func__);
-						return OK;
+						ret = OK;
+						goto release;
 					}
 					TS_LOG_ERR( "%s 3: ERROR %02X\n", __func__, ERROR_FILE_PARSE);
-					return ERROR_FILE_PARSE;
+					ret = ERROR_FILE_PARSE;
+					goto release;
 				}
 			}
 
 		}
 		TS_LOG_ERR( "%s: ERROR %02X\n", __func__, ERROR_LABEL_NOT_FOUND);
-		return ERROR_LABEL_NOT_FOUND;
+		ret = ERROR_LABEL_NOT_FOUND;
+		goto release;
 	}
 	else
 	{
 		TS_LOG_ERR( "%s: ERROR %02X\n", __func__, ERROR_FILE_NOT_FOUND);
-		return ERROR_FILE_NOT_FOUND;
+		ret = ERROR_FILE_NOT_FOUND;
+		goto release;
 	}
+release:
+	kfree(line);
+	line = NULL;
+	return ret;
 }
 
 int readLine(char * data, char ** line, int size, int *n)

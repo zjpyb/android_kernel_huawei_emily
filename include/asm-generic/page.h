@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_GENERIC_PAGE_H
 #define __ASM_GENERIC_PAGE_H
 /*
@@ -8,6 +9,7 @@
 #ifdef CONFIG_MMU
 #error need to prove a real asm/page.h
 #endif
+
 
 /* PAGE_SHIFT determines the page size */
 
@@ -83,14 +85,14 @@ extern unsigned long memory_end;
 
 #if defined(CONFIG_HISI_LB_DEBUG)
 extern void __lb_assert_page(struct page *pg);
-#define lb_assert_page  __lb_assert_page
+#define lb_assert_page	__lb_assert_page
 #endif
 
 #if defined(CONFIG_HISI_LB_DEBUG)
 #define page_to_virt(page) ({ \
-	lb_assert_page(page); \
-	pfn_to_virt(page_to_pfn(page)); \
-	})
+		lb_assert_page(page); \
+		pfn_to_virt(page_to_pfn(page)); \
+		})
 #else
 #define page_to_virt(page)	pfn_to_virt(page_to_pfn(page))
 #endif

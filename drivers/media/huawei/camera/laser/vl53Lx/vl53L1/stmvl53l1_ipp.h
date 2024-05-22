@@ -356,10 +356,10 @@ static inline void ipp_dump_work(struct ipp_work_t *pw, uint32_t max_data,
 {
 	uint32_t data_cnt;
 	uint32_t i;
-	uint8_t *pbdata;
+	uint8_t *pbdata = NULL;
 
 	(void)max_dev; /* avoid warning when not used */
-	(void)pbdata; /*avoid warning in case no print no use*/
+	(void)pbdata; /* avoid warning in case no print no use */
 
 	IPP_PRINT("dev #%d (%s)\n", pw->dev_id, pw->dev_id < max_dev ?
 			"ok" : "bad");

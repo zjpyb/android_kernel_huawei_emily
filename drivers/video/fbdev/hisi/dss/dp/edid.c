@@ -28,7 +28,7 @@ int parse_edid(struct dp_ctrl *dptx, uint16_t len)
 {
 	int16_t i, ext_block_num;
 	int ret;
-	uint8_t* edid_t;
+	uint8_t* edid_t = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] dptx is NULL pointer\n");
@@ -51,7 +51,7 @@ int parse_edid(struct dp_ctrl *dptx, uint16_t len)
 	/*Parse the EDID main part, check how many(count as ' ext_block_num ') Extension blocks there are to follow.*/
 	ext_block_num = parse_main(dptx);
 
-	if (ext_block_num > 0) {
+	if ((ext_block_num > 0) && (len == ((ext_block_num + 1) * EDID_LENGTH))) {
 		dptx->edid_info.Audio.extACount = 0;
 		dptx->edid_info.Audio.extSpeaker = 0;
 		dptx->edid_info.Audio.basicAudio = 0;
@@ -70,6 +70,7 @@ int parse_edid(struct dp_ctrl *dptx, uint16_t len)
 	}
 	HISI_FB_DEBUG("[DP] parse_edid -\n");
 
+#ifdef CONFIG_DP_EDID_DEBUG
 	for (i = 0; i < len;) {
 		if (!(i % 16)) {
 			printk(KERN_INFO "EDID [%04x]:  %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x \n",
@@ -85,6 +86,7 @@ int parse_edid(struct dp_ctrl *dptx, uint16_t len)
 			printk(KERN_INFO "<<<-------------------------------------------------------------->>> \n");
 		}
 	}
+#endif
 	return 0;
 }
 
@@ -142,9 +144,9 @@ int parse_main(struct dp_ctrl *dptx)
 {
 	int16_t i;
 	int ret;
-	uint8_t* block;
-	uint8_t* edid_t;
-	struct edid_video *vid_info;
+	uint8_t* block = NULL;
+	uint8_t* edid_t = NULL;
+	struct edid_video *vid_info = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] The pointer is NULL.\n");
@@ -288,13 +290,13 @@ int parse_extension_timing_description(struct dp_ctrl * dptx, uint8_t* dtdBlock,
 int parse_extension(struct dp_ctrl * dptx, uint8_t* exten)
 {
 	int ret;
-	uint8_t* dtdBlock;
-	uint8_t* ceaBlock;
+	uint8_t* dtdBlock = NULL;
+	uint8_t* ceaBlock = NULL;
 	uint8_t dtd_start_byte = 0;
 	uint8_t cea_data_block_collection = 0;
 	uint16_t DTDtotal =0;
-	struct edid_video *vid_info;
-	struct edid_audio *aud_info;
+	struct edid_video *vid_info = NULL;
+	struct edid_audio *aud_info = NULL;
 
 	if ((dptx == NULL) || (exten == NULL)) {
 		HISI_FB_ERR("[DP] The pointer is NULL.\n");
@@ -360,7 +362,7 @@ int parse_extension(struct dp_ctrl * dptx, uint8_t* exten)
 /*lint -e429*/
 int parse_timing_description(struct dp_ctrl *dptx, uint8_t *dtd)
 {
-	struct edid_video *vid_info;
+	struct edid_video *vid_info = NULL;
 	struct timing_info *node = NULL;
 
 	if ((dptx == NULL) || (dtd == NULL)) {
@@ -391,7 +393,7 @@ int parse_timing_description(struct dp_ctrl *dptx, uint8_t *dtd)
 	}
 	//node
 	node = kzalloc(sizeof(struct timing_info), GFP_KERNEL);
-	if (node) {
+	if (node != NULL) {
 		node->hActivePixels = H_ACTIVE;
 		node->hBlanking = H_BLANKING;
 		node->hSyncOffset = H_SYNC_OFFSET;
@@ -467,7 +469,7 @@ int parse_timing_description_by_vesaid(struct edid_video *vid_info, uint8_t vesa
 
 	//node
 	node = kzalloc(sizeof(struct timing_info), GFP_KERNEL);
-	if (node) {
+	if (node != NULL) {
 		node->hActivePixels = mdtd.h_active;
 		node->hBlanking = mdtd.h_blanking;
 		node->hSyncOffset = mdtd.h_sync_offset;
@@ -519,7 +521,7 @@ int parse_hdmi_vic_id(uint8_t vic_id)
 
 	//node
 	node = kzalloc(sizeof(struct dptx_hdmi_vic), GFP_KERNEL);
-	if (node) {
+	if (node != NULL) {
 		node->vic_id = vic_id;
 		HISI_FB_INFO("[DP] vic_id = %d!\n", vic_id);
 		list_add_tail(&node->list_node, dptx_hdmi_list);
@@ -558,7 +560,7 @@ int parse_audio_spec_info(struct edid_audio *aud_info, struct edid_audio_info *s
 int parse_extension_audio_tag(struct edid_audio *aud_info, uint8_t* cDblock, uint8_t tempL)
 {
 	uint8_t i, xa;
-	void *temp_ptr;
+	void *temp_ptr = NULL;
 	if ((aud_info == NULL) ||(cDblock == NULL)) {
 		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
@@ -653,8 +655,8 @@ int parse_extension_vsdb_tag(struct edid_video *vid_info, uint8_t* cDblock, uint
 	uint8_t I_Latency_Fields_Present;
 	uint8_t HDMI_VIDEO_Present;
 	uint8_t VESA_ID;
-	bool support_ai;
-	bool b3dpresent;
+	bool support_ai = false;
+	bool b3dpresent = false;
 	//struct dptx_hdmi_vic *hdmi_vic_node, *_node_;
 
 	VESA_ID = 0;
@@ -770,8 +772,8 @@ int parse_cea_data_block(struct dp_ctrl *dptx, uint8_t* ceaData, uint8_t dtdStar
 {
 	uint8_t totalLength, blockLength;
 	uint8_t* cDblock = ceaData;
-	struct edid_video *vid_info;
-	struct edid_audio *aud_info;
+	struct edid_video *vid_info = NULL;
+	struct edid_audio *aud_info = NULL;
 	/* exTlist *extlist; */
 	/*Initialize some fields*/
 	if ((dptx == NULL) || (ceaData == NULL)) {
@@ -861,7 +863,7 @@ int block_type(uint8_t* block)
 
 int parse_monitor_limits(struct dp_ctrl* dptx, uint8_t* block)
 {
-	struct edid_video *vid_info;
+	struct edid_video *vid_info = NULL;
 	if ((dptx == NULL) || (block == NULL)) {
 		HISI_FB_ERR("[DP] The pointer is NULL.\n");
 		return -EINVAL;
@@ -933,7 +935,8 @@ int parse_monitor_name(struct dp_ctrl* dptx, uint8_t* blockname, uint32_t size)
 
 int release_edid_info(struct dp_ctrl *dptx)
 {
-	struct timing_info *dptx_timing_node, *_node_;
+	struct timing_info *dptx_timing_node = NULL;
+	struct timing_info *_node_ = NULL;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] The pointer is NULL.\n");

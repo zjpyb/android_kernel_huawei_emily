@@ -53,8 +53,10 @@
 #include "dump_modem_area.h"
 #include "dump_print.h"
 
+#ifdef MNTN_AREA_CBOOT_ADDR
 void dump_clear_cpboot_area(void)
 {
 
 }
+#endif
 

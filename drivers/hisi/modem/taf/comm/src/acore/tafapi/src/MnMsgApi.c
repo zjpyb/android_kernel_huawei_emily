@@ -99,10 +99,12 @@ LOCAL MSG_MSGTYPE_LEN_STRU             f_astMsgTypeLen[] = {
     {MN_MSG_MSGTYPE_SET_RELAY_LINK_CTRL, sizeof(MN_MSG_SET_LINK_CTRL_STRU)},
     {MN_MSG_MSGTYPE_GET_RELAY_LINK_CTRL, 0},
     {MN_MSG_MSGTYPE_STUB, sizeof(MN_MSG_STUB_MSG_STRU)},
+#if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))
     {MN_MSG_MSGTYPE_GET_ALLCBMIDS ,0},
     {MN_MSG_MSGTYPE_ADD_CBMIDS ,    sizeof(TAF_CBA_CBMI_RANGE_LIST_STRU)},
     {MN_MSG_MSGTYPE_DELETE_CBMIDS , sizeof(TAF_CBA_CBMI_RANGE_LIST_STRU)},
     {MN_MSG_MSGTYPE_EMPTY_CBMIDS,0}
+#endif
 };
 
 LOCAL MN_MSG_TS_DATA_INFO_STRU         f_stMsgDataInfo;
@@ -279,7 +281,11 @@ VOS_UINT32   MN_MSG_Send(
         return MN_ERR_CLASS_SMS_NOAVAILDOMAIN;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if (MN_MSG_MEM_STORE_NV < pstSendParm->enMemStore)
+#else
+    if (MN_MSG_MEM_STORE_SIM < pstSendParm->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_Send:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -365,8 +371,12 @@ VOS_UINT32   MN_MSG_SendFromMem(
         return MN_ERR_INVALIDPARM;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstSendFromMemParm->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstSendFromMemParm->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstSendFromMemParm->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_SendFromMem:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -450,8 +460,12 @@ VOS_UINT32   MN_MSG_Write(
         return MN_ERR_INVALIDPARM;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstWriteParm->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstWriteParm->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstWriteParm->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_Write:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -506,8 +520,12 @@ VOS_UINT32   MN_MSG_Read(
         return MN_ERR_NULLPTR;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstReadParm->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstReadParm->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstReadParm->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_Read:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -537,8 +555,12 @@ VOS_UINT32   MN_MSG_List(
         return MN_ERR_NULLPTR;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstListParm->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstListParm->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstListParm->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_List:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -573,8 +595,12 @@ VOS_UINT32   MN_MSG_Delete(
         return MN_ERR_NULLPTR;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstDeleteParam->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstDeleteParam->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstDeleteParam->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_Delete:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -603,8 +629,12 @@ VOS_UINT32   MN_MSG_Delete_Test(
 {
     VOS_UINT32                          ulRet;
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstListPara->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstListPara->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstListPara->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_Delete:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -840,8 +870,12 @@ VOS_UINT32   MN_MSG_ModifyStatus(
         return MN_ERR_NULLPTR;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstModifyParm->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstModifyParm->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstModifyParm->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_ModifyStatus:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -884,8 +918,13 @@ VOS_UINT32 MN_MSG_SetRcvMsgPath(
         return MN_ERR_INVALIDPARM;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_NV < pstSetRcvPathParm->enSmMemStore)
      || (MN_MSG_MEM_STORE_NV < pstSetRcvPathParm->enStaRptMemStore))
+#else
+    if ((MN_MSG_MEM_STORE_SIM < pstSetRcvPathParm->enSmMemStore)
+     || (MN_MSG_MEM_STORE_SIM < pstSetRcvPathParm->enStaRptMemStore))
+#endif
     {
         AT_WARN_LOG("MN_MSG_SetRcvMsgPath:Invalid enSmMemStore");
         return MN_ERR_INVALIDPARM;
@@ -893,8 +932,12 @@ VOS_UINT32 MN_MSG_SetRcvMsgPath(
 
     if (MN_MSG_RCVMSG_ACT_STORE == pstSetRcvPathParm->enRcvSmAct)
     {
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
         if ((MN_MSG_MEM_STORE_NV  != pstSetRcvPathParm->enSmMemStore)
          && (MN_MSG_MEM_STORE_SIM != pstSetRcvPathParm->enSmMemStore))
+#else
+        if (MN_MSG_MEM_STORE_SIM != pstSetRcvPathParm->enSmMemStore)
+#endif
         {
             AT_WARN_LOG("MN_MSG_SetRcvMsgPath:Invalid Parm");
             return MN_ERR_INVALIDPARM;
@@ -903,8 +946,12 @@ VOS_UINT32 MN_MSG_SetRcvMsgPath(
 
     if (MN_MSG_RCVMSG_ACT_STORE == pstSetRcvPathParm->enRcvStaRptAct)
     {
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
         if ((MN_MSG_MEM_STORE_NV  != pstSetRcvPathParm->enStaRptMemStore)
          && (MN_MSG_MEM_STORE_SIM != pstSetRcvPathParm->enStaRptMemStore))
+#else
+        if (MN_MSG_MEM_STORE_SIM != pstSetRcvPathParm->enStaRptMemStore)
+#endif
         {
             AT_WARN_LOG("MN_MSG_SetRcvMsgPath:Invalid Parm");
             return MN_ERR_INVALIDPARM;
@@ -958,9 +1005,13 @@ VOS_UINT32  MN_MSG_GetStorageStatus(
         return MN_ERR_NULLPTR;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstStorageParm->enMem1Store)
      && (MN_MSG_MEM_STORE_NV != pstStorageParm->enMem1Store)
      && (MN_MSG_MEM_STORE_NONE != pstStorageParm->enMem1Store))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstStorageParm->enMem1Store)
+#endif
     {
         AT_WARN_LOG("MN_MSG_GetStorageStatus:Invalid enMemStore:mem1");
         return MN_ERR_INVALIDPARM;
@@ -995,8 +1046,12 @@ VOS_UINT32   MN_MSG_GetStaRptIndex(
         return MN_ERR_NULLPTR;
     }
 
+#if (NAS_FEATURE_SMS_NVIM_SMSEXIST == FEATURE_ON)
     if ((MN_MSG_MEM_STORE_SIM != pstMoMsgParm->enMemStore)
      && (MN_MSG_MEM_STORE_NV != pstMoMsgParm->enMemStore))
+#else
+    if (MN_MSG_MEM_STORE_SIM != pstMoMsgParm->enMemStore)
+#endif
     {
         AT_WARN_LOG("MN_MSG_GetStaRptFromMoMsg:Invalid enMemStore");
         return MN_ERR_INVALIDPARM;
@@ -1077,6 +1132,7 @@ VOS_UINT32 MN_MSG_SetMemStatus(
     return ulRet;
 }
 
+#if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))
 
 
 VOS_UINT32 MN_MSG_GetAllCbMids(
@@ -1156,4 +1212,5 @@ VOS_UINT32 MN_MSG_EmptyCbMids(
     return ulRet;
 }
 
+#endif
 

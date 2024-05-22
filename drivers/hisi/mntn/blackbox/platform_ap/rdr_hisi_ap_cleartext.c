@@ -94,11 +94,11 @@ static int _rdr_hisiap_cleartext_print_hk_cpu_onoff(struct file   *fp,
                                                     u32           len,
                                                     AP_EH_ROOT    *ap_root)
 {
-	struct hisiap_ringbuffer_s *q;
-	cpu_onoff_info             *cpu_onoff;
-	bool                       error;
+	struct hisiap_ringbuffer_s *q = NULL;
+	cpu_onoff_info             *cpu_onoff = NULL;
+	bool                       error = false;
 	u32                        start, end, i;
-	u8                         *real_addr;
+	u8                         *real_addr = NULL;
 
 	/* for cpu not online, will set addr NULL, so neglect it */
 	if (unlikely(NULL == addr)) {
@@ -130,7 +130,7 @@ static int _rdr_hisiap_cleartext_print_hk_cpu_onoff(struct file   *fp,
 	get_ringbuffer_start_end(q, &start, &end);
 	for (i = start; i <= end; i++) {
 		cpu_onoff = (cpu_onoff_info *)&q->data[(i % q->max_num) * q->field_count];
-		rdr_cleartext_print(fp, &error, "%-18llu%-4u%-2u\n", 
+		rdr_cleartext_print(fp, &error, "%-18llu%-4u%-2u\n",
 			cpu_onoff->clock, cpu_onoff->cpu, cpu_onoff->on?1:0);
 	}
 
@@ -161,9 +161,9 @@ static int rdr_hisiap_cleartext_print_hk_cpu_onoff(char *dir_path,
                                                    u64  log_addr,
                                                    u32  log_len)
 {
-	struct device_node *np;
-	AP_EH_ROOT         *ap_root;
-	struct file        *fp;
+	struct device_node *np = NULL;
+	AP_EH_ROOT         *ap_root = NULL;
+	struct file        *fp = NULL;
 	int                ret = 0;
 	u32                size = 0;
 
@@ -192,8 +192,8 @@ static int rdr_hisiap_cleartext_print_hk_cpu_onoff(char *dir_path,
 
 	ap_root = (AP_EH_ROOT *)(uintptr_t)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
 
-	if (unlikely(_rdr_hisiap_cleartext_print_hk_cpu_onoff(fp, log_addr, 
-					log_len, ap_root->hook_buffer_addr[HK_CPU_ONOFF], 
+	if (unlikely(_rdr_hisiap_cleartext_print_hk_cpu_onoff(fp, log_addr,
+					log_len, ap_root->hook_buffer_addr[HK_CPU_ONOFF],
 					size, ap_root))) {
 		ret = -1;
 		goto exit;
@@ -229,11 +229,11 @@ static int rdr_hisiap_cleartext_print_hk_cpuidle_on_cpu(struct file *fp,
                                                         AP_EH_ROOT  *ap_root,
                                                         u32         cpu)
 {
-	struct hisiap_ringbuffer_s *q;
-	cpuidle_info               *cpuidle;
-	bool                       error;
+	struct hisiap_ringbuffer_s *q = NULL;
+	cpuidle_info               *cpuidle = NULL;
+	bool                       error = false;
 	u32                        start, end, i;
-	u8                         *real_addr;
+	u8                         *real_addr = NULL;
 
 	/* for cpu not online, will set addr NULL, so neglect it */
 	if (unlikely(NULL == addr)) {
@@ -265,7 +265,7 @@ static int rdr_hisiap_cleartext_print_hk_cpuidle_on_cpu(struct file *fp,
 	get_ringbuffer_start_end(q, &start, &end);
 	for (i = start; i <= end; i++) {
 		cpuidle = (cpuidle_info *)&q->data[(i % q->max_num) * q->field_count];
-		rdr_cleartext_print(fp, &error, "%-18llu%-3u\n", 
+		rdr_cleartext_print(fp, &error, "%-18llu%-3u\n",
 			cpuidle->clock, cpuidle->dir?1:0);
 	}
 
@@ -294,8 +294,8 @@ exit:
  */
 static int rdr_hisiap_cleartext_print_hk_cpuidle(char *dir_path, u64 log_addr, u32 log_len)
 {
-	struct file *fp;
-	AP_EH_ROOT  *ap_root;
+	struct file *fp = NULL;
+	AP_EH_ROOT  *ap_root = NULL;
 	int         ret = 0;
 	u32         i;
 
@@ -309,8 +309,8 @@ static int rdr_hisiap_cleartext_print_hk_cpuidle(char *dir_path, u64 log_addr, u
 	ap_root = (AP_EH_ROOT *)(uintptr_t)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
 
 	for (i = 0; i < NR_CPUS; i++) {
-		if (unlikely(rdr_hisiap_cleartext_print_hk_cpuidle_on_cpu(fp, log_addr, 
-						log_len, ap_root->hook_percpu_buffer[HK_CPUIDLE].percpu_addr[i], 
+		if (unlikely(rdr_hisiap_cleartext_print_hk_cpuidle_on_cpu(fp, log_addr,
+						log_len, ap_root->hook_percpu_buffer[HK_CPUIDLE].percpu_addr[i],
 						ap_root->hook_percpu_buffer[HK_CPUIDLE].percpu_length[i], ap_root, i))) {
 			ret = -1;
 			break;
@@ -346,11 +346,11 @@ static int rdr_hisiap_cleartext_print_hk_irq_on_cpu(struct file *fp,
                                                     AP_EH_ROOT  *ap_root,
                                                     u32         cpu)
 {
-	struct hisiap_ringbuffer_s *q;
-	irq_info                   *irq;
-	bool                       error;
+	struct hisiap_ringbuffer_s *q = NULL;
+	irq_info                   *irq = NULL;
+	bool                       error = false;
 	u32                        start, end, i;
-	u8                         *real_addr;
+	u8                         *real_addr = NULL;
 
 	/* for cpu not online, will set addr NULL, so neglect it */
 	if (unlikely(NULL == addr)) {
@@ -382,7 +382,7 @@ static int rdr_hisiap_cleartext_print_hk_irq_on_cpu(struct file *fp,
 	get_ringbuffer_start_end(q, &start, &end);
 	for (i = start; i <= end; i++) {
 		irq = (irq_info *)&q->data[(i % q->max_num) * q->field_count];
-		rdr_cleartext_print(fp, &error, "%-18llu%-15llu%-5u%-3u\n", 
+		rdr_cleartext_print(fp, &error, "%-18llu%-15llu%-5u%-3u\n",
 			irq->clock, irq->jiff, irq->irq, irq->dir?1:0);
 	}
 
@@ -411,8 +411,8 @@ exit:
  */
 static int rdr_hisiap_cleartext_print_hk_irq(char *dir_path, u64 log_addr, u32 log_len)
 {
-	struct file *fp;
-	AP_EH_ROOT  *ap_root;
+	struct file *fp = NULL;
+	AP_EH_ROOT  *ap_root = NULL;
 	int         ret = 0;
 	u32         i;
 
@@ -426,8 +426,8 @@ static int rdr_hisiap_cleartext_print_hk_irq(char *dir_path, u64 log_addr, u32 l
 	ap_root = (AP_EH_ROOT *)(uintptr_t)(log_addr + PMU_RESET_RECORD_DDR_AREA_SIZE);
 
 	for (i = 0; i < NR_CPUS; i++) {
-		if (unlikely(rdr_hisiap_cleartext_print_hk_irq_on_cpu(fp, log_addr, 
-						log_len, ap_root->hook_percpu_buffer[HK_IRQ].percpu_addr[i], 
+		if (unlikely(rdr_hisiap_cleartext_print_hk_irq_on_cpu(fp, log_addr,
+						log_len, ap_root->hook_percpu_buffer[HK_IRQ].percpu_addr[i],
 						ap_root->hook_percpu_buffer[HK_IRQ].percpu_length[i], ap_root, i))) {
 			ret = -1;
 			break;
@@ -456,9 +456,9 @@ static int rdr_hisiap_cleartext_print_hk_irq(char *dir_path, u64 log_addr, u32 l
  */
 static int rdr_hisiap_cleartext_print_ap_root(char *dir_path, u64 log_addr, u32 log_len)
 {
-	struct file *fp;
-	AP_EH_ROOT  *ap_root;
-	bool        error;
+	struct file *fp = NULL;
+	AP_EH_ROOT  *ap_root = NULL;
+	bool        error = false;
 	u32         i;
 
 	if ( unlikely(log_len < (sizeof(AP_EH_ROOT) + PMU_RESET_RECORD_DDR_AREA_SIZE)) ) {
@@ -528,7 +528,7 @@ static int rdr_hisiap_cleartext_print_ap_root(char *dir_path, u64 log_addr, u32 
 int rdr_hisiap_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 {
 	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr)) ) {
-		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n", 
+		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n",
 			__func__, dir_path, (void *)(uintptr_t)log_addr);
 		return -1;
 	}

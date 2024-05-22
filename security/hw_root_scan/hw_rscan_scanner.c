@@ -85,13 +85,13 @@ struct fault_private {
 };
 #endif
 
-static int rscan_trigger_by_stp(char *upload_rootproc)
+static uint rscan_trigger_by_stp(char *upload_rootproc)
 {
 	int scan_err_code = 0;
-	int root_masks;
+	uint root_masks;
 	int dynamic_ops;
 	int root_proc_length;
-	struct rscan_result_dynamic *scan_result_buf;
+	struct rscan_result_dynamic *scan_result_buf = NULL;
 
 	scan_result_buf = vmalloc(sizeof(struct rscan_result_dynamic));
 	if (scan_result_buf == NULL) {
@@ -104,10 +104,8 @@ static int rscan_trigger_by_stp(char *upload_rootproc)
 	mutex_lock(&scanner_lock);
 	root_masks = rscan_dynamic(dynamic_ops, scan_result_buf, &scan_err_code);
 	mutex_unlock(&scanner_lock);
-	if (root_masks != 0) {
-		RSLogDebug(TAG, "root status trigger by stp is %d.",
-			root_masks);
-	}
+	if (root_masks != 0)
+		RSLogDebug(TAG, "root status trigger by stp is %u", root_masks);
 
 	if ((upload_rootproc != NULL) &&
 		(strlen(scan_result_buf->rprocs) > 0)) {
@@ -138,20 +136,18 @@ static int get_credible_of_item(int item_ree_status, int item_tee_status)
 static int need_to_upload(unsigned int masks, unsigned int mask,
 			int ree_status, int tee_status, int flag)
 {
-	if (flag == 1) {
+	if (flag == 1)
 		return 1;
-	}
 
-	if ((masks & mask) && ((ree_status != 0) || (tee_status != 0))) {
+	if ((masks & mask) && ((ree_status != 0) || (tee_status != 0)))
 		return 1;
-	}
 
 	return 0;
 }
 
 /* flag = 0, just upload the abnormal items; flag = 1, upload all items */
-static void upload_to_stp(int ree_status, int tee_status,
-			char *rootproc, unsigned int mask, int flag)
+static void upload_to_stp(uint ree_status, uint tee_status,
+			const char *rootproc, unsigned int mask, int flag)
 {
 	int item_status;
 	int item_version = 0;
@@ -160,7 +156,7 @@ static void upload_to_stp(int ree_status, int tee_status,
 	int need_upload;
 	int i;
 
-	struct stp_item_info *stp_item_info = NULL;
+	const struct stp_item_info *stp_item_info = NULL;
 	struct stp_item item = { 0 };
 
 	for (i = 0; i < MAX_NUM_OF_ITEM; i++) {
@@ -170,9 +166,8 @@ static void upload_to_stp(int ree_status, int tee_status,
 					itembits[i].item_tee_bit);
 		need_upload = need_to_upload(mask, itembits[i].item_ree_mask,
 					item_status, item_tee_status, flag);
-		if (need_upload == 0) {
+		if (need_upload == 0)
 			continue;
-		}
 		stp_item_info = get_item_info_by_idx(i);
 		if (stp_item_info == NULL) {
 			RSLogError(TAG, "idx is %d, get item info by index failed", i);
@@ -180,16 +175,12 @@ static void upload_to_stp(int ree_status, int tee_status,
 		}
 
 		item_credible = get_credible_of_item(item_status, item_tee_status);
-		if ((i == ROOT_PROCS) || (i == SE_HOOK)) {
+		if ((i == ROOT_PROCS) || (i == SE_HOOK))
 			item_credible = STP_REFERENCE;
-		}
 
-		if (i == KCODE) {
-			if ((item_credible == STP_REFERENCE) &&
-					(g_root_scan_hot_fix != 0)) {
-				item_credible = STP_CREDIBLE;
-			}
-		}
+		if ((i == KCODE) && (item_credible == STP_REFERENCE) &&
+				(g_root_scan_hot_fix != 0))
+			item_credible = STP_CREDIBLE;
 
 		item.id = stp_item_info->id;
 		item.status = item_status;
@@ -216,9 +207,9 @@ static void upload_to_stp(int ree_status, int tee_status,
 
 int stp_rscan_trigger(void)
 {
-	int ree_status;
-	int tee_status;
-	char *upload_rootproc;
+	uint ree_status;
+	uint tee_status;
+	char *upload_rootproc = NULL;
 
 	upload_rootproc = kzalloc(RPROC_VALUE_LEN_MAX, GFP_KERNEL);
 	if (upload_rootproc == NULL) {
@@ -237,29 +228,24 @@ int stp_rscan_trigger(void)
 	return 0;
 }
 
-static int rscan_dynamic_raw_unlock(uint op_mask,
+static uint rscan_dynamic_raw_unlock(uint op_mask,
 				struct rscan_result_dynamic *result)
 {
 	int ret = 0;
-	int error_code = 0;
+	uint error_code = 0;
 
 #ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
 	if (g_r_p_flag == 1) {
-		if (g_rscan_skip_flag.skip_kcode == SKIP) {
+		if (g_rscan_skip_flag.skip_kcode == SKIP)
 			RSLogDebug(TAG, "skip kcode scan.");
-		}
-		if (g_rscan_skip_flag.skip_syscall == SKIP) {
+		if (g_rscan_skip_flag.skip_syscall == SKIP)
 			RSLogDebug(TAG, "skip syscall scan.");
-		}
-		if (g_rscan_skip_flag.skip_se_hooks == SKIP) {
+		if (g_rscan_skip_flag.skip_se_hooks == SKIP)
 			RSLogDebug(TAG, "skip se hooks scan.");
-		}
-		if (g_rscan_skip_flag.skip_se_status == SKIP) {
+		if (g_rscan_skip_flag.skip_se_status == SKIP)
 			RSLogDebug(TAG, "skip se status scan.");
-		}
-		if (g_rscan_skip_flag.skip_setid == SKIP) {
+		if (g_rscan_skip_flag.skip_setid == SKIP)
 			RSLogDebug(TAG, "skip setid scan.");
-		}
 	}
 #endif
 
@@ -287,9 +273,8 @@ static int rscan_dynamic_raw_unlock(uint op_mask,
 		}
 	}
 
-	if (op_mask & D_RSOPID_SE_STATUS) {
+	if (op_mask & D_RSOPID_SE_STATUS)
 		result->seenforcing = get_selinux_enforcing();
-	}
 
 	if (op_mask & D_RSOPID_RRPOCS) {
 #ifdef CONFIG_RSCAN_SKIP_RPROCS
@@ -303,18 +288,17 @@ static int rscan_dynamic_raw_unlock(uint op_mask,
 #endif
 	}
 
-	if (op_mask & D_RSOPID_SETID) {
+	if (op_mask & D_RSOPID_SETID)
 		result->setid = get_setids();
-	}
 
 	return error_code;
 }
 
 /* return: mask of abnormal scans items result */
-int rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
-		int *error_code)
+uint rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
+		uint *error_code)
 {
-	int bad_mask = 0;
+	uint bad_mask = 0;
 
 	if ((result == NULL) || (error_code == NULL)) {
 		RSLogError(TAG, "input parameters error!");
@@ -322,9 +306,8 @@ int rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
 	}
 
 	*error_code = rscan_dynamic_raw_unlock(op_mask, result);
-	if (*error_code != 0) {
+	if (*error_code != 0)
 		RSLogWarning(TAG, "some item of root scan failed");
-	}
 
 	if ((op_mask & D_RSOPID_KCODE) &&
 		(g_rscan_skip_flag.skip_kcode == NOT_SKIP) &&
@@ -380,9 +363,9 @@ int rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
 }
 
 /* just get the measurement, return the error mask */
-int rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result)
+uint rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result)
 {
-	int error_code;
+	uint error_code;
 
 	if (result == NULL) {
 		RSLogError(TAG, "input parameter is invalid");
@@ -400,9 +383,9 @@ int rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result)
 int rscan_dynamic_raw_and_upload(uint op_mask,
 				struct rscan_result_dynamic *result)
 {
-	int ree_status;
-	int tee_status;
-	int error_code = 0;
+	uint ree_status;
+	uint tee_status;
+	uint error_code = 0;
 
 	if (result == NULL) {
 		RSLogError(TAG, "input parameter is invalid");
@@ -416,9 +399,8 @@ int rscan_dynamic_raw_and_upload(uint op_mask,
 	tee_status = get_tee_status();
 
 	/* 0 in upload_to_stp mean just upload abnormal items */
-	if ((ree_status != 0) || (tee_status != 0)) {
+	if ((ree_status != 0) || (tee_status != 0))
 		upload_to_stp(ree_status, tee_status, NULL, op_mask, 0);
-	}
 
 	return error_code;
 }
@@ -430,9 +412,8 @@ int get_battery_status(int *is_charging, int *percentage)
 	union power_supply_propval capacity;
 	struct power_supply *psy = power_supply_get_by_name(BATTERY_NAME);
 
-	if (psy == NULL) {
+	if (psy == NULL)
 		return -EINVAL;
-	}
 
 	if (is_charging &&
 		!psy->get_property(psy, POWER_SUPPLY_PROP_STATUS, &status)) {
@@ -452,7 +433,7 @@ int get_battery_status(int *is_charging, int *percentage)
 {
 	union power_supply_propval status;
 	union power_supply_propval capacity;
-	struct power_supply *psy;
+	struct power_supply *psy = NULL;
 
 	if ((is_charging == NULL) || (percentage == NULL)) {
 		RSLogError(TAG, "input parameters invalid");
@@ -460,9 +441,8 @@ int get_battery_status(int *is_charging, int *percentage)
 	}
 
 	psy = power_supply_get_by_name(BATTERY_NAME);
-	if (psy == NULL) {
+	if (psy == NULL)
 		return -1;
-	}
 
 	/* is_charging never be NULL because of input parameters check */
 	if (!power_supply_get_property(psy, POWER_SUPPLY_PROP_STATUS, &status)) {
@@ -471,9 +451,8 @@ int get_battery_status(int *is_charging, int *percentage)
 	}
 
 	/* percentage never be NULL because of input parameters check */
-	if (!power_supply_get_property(psy, POWER_SUPPLY_PROP_CAPACITY, &capacity)) {
+	if (!power_supply_get_property(psy, POWER_SUPPLY_PROP_CAPACITY, &capacity))
 		*percentage = capacity.intval;
-	}
 
 	return 0;
 }
@@ -536,6 +515,7 @@ int load_rproc_whitelist(char *whitelist, size_t len)
 int rscan_init_data(void)
 {
 	int ret;
+	uint error_code;
 
 	/* initialize g_rscan_clean_scan_result */
 	memset(&g_rscan_clean_scan_result, 0, sizeof(struct rscan_result_dynamic));
@@ -553,22 +533,22 @@ int rscan_init_data(void)
 		g_rscan_skip_flag.skip_rprocs = SKIP;
 	}
 
-	ret = rscan_dynamic_raw(D_RSOPID_KCODE |
+	error_code = rscan_dynamic_raw(D_RSOPID_KCODE |
 				D_RSOPID_SYS_CALL |
 				D_RSOPID_SE_HOOKS,
 				&g_rscan_clean_scan_result);
-	if (ret != 0) {
-		if (ret & D_RSOPID_KCODE) {
+	if (error_code != 0) {
+		if (error_code & D_RSOPID_KCODE) {
 			RSLogError(TAG, "rscan D_RSOPID_KCODE init failed");
 			g_rscan_skip_flag.skip_kcode = SKIP;
 		}
 
-		if (ret & D_RSOPID_SYS_CALL) {
+		if (error_code & D_RSOPID_SYS_CALL) {
 			RSLogError(TAG, "rscan D_RSOPID_SYS_CALL init failed");
 			g_rscan_skip_flag.skip_syscall = SKIP;
 		}
 
-		if (ret & D_RSOPID_SE_HOOKS) {
+		if (error_code & D_RSOPID_SE_HOOKS) {
 			RSLogError(TAG, "rscan D_RSOPID_SE_HOOKS init failed");
 			g_rscan_skip_flag.skip_se_hooks = SKIP;
 		}
@@ -586,38 +566,33 @@ int rscan_trigger(void)
 	return result;
 }
 
-static int dynamic_call(unsigned int mask)
+static uint dynamic_call(unsigned int mask)
 {
-	int root_status = rscan_dynamic_raw_unlock(mask,
+	uint root_status = rscan_dynamic_raw_unlock(mask,
 						&g_rscan_clean_scan_result);
 
-	RSLogDebug(TAG, "set %d scan resume", mask);
+	RSLogDebug(TAG, "set %u scan resume", mask);
 
-	if (root_status != 0) {
+	if (root_status != 0)
 		return root_status;
-	}
 
-	if (mask & D_RSOPID_KCODE) {
+	if (mask & D_RSOPID_KCODE)
 		g_rscan_skip_flag.skip_kcode = NOT_SKIP;
-	}
 
-	if (mask & D_RSOPID_SYS_CALL) {
+	if (mask & D_RSOPID_SYS_CALL)
 		g_rscan_skip_flag.skip_syscall = NOT_SKIP;
-	}
 
-	if (mask & D_RSOPID_SE_HOOKS) {
+	if (mask & D_RSOPID_SE_HOOKS)
 		g_rscan_skip_flag.skip_se_hooks = NOT_SKIP;
-	}
 
-	if (mask & D_RSOPID_SE_STATUS) {
+	if (mask & D_RSOPID_SE_STATUS)
 		g_rscan_skip_flag.skip_se_status = NOT_SKIP;
-	}
 
 	return root_status;
 }
 
 /* @reserved is reserved parameters for external module */
-static int __root_scan_pause(unsigned int op_mask, void *reserved)
+static int __root_scan_pause(unsigned int op_mask, const void *reserved)
 {
 	VAR_NOT_USED(reserved);
 
@@ -630,7 +605,7 @@ static int __root_scan_pause(unsigned int op_mask, void *reserved)
 	g_rscan_skip_flag.skip_se_status = SKIP &
 			((op_mask & D_RSOPID_SE_STATUS) >> SESTATUS_OFFSET);
 
-	RSLogDebug(TAG, "set scan pause, pause mask %d", op_mask);
+	RSLogDebug(TAG, "set scan pause, pause mask %u", op_mask);
 
 #ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
 	g_r_p_flag = 1;
@@ -679,13 +654,13 @@ int root_scan_pause(unsigned int op_mask, void *reserved)
 	int result = 0;
 	int root_status;
 	int dynamic_ops;
-	struct rscan_result_dynamic *scan_result_buf;
+	struct rscan_result_dynamic *scan_result_buf = NULL;
 	struct timeval tv;
 
 	VAR_NOT_USED(reserved);
 
 	do_gettimeofday(&tv);
-	RSLogTrace(TAG, "pause item:%d, time:%ld:%ld",
+	RSLogTrace(TAG, "pause item:%u, time:%ld:%ld",
 		op_mask, tv.tv_sec, tv.tv_usec);
 
 	mutex_lock(&scanner_lock);
@@ -727,7 +702,7 @@ int root_scan_resume(unsigned int op_mask, void *reserved)
 	g_root_scan_hot_fix = 1;    /* have been done HotFix */
 
 	do_gettimeofday(&tv);
-	RSLogTrace(TAG, "resume item:%d, time:%ld:%ld",
+	RSLogTrace(TAG, "resume item:%u, time:%ld:%ld",
 		op_mask, tv.tv_sec, tv.tv_usec);
 
 	mutex_lock(&scanner_lock);
@@ -761,21 +736,19 @@ static ssize_t copy_private_data_to_user(struct file *file,
 	return tocopy;
 }
 
-static int open_private_file(struct file *file, char *strBuf)
+static int open_private_file(struct file *file, const char *strBuf)
 {
-	struct fault_private *priv;
+	struct fault_private *priv = NULL;
 
 	WARN_ON(file->private_data);
 	priv = vmalloc(sizeof(struct fault_private));
-	if (priv == NULL) {
+	if (priv == NULL)
 		return -ENOMEM;
-	}
 	file->private_data = priv;
 	memset(priv, 0, sizeof(struct fault_private));
 	priv->len = strlen(strBuf);
-	if (priv->len >= FAULT_PRIVATE_LENTH) {
+	if (priv->len >= FAULT_PRIVATE_LENTH)
 		return -EINVAL;
-	}
 
 	strncpy(priv->buf, strBuf, priv->len);
 
@@ -932,9 +905,8 @@ static int syscall_release(struct inode *inode, struct file *file)
 {
 	struct fault_private *priv = file->private_data;
 
-	if (priv == NULL) {
+	if (priv == NULL)
 		return 0;
-	}
 
 	vfree(file->private_data);
 	file->private_data = NULL;
@@ -990,9 +962,8 @@ static int rev_syscall_release(struct inode *inode, struct file *file)
 {
 	struct fault_private *priv = file->private_data;
 
-	if (priv == NULL) {
+	if (priv == NULL)
 		return 0;
-	}
 
 	vfree(file->private_data);
 	file->private_data = NULL;

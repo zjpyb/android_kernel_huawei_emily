@@ -222,7 +222,10 @@ static ssize_t lcdkit_panel_info_show(char* buf)
     } else {
         bl_max_nit = lcdkit_info.panel_infos.bl_max_nit;
     }
-
+    /* blmaxnit_improve 0 no need improve bl_max_nit */
+    if (lcdkit_info.panel_infos.blmax_improve_support &&
+            (lcdkit_info.panel_infos.blmaxnit_improve != 0))
+            bl_max_nit = lcdkit_info.panel_infos.blmaxnit_improve;
     if (lcdkit_is_lcd_panel())
     {
         LCDKIT_INFO("is lcd panel!\n");
@@ -1505,12 +1508,10 @@ static void lcdkit_vsp_enable(bool en)
     {
         if(en)
         {
-//            gpio_direction_output(volt.vsp_gpio, 1);
                ;
         }
         else
         {
-//            gpio_direction_output(volt.vsp_gpio, 0);
              ;
         }
     }

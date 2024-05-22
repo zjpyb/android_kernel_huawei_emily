@@ -16,6 +16,9 @@
 #include <linux/of_gpio.h>
 #include "elan_ts.h"
 #include "elan_mmi.h"
+#if defined(CONFIG_HUAWEI_DSM)
+#include <dsm/dsm_pub.h>
+#endif
 
 static int elan_ktf_chip_detect(struct ts_kit_platform_data *platform_data);
 static int elan_ktf_init_chip(void);
@@ -40,6 +43,8 @@ static int elan_read_fw_info(void);
 static int elan_chip_get_capacitance_test_type(struct ts_test_type_info *info);
 static int rawdata_proc_elan_printf(struct seq_file *m, struct ts_rawdata_info *info,
 		int range_size, int row_size);
+static void elan_chip_touch_switch(void);
+static int elan_ktf_ts_calibrate(void);
 static atomic_t g_last_pen_inrange_status = ATOMIC_INIT(TS_PEN_OUT_RANGE); // remember the last pen inrange status
 extern u8 cypress_ts_kit_color[TP_COLOR_SIZE];
 struct elan_ktf_ts_data *g_elan_ts = NULL;
@@ -66,6 +71,19 @@ enum TP_MODE
 #define IOCTL_I2C_INT  _IOR(ELAN_IOCTLID, 13, int)
 #endif
 
+#define ELAN_WATER_MODE_INFO_MASK 0x18
+#define ELAN_TRACE_MODE_INFO_MASK 0x20
+#define ELAN_PALM_MODE_INFO_MASK 0x4
+#define ELAN_FREQ_HOP_INFO_MASK 0x2
+#define ELAN_OBL_MODE_INFO_MASK 0x1
+#define ELAN_IC_DEBUG_INFO 0x3
+#define TRACE_MODE_OFFSET 0x5
+#define WATER_MODE_OFFSET 0x3
+#define ELAN_DOZE_MAX_INPUT_SEPARATE_NUM 2
+#define ELAN_CALIBRATE_STATUS_LBYTE 7
+#define ELAN_CALIBRATE_STATUS_HBYTE 6
+#define ELAN_NOT_CALIBRATE 0xFF
+
 struct ts_device_ops ts_kit_elan_ops = {
 	.chip_parse_config = elan_ktf_parse_dts,
 	.chip_detect = elan_ktf_chip_detect,
@@ -85,7 +103,133 @@ struct ts_device_ops ts_kit_elan_ops = {
 	.chip_get_capacitance_test_type = elan_chip_get_capacitance_test_type,
 	.chip_special_rawdata_proc_printf = rawdata_proc_elan_printf,
 	.chip_shutdown = elan_chip_shutdown,
+	.chip_touch_switch = elan_chip_touch_switch,
 };
+
+static void elan_scene_switch(unsigned int scene, unsigned int oper)
+{
+	int error;
+	u8 enter_scene_cmd[ELAN_SEND_DATA_LEN] = { 0x04, 0x00, 0x23, 0x00, 0x03,
+		0x00, 0x04, 0x54, 0xcf, 0x00, (u8)scene };
+	u8 exit_scene_cmd[ELAN_SEND_DATA_LEN] = { 0x04, 0x00, 0x23, 0x00, 0x03,
+		0x00, 0x04, 0x54, 0xcf, 0x00, 0x00 };
+
+	if ((g_elan_ts->elan_chip_data->touch_switch_flag &
+		TS_SWITCH_TYPE_SCENE) != TS_SWITCH_TYPE_SCENE) {
+		TS_LOG_ERR("%s, scene switch does not supported by this chip\n",
+			__func__);
+		goto out;
+	}
+
+	switch (oper) {
+	case TS_SWITCH_SCENE_ENTER:
+		TS_LOG_INFO("%s, enter scene %d\n", __func__, scene);
+		error = elan_i2c_write(enter_scene_cmd,
+			sizeof(enter_scene_cmd));
+		if (error) {
+			TS_LOG_ERR("%s: Switch to scene %d mode Failed: error:%d\n",
+				__func__, scene, error);
+		}
+		break;
+	case TS_SWITCH_SCENE_EXIT:
+		TS_LOG_INFO("%s, enter normal scene\n", __func__);
+		error = elan_i2c_write(exit_scene_cmd,
+			sizeof(exit_scene_cmd));
+		if (error) {
+			TS_LOG_ERR("%s: exit scene %d mode Failed: error:%d\n",
+				__func__, scene, error);
+		}
+		break;
+	default:
+		TS_LOG_ERR("%s: oper unknown:%d, invalid\n",
+			__func__, oper);
+		break;
+	}
+out:
+	return;
+}
+
+static void elan_chip_touch_switch(void)
+{
+	char in_data[MAX_STR_LEN] = {0};
+	unsigned int stype = 0;
+	unsigned int soper = 0;
+	unsigned int time = 0;
+	int error;
+	unsigned int i;
+	unsigned int cnt = 0;
+
+	TS_LOG_INFO("%s enter\n", __func__);
+	if (!g_elan_ts || !g_elan_ts->elan_chip_data ||
+		!g_elan_ts->elan_chip_data->ts_platform_data){
+		TS_LOG_ERR("%s, error chip data\n", __func__);
+		goto out;
+	}
+
+	/* SWITCH_OPER,ENABLE_DISABLE,PARAM */
+	memcpy(in_data, g_elan_ts->elan_chip_data->touch_switch_info,
+		MAX_STR_LEN - 1);
+	TS_LOG_INFO("%s, in_data:%s\n", __func__, in_data);
+	for (i = 0; i < strlen(in_data) && (in_data[i] != '\n'); i++) {
+		if (in_data[i] == ',') {
+			cnt++;
+		} else if (!isdigit(in_data[i])) {
+			TS_LOG_ERR("%s: input format error!\n", __func__);
+			goto out;
+		}
+	}
+	if (cnt != ELAN_DOZE_MAX_INPUT_SEPARATE_NUM) {
+		TS_LOG_ERR("%s: input format error[separation_cnt=%d]!\n",
+			__func__, cnt);
+		goto out;
+	}
+
+	error = sscanf(in_data, "%u,%u,%u", &stype, &soper, &time);
+	if (error <= 0) {
+		TS_LOG_ERR("%s: sscanf error\n", __func__);
+		goto out;
+	}
+	TS_LOG_DEBUG("stype=%u,soper=%u,param=%u\n", stype, soper, time);
+
+	if (atomic_read(&g_elan_ts->elan_chip_data->ts_platform_data->state) ==
+		TS_SLEEP) {
+		TS_LOG_ERR("%s, TP in sleep\n", __func__);
+		goto out;
+	}
+
+	switch (stype) {
+	case TS_SWITCH_TYPE_DOZE:
+		break;
+	case TS_SWITCH_TYPE_GAME:
+		break;
+	case TS_SWITCH_SCENE_3:
+	case TS_SWITCH_SCENE_4:
+	case TS_SWITCH_SCENE_5:
+	case TS_SWITCH_SCENE_6:
+	case TS_SWITCH_SCENE_7:
+	case TS_SWITCH_SCENE_8:
+	case TS_SWITCH_SCENE_9:
+	case TS_SWITCH_SCENE_10:
+	case TS_SWITCH_SCENE_11:
+	case TS_SWITCH_SCENE_12:
+	case TS_SWITCH_SCENE_13:
+	case TS_SWITCH_SCENE_14:
+	case TS_SWITCH_SCENE_15:
+	case TS_SWITCH_SCENE_16:
+	case TS_SWITCH_SCENE_17:
+	case TS_SWITCH_SCENE_18:
+	case TS_SWITCH_SCENE_19:
+	case TS_SWITCH_SCENE_20:
+		elan_scene_switch(stype, soper);
+		break;
+	default:
+		TS_LOG_ERR("%s: stype unknown:%u, invalid\n",
+			__func__, stype);
+		break;
+	}
+out:
+	return;
+}
 
 static int tp_module_test_init(struct ts_rawdata_info *info)
 {
@@ -161,7 +305,7 @@ static int elan_ktf_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node
 	} else {
 		atomic_set(&g_elan_ts->tp_mode, TP_MODULETEST);
 	}
-	wake_lock(&g_elan_ts->wake_lock);
+	__pm_stay_awake(&g_elan_ts->wake_lock);
 	memset(info->result, 0, sizeof(info->result));
 
 	/* elan mmi step 1 i2c test and alloc data buf */
@@ -175,14 +319,14 @@ static int elan_ktf_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node
 	ret = get_noise_test_data(info);
 	if (ret < 0) {
 		TS_LOG_ERR("[elan]:Noise read Fail!\n");
-		strncat(noise_test_result, "3F-", sizeof(noise_test_result));
+		strncat(noise_test_result, "3F-", (RESULT_MAX_LEN - 1));
 		goto test_exit;
 	} else if (ret == 1) { // 1, noise test fail
 		TS_LOG_ERR("[elan]:Noise Test Fail!\n");
-		strncat(noise_test_result, "3F-", sizeof(noise_test_result));
+		strncat(noise_test_result, "3F-", (RESULT_MAX_LEN - 1));
 	} else {
 		TS_LOG_INFO("[elan]:Noise Test Pass!\n");
-		strncat(noise_test_result, "3P-", sizeof(noise_test_result));
+		strncat(noise_test_result, "3P-", (RESULT_MAX_LEN - 1));
 	}
 
 	/* elan mmi step 3 rx open test */
@@ -210,9 +354,9 @@ static int elan_ktf_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node
 		TS_LOG_INFO("[elan]:tx open test pass!\n");
 	}
 	if (txrx_open_test) {
-		strncat(txrx_open_test_result, "2P-", sizeof(txrx_open_test_result));
+		strncat(txrx_open_test_result, "2P-", (RESULT_MAX_LEN - 1));
 	} else {
-		strncat(txrx_open_test_result, "2F-", sizeof(txrx_open_test_result));
+		strncat(txrx_open_test_result, "2F-", (RESULT_MAX_LEN - 1));
 	}
 
 	/* elan mmi step 6 txrx short test */
@@ -232,7 +376,7 @@ test_exit:
 	strncat(info->result, "_", sizeof("_"));
 	strncat(info->result, g_elan_ts->project_id, sizeof(g_elan_ts->project_id));
 	free_data_buf();
-	wake_unlock(&g_elan_ts->wake_lock);
+	__pm_relax(&g_elan_ts->wake_lock);
 	atomic_set(&g_elan_ts->tp_mode, TP_NORMAL);
 	res = elan_ktf_hw_reset();
 	if (res != NO_ERR) {
@@ -475,11 +619,16 @@ static void elants_reset_pin_high(void)
 static int elan_ktf_get_info(struct ts_chip_info_param *info)
 {
 	struct elan_ktf_ts_data *ts = g_elan_ts;
-	if (!info || !ts || !ts->elan_chip_data) {
+	if (!info || !ts || !ts->elan_chip_data || !ts->elan_chip_client) {
 		TS_LOG_ERR("[elan]arg is NULL,%s\n", __func__);
 		return -EINVAL;
 	}
-	snprintf(info->ic_vendor, sizeof(info->chip_name), ts->elan_chip_data->chip_name);
+	if (ts->elan_chip_client->hide_plain_id)
+		snprintf(info->ic_vendor, sizeof(ts->project_id),
+			ts->project_id);
+	else
+		snprintf(info->ic_vendor, sizeof(info->chip_name),
+			ts->elan_chip_data->chip_name);
 	snprintf(info->fw_vendor, sizeof(info->fw_vendor), "0x%04x", ts->fw_ver);
 	snprintf(info->mod_vendor, sizeof(info->mod_vendor), ts->project_id);
 	return NO_ERR;
@@ -515,32 +664,31 @@ static int elan_config_gpio(void)
 	return NO_ERR;
 }
 
-static inline void elan_ktf_finger_parse_xy(uint8_t *data, uint16_t *x, uint16_t *y)
+static inline void elan_ktf_finger_parse_xy(uint8_t *data)
 {
-	*x = data[FINGERX_POINT_HBYTE];
-	*x <<= 8;
-	*x |= data[FINGERX_POINT_LBYTE];
-
-	*y = data[FINGERY_POINT_HBYTE];
-	*y <<= 8;
-	*y |= data[FINGERY_POINT_LBYTE];
+	g_elan_ts->wx = data[FINGERX_WIDTH_BYTE];
+	g_elan_ts->wy = data[FINGERY_WIDTH_BYTE];
+	g_elan_ts->ewx = data[FINGERX_EDGE_WIDTH_BYTE];
+	g_elan_ts->ewy = data[FINGERY_EDGE_WIDTH_BYTE];
+	g_elan_ts->xer = data[FINGERX_XEDGE_RATIO_BYTE];
+	g_elan_ts->yer = data[FINGERY_YEDGE_RATIO_BYTE];
+	g_elan_ts->finger_x = ((data[FINGERX_POINT_HBYTE] << 8) |
+		data[FINGERX_POINT_LBYTE]);
+	g_elan_ts->finger_y = ((data[FINGERY_POINT_HBYTE] << 8) |
+		data[FINGERY_POINT_LBYTE]);
 
 	return;
 }
 
-static inline void elan_ktf_pen_parse_xy(uint8_t *data,  uint16_t *x, uint16_t *y, uint16_t *p)
+static inline void elan_ktf_pen_parse_xy(uint8_t *data)
 {
-	*x = data[PENX_POINT_HBYTE];
-	*x <<= 8;
-	*x |= data[PENX_POINT_LBYTE];
+	g_elan_ts->pen_x = ((data[PENX_POINT_HBYTE] << 8) |
+		data[PENX_POINT_LBYTE]);
+	g_elan_ts->pen_y = ((data[PENY_POINT_HBYTE] << 8) |
+		data[PENY_POINT_LBYTE]);
+	g_elan_ts->pen_pressure = ((data[PEN_PRESS_HBYTE] << 8) |
+		data[PEN_PRESS_LBYTE]);
 
-	*y = data[PENY_POINT_HBYTE];
-	*y <<= 8;
-	*y |= data[PENY_POINT_LBYTE];
-
-	*p = data[PEN_PRESS_HBYTE];
-	*p <<= 8;
-	*p |= data[PEN_PRESS_LBYTE];
 	return;
 }
 
@@ -656,8 +804,8 @@ static void elan_mt_process_touch(uint16_t *x, uint16_t *y, int x_resolution, in
 		temp_y = temp_value;
 
 	}
-	lcm_max_x = g_elan_ts->elan_chip_data->x_max;
-	lcm_max_y = g_elan_ts->elan_chip_data->y_max;
+	lcm_max_x = g_elan_ts->elan_chip_data->x_max - 1;
+	lcm_max_y = g_elan_ts->elan_chip_data->y_max - 1;
 	if ((x_resolution > 0) && (y_resolution > 0)) {
 		temp_x = (uint16_t)((int)temp_x * lcm_max_x / x_resolution);
 		temp_y = (uint16_t)((int)temp_y * lcm_max_y / y_resolution);
@@ -680,8 +828,6 @@ static void parse_fingers_point(struct ts_fingers *pointinfo, u8 *pbuf)
 	int i = 0;
 	int fid = 0;
 	int idx = 3; // point  start byte
-	uint16_t x = 0;
-	uint16_t y = 0;
 
 	if ((!pointinfo) || (!pbuf) || (!g_elan_ts) || (!g_elan_ts->elan_chip_data)) {
 		TS_LOG_ERR("[elan]%s:arg is NULL\n", __func__);
@@ -692,25 +838,31 @@ static void parse_fingers_point(struct ts_fingers *pointinfo, u8 *pbuf)
 	for (i = 0; i < g_elan_ts->cur_finger_num; i++) {
 		if ((pbuf[idx] & 0x3) != 0x0) {    // bit0 tip bit1 range
 			fid = (pbuf[idx] >> 2) & 0x3f;    // fingerid bit 2-7
-			elan_ktf_finger_parse_xy(pbuf + idx, &x, &y);
-			elan_mt_process_touch(&x, &y, g_elan_ts->finger_x_resolution,
-					g_elan_ts->finger_y_resolution);
+			elan_ktf_finger_parse_xy(pbuf + idx);
+			elan_mt_process_touch(&(g_elan_ts->finger_x),
+				&(g_elan_ts->finger_y),
+				g_elan_ts->finger_x_resolution,
+				g_elan_ts->finger_y_resolution);
 			pointinfo->fingers[fid].status = TS_FINGER_PRESS;
-			pointinfo->fingers[fid].x = (int)x;
-			pointinfo->fingers[fid].y = (int)y;
+			pointinfo->fingers[fid].x = (int)(g_elan_ts->finger_x);
+			pointinfo->fingers[fid].y = (int)(g_elan_ts->finger_y);
 			pointinfo->fingers[fid].major = FINGER_MAJOR;
 			pointinfo->fingers[fid].minor = FINGER_MINOR;
 			pointinfo->fingers[fid].pressure = FINGER_PRESSURE;
+			pointinfo->fingers[fid].wx = (int)(g_elan_ts->wx);
+			pointinfo->fingers[fid].wy = (int)(g_elan_ts->wy);
+			pointinfo->fingers[fid].ewx = (int)(g_elan_ts->ewx);
+			pointinfo->fingers[fid].ewy = (int)(g_elan_ts->ewy);
+			pointinfo->fingers[fid].xer = (int)(g_elan_ts->xer);
+			pointinfo->fingers[fid].yer = (int)(g_elan_ts->yer);
 		}
 		idx += VALUE_OFFSET;
 	}
+	pointinfo->cur_finger_number = g_elan_ts->cur_finger_num;
 }
 
 static void parse_pen_point(struct ts_pens *pointinfo, u8 *pbuf, struct ts_cmd_node *out_cmd)
 {
-	uint16_t x = 0;
-	uint16_t y = 0;
-	uint16_t p = 0;
 	unsigned int pen_down = 0;
 
 	if ((!pointinfo) || (!pbuf) || (!g_elan_ts) || (!g_elan_ts->elan_chip_data)) {
@@ -719,16 +871,17 @@ static void parse_pen_point(struct ts_pens *pointinfo, u8 *pbuf, struct ts_cmd_n
 	}
 	pen_down = pbuf[3] & 0x03;   // pbuf[3] bit 0,1 tip and inrange
 	if (pen_down) {
-		elan_ktf_pen_parse_xy(pbuf, &x, &y, &p);
-		elan_mt_process_touch(&x, &y, g_elan_ts->pen_x_resolution,
-				g_elan_ts->pen_y_resolution);
+		elan_ktf_pen_parse_xy(pbuf);
+		elan_mt_process_touch(&(g_elan_ts->pen_x), &(g_elan_ts->pen_y),
+			g_elan_ts->pen_x_resolution,
+			g_elan_ts->pen_y_resolution);
 		pointinfo->tool.tip_status = (int)(pen_down >> 1);
-		pointinfo->tool.x = (int)x;
-		pointinfo->tool.y = (int)y;
-		pointinfo->tool.pressure = p;
+		pointinfo->tool.x = (int)(g_elan_ts->pen_x);
+		pointinfo->tool.y = (int)(g_elan_ts->pen_y);
+		pointinfo->tool.pressure = (int)(g_elan_ts->pen_pressure);
 		pointinfo->tool.pen_inrange_status = (int)(pen_down & 0x1);
 		TS_LOG_DEBUG("[elan]:report pen pressure = %d, pen_inrange_status = %d\n", \
-				p, (int)(pen_down & 0x1));
+			g_elan_ts->pen_pressure, (int)(pen_down & 0x1));
 		if (!g_elan_ts->pen_detected) {
 			TS_LOG_INFO("[elan]:pen is detected!\n");
 			g_elan_ts->pen_detected = true;
@@ -746,6 +899,8 @@ static int check_fw_status(void)
 {
 	int ret = 0;
 	u8 checkstatus[ELAN_SEND_DATA_LEN] = { 0x04, 0x00, 0x23, 0x00, 0x03, 0x18 };
+	u8 check_rek_count[ELAN_SEND_DATA_LEN] = { 0x04, 0x00, 0x23, 0x00,
+		0x03, 0x00, 0x04, 0x53, 0xd0, 0x00, 0x01 };
 	u8 buff[ELAN_RECV_DATA_LEN] = {0};
 	if (!g_elan_ts) {
 		TS_LOG_ERR("[elan]:%s,elan ts is null\n", __func__);
@@ -761,6 +916,34 @@ static int check_fw_status(void)
 	}
 
 	if (buff[TP_NORMAL_DATA_BYTE] == TP_NORMAL_DATA) {
+		ret = elan_i2c_read(check_rek_count, sizeof(check_rek_count),
+			buff, sizeof(buff));
+		if (ret) {
+			TS_LOG_ERR("[elan]:i2c read tp mode fail!ret=%d\n",
+				ret);
+			return -EINVAL;
+		}
+		/* 0-5th hid head info, 6th & 7th calibration status */
+		TS_LOG_INFO("[elan]:Tp rek_count check:%x,%x,%x,%x,%x,%x,%x,%x\n",
+			buff[0], buff[1], buff[2], buff[3], buff[4],
+			buff[5], buff[ELAN_CALIBRATE_STATUS_HBYTE],
+			buff[ELAN_CALIBRATE_STATUS_LBYTE]);
+		/*
+		 * calibrate status description:
+		 *    0xFFFF: TP IC do not calibrate after last update firmware.
+		 *    0x0: TP IC need not calibrate.
+		 *    0x1: TP IC has been calibrated.
+		 */
+		if (buff[ELAN_CALIBRATE_STATUS_LBYTE] == ELAN_NOT_CALIBRATE) {
+			ret = elan_ktf_ts_calibrate();
+			if (ret) {
+				TS_LOG_ERR("[elan]:%s,calibrate fail\n",
+					__func__);
+				return -EINVAL;
+			}
+			TS_LOG_INFO("%s,elan_ktf_ts_calibrate success\n",
+				__func__);
+		}
 		atomic_set(&g_elan_ts->tp_mode, TP_NORMAL);
 		return 1;
 	} else if (buff[TP_RECOVER_DATA_BYTE] == TP_RECOVER_DATA) {
@@ -864,7 +1047,7 @@ static int hid_write_page(int pagenum, const u8 *fwdata)
 {
 	int write_times = 0;
 	int ipage = 0;
-	int offset = 0;
+	unsigned int offset;
 	int byte_count = 0;
 	int curIndex = 0;
 	int res = 0;
@@ -1064,7 +1247,7 @@ static int elan_ktf_fw_update_sd(void)
 	}
 
 	atomic_set(&g_elan_ts->tp_mode, TP_FWUPDATA);
-	wake_lock(&g_elan_ts->wake_lock);
+	__pm_stay_awake(&g_elan_ts->wake_lock);
 	err = elan_firmware_update(fw_entry);
 	if (err) {
 		TS_LOG_ERR("[elan]:updata fw fail!\n");
@@ -1073,7 +1256,7 @@ static int elan_ktf_fw_update_sd(void)
 		TS_LOG_DEBUG("[elan]:updata fw success!\n");
 		atomic_set(&g_elan_ts->tp_mode, TP_NORMAL);
 	}
-	wake_unlock(&g_elan_ts->wake_lock);
+	__pm_relax(&g_elan_ts->wake_lock);
 	TS_LOG_INFO("[elan]:%s: end!\n", __func__);
 	release_firmware(fw_entry);
 EXIT:
@@ -1117,7 +1300,7 @@ static int elan_ktf_fw_update_boot(char *file_name)
 
 	if ((New_Fw_Ver != (g_elan_ts->fw_ver)) || g_elan_ts->sd_fw_updata) {
 		atomic_set(&g_elan_ts->tp_mode, TP_FWUPDATA);
-		wake_lock(&g_elan_ts->wake_lock);
+		__pm_stay_awake(&g_elan_ts->wake_lock);
 		err = elan_firmware_update(fw_entry);
 		if (err) {
 			TS_LOG_ERR("[elan]:updata fw fail!\n");
@@ -1126,7 +1309,7 @@ static int elan_ktf_fw_update_boot(char *file_name)
 			TS_LOG_DEBUG("[elan]:updata fw success!\n");
 			atomic_set(&g_elan_ts->tp_mode, TP_NORMAL);
 		}
-		wake_unlock(&g_elan_ts->wake_lock);
+		__pm_relax(&g_elan_ts->wake_lock);
 	} else {
 		TS_LOG_INFO("[elan]:fw ver is new don't need updata!\n");
 	}
@@ -1256,6 +1439,9 @@ static void elan_power_off(void)
 		TS_LOG_ERR("%s, power on iovdd fail, %d\n", __func__, rc);
 	}
 
+	atomic_set(&g_last_pen_inrange_status, TS_PEN_OUT_RANGE);
+	(void)ts_event_notify(TS_PEN_OUT_RANGE); /* notify pen out of range */
+	TS_LOG_INFO("report pen exit\n");
 	return;
 }
 
@@ -1473,8 +1659,8 @@ static int elan_project_color(void)
 static int elan_read_fw_info(void)
 {
 	int ret = 0;
-	int highbyte = 0;
-	int lowbyte = 0;
+	unsigned int highbyte;
+	unsigned int lowbyte;
 	char ver_byte[2] = {0};
 	/* Get firmware version */
 	u8 cmd_ver[ELAN_SEND_DATA_LEN] = { 0x04, 0x00, 0x23, 0x00, 0x03, 0x00, 0x04, 0x53, 0x00, 0x00, 0x01 };
@@ -1549,7 +1735,7 @@ static int elan_ktf_init_chip(void)
 	}
 #endif
 	strncpy(g_elan_ts->elan_chip_data->chip_name, ELAN_KTF_NAME, strlen(ELAN_KTF_NAME) + 1);
-	wake_lock_init(&g_elan_ts->wake_lock, WAKE_LOCK_SUSPEND, "elantp_wake_lock");
+	wakeup_source_init(&g_elan_ts->wake_lock, "elantp_wake_lock");
 	ret = check_fw_status();
 	if (ret < 0) {
 		TS_LOG_ERR("[elan]:ic is unknown mode\n");
@@ -1583,6 +1769,12 @@ static int elan_ktf_init_chip(void)
 	}
 	g_elan_ts->sd_fw_updata = false;
 	g_elan_ts->pen_detected = false;
+
+#if defined(CONFIG_TEE_TUI)
+	strncpy(tee_tui_data.device_name, g_elan_ts->project_id,
+		sizeof(g_elan_ts->project_id));
+	tee_tui_data.device_name[strlen(g_elan_ts->project_id)] = '\0';
+#endif
 	return NO_ERR;
 }
 
@@ -1604,10 +1796,13 @@ static int elan_ktf_input_config(struct input_dev *input_dev)
 	input_set_abs_params(input_dev, ABS_MT_WIDTH_MINOR, 0, FINGER_MINOR, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0, MAX_FINGER_SIZE, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
-		g_elan_ts->elan_chip_data->y_max, 0, 0);
+		g_elan_ts->elan_chip_data->y_max - 1, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
-		g_elan_ts->elan_chip_data->x_max, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0, MAX_FINGER_SIZE, 0, 0);
+		g_elan_ts->elan_chip_data->x_max - 1, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0,
+		FINGER_MAJOR, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0,
+		FINGER_MINOR, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, MAX_FINGER_PRESSURE, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_DISTANCE, 0, MAX_FINGER_SIZE, 0, 0);
 	return NO_ERR;
@@ -1638,6 +1833,33 @@ static int elan_ktf_irq_top_half(struct ts_cmd_node *cmd)
 {
 	cmd->command = TS_INT_PROCESS;
 	return NO_ERR;
+}
+
+static void elan_report_debug_info(u8 debug_info)
+{
+	u8 trace_mode = (debug_info & ELAN_TRACE_MODE_INFO_MASK) >>
+		TRACE_MODE_OFFSET;
+	u8 water_mode = (debug_info & ELAN_WATER_MODE_INFO_MASK) >>
+		WATER_MODE_OFFSET;
+	u8 palm_mode = debug_info & ELAN_PALM_MODE_INFO_MASK;
+	u8 freq_mode = debug_info & ELAN_FREQ_HOP_INFO_MASK;
+	u8 obl_mode = debug_info & ELAN_OBL_MODE_INFO_MASK;
+
+	TS_LOG_INFO("trace=%d,Water=%d,Palm=%d,Freq Hop=%d,OBL=%d\n",
+		trace_mode, water_mode, palm_mode, freq_mode, obl_mode);
+#if defined(CONFIG_HUAWEI_DSM)
+	ts_dmd_report(DSM_TP_CHARGER_NOISE_HOP,
+		"try to client record DSM_TP_CHARGER_NOISE_HOP:%d\n"
+		"elan tp enter abnormal mode:\n"
+		"abnormal mode description:\n"
+		"trach mode:0x%02x\n"
+		"water mode:0x%02x\n"
+		"palm mode:0x%02x\n"
+		"freq hop:0x%02x\n"
+		"OBL mode:0x%02x\n",
+		DSM_TP_CHARGER_NOISE_HOP,
+		trace_mode, water_mode, palm_mode, freq_mode, obl_mode);
+#endif
 }
 
 static int elan_ktf_irq_bottom_half(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
@@ -1680,6 +1902,9 @@ static int elan_ktf_irq_bottom_half(struct ts_cmd_node *in_cmd, struct ts_cmd_no
 				}
 			}
 			break;
+		case ELAN_DEBUG_MESG:
+			elan_report_debug_info(buf[ELAN_IC_DEBUG_INFO]);
+			break;
 		default:
 			// 0th len 2th id 4,5th other
 			TS_LOG_INFO("[elan]:unknown report id:%0x,%0x,%0x,%0x\n", buf[0], buf[2], buf[4], buf[5]);
@@ -1700,7 +1925,7 @@ static int elan_ktf_hw_reset(void)
 	return NO_ERR;
 }
 
-static int elan_ktf_ts_set_power_state(int state)
+static int elan_ktf_ts_set_power_state(unsigned int state)
 {
 	int ret = 0;
 	u8 cmd[ELAN_SEND_DATA_LEN] = {0x04, 0x00, 0x23, 0x00, 0x03, 0x00, 0x04, 0x54, 0x50, 0x00, 0x01};
@@ -1727,6 +1952,10 @@ static int elan_ktf_core_suspend(void)
 			TS_LOG_ERR("[elan]:suspend fail\n");
 		}
 	}
+
+	atomic_set(&g_last_pen_inrange_status, TS_PEN_OUT_RANGE);
+	(void)ts_event_notify(TS_PEN_OUT_RANGE); /* notify pen out of range */
+	TS_LOG_INFO("report pen exit\n");
 	return rc;
 }
 
@@ -1748,6 +1977,10 @@ static int elan_ktf_core_resume(void)
 			}
 		}
 	}
+
+	atomic_set(&g_last_pen_inrange_status, TS_PEN_OUT_RANGE);
+	(void)ts_event_notify(TS_PEN_OUT_RANGE); /* notify pen out of range */
+	TS_LOG_INFO("report pen exit\n");
 	return rc;
 }
 

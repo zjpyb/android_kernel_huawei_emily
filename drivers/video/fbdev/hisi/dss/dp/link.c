@@ -29,8 +29,8 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
 
 #include "dp_aux.h"
 #include "link.h"
@@ -272,6 +272,7 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 	dptx_writel(dptx, DPTX_PHYIF_CTRL, phyifctrl);
 
 	if (byte & DP_MAX_DOWN_SPREAD) {
+		#if CONFIG_DP_SETTING_COMBOPHY && defined(CONFIG_HISI_FB_970)
 			phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
 			phyifctrl &= ~DPTX_PHYIF_CTRL_SSC_DIS;
 			dptx_writel(dptx, DPTX_PHYIF_CTRL, phyifctrl);
@@ -294,6 +295,11 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 					HISI_FB_ERR("[DP] Invalid PHY rate %d\n", dptx->link.rate);
 					break;
 			}
+		#else
+			phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
+			phyifctrl &= ~DPTX_PHYIF_CTRL_SSC_DIS;
+			dptx_writel(dptx, DPTX_PHYIF_CTRL, phyifctrl);
+		#endif
 
 		retval = dptx_read_dpcd(dptx, DP_DOWNSPREAD_CTRL, &byte);
 		if (retval) {
@@ -308,12 +314,18 @@ int dptx_link_set_ssc(struct dp_ctrl *dptx, bool bswitchphy)
 			return retval;
 		}
 	} else {
+		#if CONFIG_DP_SETTING_COMBOPHY && defined(CONFIG_HISI_FB_970)
 			phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
 			phyifctrl |= DPTX_PHYIF_CTRL_SSC_DIS;
 			dptx_writel(dptx, DPTX_PHYIF_CTRL, phyifctrl);
 
 			usb31phy_cr_write(0x36, 0x25);
 			usb31phy_cr_write(0x37, 0x66);
+		#else
+			phyifctrl = dptx_readl(dptx, DPTX_PHYIF_CTRL);
+			phyifctrl |= DPTX_PHYIF_CTRL_SSC_DIS;
+			dptx_writel(dptx, DPTX_PHYIF_CTRL, phyifctrl);
+		#endif
 
 		retval = dptx_read_dpcd(dptx, DP_DOWNSPREAD_CTRL, &byte);
 		if (retval) {
@@ -421,7 +433,7 @@ static int dptx_link_check_ch_eq_done(struct dp_ctrl *dptx,
 				      bool *out_ch_eq_done)
 {
 	int retval;
-	bool done;
+	bool done = false;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -457,7 +469,9 @@ void dptx_link_set_preemp_vswing(struct dp_ctrl *dptx)
 	uint32_t i;
 	uint8_t pe;
 	uint8_t vs;
+#if CONFIG_DP_SETTING_COMBOPHY
 	int retval;
+#endif
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -473,15 +487,22 @@ void dptx_link_set_preemp_vswing(struct dp_ctrl *dptx)
 		pe = dptx->link.preemp_level[i];
 		vs = dptx->link.vswing_level[i];
 		HISI_FB_INFO("[DP] lane: (%d), vs: (%d), pe: (%d) \n",i,vs ,pe);
+		#if CONFIG_DP_SETTING_COMBOPHY
 			dptx_combophy_set_preemphasis_swing(dptx, i, vs, pe);
+		#else
+			dptx_phy_set_pre_emphasis(dptx, i, pe);
+			dptx_phy_set_vswing(dptx, i, vs);
+		#endif
 	}
 
+#if CONFIG_DP_SETTING_COMBOPHY
 	/* Wait for PHY busy */
 	retval = dptx_phy_wait_busy(dptx, dptx->link.lanes);
 	if (retval) {
 		HISI_FB_ERR("[DP] Timed out 1 waiting for PHY BUSY\n");
 		return;
 	}
+#endif
 }
 
 int dptx_link_training_lanes_set(struct dp_ctrl *dptx)
@@ -540,6 +561,7 @@ int dptx_link_adjust_drive_settings(struct dp_ctrl *dptx, int *out_changed)
 	HISI_FB_INFO("[DP] Lane: %d \n",lanes);
 
 	switch (lanes) {
+	/* This case (value 4) is not terminated by a 'break' statement */
 	case 4:
 		retval = dptx_read_dpcd(dptx, DP_ADJUST_REQUEST_LANE2_3, &byte);
 		if (retval)
@@ -579,7 +601,7 @@ int dptx_link_adjust_drive_settings(struct dp_ctrl *dptx, int *out_changed)
 	if (retval)
 		return retval;
 
-	if (out_changed)
+	if (out_changed != NULL)
 		*out_changed = changed;
 
 	return 0;
@@ -819,8 +841,8 @@ int dptx_link_cr(struct dp_ctrl *dptx)
 int dptx_link_ch_eq(struct dp_ctrl *dptx)
 {
 	int retval;
-	bool cr_done;
-	bool ch_eq_done;
+	bool cr_done = false;
+	bool ch_eq_done = false;
 	uint32_t pattern;
 	uint32_t i;
 	uint8_t dp_pattern;
@@ -957,8 +979,9 @@ int dptx_link_reduce_lanes(struct dp_ctrl *dptx)
 
 int dptx_link_training(struct dp_ctrl *dptx, uint8_t rate, uint8_t lanes)
 {
-	int retval;
+	int retval, retval1;
 	uint8_t byte;
+	u32 hpd_sts;
 
 	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -1065,7 +1088,14 @@ again:
 	retval = dptx_read_dpcd(dptx, DP_SINK_COUNT, &byte);
 	if (retval)
 		return retval;
+
+	retval = dptx_read_dpcd(dptx, DP_SINK_COUNT_ESI, &byte);
+	if (retval)
+		return retval;
+
+#ifdef CONFIG_DP_HDCP_ENABLE
 	HDCP_Read_TEInfo(dptx);
+#endif
 	dptx_video_ts_change(dptx, 0);
 	HISI_FB_INFO("[DP] Link training succeeded rate=%d lanes=%d\n",
 		 dptx->link.rate, dptx->link.lanes);
@@ -1077,7 +1107,18 @@ again:
 	return 0;
 
 fail:
-	HISI_FB_ERR("[DP] Link training failed %d\n", retval);
+	hpd_sts = dptx_readl(dptx, DPTX_HPDSTS);
+
+	if(hpd_sts & DPTX_HPDSTS_STATUS_GA) {
+		dptx_phy_set_pattern(dptx, DPTX_PHYIF_CTRL_TPS_NONE);
+		retval1 = dptx_link_training_pattern_set(dptx, DP_TRAINING_PATTERN_DISABLE);
+		if (retval1)
+			return retval1;
+
+		HISI_FB_ERR("[DP] Link training failed %d\n", retval);
+	} else {
+		HISI_FB_ERR("[DP]Link training failed  as sink is disconnected %d\n", retval);
+	}
 	return retval;
 }
 
@@ -1116,8 +1157,8 @@ int dptx_link_check_status(struct dp_ctrl *dptx)
 		dp_imonitor_set_param(DP_PARAM_LINK_RETRAINING, NULL);
 
 		retval = dptx_link_training(dptx,
-					  DPTX_MAX_LINK_RATE,
-					  DPTX_MAX_LINK_LANES);
+			dptx->max_rate,
+			dptx->max_lanes);
 		if (retval < 0) {
 			dp_imonitor_set_param(DP_PARAM_LINK_TRAINING_FAILED, &retval);
 		}
@@ -1138,8 +1179,8 @@ int dptx_link_check_status(struct dp_ctrl *dptx)
 int dptx_link_retraining(struct dp_ctrl *dptx, uint8_t rate, uint8_t lanes)
 {
 	u32 hpdsts;
-	struct video_params *vparams;
-	struct dtd *mdtd;
+	struct video_params *vparams = NULL;
+	struct dtd *mdtd = NULL;
 	int i, retval;
 
 	hpdsts = dptx_readl(dptx, DPTX_HPDSTS);

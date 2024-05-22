@@ -28,7 +28,7 @@
 #include <linux/mm_inline.h>
 #include <linux/bug.h>
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <linux/sched/signal.h>
 #include <linux/uaccess.h>
 #else
@@ -37,7 +37,7 @@
 #endif
 
 #include "../../../fs/proc/internal.h"
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 #include "../../../fs/internal.h"
 #endif
 #include <linux/hisi/protect_lru.h>
@@ -80,7 +80,7 @@ void protect_lru_set_from_file(struct page *page)
 		struct lruvec *lruvec;
 
 		zone = page_zone(page);
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 		lruvec = mem_cgroup_page_lruvec(page, zone->zone_pgdat);
 #else
 		lruvec = mem_cgroup_page_lruvec(page, zone);
@@ -105,7 +105,7 @@ void protect_lru_set_from_process(struct page *page)
 		int num;
 
 		zone = page_zone(page);
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 		lruvec = mem_cgroup_page_lruvec(page, zone->zone_pgdat);
 #else
 		lruvec = mem_cgroup_page_lruvec(page, zone);
@@ -122,9 +122,10 @@ void protect_lru_set_from_process(struct page *page)
 }
 EXPORT_SYMBOL(protect_lru_set_from_process);
 
-void add_page_to_protect_lru_list(struct page *page, struct lruvec *lruvec, bool lru_head)
+void add_page_to_protect_lru_list(struct page *page,
+			struct lruvec *lruvec, bool lru_head)
 {
-	int nr_pages,num = 0,num_index = 0;
+	int nr_pages, num = 0, num_index = 0;
 	enum lru_list lru;
 	struct list_head *head;
 
@@ -139,10 +140,6 @@ void add_page_to_protect_lru_list(struct page *page, struct lruvec *lruvec, bool
 		lruvec->heads[num].pages += nr_pages;
 		__mod_zone_page_state(page_zone(page),
 				NR_PROTECT_LRU_BASE + lru, nr_pages);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-		__mod_node_page_state(lruvec_pgdat(lruvec),
-				NR_PROTECT_LRU_BASE + lru, nr_pages);
-#endif
 	} else
 		head = &lruvec->heads[PROTECT_HEAD_END].protect_page[lru].lru;
 
@@ -177,10 +174,6 @@ void del_page_from_protect_lru_list(struct page *page, struct lruvec *lruvec)
 		lruvec->heads[num].pages -= nr_pages;
 		__mod_zone_page_state(page_zone(page),
 				NR_PROTECT_LRU_BASE + lru, -nr_pages);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-		__mod_node_page_state(lruvec_pgdat(lruvec),
-				NR_PROTECT_LRU_BASE + lru, -nr_pages);
-#endif
 	}
 }
 EXPORT_SYMBOL(del_page_from_protect_lru_list);
@@ -269,18 +262,18 @@ struct page *protect_lru_move_and_shrink(struct page *page)
 		return NULL;
 
 	zone = page_zone(page);
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 	lruvec = mem_cgroup_page_lruvec(page, zone->zone_pgdat);
 	if (protect_file_is_full(lruvec)) {
-		spin_lock_irqsave(zone_lru_lock(zone),flags);
+		spin_lock_irqsave(zone_lru_lock(zone), flags);
 		shrink_protect_file(lruvec, false);
-		spin_unlock_irqrestore(zone_lru_lock(zone),flags);
+		spin_unlock_irqrestore(zone_lru_lock(zone), flags);
 #else
 	lruvec = mem_cgroup_page_lruvec(page, zone);
 	if (protect_file_is_full(lruvec)) {
-		spin_lock_irqsave(&zone->lru_lock,flags);
+		spin_lock_irqsave(&zone->lru_lock, flags);
 		shrink_protect_file(lruvec, false);
-		spin_unlock_irqrestore(&zone->lru_lock,flags);
+		spin_unlock_irqrestore(&zone->lru_lock, flags);
 #endif
 	}
 
@@ -307,16 +300,17 @@ static bool shrink_protect_file_debug(struct lruvec *lruvec, int prot)
 	int debug_times = 4;
 	int i = prot;
 
-	head = &lruvec->heads[i+1].protect_page[LRU_INACTIVE_FILE].lru; //lint !e679
+	head = &lruvec->heads[i+1].protect_page[LRU_INACTIVE_FILE].lru;
 	tail = list_entry(head->prev, struct page, lru);
 	if (PageReserved(tail))
-		head = &lruvec->heads[i+1].protect_page[LRU_ACTIVE_FILE].lru;  //lint !e679
+		head = &lruvec->heads[i+1].protect_page[LRU_ACTIVE_FILE].lru;
 	while (debug_times) {
 		tail = list_entry(head->prev, struct page, lru);
 		if (PageReserved(tail))
 			break;
 
-		pr_emerg("protect file: flags %#lx(%pGp)\n", tail->flags, &tail->flags);
+		pr_emerg("protect file: flags %#lx(%pGp)\n",
+			tail->flags, &tail->flags);
 		debug_times--;
 		head = head->prev;
 	}
@@ -347,13 +341,13 @@ static int sysctl_protect_max_mbytes_handler(struct ctl_table *table, int write,
 			total_prot_pages = protect_max_mbytes[i] << (20 - PAGE_SHIFT);
 
 			for_each_populated_zone(zone) {
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 				lruvec = &zone->zone_pgdat->lruvec;
 				lruvec->heads[i].max_pages = total_prot_pages;
 				break;
 #else
-				unsigned long prot_pages = (u64)zone->managed_pages * total_prot_pages
-						/ totalram_pages;
+				unsigned long prot_pages = (u64)zone->managed_pages
+					* total_prot_pages / totalram_pages;
 				lruvec = &zone->lruvec;
 				lruvec->heads[i].max_pages = prot_pages;
 #endif
@@ -361,34 +355,35 @@ static int sysctl_protect_max_mbytes_handler(struct ctl_table *table, int write,
 		}
 
 		for_each_populated_zone(zone) {
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 			lruvec = &zone->zone_pgdat->lruvec;
 #else
 			lruvec = &zone->lruvec;
 #endif
 
-			for (i = 0; i < PROTECT_HEAD_END; i++) {
+			for (i = 0; i < PROTECT_HEAD_END; i++)
 				lastcur[i] = lruvec->heads[i].pages;
-			}
+
 			while (protect_file_is_full(lruvec)) {
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-				spin_lock_irqsave(zone_lru_lock(zone),flags);
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
+				spin_lock_irqsave(zone_lru_lock(zone), flags);
 				shrink_protect_file(lruvec, false);
-				spin_unlock_irqrestore(zone_lru_lock(zone),flags);
+				spin_unlock_irqrestore(zone_lru_lock(zone), flags);
 #else
-				spin_lock_irqsave(&zone->lru_lock,flags);
+				spin_lock_irqsave(&zone->lru_lock, flags);
 				shrink_protect_file(lruvec, false);
-				spin_unlock_irqrestore(&zone->lru_lock,flags);
+				spin_unlock_irqrestore(&zone->lru_lock, flags);
 #endif
 				for (i = 0; i < PROTECT_HEAD_END; i++) {
 					cur[i] = lruvec->heads[i].pages;
-					if(!lruvec->heads[i].max_pages && cur[i] && lastcur[i]==cur[i]){
+					if (!lruvec->heads[i].max_pages && cur[i]
+						&& lastcur[i] == cur[i]) {
 						WARN_ONCE(true,
-							  "protect_lru: %s() can not shink page, cur=%lu",
-							   __FUNCTION__, cur[i]);
+							"protect_lru: %s() can not shink page, cur=%lu",
+							__func__, cur[i]);
 						count++;
 
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 						spin_lock_irqsave(zone_lru_lock(zone), flags);
 						empty = shrink_protect_file_debug(lruvec, i);
 						spin_unlock_irqrestore(zone_lru_lock(zone), flags);
@@ -439,7 +434,7 @@ static int sysctl_protect_cur_mbytes_handler(struct ctl_table *table, int write,
 	for (i = 0; i < PROTECT_HEAD_END; i++) {
 		protect_cur_mbytes[i] = 0;
 		for_each_populated_zone(zone) {
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 			lruvec = &zone->zone_pgdat->lruvec;
 			protect_cur_mbytes[i] = lruvec->heads[i].pages;
 			break;
@@ -454,9 +449,10 @@ static int sysctl_protect_cur_mbytes_handler(struct ctl_table *table, int write,
 	return proc_doulongvec_minmax(table, write, buffer, length, ppos);
 }
 
+EXPORT_SYMBOL(shrink_protect_file);
 void shrink_protect_file(struct lruvec *lruvec, bool force)
 {
-	int i, count,index = 0;
+	int i, count, index = 0;
 	unsigned long cur, max;
 	struct list_head *head;
 	struct page *tail;
@@ -491,8 +487,6 @@ void shrink_protect_file(struct lruvec *lruvec, bool force)
 	}
 }
 
-EXPORT_SYMBOL(shrink_protect_file);
-
 bool protect_file_is_full(struct lruvec *lruvec)
 {
 	int i;
@@ -502,9 +496,9 @@ bool protect_file_is_full(struct lruvec *lruvec)
 	for (i = 0; i < PROTECT_HEAD_END; i++) {
 		cur = lruvec->heads[i].pages;
 		max = lruvec->heads[i].max_pages;
-		if (cur > totalram_pages) {
+		if (cur > totalram_pages)
 			pr_err("protect lru cur larger then totalram_pages");
-		}
+
 		if (cur && cur > max)
 			return true;
 	}
@@ -563,7 +557,7 @@ static int __init protect_lru_init(void)
 		for_each_populated_zone(zone) {
 			prot_pages = (u64)zone->managed_pages * total_prot_pages
 					/ totalram_pages;
-#if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+#if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 			lruvec = &zone->zone_pgdat->lruvec;
 #else
 			lruvec = &zone->lruvec;
@@ -571,7 +565,7 @@ static int __init protect_lru_init(void)
 			lruvec->heads[i].max_pages = prot_pages;
 		}
 	}
-	pr_err("protect_lru_init phone_total_pages:%lu",totalram_pages);
+	pr_err("%s phone_total_pages:%lu", __func__, totalram_pages);
 
 	return 0;
 }
@@ -580,10 +574,10 @@ module_init(protect_lru_init);
 
 /*
  * Format: 'fd level path'
- * */
+ */
 
-static ssize_t protect_write(struct file *file, const char __user * buffer,
-                       size_t count, loff_t *ppos)
+static ssize_t protect_write(struct file *file, const char __user *buffer,
+				size_t count, loff_t *ppos)
 {
 	char proctectData[MAX_LEN] = {0};
 	int ret = 0, index = 0, fd = 0, level = 0;
@@ -616,14 +610,14 @@ static ssize_t protect_write(struct file *file, const char __user * buffer,
 		}
 
 		if (index == 0) {
-			index ++;
+			index++;
 			*p = '\0';
 			p++;
 			while (' ' == *p)
 				p++;
 			pStrLevel = p;
 		} else if (index == 1) {
-			index ++;
+			index++;
 			*p = '\0';
 			p++;
 			while (' ' == *p)
@@ -632,20 +626,20 @@ static ssize_t protect_write(struct file *file, const char __user * buffer,
 		}
 	}
 
-	if (2 != index) {
+	if (index != 2) {
 		pr_err("set protect lru:incorrect content!\n");
 		return -EINVAL;
 	}
 
 	path = p;
 	ret = kstrtoint(start, 10, &fd);
-	if (0 != ret) {
+	if (ret != 0) {
 		pr_err("set protect lru:get fd error!\n");
 		return -EINVAL;
 	}
 
 	ret = kstrtoint(pStrLevel, 10, &level);
-	if (0 != ret) {
+	if (ret != 0) {
 		pr_err("set protect lru:get level error!\n");
 		return -EINVAL;
 	}
@@ -656,7 +650,7 @@ static ssize_t protect_write(struct file *file, const char __user * buffer,
 		return -EBADF;
 	}
 
-	if (0 <= level && level <= MAX_LEVEL) {
+	if (level >= 0 && level <= MAX_LEVEL) {
 		ret = do_vfs_ioctl(f.file, fd, FPROTECTLRUSET, level);
 	} else {
 		pr_err("set protect lru: level is not right\n");

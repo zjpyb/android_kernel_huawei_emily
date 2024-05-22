@@ -1,21 +1,25 @@
-/* Copyright (c) 2017-2018, Huawei terminal Tech. Co., Ltd. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 and
-* only version 2 as published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
-* GNU General Public License for more details.
-*
-*/
+/*
+ * lcd_kit_debug_hs.c
+ *
+ * lcdkit debug function for lcd driver of hisi platform
+ *
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include "hisi_fb.h"
 #include "lcd_kit_common.h"
 #include "lcd_kit_dbg.h"
 #include "lcd_kit_disp.h"
-#include "lcd_kit_parse.h"
 #include "lcd_kit_power.h"
 
 static bool dbg_panel_power_on(void);
@@ -30,64 +34,69 @@ static int dbg_fps_updt_support(int val)
 static int dbg_quickly_sleep_out_support(int val)
 {
 	disp_info->quickly_sleep_out.support = val;
-	LCD_KIT_INFO("disp_info->quickly_sleep_out.support = %d\n", disp_info->quickly_sleep_out.support);
+	LCD_KIT_INFO("disp_info->quickly_sleep_out.support = %d\n",
+		disp_info->quickly_sleep_out.support);
+	return LCD_KIT_OK;
+}
+
+static int init_panel_info(struct hisi_fb_data_type *hisifd,
+	struct hisi_panel_info *pinfo)
+{
+	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+	if (hisifd == NULL) {
+		LCD_KIT_ERR("hisifd is null\n");
+		return LCD_KIT_FAIL;
+	}
+	pinfo = &hisifd->panel_info;
+	if (pinfo == NULL) {
+		LCD_KIT_ERR("pinfo is null\n");
+		return LCD_KIT_FAIL;
+	}
 	return LCD_KIT_OK;
 }
 
 static int dbg_blpwm_input_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->blpwm_input_disable = val;
-	LCD_KIT_INFO("pinfo->blpwm_input_disable = %d\n", pinfo->blpwm_input_disable);
+	LCD_KIT_INFO("blpwm_input_disable = %d\n", pinfo->blpwm_input_disable);
 	return LCD_KIT_OK;
 }
 
 static int dbg_dsi_upt_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->dsi_bit_clk_upt_support = val;
-	LCD_KIT_INFO("pinfo->dsi_bit_clk_upt_support = %d\n", pinfo->dsi_bit_clk_upt_support);
+	LCD_KIT_INFO("dsi_upt_support = %d\n", pinfo->dsi_bit_clk_upt_support);
 	return LCD_KIT_OK;
 }
 
 static int dbg_rgbw_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->rgbw_support = val;
 	disp_info->rgbw.support = val;
@@ -97,18 +106,14 @@ static int dbg_rgbw_support(int val)
 
 static int dbg_gamma_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->gamma_support = val;
 	LCD_KIT_INFO("pinfo->gamma_support = %d\n", pinfo->gamma_support);
@@ -117,18 +122,14 @@ static int dbg_gamma_support(int val)
 
 static int dbg_gmp_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->gmp_support = val;
 	LCD_KIT_INFO("pinfo->gmp_support = %d\n", pinfo->gmp_support);
@@ -137,18 +138,14 @@ static int dbg_gmp_support(int val)
 
 static int dbg_hiace_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->hiace_support = val;
 	LCD_KIT_INFO("pinfo->hiace_support = %d\n", pinfo->hiace_support);
@@ -157,18 +154,14 @@ static int dbg_hiace_support(int val)
 
 static int dbg_xcc_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->xcc_support = val;
 	LCD_KIT_INFO("pinfo->xcc_support = %d\n", pinfo->xcc_support);
@@ -177,48 +170,40 @@ static int dbg_xcc_support(int val)
 
 static int dbg_arsr1psharpness_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->arsr1p_sharpness_support = val;
-	LCD_KIT_INFO("pinfo->arsr1p_sharpness_support = %d\n", pinfo->arsr1p_sharpness_support);
+	LCD_KIT_INFO("arsr1p_support = %d\n", pinfo->arsr1p_sharpness_support);
 	return LCD_KIT_OK;
 }
 
 static int dbg_prefixsharptwo_d_support(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->prefix_sharpness2D_support = val;
-	LCD_KIT_INFO("pinfo->prefix_sharpness2D_support = %d\n", pinfo->prefix_sharpness2D_support);
+	LCD_KIT_INFO("prefix_support=%d\n", pinfo->prefix_sharpness2D_support);
 	return LCD_KIT_OK;
 }
 
 static void hisifb_frame_refresh(struct hisi_fb_data_type *hisifd)
 {
-	#define ENVP_LEN 2
-	#define BUF_LEN 64
+#define ENVP_LEN 2
+#define BUF_LEN 64
 	char *envp[ENVP_LEN] = {0};
 	char buf[BUF_LEN];
 
@@ -235,25 +220,19 @@ static void hisifb_frame_refresh(struct hisi_fb_data_type *hisifd)
 
 static int dbg_video_idle_mode_support(int val)
 {
-	#define BACKLIGHT_DELAY 100
+#define BACKLIGHT_DELAY 100
 	struct hisi_fb_data_type *hisifd = hisifd_list[PRIMARY_PANEL_IDX];
 	struct hisi_panel_info *pinfo = NULL;
 	bool panel_power_on = dbg_panel_power_on();
 	uint32_t bl_level_cur;
 	int ret;
 
-	if (!hisifd) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
-
-	pinfo = &hisifd->panel_info;
-	if (!pinfo) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
-	}
-
-	/*lcd panel off*/
+	/* lcd panel off */
 	if (panel_power_on) {
 		bl_level_cur = hisifd->bl_level;
 		hisifb_set_backlight(hisifd, 0, false);
@@ -267,7 +246,7 @@ static int dbg_video_idle_mode_support(int val)
 
 	pinfo->video_idle_mode = val;
 
-	/*lcd panel on*/
+	/* lcd panel on */
 	if (panel_power_on) {
 		ret = hisi_fb_blank_sub(FB_BLANK_UNBLANK, hisifd->fbi);
 		if (ret != 0) {
@@ -277,8 +256,8 @@ static int dbg_video_idle_mode_support(int val)
 		}
 		hisifb_frame_refresh(hisifd);
 		msleep(BACKLIGHT_DELAY);
-		hisifb_set_backlight(hisifd,
-			bl_level_cur ? bl_level_cur : hisifd->bl_level, false);
+		bl_level_cur = bl_level_cur ? bl_level_cur : hisifd->bl_level;
+		hisifb_set_backlight(hisifd, bl_level_cur, false);
 	}
 	LCD_KIT_INFO("pinfo->video_idle_mode = %d\n", pinfo->video_idle_mode);
 	return LCD_KIT_OK;
@@ -286,18 +265,14 @@ static int dbg_video_idle_mode_support(int val)
 
 static int dbg_cmd_type(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->type = val;
 	LCD_KIT_INFO("pinfo->type = %d\n", pinfo->type);
@@ -306,38 +281,30 @@ static int dbg_cmd_type(int val)
 
 static int dbg_pxl_clk(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->pxl_clk_rate = val * 1000000UL;
-	LCD_KIT_INFO("pinfo->pxl_clk_rate = %ul\n", pinfo->pxl_clk_rate);
+	LCD_KIT_INFO("pinfo->pxl_clk_rate = %llu\n", pinfo->pxl_clk_rate);
 	return LCD_KIT_OK;
 }
 
 static int dbg_pxl_clk_div(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->pxl_clk_rate_div = val;
 	LCD_KIT_INFO("pinfo->pxl_clk_rate_div = %d\n", pinfo->pxl_clk_rate_div);
@@ -346,18 +313,14 @@ static int dbg_pxl_clk_div(int val)
 
 static int dbg_vsync_ctrl_type(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->vsync_ctrl_type = val;
 	LCD_KIT_INFO("pinfo->vsync_ctrl_type = %d\n", pinfo->vsync_ctrl_type);
@@ -366,18 +329,14 @@ static int dbg_vsync_ctrl_type(int val)
 
 static int dbg_hback_porch(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->ldi.h_back_porch = val;
 	LCD_KIT_INFO("pinfo->ldi.h_back_porch = %d\n", pinfo->ldi.h_back_porch);
@@ -386,58 +345,46 @@ static int dbg_hback_porch(int val)
 
 static int dbg_hfront_porch(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->ldi.h_front_porch = val;
-	LCD_KIT_INFO("pinfo->ldi.h_front_porch = %d\n", pinfo->ldi.h_front_porch);
+	LCD_KIT_INFO("ldi.h_front_porch = %d\n", pinfo->ldi.h_front_porch);
 	return LCD_KIT_OK;
 }
 
 static int dbg_hpulse_width(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->ldi.h_pulse_width = val;
-	LCD_KIT_INFO("pinfo->ldi.h_pulse_width = %d\n", pinfo->ldi.h_pulse_width);
+	LCD_KIT_INFO("ldi.h_pulse_width = %d\n", pinfo->ldi.h_pulse_width);
 	return LCD_KIT_OK;
 }
 
 static int dbg_vback_porch(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->ldi.v_back_porch = val;
 	LCD_KIT_INFO("pinfo->ldi.v_back_porch = %d\n", pinfo->ldi.v_back_porch);
@@ -446,58 +393,46 @@ static int dbg_vback_porch(int val)
 
 static int dbg_vfront_porch(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->ldi.v_front_porch = val;
-	LCD_KIT_INFO("pinfo->ldi.v_front_porch = %d\n", pinfo->ldi.v_front_porch);
+	LCD_KIT_INFO("pinfo->ldi.v_front_porch=%d\n", pinfo->ldi.v_front_porch);
 	return LCD_KIT_OK;
 }
 
 static int dbg_vpulse_width(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->ldi.v_pulse_width = val;
-	LCD_KIT_INFO("pinfo->ldi.v_pulse_width = %d\n", pinfo->ldi.v_pulse_width);
+	LCD_KIT_INFO("pinfo->ldi.v_pulse_width=%d\n", pinfo->ldi.v_pulse_width);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_burst_mode(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.burst_mode = val;
 	LCD_KIT_INFO("pinfo->mipi.burst_mode = %d\n", pinfo->mipi.burst_mode);
@@ -506,38 +441,30 @@ static int dbg_mipi_burst_mode(int val)
 
 static int dbg_mipi_max_tx_esc_clk(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.max_tx_esc_clk = val;
-	LCD_KIT_INFO("pinfo->mipi.max_tx_esc_clk = %d\n", pinfo->mipi.max_tx_esc_clk);
+	LCD_KIT_INFO("mipi.max_tx_esc_clk = %d\n", pinfo->mipi.max_tx_esc_clk);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_dsi_bit_clk(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.dsi_bit_clk_upt = val;
 	LCD_KIT_INFO("pinfo->mipi.dsi_bit_clk = %d\n", pinfo->mipi.dsi_bit_clk);
@@ -546,158 +473,126 @@ static int dbg_mipi_dsi_bit_clk(int val)
 
 static int dbg_mipi_dsi_bit_clk_a(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.dsi_bit_clk_val1 = val;
-	LCD_KIT_INFO("pinfo->mipi.dsi_bit_clk_val1 = %d\n", pinfo->mipi.dsi_bit_clk_val1);
+	LCD_KIT_INFO("dsi_bit_clk_val1 = %d\n", pinfo->mipi.dsi_bit_clk_val1);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_dsi_bit_clk_b(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.dsi_bit_clk_val2 = val;
-	LCD_KIT_INFO("pinfo->mipi.dsi_bit_clk_val2 = %d\n", pinfo->mipi.dsi_bit_clk_val2);
+	LCD_KIT_INFO("dsi_bit_clk_val2 = %d\n", pinfo->mipi.dsi_bit_clk_val2);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_dsi_bit_clk_c(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.dsi_bit_clk_val3 = val;
-	LCD_KIT_INFO("pinfo->mipi.dsi_bit_clk_val3 = %d\n", pinfo->mipi.dsi_bit_clk_val3);
+	LCD_KIT_INFO("dsi_bit_clk_val3 = %d\n", pinfo->mipi.dsi_bit_clk_val3);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_dsi_bit_clk_d(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.dsi_bit_clk_val4 = val;
-	LCD_KIT_INFO("pinfo->mipi.dsi_bit_clk_val4 = %d\n", pinfo->mipi.dsi_bit_clk_val4);
+	LCD_KIT_INFO("dsi_bit_clk_val4 = %d\n", pinfo->mipi.dsi_bit_clk_val4);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_dsi_bit_clk_e(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.dsi_bit_clk_val5 = val;
-	LCD_KIT_INFO("pinfo->mipi.dsi_bit_clk_val5 = %d\n", pinfo->mipi.dsi_bit_clk_val5);
+	LCD_KIT_INFO("dsi_bit_clk_val5 = %d\n", pinfo->mipi.dsi_bit_clk_val5);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_noncontinue_enable(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.non_continue_en = val;
-	LCD_KIT_INFO("pinfo->mipi.non_continue_en = %d\n", pinfo->mipi.non_continue_en);
+	LCD_KIT_INFO("non_continue_en = %d\n", pinfo->mipi.non_continue_en);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_rg_vcm_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.rg_vrefsel_vcm_adjust = val;
-	LCD_KIT_INFO("pinfo->mipi.rg_vrefsel_vcm_adjust = %d\n", pinfo->mipi.rg_vrefsel_vcm_adjust);
+	LCD_KIT_INFO("rg_vcm_adjust = %d\n", pinfo->mipi.rg_vrefsel_vcm_adjust);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_clk_post_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.clk_post_adjust = val;
 	LCD_KIT_INFO("pinfo->mipi.clk_post_adjust = %d\n", pinfo->mipi.clk_post_adjust);
@@ -706,138 +601,110 @@ static int dbg_mipi_clk_post_adjust(int val)
 
 static int dbg_mipi_clk_pre_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.clk_pre_adjust = val;
-	LCD_KIT_INFO("pinfo->mipi.clk_pre_adjust = %d\n", pinfo->mipi.clk_pre_adjust);
+	LCD_KIT_INFO("clk_pre_adjust = %d\n", pinfo->mipi.clk_pre_adjust);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_clk_ths_prepare_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.clk_t_hs_prepare_adjust = val;
-	LCD_KIT_INFO("pinfo->mipi.clk_t_hs_prepare_adjust = %d\n", pinfo->mipi.clk_t_hs_prepare_adjust);
+	LCD_KIT_INFO("clk_ths_pre=%d\n", pinfo->mipi.clk_t_hs_prepare_adjust);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_clk_tlpx_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.clk_t_lpx_adjust = val;
-	LCD_KIT_INFO("pinfo->mipi.clk_t_lpx_adjust = %d\n", pinfo->mipi.clk_t_lpx_adjust);
+	LCD_KIT_INFO("clk_tlpx_adjust = %d\n", pinfo->mipi.clk_t_lpx_adjust);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_clk_ths_trail_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.clk_t_hs_trial_adjust = val;
-	LCD_KIT_INFO("pinfo->mipi.clk_t_hs_trial_adjust = %d\n", pinfo->mipi.clk_t_hs_trial_adjust);
+	LCD_KIT_INFO("clk_t_hs_trial=%d\n", pinfo->mipi.clk_t_hs_trial_adjust);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_clk_ths_exit_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.clk_t_hs_exit_adjust = val;
-	LCD_KIT_INFO("pinfo->mipi.clk_t_hs_exit_adjust = %d\n", pinfo->mipi.clk_t_hs_exit_adjust);
+	LCD_KIT_INFO("clk_t_hs_exit = %d\n", pinfo->mipi.clk_t_hs_exit_adjust);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_clk_ths_zero_adjust(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.clk_t_hs_zero_adjust = val;
-	LCD_KIT_INFO("pinfo->mipi.clk_t_hs_zero_adjust = %d\n", pinfo->mipi.clk_t_hs_zero_adjust);
+	LCD_KIT_INFO("clk_t_hs_zero = %d\n", pinfo->mipi.clk_t_hs_zero_adjust);
 	return LCD_KIT_OK;
 }
 
 static int dbg_mipi_lp11_flag(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.lp11_flag = val;
 	LCD_KIT_INFO("pinfo->mipi.lp11_flag = %d\n", pinfo->mipi.lp11_flag);
@@ -846,132 +713,162 @@ static int dbg_mipi_lp11_flag(int val)
 
 static int dbg_mipi_phy_update(int val)
 {
-	struct hisi_fb_data_type* hisifd = NULL;
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return LCD_KIT_FAIL;
-	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return LCD_KIT_FAIL;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
 	pinfo->mipi.phy_m_n_count_update = val;
-	LCD_KIT_INFO("pinfo->mipi.phy_m_n_count_update = %d\n", pinfo->mipi.phy_m_n_count_update);
+	LCD_KIT_INFO("phy_update = %d\n", pinfo->mipi.phy_m_n_count_update);
 	return LCD_KIT_OK;
 }
 
 static int dbg_rgbw_bl_max(int val)
 {
 	disp_info->rgbw.rgbw_bl_max = val;
-	LCD_KIT_INFO("disp_info->rgbw.rgbw_bl_max = %d\n", disp_info->rgbw.rgbw_bl_max);
+	LCD_KIT_INFO("rgbw_bl_max = %d\n", disp_info->rgbw.rgbw_bl_max);
 	return LCD_KIT_OK;
 }
 
-static int dbg_rgbw_set_mode1(char* buf, int len)
+static int dbg_rgbw_set_mode1(char *buf, int len)
 {
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
 	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode1_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
-static int dbg_rgbw_set_mode2(char* buf, int len)
+static int dbg_rgbw_set_mode2(char *buf, int len)
 {
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
 	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode2_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
-static int dbg_rgbw_set_mode3(char* buf, int len)
+static int dbg_rgbw_set_mode3(char *buf, int len)
 {
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
 	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode3_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
-static int dbg_rgbw_set_mode4(char* buf, int len)
+static int dbg_rgbw_set_mode4(char *buf, int len)
 {
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
 	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode4_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
-static int dbg_rgbw_backlight_cmd(char* buf, int len)
+static int dbg_rgbw_backlight_cmd(char *buf, int len)
 {
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
 	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.backlight_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
-static int dbg_rgbw_pixel_gainlimit_cmd(char* buf, int len)
+static int dbg_rgbw_pixel_gainlimit_cmd(char *buf, int len)
 {
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
 	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.pixel_gain_limit_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
-static int dbg_barcode_2d_cmd(char* buf, int len)
+static int dbg_barcode_2d_cmd(char *buf, int len)
 {
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
 	lcd_kit_dbg_parse_cmd(&disp_info->oeminfo.barcode_2d.cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
-static int dbg_brightness_color_cmd(char* buf, int len)
+static int dbg_brightness_color_cmd(char *buf, int len)
 {
-	lcd_kit_dbg_parse_cmd(&disp_info->oeminfo.brightness_color_uniform.brightness_color_cmds, buf, len);
+	if (!buf) {
+		LCD_KIT_ERR("buf is null\n");
+		return LCD_KIT_FAIL;
+	}
+	lcd_kit_dbg_parse_cmd(&disp_info->oeminfo.brightness_color_uniform.brightness_color_cmds,
+		buf, len);
 	return LCD_KIT_OK;
 }
 
 static int dbg_set_voltage(void)
 {
-	int ret = 0;
+	int ret;
+
 	ret = lcd_kit_dbg_set_voltage();
 	return ret;
 }
 
-static int dbg_dsi_cmds_rx(uint8_t* out, struct lcd_kit_dsi_panel_cmds* cmds)
+static int dbg_dsi_cmds_rx(uint8_t *out, int out_len,
+	struct lcd_kit_dsi_panel_cmds *cmds)
 {
-	struct hisi_fb_data_type* hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+	struct hisi_fb_data_type *hisifd = hisifd_list[PRIMARY_PANEL_IDX];
 
 	if (hisifd == NULL) {
 		LCD_KIT_ERR("hisifd is null\n");
 		return LCD_KIT_FAIL;
 	}
-	return lcd_kit_dsi_cmds_rx(hisifd,out,cmds);
+	if (!out || !cmds) {
+		LCD_KIT_ERR("out is null or cmds is null\n");
+		return LCD_KIT_FAIL;
+	}
+	return lcd_kit_dsi_cmds_rx(hisifd, out, cmds);
 }
 
 static bool dbg_panel_power_on(void)
 {
-	struct hisi_fb_data_type* hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	bool panel_power_on = false;
+	struct hisi_fb_data_type *hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+	bool panel_power_on;
 
 	if (hisifd == NULL) {
 		LCD_KIT_ERR("hisifd is null\n");
 		return false;
 	}
-
 	down(&hisifd->blank_sem);
 	panel_power_on = hisifd->panel_power_on;
 	up(&hisifd->blank_sem);
 	return panel_power_on;
 }
 
-static void dbg_esd_check_func(void)
+static int dbg_esd_check_func(void)
 {
-	struct hisi_fb_data_type* hisifd = hisifd_list[PRIMARY_PANEL_IDX];
-	struct hisi_panel_info* pinfo = NULL;
+	struct hisi_fb_data_type *hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+	struct hisi_panel_info *pinfo = NULL;
+	int ret;
 
-	if (hisifd == NULL) {
-		LCD_KIT_ERR("hisifd is null\n");
-		return;
+	ret = init_panel_info(hisifd, pinfo);
+	if (ret != LCD_KIT_OK) {
+		LCD_KIT_INFO("init_panel_info fail\n");
+		return ret;
 	}
-	pinfo = &hisifd->panel_info;
-	if (pinfo == NULL) {
-		LCD_KIT_ERR("pinfo is null\n");
-		return;
-	}
-
 	pinfo->esd_enable = 1;
-	if (hisifd->esd_register) {
+	if (hisifd->esd_register)
 		hisifd->esd_register(hisifd->pdev);
-	}
+	return LCD_KIT_OK;
 }
 
 struct lcd_kit_dbg_ops hisi_dbg_ops = {
@@ -1030,9 +927,11 @@ struct lcd_kit_dbg_ops hisi_dbg_ops = {
 	.panel_power_on = dbg_panel_power_on,
 	.esd_check_func = dbg_esd_check_func,
 };
+
 int lcd_kit_dbg_init(void)
 {
-	int ret = LCD_KIT_OK;
+	int ret;
+
 	ret = lcd_kit_debug_register(&hisi_dbg_ops);
 	return ret;
 }

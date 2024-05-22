@@ -59,6 +59,7 @@
 #define    THIS_FILE_ID        PS_FILE_ID_LINK_C
 /*lint +e767   */
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 /******************************************************************************
    2 外部函数变量声明
@@ -186,8 +187,14 @@ PPP_ZC_STRU *ipv4_Input(/*struct bundle *bundle, */struct link *l, PPP_ZC_STRU *
     if(l->phase == PHASE_NETWORK
         &&l->ipcp.fsm.state == ST_OPENED)
     {
+        #if (PPP_FEATURE == PPP_FEATURE_PPP)
         /*将上行数据发往协议栈*/
         PPP_SendPulledData((VOS_UINT16)PPP_LINK_TO_ID(l), bp);
+        #else
+        /*调用PPPoE的发送函数*/
+        PPPoE_PPPSendDataToRABM(PPP_ZC_GET_DATA_PTR(bp), PPP_ZC_GET_DATA_LEN(bp));
+        PPP_MemFree(bp);
+        #endif
     }
     else
     {
@@ -266,9 +273,11 @@ VOS_VOID link_Init(struct link *l)
     link_EmptyStack(l);
 
     /*依次压入PPP协议的各个处理层*/
+    #if (PPP_FEATURE == PPP_FEATURE_PPP)
     link_Stack(l, &asynclayer);
     link_Stack(l, &hdlclayer);
     link_Stack(l, &acflayer);
+    #endif
 
     link_Stack(l, &protolayer);
 
@@ -469,6 +478,7 @@ VOS_UINT32 PPP_SendPushedData(VOS_UINT16 usPppId, VOS_UINT8 *pucDataBuf, VOS_UIN
     return PS_SUCC;
 }
 
+#endif /*#if(FEATURE_ON == FEATURE_PPP)*/
 
 
 

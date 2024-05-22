@@ -80,6 +80,7 @@
 *****************************************************************************/
 #define    THIS_FILE_ID        PS_FILE_ID_V_NSPRINTF_C
 
+#if (VOS_RTOSCK != VOS_OS_VER)
 /*****************************************************************************
  Function   : VOS_nvsprintf_s
  Description:
@@ -90,7 +91,9 @@
  *****************************************************************************/
 VOS_INT VOS_nvsprintf_s(VOS_CHAR * str, VOS_SIZE_T ulMaxStrLen, VOS_SIZE_T ulCount, const VOS_CHAR *format, va_list arguments)
 {
+#if (VOS_LINUX == VOS_OS_VER) || defined(LLT_OS_LINUX)
     VOS_SIZE_T                          ulPrintLen;
+#endif
 
     if ( ulCount > VOS_SECUREC_MEM_MAX_LEN )
     {
@@ -111,9 +114,13 @@ VOS_INT VOS_nvsprintf_s(VOS_CHAR * str, VOS_SIZE_T ulMaxStrLen, VOS_SIZE_T ulCou
         }
     }
 
+#if (VOS_LINUX == VOS_OS_VER) || defined(LLT_OS_LINUX)
     ulPrintLen = (ulMaxStrLen > ulCount)?(ulCount + 1) : ulMaxStrLen;
 
     return (VOS_INT)vscnprintf(str, (VOS_UINT32)(ulPrintLen), (const VOS_CHAR *) format, arguments);
+#else
+    return (VOS_INT)vsnprintf_s(str, (VOS_UINT32)ulMaxStrLen, (VOS_UINT32)(ulCount), (const VOS_CHAR *) format, arguments);
+#endif
 
 }
 
@@ -127,7 +134,9 @@ VOS_INT VOS_nvsprintf_s(VOS_CHAR * str, VOS_SIZE_T ulMaxStrLen, VOS_SIZE_T ulCou
  *****************************************************************************/
 VOS_INT VOS_nsprintf_s(VOS_CHAR *str, VOS_SIZE_T ulMaxStrLen, VOS_SIZE_T ulCount, const VOS_CHAR *fmt, ...)
 {
+#if (VOS_LINUX == VOS_OS_VER) || defined(LLT_OS_LINUX)
     VOS_SIZE_T                          ulPrintLen;
+#endif
 
     /*lint -e530 -e830 */
     va_list arg;
@@ -155,17 +164,26 @@ VOS_INT VOS_nsprintf_s(VOS_CHAR *str, VOS_SIZE_T ulMaxStrLen, VOS_SIZE_T ulCount
     /*lint -e586*/
     va_start(arg, fmt);
     /*lint +e586*/
+#if (VOS_LINUX == VOS_OS_VER) || defined(LLT_OS_LINUX)
     ulPrintLen = (ulMaxStrLen > ulCount)?(ulCount + 1) : ulMaxStrLen;
 
     nc = (VOS_INT)vscnprintf(str, (VOS_UINT32)(ulPrintLen), (const VOS_CHAR *) fmt, arg);
 
+#else
+    nc = (VOS_INT)vsnprintf_s(str, (VOS_UINT32)ulMaxStrLen, (VOS_UINT32)ulCount, (const VOS_CHAR *) fmt, arg);
+#endif
     /*lint -e586*/
     va_end(arg);
     /*lint +e586*/
     return (nc);
     /*lint +e530 +e830 */
 }
+#endif
 
+#if (VOS_WIN32 == VOS_OS_VER)
+/* which comes from MFC of WIN32 */
+extern void zprint(char *str);
+#endif
 
 /*****************************************************************************
  Function   : vos_printf
@@ -188,7 +206,11 @@ VOS_INT32 vos_printf( const VOS_CHAR * format, ... )
 
     if ( VOS_NULL_PTR != format )
     {
+#if (VOS_LINUX == VOS_OS_VER) || defined(LLT_OS_LINUX)
     (VOS_VOID)vscnprintf(output_info, VOS_MAX_PRINT_LEN, format, argument);
+#else
+    (VOS_VOID)vsnprintf_s(output_info, VOS_MAX_PRINT_LEN, VOS_MAX_PRINT_LEN - 1, format, argument);
+#endif
     }
 
     /*lint -e586*/
@@ -198,10 +220,21 @@ VOS_INT32 vos_printf( const VOS_CHAR * format, ... )
 
     output_info[VOS_MAX_PRINT_LEN - 1] = '\0';
 
+#if ((VOS_VXWORKS == VOS_OS_VER)  || (VOS_NUCLEUS == VOS_OS_VER) )
+    (VOS_VOID)printf( "%s",output_info );
+#endif
 
+#if (VOS_WIN32 == VOS_OS_VER)
+    (VOS_VOID)zprint(output_info );
+#endif
 
+#if (VOS_LINUX == VOS_OS_VER)
     (VOS_VOID)printk( "%s",output_info );
+#endif
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+    (VOS_VOID)SRE_Printf( "%s",output_info );
+#endif
 
     return (VOS_INT32)ulReturn;
 }

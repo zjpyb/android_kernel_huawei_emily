@@ -3,7 +3,7 @@
  *
  *  interface to USB gadget "serial port"/TTY utilities
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -23,12 +23,12 @@
 #include <linux/usb/cdc.h>
 #include "usb_vendor.h"
 
-#define HW_MAX_U_SERIAL_PORTS       (4)
-#define HW_ACM_IS_SINGLE            (1)
-#define HW_ACM_SUPPORT_NOTIFY       (0)
+#define HW_MAX_U_SERIAL_PORTS        4
+#define HW_ACM_IS_SINGLE             1
+#define HW_ACM_SUPPORT_NOTIFY        0
 
-#define USB_CDC_SET_COMM_FEATURE    (0x02)
-#define USB_CDC_SEND_PORT_STATUS    (0xa3)
+#define USB_CDC_SET_COMM_FEATURE     0x02
+#define USB_CDC_SEND_PORT_STATUS     0xa3
 
 struct f_serial_opts {
 	struct usb_function_instance func_inst;

@@ -17,10 +17,10 @@ obj-$(CONFIG_HISI_ISP_RDR) += mntn/
 
 obj-$(CONFIG_HISI_HISTAR_ISP) += hisp_rpm.o nonsec.o sec.o \
                                 cma.o smc.o  qos.o \
-                                sensor.o isp.o
+                                sensor.o isp.o secisp_ca.o
 
 ifeq ($(CONFIG_HISI_HISTAR_ISP), y)
-subdir-ccflags-y += -Wall -Werror
+subdir-ccflags-y += -Wall
 subdir-ccflags-y += -I$(srctree)/drivers/hisi/tzdriver \
                     -I$(srctree)/drivers/hisi/load_image \
                     -I$(srctree)/drivers/media/huawei/camera \

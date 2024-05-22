@@ -35,6 +35,8 @@
 config SCSI_UFSHCD
 	tristate "Universal Flash Storage Controller Driver Core"
 	depends on SCSI && SCSI_DMA
+	select PM_DEVFREQ
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
 	select NLS
 	---help---
 	This selects the support for UFS devices in Linux, say Y and make
@@ -47,6 +49,17 @@ config SCSI_UFSHCD
 	  <file:Documentation/scsi/ufs.txt>.
 	  However, do not compile this as a module if your root file system
 	  (the one containing the directory /) is located on a UFS device.
+
+config HISI_UFS_HC
+	tristate "Hisilicon UFS Host Controller"
+	---help---
+	This selects use Hisilicon UFS host controller.
+
+config FS_PER_FILE_PER_KEY
+	tristate "F2FS file system encrypto per file per key"
+	depends on HISI_UFS_HC
+	---help---
+	This selects use f2fs file system encrypto per file per key.
 
 config SCSI_UFSHCD_PCI
 	tristate "PCI bus based UFS Controller support"
@@ -87,8 +100,8 @@ config SCSI_UFS_DWC_TC_PLATFORM
 	  If unsure, say N.
 
 config SCSI_UFS_QCOM
-	bool "QCOM specific hooks to UFS controller platform driver"
-	depends on SCSI_UFSHCD_PLATFORM && ARCH_MSM
+	tristate "QCOM specific hooks to UFS controller platform driver"
+	depends on SCSI_UFSHCD_PLATFORM && ARCH_QCOM
 	select PHY_QCOM_UFS
 	help
 	  This selects the QCOM specific additions to UFSHCD platform driver.
@@ -149,6 +162,26 @@ config SCSI_UFS_TAURUS
 
 	  If unsure, say N.
 
+config SCSI_UFS_PISCES
+	  tristate "UFS Host PISCES Controller Driver"
+	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	  ---help---
+	  This selects the UFS PISCES host controller driver.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+config SCSI_UFS_UTRD_EXTENSION
+	  tristate "UFS UTRD length extension"
+	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	  ---help---
+	  This selects the UFS UTRD length extension.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
 config SCSI_UFS_LIBRA
 	  tristate "UFS Host LIBRA Controller Driver"
 	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
@@ -159,7 +192,6 @@ config SCSI_UFS_LIBRA
 
 	  If unsure, say N.
 
-
 config SCSI_UFS_CAPRICORN
 	  tristate "UFS Host CAPRICORN Controller Driver"
 	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
@@ -169,6 +201,16 @@ config SCSI_UFS_CAPRICORN
 	  If you have a controller with this interface, say Y or M here.
 
 	  If unsure, say N.
+
+config SCSI_UFS_LEO
+	 tristate "UFS Host LEO Controller Driver"
+	 depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	 ---help---
+	 This selects the UFS LEO host controller driver.
+
+	 If you have a controller with this interface, say Y or M here.
+
+	 If unsure, say N.
 
 config SCSI_UFS_KIRIN_LINERESET_CHECK
 	  bool "UFS background thread to check line-reset"
@@ -272,7 +314,7 @@ config SCSI_UFS_HI1861_VCMD
 
 config HISI_UFS_MANUAL_BKOPS
        bool "hisi manual BKOPS support for UFS"
-       depends on HISI_BK_OPS && SCSI_UFSHCD
+       depends on HISI_BKOPS && SCSI_UFSHCD
        default n
 
 config HUAWEI_UFS_VENDOR_MODE

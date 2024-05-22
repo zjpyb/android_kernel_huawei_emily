@@ -24,6 +24,7 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/pm_runtime.h>
+#include <linux/types.h>
 #include <rdr_hisi_audio_adapter.h>
 
 /*lint -e750 -e730 -e838 -e529 -e438 -e778 -e826 -e774 -e747 -e527 -e456 -e454 -e455*/
@@ -188,7 +189,7 @@ void ssi_reg_write32(unsigned int reg, unsigned int val)
 	mutex_lock(&pdata->sr_rw_lock);
 
 	if (reg & 0x3) {
-		pr_err("%s:reg is 0x%pK, it's not alignment!!\n", __FUNCTION__, (void *)(unsigned long)reg);
+		pr_err("%s:reg is 0x%pK, it's not alignment!!\n", __FUNCTION__, (void *)(uintptr_t)reg);
 		mutex_unlock(&pdata->sr_rw_lock);
 		return;
 	}
@@ -221,9 +222,9 @@ EXPORT_SYMBOL(ssi_reg_write32);
 
 static int hi_cdcssi_probe(struct platform_device *pdev)
 {
-	struct hi_cdcssi_priv *priv;
+	struct hi_cdcssi_priv *priv = NULL;
 	struct device *dev = &pdev->dev;
-	struct resource *resource;
+	struct resource *resource = NULL;
 	int ret = 0;
 
 	priv = devm_kzalloc(dev, sizeof(struct hi_cdcssi_priv), GFP_KERNEL);
@@ -290,7 +291,7 @@ static int hi_cdcssi_probe(struct platform_device *pdev)
 
 	priv->ssi_base = ioremap(resource->start, resource_size(resource));
 	if (!priv->ssi_base) {
-		dev_err(dev, "remap base address %pK failed\n", (void*)resource->start);
+		dev_err(dev, "remap base address %pK failed\n", (void*)(uintptr_t)resource->start);
 		ret = -ENXIO;
 		goto err_exit;
 	}
@@ -321,7 +322,6 @@ static int hi_cdcssi_remove(struct platform_device *pdev)
 	struct hi_cdcssi_priv *priv = platform_get_drvdata(pdev);
 	struct device *dev;
 
-	WARN_ON(NULL == priv);
 	dev = &pdev->dev;
 
 	if (priv->pm_runtime_support) {
@@ -342,6 +342,7 @@ static int hi_cdcssi_remove(struct platform_device *pdev)
 	return ret;
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int hi_cdcssi_suspend(struct device *device)
 {
 	int ret = 0;
@@ -350,7 +351,6 @@ static int hi_cdcssi_suspend(struct device *device)
 	struct device *dev;
 	int pm_ret = 0;
 
-	WARN_ON(NULL == priv);
 	dev = &pdev->dev;
 
 	mutex_lock(&priv->sr_rw_lock);
@@ -385,7 +385,6 @@ static int hi_cdcssi_resume(struct device *device)
 	struct hi_cdcssi_priv *priv = platform_get_drvdata(pdev);
 	struct device	*dev;
 
-	WARN_ON(NULL == priv);
 	dev = &pdev->dev;
 
 	ret = clk_prepare_enable(priv->codec_ssi_clk);
@@ -414,7 +413,9 @@ static int hi_cdcssi_resume(struct device *device)
 
 	return ret;
 }
+#endif
 
+#ifdef CONFIG_PM
 static int hi_cdcssi_runtime_suspend(struct device *device)
 {
 	struct platform_device *pdev = to_platform_device(device);
@@ -452,6 +453,7 @@ static int hi_cdcssi_runtime_resume(struct device *device)
 
 	return ret;
 }
+#endif
 
 static const struct dev_pm_ops cdcssi_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(hi_cdcssi_suspend, hi_cdcssi_resume)

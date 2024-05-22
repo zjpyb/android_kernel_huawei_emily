@@ -1082,6 +1082,12 @@ static ssize_t lcdkit_effect_bl_show(struct device* dev,
     return effect_bl_show(dev, attr, buf);
 }
 
+static ssize_t lcdkit_effect_bl_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	return effect_bl_store(dev, attr, buf, count);
+}
+
 static ssize_t lcdkit_effect_bl_enable_show(struct device* dev,
         struct device_attribute* attr, char* buf)
 {
@@ -1730,6 +1736,19 @@ static ssize_t lcdkit_mipi_config_store(struct device* dev, struct device_attrib
     return count;
 }
 
+static ssize_t lcdkit_panel_sncode_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	ssize_t ret;
+
+	if (buf == NULL || dev == NULL) {
+		LCDKIT_ERR("NULL Pointer\n");
+		return -EINVAL;
+	}
+	ret = lcd_panel_sncode_show(dev, buf);
+	return ret;
+}
+
 static DEVICE_ATTR(lcd_model, 0644, lcdkit_lcd_model_show, NULL);
 static DEVICE_ATTR(lcd_display_type, 0644, lcdkit_lcd_display_type_show, NULL);
 static DEVICE_ATTR(panel_info, 0644, lcdkit_lcd_panel_info_show, NULL);
@@ -1759,7 +1778,7 @@ static DEVICE_ATTR(lcd_ce_mode, S_IRUGO | S_IWUSR, lcdkit_lcd_ce_mode_show, lcdk
 static DEVICE_ATTR(effect_al, S_IRUGO | S_IWUSR, lcdkit_effect_al_show, lcdkit_effect_al_store);
 static DEVICE_ATTR(effect_ce, S_IRUGO | S_IWUSR, lcdkit_effect_ce_show, lcdkit_effect_ce_store);
 static DEVICE_ATTR(effect_hdr_mode, S_IRUGO|S_IWUSR, lcdkit_effect_hdr_mode_show, lcdkit_effect_hdr_mode_store);
-static DEVICE_ATTR(effect_bl, S_IRUGO, lcdkit_effect_bl_show, NULL);
+static DEVICE_ATTR(effect_bl, S_IRUGO | S_IWUSR, lcdkit_effect_bl_show, lcdkit_effect_bl_store);
 static DEVICE_ATTR(effect_bl_enable, S_IRUGO | S_IWUSR, lcdkit_effect_bl_enable_show, lcdkit_effect_bl_enable_store);
 static DEVICE_ATTR(effect_sre, S_IRUGO|S_IWUSR, lcdkit_effect_sre_show, lcdkit_effect_sre_store);
 static DEVICE_ATTR(effect_metadata, S_IRUGO | S_IWUSR, lcdkit_effect_metadata_show, lcdkit_effect_metadata_store);
@@ -1788,6 +1807,7 @@ static DEVICE_ATTR(lcd_se_mode, S_IRUGO | S_IWUSR, lcdkit_se_mode_show, lcdkit_s
 static DEVICE_ATTR(lcd_bl_support_mode, S_IRUGO | S_IWUSR, lcdkit_support_bl_mode_show, lcdkit_support_bl_mode_store);
 static DEVICE_ATTR(lcd_ldo_check, S_IRUGO, lcdkit_ldo_check_show, NULL);
 static DEVICE_ATTR(lcd_mipi_config, 0644, NULL, lcdkit_mipi_config_store);
+static DEVICE_ATTR(panel_sncode, 0644, lcdkit_panel_sncode_show, NULL);
 
 static struct attribute* lcdkit_fb_attrs[] =
 {
@@ -1849,6 +1869,7 @@ static struct attribute* lcdkit_fb_attrs[] =
     &dev_attr_lcd_bl_support_mode.attr,
     &dev_attr_lcd_ldo_check.attr,
     &dev_attr_lcd_mipi_config.attr,
+	&dev_attr_panel_sncode.attr,
     NULL,
 };
 

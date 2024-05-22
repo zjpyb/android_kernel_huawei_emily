@@ -1,4 +1,5 @@
 
+
 #ifndef __VFMW_OSAL_EXT_HEADER__
 #define __VFMW_OSAL_EXT_HEADER__
 
@@ -6,116 +7,116 @@
 #include "mem_manage.h"
 
 #define OSAL_OK     0
-#define OSAL_ERR   -1
+#define OSAL_ERR   (-1)
 
-typedef SINT32(*OSAL_IRQ_HANDLER_t) (SINT32, VOID *);
+typedef SINT32(*OSAL_IRQ_HANDLER_T)(SINT32, VOID *);
 
-typedef enum SpinLockType {
+typedef enum spin_lock_type {
 	G_SPINLOCK_SCD = 0,
 	G_SPINLOCK_VDH,
 	G_SPINLOCK_RECORD,
-} SpinLockType;
+} spin_lock_type;
 
-typedef enum MutexType {
+typedef enum mutex_type {
 	G_SCDHWDONEEVENT = 0,
 	G_VDMHWDONEEVENT,
-} MutexType;
+} mutex_type;
 
-typedef enum SemType {
+typedef enum sem_type {
 	G_SCD_SEM = 0,
 	G_VDH_SEM,
 	G_BPD_SEM,
-} SemType;
+} sem_type;
 
-typedef UINT32  (*FN_OSAL_GetTimeInMs) (VOID);
-typedef UINT32  (*FN_OSAL_GetTimeInUs) (VOID);
-typedef VOID    (*FN_OSAL_SpinLockInit) (SpinLockType);
-typedef SINT32  (*FN_OSAL_SpinLock) (SpinLockType);
-typedef SINT32  (*FN_OSAL_SpinUnlock) (SpinLockType);
-typedef VOID    (*FN_OSAL_SemaInit) (SemType);
-typedef SINT32  (*FN_OSAL_SemaDown) (SemType);
-typedef VOID    (*FN_OSAL_SemaUp) (SemType);
-typedef SINT32  (*FN_OSAL_Print) (const char *, ...);
-typedef VOID    (*FN_OSAL_Mb) (VOID);
-typedef VOID    (*FN_OSAL_uDelay) (ULONG);
-typedef VOID    (*FN_OSAL_mSleep) (UINT32);
-typedef SINT32  (*FN_OSAL_InitEvent) (MutexType, SINT32);
-typedef SINT32  (*FN_OSAL_GiveEvent) (MutexType);
-typedef SINT32  (*FN_OSAL_WaitEvent) (MutexType, SINT32);
-typedef SINT32  (*FN_OSAL_MemAlloc) (UINT8 *, UINT32, UINT32, UINT32, MEM_DESC_S *);
-typedef SINT32  (*FN_OSAL_MemFree) (MEM_DESC_S *);
-typedef UINT8  *(*FN_OSAL_RegisterMap) (UADDR, UINT32);
-typedef VOID    (*FN_OSAL_RegisterUnMap) (UINT8 *, UINT32);
-typedef UINT8  *(*FN_OSAL_Mmap) (UADDR, UINT32);
-typedef UINT8  *(*FN_OSAL_MmapCache) (UADDR, UINT32);
-typedef VOID    (*FN_OSAL_MunMap) (UINT8 *);
-typedef SINT32  (*FN_OSAL_RequestIrq) (UINT32, OSAL_IRQ_HANDLER_t, ULONG, const char *, VOID *);
-typedef VOID    (*FN_OSAL_FreeIrq) (UINT32, VOID *);
-typedef VOID   *(*FN_OSAL_AllocVirMem) (SINT32);
-typedef VOID    (*FN_OSAL_FreeVirMem) (VOID *);
-typedef SINT32  (*FN_OSAL_ProcInit) (VOID);
-typedef VOID    (*FN_OSAL_ProcExit) (VOID);
+typedef UINT32(*FN_OSAL_GET_TIME_IN_MS)(VOID);
+typedef UINT32(*FN_OSAL_GET_TIME_IN_US)(VOID);
+typedef VOID(*FN_OSAL_SPIN_LOCK_INIT)(spin_lock_type);
+typedef SINT32(*FN_OSAL_SPIN_LOCK)(spin_lock_type);
+typedef SINT32(*FN_OSAL_SPIN_UNLOCK)(spin_lock_type);
+typedef VOID(*FN_OSAL_SEMA_INIT)(sem_type);
+typedef SINT32(*FN_OSAL_SEMA_DOWN)(sem_type);
+typedef VOID(*FN_OSAL_SEMA_UP)(sem_type);
+typedef SINT32(*FN_OSAL_PRINT)(const char *, ...);
+typedef VOID(*FN_OSAL_MB)(VOID);
+typedef VOID(*FN_OSAL_U_Delay)(ULONG);
+typedef VOID(*FN_OSAL_M_SLEEP)(UINT32);
+typedef SINT32(*FN_OSAL_INIT_EVENT)(mutex_type, SINT32);
+typedef SINT32(*FN_OSAL_GIVE_EVENT)(mutex_type);
+typedef SINT32(*FN_OSAL_WAIT_EVENT)(mutex_type, SINT32);
+typedef SINT32(*FN_OSAL_MEM_ALLOC)(UINT8 *, UINT32, UINT32, UINT32, mem_desc_s *);
+typedef SINT32(*FN_OSAL_MEM_FREE)(mem_desc_s *);
+typedef UINT8  * (*FN_OSAL_REGISTER_MAP)(UADDR, UINT32);
+typedef VOID(*FN_OSAL_REGISTER_UNMAP)(UINT8 *, UINT32);
+typedef UINT8  * (*FN_OSAL_MMAP)(UADDR, UINT32);
+typedef UINT8  * (*FN_OSAL_MMAP_CACHE)(UADDR, UINT32);
+typedef VOID(*FN_OSAL_MUNMAP)(UINT8 *);
+typedef SINT32(*FN_OSAL_REQUEST_IRQ)(UINT32, OSAL_IRQ_HANDLER_T, ULONG, const char *, VOID *);
+typedef VOID(*FN_OSAL_FREE_IRQ)(UINT32, VOID *);
+typedef VOID   * (*FN_OSAL_ALLOC_VIR_MEM)(SINT32);
+typedef VOID (*FN_OSAL_FREE_VIR_MEM)(VOID *);
+typedef SINT32(*FN_OSAL_PROC_INIT)(VOID);
+typedef VOID (*FN_OSAL_PROC_EXIT)(VOID);
 
-typedef struct Vfmw_Osal_Func_Ptr {
-	FN_OSAL_GetTimeInMs    pfun_Osal_GetTimeInMs;
-	FN_OSAL_GetTimeInUs    pfun_Osal_GetTimeInUs;
-	FN_OSAL_SpinLockInit   pfun_Osal_SpinLockInit;
-	FN_OSAL_SpinLock       pfun_Osal_SpinLock;
-	FN_OSAL_SpinUnlock     pfun_Osal_SpinUnLock;
-	FN_OSAL_SemaInit       pfun_Osal_SemaInit;
-	FN_OSAL_SemaDown       pfun_Osal_SemaDown;
-	FN_OSAL_SemaUp         pfun_Osal_SemaUp;
-	FN_OSAL_Print          pfun_Osal_Print;
-	FN_OSAL_Mb             pfun_Osal_Mb;
-	FN_OSAL_uDelay         pfun_Osal_uDelay;
-	FN_OSAL_mSleep         pfun_Osal_mSleep;
-	FN_OSAL_InitEvent      pfun_Osal_InitEvent;
-	FN_OSAL_GiveEvent      pfun_Osal_GiveEvent;
-	FN_OSAL_WaitEvent      pfun_Osal_WaitEvent;
-	FN_OSAL_RequestIrq     pfun_Osal_RequestIrq;
-	FN_OSAL_FreeIrq        pfun_Osal_FreeIrq;
-	FN_OSAL_MemAlloc       pfun_Osal_MemAlloc;
-	FN_OSAL_MemFree        pfun_Osal_MemFree;
-	FN_OSAL_RegisterMap    pfun_Osal_RegisterMap;
-	FN_OSAL_RegisterUnMap  pfun_Osal_RegisterUnMap;
-	FN_OSAL_Mmap           pfun_Osal_Mmap;
-	FN_OSAL_MmapCache      pfun_Osal_MmapCache;
-	FN_OSAL_MunMap         pfun_Osal_MunMap;
-	FN_OSAL_AllocVirMem    pfun_Osal_AllocVirMem;
-	FN_OSAL_FreeVirMem     pfun_Osal_FreeVirMem;
-	FN_OSAL_ProcInit       pfun_Osal_ProcInit;
-	FN_OSAL_ProcExit       pfun_Osal_ProcExit;
-} Vfmw_Osal_Func_Ptr;
+typedef struct vfmw_osal_func_ptr {
+	FN_OSAL_GET_TIME_IN_MS    pfun_osal_get_time_in_ms;
+	FN_OSAL_GET_TIME_IN_US    pfun_osal_get_time_in_us;
+	FN_OSAL_SPIN_LOCK_INIT      pfun_osal_spin_lock_init;
+	FN_OSAL_SPIN_LOCK          pfun_osal_spin_lock;
+	FN_OSAL_SPIN_UNLOCK        pfun_osal_spin_unlock;
+	FN_OSAL_SEMA_INIT          pfun_osal_sema_init;
+	FN_OSAL_SEMA_DOWN          pfun_osal_sema_down;
+	FN_OSAL_SEMA_UP            pfun_osal_sema_up;
+	FN_OSAL_PRINT             pfun_osal_print;
+	FN_OSAL_MB                pfun_osal_mb;
+	FN_OSAL_U_Delay            pfun_osal_u_delay;
+	FN_OSAL_M_SLEEP            pfun_osal_m_sleep;
+	FN_OSAL_INIT_EVENT        pfun_osal_init_event;
+	FN_OSAL_GIVE_EVENT        pfun_osal_give_event;
+	FN_OSAL_WAIT_EVENT         pfun_osal_wait_event;
+	FN_OSAL_REQUEST_IRQ        pfun_osal_request_irq;
+	FN_OSAL_FREE_IRQ           pfun_osal_free_irq;
+	FN_OSAL_MEM_ALLOC          pfun_osal_mem_alloc;
+	FN_OSAL_MEM_FREE           pfun_osal_mem_free;
+	FN_OSAL_REGISTER_MAP       pfun_osal_register_map;
+	FN_OSAL_REGISTER_UNMAP     pfun_osal_register_unmap;
+	FN_OSAL_MMAP              pfun_osal_mmap;
+	FN_OSAL_MMAP_CACHE         pfun_osal_mmap_cache;
+	FN_OSAL_MUNMAP            pfun_osal_mun_map;
+	FN_OSAL_ALLOC_VIR_MEM       pfun_osal_alloc_vir_mem;
+	FN_OSAL_FREE_VIR_MEM        pfun_osal_free_vir_mem;
+	FN_OSAL_PROC_INIT          pfun_osal_proc_init;
+	FN_OSAL_PROC_EXIT          pfun_osal_proc_exit;
+} vfmw_osal_func_ptr;
 
-extern Vfmw_Osal_Func_Ptr g_vfmw_osal_fun_ptr;
+extern vfmw_osal_func_ptr g_vfmw_osal_fun_ptr;
 
-#define VFMW_OSAL_GetTimeInMs          g_vfmw_osal_fun_ptr.pfun_Osal_GetTimeInMs
-#define VFMW_OSAL_GetTimeInUs          g_vfmw_osal_fun_ptr.pfun_Osal_GetTimeInUs
-#define VFMW_OSAL_SpinLockInit         g_vfmw_osal_fun_ptr.pfun_Osal_SpinLockInit
-#define VFMW_OSAL_SpinLock             g_vfmw_osal_fun_ptr.pfun_Osal_SpinLock
-#define VFMW_OSAL_SpinUnLock           g_vfmw_osal_fun_ptr.pfun_Osal_SpinUnLock
-#define VFMW_OSAL_SemaInit             g_vfmw_osal_fun_ptr.pfun_Osal_SemaInit
-#define VFMW_OSAL_SemaDown             g_vfmw_osal_fun_ptr.pfun_Osal_SemaDown
-#define VFMW_OSAL_SemaUp               g_vfmw_osal_fun_ptr.pfun_Osal_SemaUp
-#define VFMW_OSAL_Print                g_vfmw_osal_fun_ptr.pfun_Osal_Print
-#define VFMW_OSAL_Mb                   g_vfmw_osal_fun_ptr.pfun_Osal_Mb
-#define VFMW_OSAL_uDelay               g_vfmw_osal_fun_ptr.pfun_Osal_uDelay
-#define VFMW_OSAL_mSleep               g_vfmw_osal_fun_ptr.pfun_Osal_mSleep
-#define VFMW_OSAL_InitEvent            g_vfmw_osal_fun_ptr.pfun_Osal_InitEvent
-#define VFMW_OSAL_GiveEvent            g_vfmw_osal_fun_ptr.pfun_Osal_GiveEvent
-#define VFMW_OSAL_WaitEvent            g_vfmw_osal_fun_ptr.pfun_Osal_WaitEvent
-#define VFMW_OSAL_RequestIrq           g_vfmw_osal_fun_ptr.pfun_Osal_RequestIrq
-#define VFMW_OSAL_FreeIrq              g_vfmw_osal_fun_ptr.pfun_Osal_FreeIrq
-#define VFMW_OSAL_MemAlloc             g_vfmw_osal_fun_ptr.pfun_Osal_MemAlloc
-#define VFMW_OSAL_MemFree              g_vfmw_osal_fun_ptr.pfun_Osal_MemFree
-#define VFMW_OSAL_RegisterMap          g_vfmw_osal_fun_ptr.pfun_Osal_RegisterMap
-#define VFMW_OSAL_RegisterUnMap        g_vfmw_osal_fun_ptr.pfun_Osal_RegisterUnMap
-#define VFMW_OSAL_Mmap                 g_vfmw_osal_fun_ptr.pfun_Osal_Mmap
-#define VFMW_OSAL_MmapCache            g_vfmw_osal_fun_ptr.pfun_Osal_MmapCache
-#define VFMW_OSAL_MunMap               g_vfmw_osal_fun_ptr.pfun_Osal_MunMap
-#define VFMW_OSAL_AllocVirMem          g_vfmw_osal_fun_ptr.pfun_Osal_AllocVirMem
-#define VFMW_OSAL_FreeVirMem           g_vfmw_osal_fun_ptr.pfun_Osal_FreeVirMem
-#define VFMW_OSAL_ProcInit             g_vfmw_osal_fun_ptr.pfun_Osal_ProcInit
-#define VFMW_OSAL_ProcExit             g_vfmw_osal_fun_ptr.pfun_Osal_ProcExit
+#define VFMW_OSAL_GET_TIME_IN_MS       g_vfmw_osal_fun_ptr.pfun_osal_get_time_in_ms
+#define VFMW_OSAL_GET_TIME_IN_US       g_vfmw_osal_fun_ptr.pfun_osal_get_time_in_us
+#define VFMW_OSAL_SPIN_LOCK_INIT       g_vfmw_osal_fun_ptr.pfun_osal_spin_lock_init
+#define VFMW_OSAL_SPIN_LOCK            g_vfmw_osal_fun_ptr.pfun_osal_spin_lock
+#define VFMW_OSAL_SPIN_UNLOCK          g_vfmw_osal_fun_ptr.pfun_osal_spin_unlock
+#define VFMW_OSAL_SEMA_INIT            g_vfmw_osal_fun_ptr.pfun_osal_sema_init
+#define VFMW_OSAL_SEMA_DOWN            g_vfmw_osal_fun_ptr.pfun_osal_sema_down
+#define VFMW_OSAL_SEMA_UP              g_vfmw_osal_fun_ptr.pfun_osal_sema_up
+#define VFMW_OSAL_PRINT                g_vfmw_osal_fun_ptr.pfun_osal_print
+#define VFMW_OSAL_MB                   g_vfmw_osal_fun_ptr.pfun_osal_mb
+#define VFMW_OSAL_U_DELAY              g_vfmw_osal_fun_ptr.pfun_osal_u_delay
+#define VFMW_OSAL_M_SLEEP              g_vfmw_osal_fun_ptr.pfun_osal_m_sleep
+#define VFMW_OSAL_INIT_EVENT           g_vfmw_osal_fun_ptr.pfun_osal_init_event
+#define VFMW_OSAL_GIVE_EVENT           g_vfmw_osal_fun_ptr.pfun_osal_give_event
+#define VFMW_OSAL_WAIT_EVENT           g_vfmw_osal_fun_ptr.pfun_osal_wait_event
+#define VFMW_OSAL_REQUEST_IRQ          g_vfmw_osal_fun_ptr.pfun_osal_request_irq
+#define VFMW_OSAL_FREE_IRQ             g_vfmw_osal_fun_ptr.pfun_osal_free_irq
+#define VFMW_OSAL_MEM_ALLOC            g_vfmw_osal_fun_ptr.pfun_osal_mem_alloc
+#define VFMW_OSAL_MEM_FREE             g_vfmw_osal_fun_ptr.pfun_osal_mem_free
+#define VFMW_OSAL_REGISTER_MAP         g_vfmw_osal_fun_ptr.pfun_osal_register_map
+#define VFMW_OSAL_REGISTER_UNMAP       g_vfmw_osal_fun_ptr.pfun_osal_register_unmap
+#define VFMW_OSAL_MMAP                 g_vfmw_osal_fun_ptr.pfun_osal_mmap
+#define VFMW_OSAL_MMAP_CACHE           g_vfmw_osal_fun_ptr.pfun_osal_mmap_cache
+#define VFMW_OSAL_MUN_MAP              g_vfmw_osal_fun_ptr.pfun_osal_mun_map
+#define VFMW_OSAL_ALLOC_VIR_MEM        g_vfmw_osal_fun_ptr.pfun_osal_alloc_vir_mem
+#define VFMW_OSAL_PREE_VIR_MEM         g_vfmw_osal_fun_ptr.pfun_osal_free_vir_mem
+#define VFMW_OSAL_PROC_INIT            g_vfmw_osal_fun_ptr.pfun_osal_proc_init
+#define VFMW_OSAL_PROC_EXIT            g_vfmw_osal_fun_ptr.pfun_osal_proc_exit
 
 #endif

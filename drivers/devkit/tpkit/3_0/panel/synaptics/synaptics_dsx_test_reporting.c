@@ -414,7 +414,8 @@ enum mmi_results {
 	TEST_FAILED,
 	TEST_PASS,
 };
-static char tp_test_failed_reason[TP_TEST_FAILED_REASON_LEN] = { "-software_reason" };
+static char tp_test_failed_reason[TP_TEST_FAILED_REASON_LEN + 1] =
+	"-software_reason";
 static char *g_mmi_buf_f54test_result;
 static char *g_mmi_highresistance_report;
 static char *g_mmi_maxmincapacitance_report;

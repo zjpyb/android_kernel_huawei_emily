@@ -20,7 +20,7 @@
 #include <linux/of_device.h>
 #include <linux/slab.h>
 #include <linux/clk.h>
-
+#include <securec.h>
 #include "dvfs/peri_volt_poll.h"
 #include "clk-kirin-common.h"
 
@@ -180,7 +180,7 @@ static void hisi_peri_dvfs_unprepare(struct hi3xxx_periclk *pclk)
 static int hi3xxx_clkgate_prepare(struct clk_hw *hw)
 {
 	struct hi3xxx_periclk *pclk = NULL;
-	struct clk *friend_clk;
+	struct clk *friend_clk = NULL;
 	int ret = 0;
 
 	pclk = container_of(hw, struct hi3xxx_periclk, hw);
@@ -212,8 +212,8 @@ static int hi3xxx_clkgate_prepare(struct clk_hw *hw)
 
 static int hi3xxx_clkgate_enable(struct clk_hw *hw)
 {
-	struct hi3xxx_periclk *pclk;
-	struct clk *friend_clk;
+	struct hi3xxx_periclk *pclk = NULL;
+	struct clk *friend_clk = NULL;
 	int ret = 0;
 
 	pclk = container_of(hw, struct hi3xxx_periclk, hw);
@@ -256,8 +256,8 @@ static int hi3xxx_clkgate_enable(struct clk_hw *hw)
 
 static void hi3xxx_clkgate_disable(struct clk_hw *hw)
 {
-	struct hi3xxx_periclk *pclk;
-	struct clk *friend_clk;
+	struct hi3xxx_periclk *pclk = NULL;
+	struct clk *friend_clk = NULL;
 	pclk = container_of(hw, struct hi3xxx_periclk, hw);
 
 	/* reset the ip, then disalbe clk */
@@ -285,7 +285,7 @@ static void hi3xxx_clkgate_disable(struct clk_hw *hw)
 static void hi3xxx_clkgate_unprepare(struct clk_hw *hw)
 {
 	struct hi3xxx_periclk *pclk = NULL;
-	struct clk *friend_clk;
+	struct clk *friend_clk = NULL;
 
 	pclk = container_of(hw, struct hi3xxx_periclk, hw);
 
@@ -317,17 +317,7 @@ static int hi3xxx_clkgate_is_enabled(struct clk_hw *hw)
 	pclk = container_of(hw, struct hi3xxx_periclk, hw);
 
 	if (pclk->enable) {
-#ifdef CONFIG_HISI_HI6250_CLK
-		if ((!strcmp(__clk_get_name(hw->clk), "clk_dss_axi_mm"))
-				|| (!strcmp(__clk_get_name(hw->clk), "pclk_mmbuf"))
-				|| (!strcmp(__clk_get_name(hw->clk), "aclk_mmbuf")))
-			reg = readl(pclk->enable + 0x18);
-		else{
-			reg = readl(pclk->enable + hi3xxx_CLK_GATE_STATUS_OFFSET);
-		}
-#else
 		reg = readl(pclk->enable + hi3xxx_CLK_GATE_STATUS_OFFSET);
-#endif
 	} else
 		return 2;
 
@@ -338,7 +328,7 @@ static int hi3xxx_clkgate_is_enabled(struct clk_hw *hw)
 
 static void __iomem *hi3xxx_clkgate_get_reg(struct clk_hw *hw)
 {
-	struct hi3xxx_periclk *pclk;
+	struct hi3xxx_periclk *pclk = NULL;
 	void __iomem	*ret = NULL;
 	u32 val = 0;
 
@@ -357,20 +347,23 @@ static void __iomem *hi3xxx_clkgate_get_reg(struct clk_hw *hw)
 
 static int hi3xxx_dumpgate(struct clk_hw *hw, char* buf, struct seq_file *s)
 {
-	struct hi3xxx_periclk *pclk;
+	struct hi3xxx_periclk *pclk = NULL;
 	void __iomem	*ret = NULL;
 	long unsigned int clk_base_addr = 0;
 	unsigned int clk_bit = 0;
 	u32 index = 0;
 	u32 val = 0;
+	int s_ret = 0;
 
 	pclk = container_of(hw, struct hi3xxx_periclk, hw);
 
 	if (pclk->enable && buf && !s) {
 		ret = pclk->enable + hi3xxx_CLK_GATE_STATUS_OFFSET;
 		val = readl(ret);
-		snprintf(buf, DUMP_CLKBUFF_MAX_SIZE, "[%s] : regAddress = 0x%pK, regval = 0x%x\n", \
-			__clk_get_name(hw->clk), ret, val);
+		s_ret = snprintf_s(buf, DUMP_CLKBUFF_MAX_SIZE, DUMP_CLKBUFF_MAX_SIZE - 1, \
+			"[%s] : regAddress = 0x%pK, regval = 0x%x\n", __clk_get_name(hw->clk), ret, val);
+		if(s_ret == -1)
+			pr_err("%s snprintf_s failed!\n", __func__);
 	}
 
 	if(!buf && s) {
@@ -422,11 +415,11 @@ static struct clk_ops hi3xxx_clkgate_ops = {
 
 static void __init hi3xxx_clkgate_setup(struct device_node *np)
 {
-	struct hi3xxx_periclk *pclk;
-	struct clk_init_data *init;
-	struct clk *clk;
-	const char *clk_name, *name, *clk_friend, *parent_names;
-	void __iomem *reg_base;
+	struct hi3xxx_periclk *pclk = NULL;
+	struct clk_init_data *init = NULL;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, *name = NULL, *clk_friend = NULL, *parent_names = NULL;
+	void __iomem *reg_base = NULL;
 	u32 rdata[2] = {0};
 	u32 gdata[2] = {0};
 	u32 freq_table[DVFS_MAX_FREQ_NUM] = {0};
@@ -529,12 +522,9 @@ static void __init hi3xxx_clkgate_setup(struct device_node *np)
 		return;
 	}
 
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 	init->ops = &hi3xxx_clkgate_ops;
 	init->flags = CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED;
 	init->parent_names = &parent_names;
@@ -604,11 +594,11 @@ static void __init hi3xxx_clkgate_setup(struct device_node *np)
 	of_clk_add_provider(np, of_clk_src_simple_get, clk);
 	return;/*lint !e429*/
 err_clk:
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(pclk);
-	pclk = NULL;
 	return;
 }
 

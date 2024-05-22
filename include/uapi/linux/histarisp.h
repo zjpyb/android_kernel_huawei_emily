@@ -29,6 +29,10 @@
 #define HISP_POOL_DESTROY           _IOWR('i', 0x1213, rpmsg_ioctl_arg_t)
 #define HISP_POOL_ALLOC             _IOWR('i', 0x1214, rpmsg_ioctl_arg_t)
 #define HISP_POOL_FREE              _IOWR('i', 0x1215, rpmsg_ioctl_arg_t)
+#define HISP_MAP_IOMMU              _IOWR('i', 0x1216, rpmsg_ioctl_arg_t)
+#define HISP_UNMAP_IOMMU            _IOWR('i', 0x1217, rpmsg_ioctl_arg_t)
+#define HISP_SECISP_TA_MAP          _IOWR('i', 0x1221, rpmsg_ioctl_arg_t)
+#define HISP_SECISP_TA_UNMAP        _IOWR('i', 0x1222, rpmsg_ioctl_arg_t)
 
 #define SENSOR_NAME_SIZE (64)
 
@@ -51,6 +55,14 @@ typedef struct map_hisp_cfg_data {
 	addr_param_t param;
 }map_hisp_cfg_data_t;
 
+struct memory_block_s {
+	int shared_fd;
+	int size;
+	unsigned long prot;
+	unsigned int da;
+	int usage;
+	void *viraddr;
+};
 typedef struct rpmsg_ioctl_arg {
 	int index;
 	char name[SENSOR_NAME_SIZE];

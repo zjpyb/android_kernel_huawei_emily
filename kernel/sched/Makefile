@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 ifdef CONFIG_FUNCTION_TRACER
 CFLAGS_REMOVE_clock.o = $(CC_FLAGS_FTRACE)
 endif
@@ -16,11 +17,12 @@ CFLAGS_core.o := $(PROFILING) -fno-omit-frame-pointer
 endif
 
 obj-y += core.o loadavg.o clock.o cputime.o
-obj-y += idle_task.o fair.o rt.o deadline.o stop_task.o
-obj-y += wait.o swait.o completion.o idle.o
-obj-$(CONFIG_SMP) += cpupri.o cpudeadline.o energy.o
+obj-y += idle_task.o fair.o rt.o deadline.o
+obj-y += wait.o wait_bit.o swait.o completion.o idle.o
+obj-$(CONFIG_SMP) += cpupri.o cpudeadline.o topology.o stop_task.o
+obj-$(CONFIG_GENERIC_ARCH_TOPOLOGY) += energy.o
 obj-$(CONFIG_SCHED_WALT) += walt.o
-obj-$(CONFIG_SCHED_AUTOGROUP) += auto_group.o
+obj-$(CONFIG_SCHED_AUTOGROUP) += autogroup.o
 obj-$(CONFIG_SCHEDSTATS) += stats.o
 obj-$(CONFIG_SCHED_DEBUG) += debug.o
 obj-$(CONFIG_SCHED_HWSTATUS) += hwstatus.o
@@ -28,6 +30,8 @@ obj-$(CONFIG_SCHED_TUNE) += tune.o
 obj-$(CONFIG_CGROUP_CPUACCT) += cpuacct.o
 obj-$(CONFIG_CPU_FREQ) += cpufreq.o
 obj-$(CONFIG_CPU_FREQ_GOV_SCHEDUTIL) += cpufreq_schedutil.o
+obj-$(CONFIG_MEMBARRIER) += membarrier.o
 obj-$(CONFIG_HISI_CORE_CTRL) += hisi_core_ctl.o
 obj-$(CONFIG_HISI_RTG) += hisi_rtg.o
 obj-y += frame/
+obj-$(CONFIG_PSI) += psi.o

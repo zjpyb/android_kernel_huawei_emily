@@ -53,6 +53,9 @@ void ufs_kirin_regulator_init(struct ufs_hba *hba)
 	if (regulator_enable(hba->vreg_info.vcc->reg))
 		dev_err(dev, "regulator vcc enable failed\n");
 
+	/* hisi not adjust vcc voltage or current dynamically currently */
+	hba->vreg_info.vcc->unused = true;
+
 error:
 	return;
 }
@@ -723,7 +726,7 @@ re_check:
 #endif
 
 /*lint -save -e529 -e438 -e732 -e845*/
-void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
+void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba, struct ufs_pa_layer_attr *dev_req_params)
 {
 	uint32_t value;
 	pr_info("%s ++\n", __func__);

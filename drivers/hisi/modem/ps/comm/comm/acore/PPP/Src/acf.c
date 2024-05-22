@@ -52,6 +52,7 @@
 /*lint +e767  */
 
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 VOS_INT32
 acf_WrapperOctets(struct lcp *lcp, VOS_UINT16 proto)
@@ -125,4 +126,5 @@ PPP_ZC_STRU * acf_LayerPull(struct link *l, PPP_ZC_STRU *pstMem, VOS_UINT16 *pro
 
 struct layer acflayer = { LAYER_ACF, "acf", acf_LayerPush, acf_LayerPull };
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

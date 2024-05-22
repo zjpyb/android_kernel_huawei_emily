@@ -1,33 +1,33 @@
 #ifndef _REG_ADDR_H_
 #define _REG_ADDR_H_
 /*******************************************************/
-#define BIT_SMMU_BRST_DIS           (1 << 0)    //TBU dis-reset bit
-#define BIT_SMMU_CRST_DIS           (1 << 1)    //TCU dis-reset bit
+#define BIT_SMMU_BRST_DIS           BIT(0)    //TBU dis-reset bit
+#define BIT_SMMU_CRST_DIS           BIT(1)    //TCU dis-reset bit
 
-#define BIT_SMMU_BRST_EN            (1 << 0)    //TBU reset bit
-#define BIT_SMMU_CRST_EN            (1 << 1)    //TCU reset bit
+#define BIT_SMMU_BRST_EN            BIT(0)    //TBU reset bit
+#define BIT_SMMU_CRST_EN            BIT(1)    //TCU reset bit
 #define IVP_SMMU_CB_VMID_NS         (0)         //vmid  for ivp.NON_SEC
 
-#define BIT_BUS_GATE_CLOCK_X2X_ACLK                (0x01 << 11)
-#define BIT_BUS_GATE_CLOCK_IVP32_CFG_PCLK          (0x01 << 10)
-#define BIT_BUS_GATE_CLOCK_X2P_ACLN                (0x01 << 9)
-#define BIT_BUS_GATE_CLOCK_X2P_PCLN                (0x01 << 8)
-#define BIT_BUS_GATE_CLOCK_DEFAULT_SLN             (0x01 << 7)
-#define BIT_BUS_GATE_CLOCK_DW_AXI_S5               (0x01 << 6)
-#define BIT_BUS_GATE_CLOCK_DW_AXI_S4               (0x01 << 5)
-#define BIT_BUS_GATE_CLOCK_DW_AXI_S3               (0x01 << 4)
-#define BIT_BUS_GATE_CLOCK_DW_AXI_S2               (0x01 << 3)
-#define BIT_BUS_GATE_CLOCK_DW_AXI_S1               (0x01 << 2)
-#define BIT_BUS_GATE_CLOCK_DW_AXI_M2               (0x01 << 1)
-#define BIT_BUS_GATE_CLOCK_DW_AXI_M1               (0x01 << 0)
+#define BIT_BUS_GATE_CLOCK_X2X_ACLK                BIT(11)
+#define BIT_BUS_GATE_CLOCK_IVP32_CFG_PCLK          BIT(10)
+#define BIT_BUS_GATE_CLOCK_X2P_ACLN                BIT(9)
+#define BIT_BUS_GATE_CLOCK_X2P_PCLN                BIT(8)
+#define BIT_BUS_GATE_CLOCK_DEFAULT_SLN           BIT(7)
+#define BIT_BUS_GATE_CLOCK_DW_AXI_S5               BIT(6)
+#define BIT_BUS_GATE_CLOCK_DW_AXI_S4               BIT(5)
+#define BIT_BUS_GATE_CLOCK_DW_AXI_S3               BIT(4)
+#define BIT_BUS_GATE_CLOCK_DW_AXI_S2               BIT(3)
+#define BIT_BUS_GATE_CLOCK_DW_AXI_S1               BIT(2)
+#define BIT_BUS_GATE_CLOCK_DW_AXI_M2               BIT(1)
+#define BIT_BUS_GATE_CLOCK_DW_AXI_M1               BIT(0)
 
-#define BIT_SMMU_TCU_HWGT_BYPASS                   (0x01 << 3)
-#define BIT_SMMU_TBU_HWGT_BYPASS                   (0x01 << 2)
-#define BIT_SMMU_TCU_AWOKE_BYPASS                  (0x01 << 1)
-#define BIT_SMMU_TBU_AWOKE_BYPASS                  (0x01 << 0)
+#define BIT_SMMU_TCU_HWGT_BYPASS                   BIT(3)
+#define BIT_SMMU_TBU_HWGT_BYPASS                   BIT(2)
+#define BIT_SMMU_TCU_AWOKE_BYPASS                  BIT(1)
+#define BIT_SMMU_TBU_AWOKE_BYPASS                  BIT(0)
 
-#define BIT_SMMU_TCU_PWR_HANDSHAKE_ST              (0x01 << 1)
-#define BIT_SMMU_TBU_PWR_HANDSHAKE_ST              (0x01 << 1)
+#define BIT_SMMU_TCU_PWR_HANDSHAKE_ST              BIT(1)
+#define BIT_SMMU_TBU_PWR_HANDSHAKE_ST              BIT(1)
 
 /******************************************************/
 
@@ -193,12 +193,15 @@
 #define  PERICRG_REG_OFF_PERDIS6          (0x414)
 #define  PERICRG_REG_OFF_PERCLKEN6        (0x418)
 
-#define IVP_DW_AXI_M2_ST_BYPASS           (0x01 << 29)
-#define IVP_DW_AXI_M1_ST_BYPASS           (0x01 << 28)
-#define IVP_PWAITMODE_BYPASS              (0x01 << 27)
-#define IVP_DIV_AUTO_REDUCE_BYPASS        (0x01 << 0)
+#define IVP_DW_AXI_M2_ST_BYPASS           BIT(29)
+#define IVP_DW_AXI_M1_ST_BYPASS           BIT(28)
+#define IVP_PWAITMODE_BYPASS              BIT(27)
+#define IVP_DIV_AUTO_REDUCE_BYPASS        BIT(0)
 
-#define GATE_CLK_AUTODIV_IVP              (0x01 << 0)
+#define GATE_CLK_AUTODIV_IVP              BIT(0)
+
+//ivp debug
+#define IVP_DEBUG_ENABLE                   BIT(16)
 
 #define IVP_RUNSTALL_RUN          0
 #define IVP_RUNSTALL_STALL        1

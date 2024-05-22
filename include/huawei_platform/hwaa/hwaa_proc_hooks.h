@@ -17,7 +17,9 @@ struct hwaa_proc_callbacks_t {
 /*
  * Function: hwaa_proc_pre_execve
  * Description:
- * Input: const s8 __user * __user *argv: an array of
+ * Input: const s8 * exe_apth: path name of the file to
+ *        execute as the new program
+ *        const s8 __user * __user *argv: an array of
  *        arguments passed to the new program
  * Output: None
  * Return: 0 to signal hwaa_proc_post_execve should be called,

@@ -12,6 +12,7 @@
 #include <linux/errno.h>      /* EINVAL, ERANGE, etc */
 #include <linux/of_device.h>  /* Device tree functionality */
 #include <linux/delay.h>
+#include <huawei_platform/power/power_devices_info.h>
 
 /* Driver-specific includes */
 #include "fusb3601_global.h"  /* Driver-specific structures/types */
@@ -284,7 +285,6 @@ static void fusb3601_probe_work(struct work_struct *work)
 		pr_info("cc_check_ops register failed!\n");
 		return;
 	}
-	pr_info("shanshan1. *%s* pd_dpm_ops_register\n", __func__);
 	pd_dpm_ops_register(&tcpc_device_pd_dpm_ops, NULL);
 	moisture_detection_init();
         pr_debug("FUSB  %s - Core is initialized!\n", __func__);
@@ -312,6 +312,7 @@ static int fusb3601_probe (struct i2c_client* client,
 	struct fusb3601_chip* chip;
 	struct i2c_adapter* adapter;
 	struct device_node* node;
+	struct power_devices_info_data *power_dev_info = NULL;
 
 	if (!client)
 	{
@@ -427,6 +428,13 @@ static int fusb3601_probe (struct i2c_client* client,
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 	FUSB3601_dual_role_phy_init();
 #endif
+
+	power_dev_info = power_devices_info_register();
+	if (power_dev_info) {
+		power_dev_info->dev_name = client->dev.driver->name;
+		power_dev_info->dev_id = 0;
+		power_dev_info->ver_id = 0;
+	}
 
 	INIT_WORK(&chip->fusb3601_probe_work, fusb3601_probe_work);
 	INIT_WORK(&chip->fusb3601_set_cc_mode_work, fusb3601_set_cc_mode_work);

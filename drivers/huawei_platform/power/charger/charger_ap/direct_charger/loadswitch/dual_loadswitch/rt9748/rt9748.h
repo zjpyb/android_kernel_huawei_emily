@@ -3,7 +3,7 @@
  *
  * rt9748 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -74,12 +74,12 @@ enum loadswitch {
 
 #define RT9748_CONTROL                     0x06
 #define RT9748_CONTROL_INIT                0x0e
-#define RT9748_CHARGE_EN_MASK              (BIT(4))
+#define RT9748_CHARGE_EN_MASK              BIT(4)
 #define RT9748_CHARGE_EN_SHIFT             4
 
 #define RT9748_ADC_CTRL                    0x07
 #define RT9748_ADC_CTRL_INIT               0x87
-#define RT9748_ADC_EN_MASK                 (BIT(3))
+#define RT9748_ADC_EN_MASK                 BIT(3)
 #define RT9748_ADC_EN_SHIFT                3
 
 #define RT9748_SAMPLE_EN                   0x08
@@ -99,12 +99,12 @@ enum loadswitch {
 
 #define BQ25870_CONTROL                    0x06
 #define BQ25870_CONTROL_INIT               0x0e
-#define BQ25870_CHARGE_EN_MASK             (BIT(4))
+#define BQ25870_CHARGE_EN_MASK             BIT(4)
 #define BQ25870_CHARGE_EN_SHIFT            4
 
 #define BQ25870_ADC_CTRL                   0x07
 #define BQ25870_ADC_CTRL_INIT              0x87
-#define BQ25870_ADC_EN_MASK                (BIT(3))
+#define BQ25870_ADC_EN_MASK                BIT(3)
 #define BQ25870_ADC_EN_SHIFT               3
 
 #define BQ25870_SAMPLE_EN                  0x08
@@ -268,7 +268,7 @@ enum loadswitch {
 #define RT9748_VBUS_LOW_LSB                1
 #define RT9748_VBUS_ADC_MASK               (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4))
-#define RT9748_VBUS_POLARITY_MASK          (BIT(7))
+#define RT9748_VBUS_POLARITY_MASK          BIT(7)
 
 #define BQ25870_VBUS_ADC2                  0x13
 #define BQ25870_VBUS_ADC1                  0x14
@@ -276,14 +276,14 @@ enum loadswitch {
 #define BQ25870_VBUS_LOW_LSB               1
 #define BQ25870_VBUS_ADC_MASK              (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4) | BIT(5) | BIT(6))
-#define BQ25870_VBUS_POLARITY_MASK         (BIT(7))
+#define BQ25870_VBUS_POLARITY_MASK         BIT(7)
 
 #define RT9748_IBUS_ADC2                   0x15
 #define RT9748_IBUS_HIGH_LSB               256
 #define RT9748_IBUS_LOW_LSB                1
 #define RT9748_IBUS_ADC_MASK               (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4))
-#define RT9748_IBUS_POLARITY_MASK          (BIT(7))
+#define RT9748_IBUS_POLARITY_MASK          BIT(7)
 #define RT9748_IBUS_ADC1                   0x16
 
 #define BQ25870_IBUS_ADC2                  0x15
@@ -291,13 +291,13 @@ enum loadswitch {
 #define BQ25870_IBUS_LOW_LSB               1
 #define BQ25870_IBUS_ADC_MASK              (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4) | BIT(5) | BIT(6))
-#define BQ25870_IBUS_POLARITY_MASK         (BIT(7))
+#define BQ25870_IBUS_POLARITY_MASK         BIT(7)
 #define BQ25870_IBUS_ADC1                  0x16
 
 #define RT9748_VOUT_ADC2                   0x17
 #define RT9748_VOUT_ADC1                   0x18
 #define RT9748_VDROP_ADC2                  0x19
-#define RT9748_VDROP_POLARITY_MASK         (BIT(7))
+#define RT9748_VDROP_POLARITY_MASK         BIT(7)
 #define RT9748_VDROP_ADC_MASK              (BIT(0) | BIT(1))
 #define RT9748_VDROP_HIGH_LSB              256
 #define RT9748_VDROP_LOW_LSB               1
@@ -306,7 +306,7 @@ enum loadswitch {
 #define BQ25870_VOUT_ADC2                  0x17
 #define BQ25870_VOUT_ADC1                  0x18
 #define BQ25870_VDROP_ADC2                 0x19
-#define BQ25870_VDROP_POLARITY_MASK        (BIT(7))
+#define BQ25870_VDROP_POLARITY_MASK        BIT(7)
 #define BQ25870_VDROP_ADC_MASK             (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4) | BIT(5) | BIT(6))
 #define BQ25870_VDROP_HIGH_LSB             256
@@ -319,7 +319,7 @@ enum loadswitch {
 #define RT9748_VBAT_LOW_LSB                1
 #define RT9748_VBAT_ADC_MASK               (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4))
-#define RT9748_VBAT_POLARITY_MASK          (BIT(7))
+#define RT9748_VBAT_POLARITY_MASK          BIT(7)
 
 #define BQ25870_VBAT_ADC2                  0x1b
 #define BQ25870_VBAT_ADC1                  0x1c
@@ -327,7 +327,7 @@ enum loadswitch {
 #define BQ25870_VBAT_LOW_LSB               1
 #define BQ25870_VBAT_ADC_MASK              (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4) | BIT(5) | BIT(6))
-#define BQ25870_VBAT_POLARITY_MASK         (BIT(7))
+#define BQ25870_VBAT_POLARITY_MASK         BIT(7)
 
 #define RT9748_IBAT_ADC2                   0x1d
 #define RT9748_IBAT_ADC1                   0x1e
@@ -335,7 +335,7 @@ enum loadswitch {
 #define RT9748_IBAT_LOW_LSB                1
 #define RT9748_IBAT_ADC_MASK               (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4))
-#define RT9748_IBAT_POLARITY_MASK          (BIT(7))
+#define RT9748_IBAT_POLARITY_MASK          BIT(7)
 
 #define BQ25870_IBAT_ADC2                  0x1d
 #define BQ25870_IBAT_ADC1                  0x1e
@@ -343,7 +343,7 @@ enum loadswitch {
 #define BQ25870_IBAT_LOW_LSB               1
 #define BQ25870_IBAT_ADC_MASK              (BIT(0) | BIT(1) | BIT(2) | \
 	BIT(3) | BIT(4) | BIT(5) | BIT(6))
-#define BQ25870_IBAT_POLARITY_MASK         (BIT(7))
+#define BQ25870_IBAT_POLARITY_MASK         BIT(7)
 
 #define RT9748_TDIE_ADC1                   0x23
 #define RT9748_EVENT_STATUS                0x24

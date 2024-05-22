@@ -488,8 +488,7 @@ static int st_parse_dts(struct device_node *device, struct ts_device_data *chip_
 	    of_property_read_u32(device, "disable_reset_bit",
 				 &chip_data->disable_reset);
 	if (!retval) {
-		TS_LOG_INFO("not use hw reset\n",
-			    chip_data->disable_reset);
+		TS_LOG_INFO("not use hw reset\n");
 	} else {
 		chip_data->disable_reset = 0;
 		TS_LOG_INFO("use hw reset\n");
@@ -744,6 +743,8 @@ static void st_gpio_lp_mode(void)
 }
 
 static void st_regulator_enable(struct ts_device_data *chip_data){
+	int error;
+
 	//output vci
 	if (chip_data->vci_gpio_type && chip_data->vci_gpio_ctrl > 0){
 		gpio_direction_output(chip_data->vci_gpio_ctrl, 1);
@@ -753,7 +754,11 @@ static void st_regulator_enable(struct ts_device_data *chip_data){
 	if (chip_data->vci_regulator_type) {
 		if (!IS_ERR(st_info->pwr_reg)) {
 			TS_LOG_INFO("vci enable is called\n");
-			regulator_enable(st_info->pwr_reg);
+			error = regulator_enable(st_info->pwr_reg);
+			if (error < 0) {
+				TS_LOG_ERR("failed to enable pwr_reg\n");
+				return;
+			}
 			mdelay(5);
 		}
 	}
@@ -775,7 +780,11 @@ static void st_regulator_enable(struct ts_device_data *chip_data){
 	if (chip_data->vddio_regulator_type) {
 		if (!IS_ERR(st_info->bus_reg)) {
 			TS_LOG_INFO("vddio enable is called\n");
-			regulator_enable(st_info->bus_reg);
+			error = regulator_enable(st_info->bus_reg);
+			if (error < 0) {
+				TS_LOG_ERR("failed to enable bus_reg\n");
+				return;
+			}
 			mdelay(5);
 		}
 	}
@@ -789,6 +798,8 @@ static void st_regulator_enable(struct ts_device_data *chip_data){
 }
 
 static void st_regulator_disable(struct ts_device_data *chip_data){
+	int error;
+
 	//disable vddio
 	if (chip_data->vddio_gpio_type 
 		&& chip_data->vddio_gpio_ctrl > 0
@@ -800,7 +811,11 @@ static void st_regulator_disable(struct ts_device_data *chip_data){
 	if (chip_data->vddio_regulator_type) {
 		if (!IS_ERR(st_info->bus_reg)) {
 			TS_LOG_INFO("vddio enable is called\n");
-			regulator_disable(st_info->bus_reg);
+			error = regulator_disable(st_info->bus_reg);
+			if (error < 0) {
+				TS_LOG_ERR("failed to disable bus_reg\n");
+				return;
+			}
 			mdelay(5);
 		}		
 	}
@@ -820,7 +835,11 @@ static void st_regulator_disable(struct ts_device_data *chip_data){
 	if (chip_data->vci_regulator_type) {
 		if (!IS_ERR(st_info->pwr_reg)) {
 			TS_LOG_INFO("vci enable is called\n");
-			regulator_disable(st_info->pwr_reg);
+			error = regulator_disable(st_info->pwr_reg);
+			if (error < 0) {
+				TS_LOG_ERR("failed to disable pwr_reg\n");
+				return;
+			}
 			mdelay(5);
 		}		
 	}
@@ -849,10 +868,17 @@ static void st_regulator_put(struct ts_device_data *chip_data)
 
 static void st_power_on(struct ts_device_data *chip_data)
 {
+	int ret;
+
 	TS_LOG_INFO("%s+\n", __func__);
 	st_regulator_enable(chip_data);
 	st_pinctrl_normal_mode();
-	gpio_direction_input(chip_data->irq_gpio);
+	ret = gpio_direction_input(chip_data->irq_gpio);
+	if (ret) {
+		TS_LOG_INFO("gpio_direction_input %d failed, ret:0x%X\n",
+			chip_data->irq_gpio, ret);
+		return;
+	}
 }
 
 static void st_hw_reset(struct ts_device_data *chip_data)
@@ -1096,14 +1122,23 @@ static int st_set_gesture_reg(struct fts_ts_info *info, char *mode)
 	int i;
  	unsigned char reg[6] = {0xC1, 0x06};
 	unsigned char regcmd[6] = {0xC2, 0x06, 0xFF, 0xFF, 0xFF, 0xFF};
+	int error;
 
 	for(i = 0; i < 4; i++){
 		reg[i+2] = *(mode + i);
 	}
 
-	st_i2c_write(info, regcmd, sizeof(regcmd));
+	error = st_i2c_write(info, regcmd, sizeof(regcmd));
+	if (error != NO_ERR) {
+		TS_LOG_ERR("%s send regAdd Fail\n", __func__);
+		return -ENODEV;
+	}
 	usleep_range(5000,6000);
-	st_i2c_write(info, reg, sizeof(reg));
+	error = st_i2c_write(info, reg, sizeof(reg));
+	if (error != NO_ERR) {
+		TS_LOG_ERR("%s send regAdd Fail\n", __func__);
+		return -ENODEV;
+	}
 	usleep_range(5000,6000);
  	TS_LOG_DEBUG(" set gesture mode %d %d %d\n", *mode, *(mode+1), *(mode+2));
 	return 0;
@@ -1633,7 +1668,7 @@ static int st_system_init(struct fts_ts_info *info)
 		return -ENODEV;
 	}
 
-	return error ? -ENODEV : 0;
+	return 0;
 }
 
 static int st_init_hw(struct fts_ts_info *info)
@@ -1897,6 +1932,10 @@ static int st_init_chip(void)
 	int retval=NO_ERR;
 
 	TS_LOG_INFO("%s: +\n", __func__);
+	if (!st_info) {
+		TS_LOG_ERR("st_info is NULL\n");
+		goto out;
+	}
 
 #if defined (CONFIG_TEE_TUI)
 	strncpy(tui_st_data.device_name, "st", strlen("st"));
@@ -2108,7 +2147,11 @@ static int st_fw_update_boot(char *file_name)
 
 	info = st_info;
 
-	st_systemreset(info);
+	ret = st_systemreset(info);
+	if (ret) {
+		TS_LOG_ERR("Cannot reset the device\n");
+		return -ENODEV;
+	}
 	st_wait_controller_ready(info);
 	mdelay(5);
 
@@ -2162,11 +2205,17 @@ static void st_goto_sleep_mode(void)
 
 static int st_fw_update_sd(void)
 {
+	int ret;
+
 	TS_LOG_INFO("%s +\n", __func__);
 
 	st_info->fw_force = 1;
 	st_fw_update_boot(NULL);
-	st_init_hw(st_info);
+	ret = st_init_hw(st_info);
+	if (ret) {
+		TS_LOG_ERR("Cannot initialize the hardware device\n");
+		return -ENODEV;
+	}
 	st_info->fw_force = 0;
 
 	return 0;

@@ -4,11 +4,11 @@ obj-$(CONFIG_HISPIPP_V250) += ipp-core.o ipp-com.o memory.o smc.o
 obj-$(CONFIG_HISPIPP_V250) += v250/ device/
 obj-$(CONFIG_HISPIPP_V250) += adapter_common.o \
                             adapter_mcf.o \
-                            adapter_mfnr.o \
                             adapter_slam.o \
                             adapter_vbk.o \
                             adapter_reorder.o\
-                            adapter_compare.o
+                            adapter_compare.o\
+                            adapter_matcher.o
 
 subdir-ccflags-$(CONFIG_HISPIPP_V250) += -Wall -Werror
 subdir-ccflags-$(CONFIG_HISPIPP_V250) += -I$(srctree)/drivers/hisi/ipp/v250 \

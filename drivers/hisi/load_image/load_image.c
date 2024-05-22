@@ -29,7 +29,6 @@
 #include <linux/syscalls.h>
 #include <linux/unistd.h>
 #include <hisi_partition.h>
-#include <partition.h>
 #include <teek_client_api.h>
 #include <teek_client_id.h>
 #include "load_image.h"
@@ -339,9 +338,9 @@ int bsp_read_bin(const char *partion_name, unsigned int offset,
 		 unsigned int length, char *buffer)
 {
 	int ret = SEC_ERROR;
-	char *pathname;
+	char *pathname = NULL;
 	unsigned long pathlen;
-	struct file *fp;
+	struct file *fp = NULL;
 	loff_t read_offset = offset;
 
 	if ((NULL == partion_name) || (NULL == buffer)) {
@@ -358,7 +357,7 @@ int bsp_read_bin(const char *partion_name, unsigned int offset,
 		return ret;
 	}
 
-	ret = flash_find_ptn((const char *)partion_name, pathname);
+	ret = flash_find_ptn_s((const char *)partion_name, pathname, pathlen);
 	if (0 != ret) {
 		sec_print_err("partion_name(%s) not in ptable, ret=0x%x!\n", partion_name, ret);
 		ret = SEC_ERROR;
@@ -390,7 +389,6 @@ close_file:
 free_pname:
 	if (NULL != pathname) {
 		kfree(pathname);
-		pathname = NULL;
 	}
 
 	return ret;
@@ -496,11 +494,12 @@ s32 load_vrl_to_os(TEEC_Session *session,
 
 	switch (vrl_type) {
 	case PrimVRL:
-		strncpy(image_name, PART_VRL, (unsigned long)PART_NAMELEN);
+		strncpy(image_name, PART_VRL, strnlen(PART_VRL, PART_NAMELEN));
 		image_name[PART_NAMELEN - 1] = '\0';
 		break;
 	case BackVRL:
-		strncpy(image_name, PART_VRL_BACKUP, (unsigned long)PART_NAMELEN);
+		strncpy(image_name, PART_VRL_BACKUP,
+			strnlen(PART_VRL_BACKUP, PART_NAMELEN));
 		image_name[PART_NAMELEN - 1] = '\0';
 		break;
 	default:

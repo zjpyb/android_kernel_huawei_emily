@@ -86,7 +86,7 @@ static int spmi_register_controller(struct spmi_controller *ctrl);
  */
 struct spmi_controller *spmi_busnum_to_ctrl(u32 bus_num)
 {
-	struct spmi_controller *ctrl;
+	struct spmi_controller *ctrl = NULL;
 
 	mutex_lock(&board_lock);
 	ctrl = idr_find(&ctrl_idr, bus_num);
@@ -144,7 +144,7 @@ static int spmi_ctrl_remove_device(struct device *dev, void *data)
  */
 int spmi_del_controller(struct spmi_controller *ctrl)
 {
-	struct spmi_controller *found;
+	struct spmi_controller *found = NULL;
 
 	if (!ctrl)
 		return -EINVAL;
@@ -205,7 +205,7 @@ static struct device_type spmi_ctrl_type = {
  */
 struct spmi_device *spmi_alloc_device(struct spmi_controller *ctrl)
 {
-	struct spmi_device *spmidev;
+	struct spmi_device *spmidev = NULL;
 
 	if (!ctrl || !spmi_busnum_to_ctrl(ctrl->nr)) {
 		pr_err("Missing SPMI controller\n");
@@ -231,7 +231,7 @@ EXPORT_SYMBOL_GPL(spmi_alloc_device);
 /* Validate the SPMI device structure */
 static struct device *get_valid_device(struct spmi_device *spmidev)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 
 	if (!spmidev)
 		return NULL;
@@ -288,7 +288,7 @@ EXPORT_SYMBOL_GPL(spmi_add_device);
 struct spmi_device *spmi_new_device(struct spmi_controller *ctrl,
 					struct spmi_boardinfo const *info)
 {
-	struct spmi_device *spmidev;
+	struct spmi_device *spmidev = NULL;
 	int rc;
 
 	if (!ctrl || !info)
@@ -554,7 +554,7 @@ static const struct spmi_device_id *spmi_match(const struct spmi_device_id *id,
 
 static int spmi_device_match(struct device *dev, struct device_driver *drv)
 {
-	struct spmi_device *spmi_dev;
+	struct spmi_device *spmi_dev = NULL;
 	struct spmi_driver *sdrv = to_spmi_driver(drv);
 
 	if (dev->type == &spmi_dev_type)
@@ -578,7 +578,7 @@ static int spmi_device_match(struct device *dev, struct device_driver *drv)
 static int spmi_legacy_suspend(struct device *dev)
 {
 	struct spmi_device *spmi_dev = NULL;
-	struct spmi_driver *driver;
+	struct spmi_driver *driver = NULL;
 
 	if (dev->type == &spmi_dev_type)
 		spmi_dev = to_spmi_device(dev);
@@ -596,7 +596,7 @@ static int spmi_legacy_suspend(struct device *dev)
 static int spmi_legacy_resume(struct device *dev)
 {
 	struct spmi_device *spmi_dev = NULL;
-	struct spmi_driver *driver;
+	struct spmi_driver *driver = NULL;
 
 	if (dev->type == &spmi_dev_type)
 		spmi_dev = to_spmi_device(dev);
@@ -731,11 +731,11 @@ STATIC int __init spmi_init(void)
 	int retval;
 
 	retval = bus_register(&spmi_bus_type);
-	if (!retval)
+	if (!retval) {
 		retval = device_register(&spmi_dev);
-
-	if (retval)
-		bus_unregister(&spmi_bus_type);
+		if (retval)
+			bus_unregister(&spmi_bus_type);
+	}
 
 	return retval;
 }

@@ -13,7 +13,7 @@
 #define PRODUCT_DEVICE_LEN 32
 #define REGS_DUMP_MAX_NUM   10
 #define AP_DUMP_MAGIC   0x19283746
-#define BBOX_VERSION    0x1000B	/*v1.0.11 */
+#define BBOX_VERSION    0x1001B	/*v1.0.11 */
 #define AP_DUMP_END_MAGIC   0x1F2E3D4C
 #define SIZE_1K         0x400
 #define SYSTEM_BUILD_POP    "/system/build.prop"
@@ -22,11 +22,12 @@
 #define NMI_NOTIFY_LPM3_ADDR SOC_SCTRL_SCLPMCUCTRL_ADDR(SOC_ACPU_SCTRL_BASE_ADDR)
 #define WDT_KICK_SLICE_TIMES    (3)
 #define FPGA 1
+#define KDUMP_SKP_SUCCESS_FLAG    (0xAA55)
+#define KDUMP_SKP_DATASAVE_OFFSET (0x1000)
 
 #define PSTORE_PATH            "/proc/balong/pstore/"
 #define FASTBOOT_LOG_FILE      "/proc/balong/log/fastboot_log"
 #define LAST_FASTBOOT_LOG_FILE "/proc/balong/log/last_fastboot_log"
-
 
 typedef struct {
 	rdr_hisiap_dump_func_ptr dump_funcptr;

@@ -110,6 +110,7 @@ static ssize_t sec_ts_regread_show(struct device *dev, struct device_attribute *
 
 i2c_err:
 	kfree(read_lv1_buff);
+	read_lv1_buff = NULL;
 malloc_err:
 	mutex_unlock(&ts->device_mutex);
 	lv1_readremain = 0;

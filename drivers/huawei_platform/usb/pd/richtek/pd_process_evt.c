@@ -377,7 +377,7 @@ bool pd_process_data_msg_bist(
 bool pd_process_ctrl_msg_dr_swap(
 		pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	bool reject;
+	bool reject = false;
 
 	if (!pd_check_pe_state_ready(pd_port))
 		return false;
@@ -438,7 +438,7 @@ bool pd_process_dpm_msg_dr_swap(
 bool pd_process_ctrl_msg_pr_swap(
 		pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	bool reject;
+	bool reject = false;
 
 	if (!pd_check_pe_state_ready(pd_port))
 		return false;
@@ -827,7 +827,7 @@ static inline bool pe_is_valid_pd_msg_role(
 static inline bool pe_translate_pd_msg_event(
 	pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	pd_msg_t *pd_msg;
+	pd_msg_t *pd_msg = NULL;
 
 	if (pd_event->event_type != PD_EVT_PD_MSG)
 		return true;
@@ -847,7 +847,10 @@ static inline bool pe_translate_pd_msg_event(
 static inline bool pe_exit_idle_state(
 	pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	bool act_as_sink;
+	bool act_as_sink = false;
+
+	PE_EVT_INFO("type %u, msg: %u, msg_sec %u\n",
+		pd_event->event_type, pd_event->msg, pd_event->msg_sec);
 
 #ifdef CONFIG_USB_PD_CUSTOM_DBGACC
 	pd_port->custom_dbgacc = false;
@@ -868,7 +871,16 @@ static inline bool pe_exit_idle_state(
 		pd_port->custom_dbgacc = true;
 		break;
 #endif	/* CONFIG_USB_PD_CUSTOM_DBGACC */
-
+#ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC
+	case TYPEC_ATTACHED_CUSTOM_SRC:
+		act_as_sink = true;
+	break;
+#endif /* CONFIG_TYPEC_CAP_CUSTOM_SRC */
+#ifdef CONFIG_TYPEC_CAP_NORP_SRC
+	case TYPEC_ATTACHED_NORP_SRC:
+		act_as_sink = true;
+	break;
+#endif /* CONFIG_TYPEC_CAP_NORP_SRC */
 	default:
 		return false;
 	}
@@ -936,6 +948,9 @@ static inline bool pe_is_trap_in_idle_state(
 	pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	bool trap = true;
+
+	PE_EVT_INFO("pe_state: %u, type %u, msg: %u\n", pd_port->pe_state_curr,
+		pd_event->event_type, pd_event->msg);
 
 	switch (pd_port->pe_state_curr) {
 	case PE_IDLE1:

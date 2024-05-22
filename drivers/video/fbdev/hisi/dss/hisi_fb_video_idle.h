@@ -20,6 +20,7 @@
 #include <linux/ion-iommu.h>
 #endif
 #include "hisi_fb.h"
+#include <linux/hisi/hisi_lb.h>
 
 #define CACHE_WB_SIZE (1080*2244*4)
 extern uint32_t g_dss_chn_sid_num[DSS_CHN_MAX_DEFINE];
@@ -45,6 +46,7 @@ struct hisifb_video_idle_ctrl {
 	int idle_ctrl_created;
 
 	bool mmu_enable;
+	bool sc_access;
 	bool afbc_enable;
 	bool compress_enable;
 	bool video_idle_wb_status;
@@ -66,8 +68,11 @@ struct hisifb_video_idle_ctrl {
 	uint32_t wdfc_pad_num;
 
 	uint32_t l3cache_size;
+	uint32_t lb_size;
+	uint32_t policy_id;
 
 	struct idle_rb_closed_reg rb_closed_reg;
+	struct ion_handle *wb_handle;
 
 	uint32_t wb_buffer_size;
 	char __iomem *wb_buffer_base;

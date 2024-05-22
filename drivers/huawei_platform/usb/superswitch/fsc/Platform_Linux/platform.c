@@ -2,6 +2,7 @@
 #include <linux/printk.h>           /* pr_err, printk, etc */
 #include <linux/delay.h>            /* udelay, etc. */
 #include <linux/kthread.h>
+#include <linux/sched/clock.h>
 #include "fusb3601_global.h"        /* Chip structure */
 #include "platform_helpers.h"       /* Implementation details */
 #include "../core/platform.h"

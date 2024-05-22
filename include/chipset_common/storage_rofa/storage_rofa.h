@@ -19,31 +19,42 @@
 #ifndef STORAGE_ROFA_PUBLIC_H
 #define STORAGE_ROFA_PUBLIC_H
 
-/*
- * routines used to record storage information in ufs/emmc driver
- */
+#define MMC_STATUS_OK              0
+#define MMC_STATUS_CQIS_RED        1
+
+#define MMC_RESP_UNCARE            0
+
 struct scsi_device;
 struct request;
 struct scsi_sense_hdr;
+struct mmc_card;
+struct mmc_request;
 
+/*
+ * routines used to record storage information in ufs/emmc driver
+ */
 void storage_rochk_record_bootdevice_type(int type);
 void storage_rochk_record_bootdevice_manfid(unsigned int manfid);
-void storage_rochk_record_bootdevice_model(char *model);
+void storage_rochk_record_bootdevice_model(const char *model);
+void storage_rochk_record_bootdevice_fwrev(const char *rev);
 void storage_rochk_record_bootdevice_pre_eol_info(int eol);
 
-unsigned int storage_rochk_filter_sd(const struct scsi_device *sdp);
-int storage_rochk_record_sd(const struct scsi_device *sdp, const char *name,
-	int major, int minor);
+bool storage_rochk_filter_sd(const struct scsi_device *sdp);
+bool storage_rochk_is_mmc_card(const struct mmc_card *card);
+int storage_rochk_record_disk(const char *name, int major, int minor);
 void storage_rochk_record_sd_rev_once(const struct scsi_device *sdp);
-void storage_rochk_record_disk_wp_status(const struct scsi_device *sdp,
-	const char *name, unsigned char wp);
-void storage_rochk_record_disk_capacity(const struct scsi_device *sdp,
-	const char *name, unsigned long long capacity);
+void storage_rochk_record_disk_wp_status(const char *name,
+	unsigned char wp);
+void storage_rochk_record_disk_capacity(const char *name,
+	unsigned long long capacity);
 
 int storage_rochk_is_monitor_enabled(void);
 void storage_rochk_monitor_sd_readonly(const struct scsi_device *sdp,
 	const struct request *req, int result,
 	unsigned int sense_key, unsigned int asc, unsigned int ascq);
+void storage_rochk_monitor_mmc_readonly(const struct mmc_card *card,
+	const struct mmc_request *mrq, unsigned int status,
+	unsigned int resp);
 
 #ifdef CONFIG_HUAWEI_STORAGE_ROFA_FAULT_INJECT
 unsigned int storage_rofi_should_inject_check_condition_sense(void);
@@ -52,6 +63,7 @@ void storage_rofi_inject_fault_check_condition_sense(int *result,
 	struct request *req, struct scsi_device *sdp,
 	struct scsi_sense_hdr *sshdr);
 unsigned int storage_rofi_should_inject_write_prot_status(void);
+int storage_rofi_switch_mmc_card_pwronwp(const struct mmc_card *card);
 #endif
 
 /*

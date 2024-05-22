@@ -1573,7 +1573,7 @@ struct parade_core_data {
 
     char *fw_and_config_name;
     char  project_id[MAX_STR_LEN];
-    char  module_vendor[MAX_STR_LEN];
+    char module_vendor[MAX_STR_LEN + 1];
     char  lcd_module_name[MAX_STR_LEN];
     char  chip_name[MAX_STR_LEN];
     bool  is_need_check_mode_before_status_resume;

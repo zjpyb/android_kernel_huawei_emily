@@ -10,13 +10,16 @@
 * GNU General Public License for more details.
 *
 */
-
 #ifndef __PARSE_EDID_H__
 #define __PARSE_EDID_H__
 
 #include <linux/string.h>
 #include "hisi_fb.h"
 #include "hisi_dp.h"
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmacro-redefined"
+
 static const uint8_t edid_v1_header[8] = {0x00, 0xff, 0xff, 0xff,
                                    0xff, 0xff, 0xff, 0x00};
 
@@ -41,7 +44,7 @@ static const uint8_t edid_v1_header[8] = {0x00, 0xff, 0xff, 0xff,
 #define GET_CEA_DATA_BLOCK_LEN( x ) \
 			((uint8_t)0x1F & x[0])
 
-#define EDID_LENGTH                0x80
+#define EDID_LENGTH                0x80 //lint !e547
 
 #define EDID_HEADER	               0x00
 #define EDID_HEADER_END	           0x07
@@ -210,3 +213,4 @@ int block_type(uint8_t* block);
 int release_edid_info(struct dp_ctrl *dptx);
 
 #endif
+#pragma GCC diagnostic pop

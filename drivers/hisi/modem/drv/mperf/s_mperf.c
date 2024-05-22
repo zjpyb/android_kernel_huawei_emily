@@ -64,6 +64,7 @@
 	(printk(KERN_ERR "[s_mem]: <%s> "fmt, __FUNCTION__, ##__VA_ARGS__))
 
 
+#ifdef CONFIG_OF_RESERVED_MEM
 
  #define MAX_RESERVED_REGIONS    16
  static struct reserve_mem_node reserved_mems[MAX_RESERVED_REGIONS];
@@ -161,6 +162,7 @@ EXPORT_SYMBOL(bsp_mem_unmap_uncached);
 
 
 
+#endif
 
 
 static struct mperf_info  g_mperf_info = {0};

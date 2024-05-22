@@ -42,7 +42,7 @@
 #include <linux/hisi/hisi_powerkey_event.h>
 #include <linux/hisi/hisi_sp805_wdt.h>
 #include <linux/hisi/mntn_l3cache_ecc.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/version.h>
 #include <linux/hisi/hisi_pstore.h>
 #include <linux/hisi/hisi_bbox_diaginfo.h>
@@ -50,6 +50,8 @@
 #include <mntn_subtype_exception.h>
 #include "../rdr_print.h"
 #include <linux/hisi/hisi_log.h>
+#include <linux/hisi/hisi_hw_diag.h>
+#include <linux/dma-direction.h>
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 
@@ -60,7 +62,18 @@
 #define SRC_LPMCU_DDR_MEMORY		"/proc/balong/memory/lpmcu_ddr_mem"
 #define SRC_BL31_MNTN_MEMORY		"/proc/balong/memory/bl31_mntn_mem"
 #define SRC_ETR_DUMP	"/proc/balong/memory/etr_dump"
+#define SRC_LOGBUFFER_MEMORY            "/proc/balong/memory/kernel_logbuff"
+#ifdef CONFIG_HISI_HHEE
 #define SRC_HHEE_MNTN_MEMORY		"/proc/balong/memory/hhee_mntn_mem"
+#endif
+#define MAX_MEMDUMP_NAME 16
+#define KDUMP_MAX_SIZE (0x80000000)
+struct memdump
+{
+    char name[MAX_MEMDUMP_NAME];
+    unsigned long base;
+    unsigned long size;
+};
 
 static AP_EH_ROOT *g_rdr_ap_root;
 static AP_RECORD_PC *g_bbox_ap_record_pc;
@@ -81,6 +94,8 @@ int g_bbox_fpga_flag = -1;
 static unsigned int g_dump_buffer_size_tbl[HK_MAX] = {0};
 static unsigned int last_task_struct_size = 0;
 static unsigned int last_task_stack_size = 0;
+
+static struct log_buf_dump_info *g_logbuff_dump_info;
 
 /*struct rdr_exception_info_s {
 struct list_head e_list;
@@ -129,7 +144,7 @@ struct rdr_exception_info_s einfo[] = {
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
 	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_HARDLOCKUP, (u32)RDR_UPLOAD_YES, "ap", "ap",
 	 0, 0, 0},
-	{{0, 0}, MODID_AP_S_PANIC_Storage, MODID_AP_S_PANIC_Storage, RDR_ERR,
+	{{0, 0}, MODID_AP_S_PANIC_STORAGE, MODID_AP_S_PANIC_STORAGE, RDR_ERR,
 	 RDR_REBOOT_NOW, RDR_AP, RDR_AP, RDR_AP,
 	 (u32)RDR_REENTRANT_DISALLOW, (u32)AP_S_PANIC, HI_APPANIC_Storage, (u32)RDR_UPLOAD_YES, "ap", "ap",
 	 0, 0, 0},
@@ -193,16 +208,25 @@ static int acpu_panic_loop_notify(struct notifier_block *nb,
 				  unsigned long event, void *buf);
 static int rdr_hisiap_panic_notify(struct notifier_block *nb,
 				   unsigned long event, void *buf);
+static int rdr_hisiap_early_panic_notify(struct notifier_block *nb,
+				   unsigned long event, void *buf);
 static int rdr_hisiap_die_notify(struct notifier_block *nb,
 				 unsigned long event, void *pReg);
 static int save_exception_info(void *arg);
 static void get_product_version_work_fn(struct work_struct *work);
-static int rdr_copy_big_file_apend(char *dst, char *src);
-static int rdr_copy_file_apend(char *dst, char *src);
+static int rdr_copy_big_file_apend(const char *dst, const char *src);
+static int rdr_copy_file_apend(const char *dst, const char *src);
+static int skp_rdr_copy_file_apend(const char *dst, const char *src);
+
 
 static struct notifier_block acpu_panic_loop_block = {
 	.notifier_call = acpu_panic_loop_notify,
 	.priority = INT_MAX,
+};
+
+static struct notifier_block rdr_hisiap_early_panic_block = {
+	.notifier_call = rdr_hisiap_early_panic_notify,
+	.priority = INT_MIN,
 };
 
 static struct notifier_block rdr_hisiap_panic_block = {
@@ -249,7 +273,7 @@ Return:           0:读取成功, 非0:失败
 static int get_ap_trace_mem_size_from_dts(void)
 {
 	int ret;
-	struct device_node *np;
+	struct device_node *np = NULL;
 	u32 i = 0;
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,rdr_ap_adapter");
@@ -365,7 +389,7 @@ Return:           0:读取成功, 非0:失败
 static int get_ap_dump_mem_modu_size_from_dts(void)
 {
 	int ret = 0;
-	struct device_node *np;
+	struct device_node *np = NULL;
 	u32 i = 0;
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,rdr_ap_adapter");
@@ -404,7 +428,7 @@ Return:           0:读取失败或开关关闭, 非0:开关打开
 static unsigned int get_ap_last_task_switch_from_dts(void)
 {
 	int ret;
-	struct device_node *np;
+	struct device_node *np = NULL;
 	unsigned int ap_last_task_switch;
 	np = of_find_compatible_node(NULL, NULL,
 				     "hisilicon,rdr_ap_adapter");
@@ -436,7 +460,10 @@ Return:         NA
 ********************************************************************************/
 void set_exception_info(unsigned long address)
 {
-    memset(exception_buf, 0, sizeof(exception_buf));
+    if (EOK != memset_s(exception_buf,sizeof(exception_buf), 0, sizeof(exception_buf)))
+    {
+	BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+    }
     exception_buf_len = sprint_symbol(exception_buf, address);
 }
 
@@ -460,9 +487,9 @@ void get_exception_info(unsigned long *buf, unsigned long *buf_len)
 /*version < 32byte*/
 void get_product_version(char *version, size_t count)
 {
-	struct file *fp;
+	struct file *fp = NULL;
 	char buf[BUFFER_SIZE];
-	char *p;
+	char *p = NULL;
 	int i;
 	ssize_t length;
 
@@ -471,7 +498,10 @@ void get_product_version(char *version, size_t count)
 		       __func__, version);
 		return;
 	}
-	memset(version, 0, count);
+	if (EOK != memset_s(version,count ,0, count))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 
 	/* 等待文件系统ok，读取/system/build.prop的ro.confg.hw_systemversion=BalongV100R001C50B310属性 */
 	/* 不能在module_init调用 */
@@ -556,7 +586,7 @@ void print_debug_info(void)
 
 static int check_addr_overflow(unsigned char *addr)
 {
-	unsigned char *max_addr;
+	unsigned char *max_addr = NULL;
 
 	max_addr = g_rdr_ap_root->rdr_ap_area_map_addr +
 	    g_rdr_ap_root->ap_rdr_info.log_len - PMU_RESET_RECORD_DDR_AREA_SIZE;
@@ -570,7 +600,7 @@ static int check_addr_overflow(unsigned char *addr)
 /* 不包括AP_EH_ROOT所占1K空间 */
 static unsigned char *get_rdr_hisiap_dump_start_addr(void)
 {
-	unsigned char *addr;
+	unsigned char *addr = NULL;
 	unsigned int timers = sizeof(AP_EH_ROOT) / SIZE_1K + 1;
 
 	addr = g_rdr_ap_root->rdr_ap_area_map_addr +
@@ -705,14 +735,18 @@ timer_ioinit:
 	return 0;
 }
 
-static unsigned int get_total_regdump_region_size(regs_info *regs_info)
+static unsigned int get_total_regdump_region_size(regs_info *regs_info, u32 regs_info_len)
 { /*lint !e578 */
 	int i;
 	u32 total = 0;
 
 	if (!regs_info) {
-		BB_PRINT_ERR("[%s],\n", __func__);
+		BB_PRINT_ERR("[%s],regs_info is null\n", __func__);
 		return 0;
+	}
+
+	if (regs_info_len < REGS_DUMP_MAX_NUM) {
+		BB_PRINT_ERR("[%s],regs_info_len is too small\n", __func__);
 	}
 
 	for (i = 0; (unsigned int)i < g_rdr_ap_root->num_reg_regions; i++) {
@@ -972,7 +1006,7 @@ static int __init ap_dump_buffer_init(void)
 	/* 轨迹记录区 */
 	g_rdr_ap_root->hook_buffer_addr[0] =
 	    get_rdr_hisiap_dump_start_addr()
-	    + get_total_regdump_region_size(g_rdr_ap_root->dump_regs_info);
+	    + get_total_regdump_region_size(g_rdr_ap_root->dump_regs_info, REGS_DUMP_MAX_NUM);
 	for (i = 1; i < HK_MAX; i++) {
 		g_rdr_ap_root->hook_buffer_addr[i] =
 		    g_rdr_ap_root->hook_buffer_addr[i - 1] +
@@ -1065,10 +1099,11 @@ u64 rdr_get_last_wdt_kick_slice(void)
 	return last_kick_slice;
 }
 
-void rdr_regs_memcpy(void *dest, const void *src, size_t len)
+static void rdr_regs_dump(void *dest, const void *src, size_t len)
 {
 	size_t remain, mult, i;
-	u64    *u64_dst, *u64_src;
+	u64 *u64_dst = NULL;
+	u64 *u64_src = NULL;
 
 	remain  = len % sizeof(u64);
 	mult    = len / sizeof(u64);
@@ -1107,7 +1142,7 @@ void regs_dump(void)
 		       __func__, regs_info[i].reg_size, i,
 		       regs_info[i].reg_map_addr,
 		       regs_info[i].reg_dump_addr);
-		rdr_regs_memcpy(regs_info[i].reg_dump_addr,
+		rdr_regs_dump(regs_info[i].reg_dump_addr,
 		       regs_info[i].reg_map_addr,
 		       regs_info[i].reg_size);
 	}
@@ -1283,9 +1318,12 @@ Description:   get device id. ex: hi3650, hi6250...
 *****************************************************/
 static void get_device_platform(unsigned char *device_platform, size_t count)
 {
-	const char *tmp_platform;
+	const char *tmp_platform = NULL;
 
-	memset(device_platform, '\0', count);
+	if (EOK != memset_s(device_platform,count, '\0', count))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 
 	tmp_platform = of_flat_dt_get_machine_name();
 	if (tmp_platform) {
@@ -1395,7 +1433,10 @@ static void save_bl31_exc_memory(void)
 	char fullpath_arr[LOG_PATH_LEN] = "";
 	char dst_str[LOG_PATH_LEN] = "";
 
-	memset(fullpath_arr, 0, LOG_PATH_LEN);
+	if (EOK != memset_s(fullpath_arr,LOG_PATH_LEN ,0, LOG_PATH_LEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	strncat(fullpath_arr, g_log_path,
 		(LOG_PATH_LEN - 1 - strlen(fullpath_arr)));
 	strncat(fullpath_arr, "/ap_log/",
@@ -1408,7 +1449,11 @@ static void save_bl31_exc_memory(void)
 		return;
 	}
 	len = strlen(fullpath_arr);
-	memcpy(dst_str, fullpath_arr, len + 1);
+	iret = memcpy_s(dst_str, LOG_PATH_LEN, fullpath_arr, len + 1);
+	if (iret != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
 	strncat(&dst_str[len], "/bl31_mntn_memory.bin",
 		(LOG_PATH_LEN - 1 - len));
 	iret = rdr_copy_file_apend(dst_str, SRC_BL31_MNTN_MEMORY);
@@ -1421,6 +1466,61 @@ static void save_bl31_exc_memory(void)
 	return;
 }
 
+static void save_logbuff_memory(void)
+{
+	int iret = 0;
+	size_t len = 0;
+	char fullpath_arr[LOG_PATH_LEN] = "";
+	char dst_str[LOG_PATH_LEN] = "";
+
+	if (EOK != memset_s(fullpath_arr, LOG_PATH_LEN, 0, LOG_PATH_LEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+
+	if (EOK != strncat_s(fullpath_arr, LOG_PATH_LEN,
+			g_log_path, (LOG_PATH_LEN - 1 - strlen(fullpath_arr))))
+	{
+		BB_PRINT_ERR("%s():%d:strncat_s fail!\n", __func__, __LINE__);
+		return;
+	}
+
+	if (EOK != strncat_s(fullpath_arr, LOG_PATH_LEN,
+			"/ap_log/", (LOG_PATH_LEN - 1 - strlen(fullpath_arr))))
+	{
+		BB_PRINT_ERR("%s():%d:strncat_s fail!\n", __func__, __LINE__);
+		return;
+	}
+
+	BB_PRINT_PN("%s: %s\n", __func__, fullpath_arr);
+
+	iret = mntn_filesys_create_dir(fullpath_arr, DIR_LIMIT);
+	if (0 != iret) {
+		BB_PRINT_ERR("%s: iret is [%d]\n", __func__, iret);
+		return;
+	}
+
+	len = strlen(fullpath_arr);
+	if (EOK != memcpy_s((void *)dst_str, LOG_PATH_LEN, fullpath_arr, len + 1)) {
+		 BB_PRINT_ERR("[%s], memcpy_s fail!\n", __func__);
+	}
+
+	if ( EOK != strncat_s(&dst_str[len], LOG_PATH_LEN - len, "/kernel_logbuff.bin",
+		strlen("/kernel_logbuff.bin") + 1)) {
+		BB_PRINT_ERR("%s():%d:strncat_s fail!\n", __func__, __LINE__);
+		return;
+	}
+	iret = rdr_copy_file_apend(dst_str, SRC_LOGBUFFER_MEMORY);
+	if (iret) {
+		BB_PRINT_ERR(
+		       "[%s], save kernel_logbuff.bin error, ret = %d\n",
+		       __func__, iret);
+	}
+
+	return;
+}
+
+#ifdef CONFIG_HISI_HHEE
 static void save_hhee_exc_memory(void)
 {
 	int iret;
@@ -1428,7 +1528,10 @@ static void save_hhee_exc_memory(void)
 	char fullpath_arr[LOG_PATH_LEN] = "";
 	char dst_str[LOG_PATH_LEN] = "";
 
-	memset(fullpath_arr, 0, (unsigned long)LOG_PATH_LEN);
+	if (EOK != memset_s(fullpath_arr,(unsigned long)LOG_PATH_LEN ,0, (unsigned long)LOG_PATH_LEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	strncat(fullpath_arr, g_log_path,
 		((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
 	strncat(fullpath_arr, "/ap_log/",
@@ -1441,7 +1544,11 @@ static void save_hhee_exc_memory(void)
 		return;
 	}
 	len = strlen(fullpath_arr);
-	memcpy(dst_str, fullpath_arr, len + 1);
+	iret = memcpy_s(dst_str, LOG_PATH_LEN, fullpath_arr, len + 1);
+	if (iret != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
 	strncat(&dst_str[len], "/hhee_mntn_memory.bin",
 		((LOG_PATH_LEN - 1) - len));
 	iret = rdr_copy_file_apend(dst_str, SRC_HHEE_MNTN_MEMORY);
@@ -1453,6 +1560,7 @@ static void save_hhee_exc_memory(void)
 
 	return;
 }
+#endif
 
 static void save_lpmcu_exc_memory(void)
 {
@@ -1461,7 +1569,10 @@ static void save_lpmcu_exc_memory(void)
 	char fullpath_arr[LOG_PATH_LEN] = "";
 	char dst_str[LOG_PATH_LEN] = "";
 
-	memset(fullpath_arr, 0, LOG_PATH_LEN);
+	if (EOK != memset_s(fullpath_arr,LOG_PATH_LEN, 0, LOG_PATH_LEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	strncat(fullpath_arr, g_log_path, ((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
 	strncat(fullpath_arr, "/lpmcu_log/", ((LOG_PATH_LEN - 1) - strlen(fullpath_arr)));
 	BB_PRINT_PN("%s: %s\n", __func__, fullpath_arr);
@@ -1472,9 +1583,17 @@ static void save_lpmcu_exc_memory(void)
 		return;
 	}
 	len = strlen(fullpath_arr);
-	memcpy(dst_str, fullpath_arr, len + 1);
-	memcpy(&dst_str[len], "/lpmcu_ddr_memory.bin",
+	iret = memcpy_s(dst_str, LOG_PATH_LEN, fullpath_arr, len + 1);
+	if (iret != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
+	iret = memcpy_s(&dst_str[len], LOG_PATH_LEN - strlen(dst_str), "/lpmcu_ddr_memory.bin",
 	       strlen("/lpmcu_ddr_memory.bin") + 1);
+	if (iret != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
 	iret = rdr_copy_file_apend(dst_str, SRC_LPMCU_DDR_MEMORY);
 	if (iret) {
 		BB_PRINT_ERR(
@@ -1484,83 +1603,108 @@ static void save_lpmcu_exc_memory(void)
 	return;
 }
 
+extern unsigned int skp_skp_flag(void);
+
 static void save_kernel_dump(void *arg)
 {
-	int fd;
-	int ret;
-	int len;
-	char date[DATATIME_MAXLEN];
-	char dst_str[LOG_PATH_LEN] = "";
-	char exce_dir[LOG_PATH_LEN] = "";
+    int fd;
+    int ret = -1;
+    u32 len;
+    char date[DATATIME_MAXLEN];
+    char dst_str[LOG_PATH_LEN] = "";
+    char exce_dir[LOG_PATH_LEN] = "";
 
-	snprintf(exce_dir, LOG_PATH_LEN, "%s%s/", PATH_ROOT,
-		 PATH_MEMDUMP);
+    snprintf(exce_dir, LOG_PATH_LEN, "%s%s/", PATH_ROOT,
+         PATH_MEMDUMP);
 
-	mntn_rm_old_log(exce_dir, 1);
-	memset(dst_str, 0, LOG_PATH_LEN);
-	memset(date, 0, DATATIME_MAXLEN);
+    mntn_rm_old_log(exce_dir, 1);
+    memset(dst_str, 0, LOG_PATH_LEN);
+    memset(date, 0, DATATIME_MAXLEN);
 
-	BB_PRINT_PN("exce_dir is [%s]\n", exce_dir);
+    BB_PRINT_PN("exce_dir is [%s]\n", exce_dir);
 
-	/* 如果arg为真，表示是起线程保存kerneldump，此时要从内存中获取异常时间戳 */
-	if (arg && (LOG_PATH_LEN - 1 >= strlen(g_log_path))) {
-		len = strlen(g_log_path);
-		memcpy(date, &g_log_path[len - DATATIME_MAXLEN],
-		       DATATIME_MAXLEN - 1);
-	} else {
-		/* 如果arg为空，则认为是ap侧的异常，是复位之后保存的log，则获取当前时间即可 */
-		snprintf(date, DATATIME_MAXLEN, "%s-%08lld",
-			 rdr_get_timestamp(), rdr_get_tick());
-	}
+    /* 如果arg为真，表示是起线程保存kerneldump，此时要从内存中获取异常时间戳 */
+    if (arg && (LOG_PATH_LEN - 1 >= strlen(g_log_path))) {
+        len = strnlen(g_log_path, LOG_PATH_LEN);
+        if (len >= DATATIME_MAXLEN) {
+            ret = memcpy_s(date, DATATIME_MAXLEN  - 1, &g_log_path[len - DATATIME_MAXLEN],
+               DATATIME_MAXLEN - 1);
+        }
+        if (ret != EOK) {
+            BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+            return;
+        }
+    } else {
+        /* 如果arg为空，则认为是ap侧的异常，是复位之后保存的log，则获取当前时间即可 */
+        snprintf(date, DATATIME_MAXLEN, "%s-%08lld",
+             rdr_get_timestamp(), rdr_get_tick());
+    }
 
-	fd = sys_open(exce_dir, O_DIRECTORY, 0);
+    fd = sys_open(exce_dir, O_DIRECTORY, 0);
 
-	/* if dir is not exist,then create new dir */
-	if (fd < 0) {
-		fd = sys_mkdir(exce_dir, DIR_LIMIT);
-		if (fd < 0) {
-			BB_PRINT_ERR("%s %d\n", __func__, fd);
-			goto out;
-		}
-	} else {
-		sys_close(fd);
-	}
-	strncat(exce_dir, "/", ((LOG_PATH_LEN - 1) - strlen(exce_dir)));
-	strncat(exce_dir, date, ((LOG_PATH_LEN - 1) - strlen(exce_dir)));
-	fd = sys_mkdir(exce_dir, DIR_LIMIT);
-	if (fd < 0) {
-		BB_PRINT_ERR("%s %d\n", __func__, fd);
-		goto out;
-	}
+    /* if dir is not exist,then create new dir */
+    if (fd < 0) {
+        fd = sys_mkdir(exce_dir, DIR_LIMIT);
+        if (fd < 0) {
+            BB_PRINT_ERR("%s %d\n", __func__, fd);
+            goto out;
+        }
+    } else {
+        sys_close(fd);
+    }
+    strncat(exce_dir, "/", ((LOG_PATH_LEN - 1) - strlen(exce_dir)));
+    strncat(exce_dir, date, ((LOG_PATH_LEN - 1) - strlen(exce_dir)));
+    fd = sys_mkdir(exce_dir, DIR_LIMIT);
+    if (fd < 0) {
+        BB_PRINT_ERR("%s %d\n", __func__, fd);
+        goto out;
+    }
 
-	len = strlen(exce_dir);
-	memcpy(dst_str, exce_dir, len + 1);
-	memcpy(&dst_str[len], "/kerneldump_",
-	       strlen("/kerneldump_") + 1);
+    len = strlen(exce_dir);
+    ret = memcpy_s(dst_str, LOG_PATH_LEN - 1, exce_dir, len);
+    if (ret < 0) {
+        BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+        return;
+    }
+    ret = memcpy_s(&dst_str[len], LOG_PATH_LEN - strlen(dst_str), "/kerneldump_",
+           strlen("/kerneldump_") + 1);
+    if (ret != EOK) {
+        BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+        return;
+    }
 
-	strncat(dst_str, date, ((LOG_PATH_LEN - 1) - strlen(dst_str)));
-	BB_PRINT_PN("%s: %s\n", __func__, dst_str);
+    strncat(dst_str, date, ((LOG_PATH_LEN - 1) - strlen(dst_str)));
+    BB_PRINT_PN("%s: %s\n", __func__, dst_str);
 
-	if (check_himntn(HIMNTN_KERNEL_DUMP_ENABLE)) {
-		/* On FPGA it will take half one hour to transfer kerneldump,
-		it's too slowly and useless to transfer kerneldump.
-		We just create the kerneldump file name. */
-		if (FPGA == g_bbox_fpga_flag) {
-			ret = rdr_copy_big_file_apend(dst_str, SRC_KERNELDUMP);
-		} else {
-			ret = rdr_copy_file_apend(dst_str, SRC_KERNELDUMP);
-		}
+    if (check_himntn(HIMNTN_KERNEL_DUMP_ENABLE)) {
+        /* On FPGA it will take half one hour to transfer kerneldump,
+        it's too slowly and useless to transfer kerneldump.
+        We just create the kerneldump file name. */
+        if (FPGA == g_bbox_fpga_flag) {
+            ret = rdr_copy_big_file_apend(dst_str, SRC_KERNELDUMP);
+        } else {
+            if (skp_skp_flag() != KDUMP_SKP_SUCCESS_FLAG) {
+                /*copy from DDR ,old process*/
+                BB_PRINT_ERR("copy from ddr %s  %s \n", exce_dir,dst_str);
+                ret = rdr_copy_file_apend(dst_str, SRC_KERNELDUMP);
+            }else
+            {
+                /*copy from flash*/
+                BB_PRINT_ERR("copy from flash %s  %s \n", exce_dir,dst_str);
+                ret = skp_rdr_copy_file_apend(dst_str, "/dev/block/by-name/userdata");
+            }
+        }
 
-		if (ret) {
-			BB_PRINT_ERR(
-			       "[%s], save kerneldump error, ret = %d\n",
-			       __func__, ret);
-			goto out;
-		}
-	}
+        if (ret) {
+            BB_PRINT_ERR(
+                   "[%s], save kerneldump error, ret = %d\n",
+                   __func__, ret);
+            goto out;
+        }
+    }
 
 out:
-	return;
+    return;
 }
 
 /*********************************************************************
@@ -1621,12 +1765,22 @@ int save_mntndump_log(void *arg)
 	if (0 == vfs_stat(SRC_BL31_MNTN_MEMORY, &mem_stat))
 		save_bl31_exc_memory();
 
-	if (0 == vfs_stat(SRC_KERNELDUMP, &mem_stat)) {
+    /*if not success flag ,means old kdump process*/
+	if (skp_skp_flag() != KDUMP_SKP_SUCCESS_FLAG) {
+		if (0 == vfs_stat(SRC_KERNELDUMP, &mem_stat)) {
+			save_kernel_dump(arg);
+		}
+	}else {
 		save_kernel_dump(arg);
 	}
 
+#ifdef CONFIG_HISI_HHEE
 	if (0 == vfs_stat(SRC_HHEE_MNTN_MEMORY, &mem_stat))
 		save_hhee_exc_memory();
+#endif
+
+	if (0 == vfs_stat(SRC_LOGBUFFER_MEMORY, &mem_stat))
+		save_logbuff_memory();
 
 	if (0 == vfs_stat(SRC_DUMPEND, &mem_stat)) {
 		read_dump_end();
@@ -1652,7 +1806,7 @@ void save_hisiap_log(char *log_path, u32 modid)
 {
 	struct rdr_exception_info_s temp;
 	int ret, path_root_len;
-	bool is_save_done;
+	bool is_save_done = false;
 
 	temp.e_notify_core_mask = RDR_AP;
 	temp.e_reset_core_mask = RDR_AP;
@@ -1666,6 +1820,11 @@ void save_hisiap_log(char *log_path, u32 modid)
 
 	if (temp.e_exce_type == MMC_S_EXCEPTION) {
 		temp.e_from_core = RDR_EMMC;
+	}
+
+	if ((CP_S_EXCEPTION_START <= temp.e_exce_type)
+		&& (CP_S_EXCEPTION_END >= temp.e_exce_type)) {
+		temp.e_from_core = RDR_CP;
 	}
 
 	path_root_len = strlen(PATH_ROOT);
@@ -1683,7 +1842,7 @@ void save_hisiap_log(char *log_path, u32 modid)
 	} else {
 		is_save_done = true;
 	}
-	rdr_save_history_log(&temp, &log_path[path_root_len],
+	rdr_save_history_log(&temp, &log_path[path_root_len], DATATIME_MAXLEN,
 		is_save_done, get_last_boot_keypoint());
 
 	ret = save_mntndump_log(NULL);
@@ -1714,6 +1873,7 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 {
 	uintptr_t exception_info = 0;
 	unsigned long exception_info_len = 0;
+	int ret;
 
 	BB_PRINT_PN("[%s], begin.\n", __func__);
 	BB_PRINT_PN("modid is 0x%x, etype is 0x%x\n", modid, etype);
@@ -1750,8 +1910,12 @@ void rdr_hisiap_dump(u32 modid, u32 etype,
 				   &exception_info_len);
 		memset(g_bbox_ap_record_pc->exception_info, 0,
 		       RECORD_PC_STR_MAX_LENGTH);
-		memcpy(g_bbox_ap_record_pc->exception_info,
+		ret = memcpy_s(g_bbox_ap_record_pc->exception_info, RECORD_PC_STR_MAX_LENGTH,
 		       (char *)exception_info, exception_info_len);
+		if (ret != EOK) {
+			BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+			return;
+		}
 		BB_PRINT_PN("exception_info is [%s],len is [%ld]\n",
 		       (char *)exception_info, exception_info_len);
 		g_bbox_ap_record_pc->exception_info_len = exception_info_len;
@@ -1802,6 +1966,20 @@ out:
 	}
 }
 
+static int hisiap_nmi_notify_init(void)
+{
+	if (g_mi_notify_lpm3_addr) {
+		return 0;
+	}
+
+	g_mi_notify_lpm3_addr = (uintptr_t)ioremap(NMI_NOTIFY_LPM3_ADDR, 0x4);
+	if (!g_mi_notify_lpm3_addr) {
+		BB_PRINT_ERR("[%s]", __func__);
+		return -1;
+	}
+	return 0;
+}
+
 
 void hisiap_nmi_notify_lpm3(void)
 {
@@ -1809,10 +1987,6 @@ void hisiap_nmi_notify_lpm3(void)
 	uintptr_t addr = 0;
 
 	addr = g_mi_notify_lpm3_addr;
-	if (!addr) {
-		BB_PRINT_ERR("[%s]", __func__);
-		return;
-	}
 	value = readl((char *)addr);
 	value |= (0x1 << 2);
 	writel(value, (char *)addr);
@@ -2060,7 +2234,7 @@ bool rdr_get_ap_init_done(void)
 }
 
 
-static int rdr_copy_big_file_apend(char *dst, char *src)
+static int rdr_copy_big_file_apend(const char *dst, const char *src)
 {
 	long fddst, fdsrc;
 	int ret = 0;
@@ -2095,7 +2269,7 @@ out:
 }
 
 
-static int rdr_copy_file_apend(char *dst, char *src)
+static int rdr_copy_file_apend(const char *dst, const char *src)
 {
 	long fddst, fdsrc;
 	char buf[SZ_4K / 4];
@@ -2154,6 +2328,116 @@ out:
 	return ret;
 }
 
+extern u64 skp_skp_resizeaddr(void);
+
+
+static int skp_rdr_copy_file_apend(const char *dst, const char *src)
+{
+	long fddst;
+	long fdsrc;
+	char buf[SZ_4K / 4];
+	long cnt;
+	long seek_value;
+	int ret = 0;
+	long seek_return;
+	struct memdump *tmp = NULL;
+	long kdump_size;
+
+	if (NULL == dst || NULL == src) {
+		BB_PRINT_ERR("rdr:%s():dst(0x%pK) or src(0x%pK) is NULL.\n",
+		       __func__, dst, src);
+		return -1;
+	}
+
+	BB_PRINT_ERR("rdr:%s():dst(%s) or src(%s) \n",__func__, dst, src);
+
+	fdsrc = sys_open(src, O_RDONLY, FILE_LIMIT);
+	if (fdsrc < 0) {
+		BB_PRINT_ERR("rdr:%s():open %s failed, return [%ld]\n",
+		       __func__, src, fdsrc);
+		ret = -1;
+		goto out;
+	}
+
+	fddst = sys_open(dst, O_CREAT | O_WRONLY | O_APPEND, FILE_LIMIT);
+	if (fddst < 0) {
+		BB_PRINT_ERR("rdr:%s():open %s failed, return [%ld]\n",
+		       __func__, dst, fddst);
+		sys_close((unsigned int)fdsrc);
+		ret = -1;
+		goto out;
+	}
+
+	seek_value = (long)skp_skp_resizeaddr();
+	BB_PRINT_ERR("%s():%d:seek value[%lx]\n", __func__, __LINE__, seek_value);
+
+    /*偏移地址读取, seek to resize addr*/
+	seek_return = sys_lseek((unsigned int)fdsrc, seek_value, SEEK_SET);
+	if (seek_return < 0) {
+		BB_PRINT_ERR("%s():%d:lseek fail[%ld]\n", __func__, __LINE__, seek_return);
+		goto close;
+	}
+
+    /*read out the head of kdump,find the size to save*/
+	cnt = sys_read((unsigned int)fdsrc, buf, SZ_4K / 4);
+	if (cnt <= 0) {
+		BB_PRINT_ERR
+		    ("rdr:%s():read %s failed, return [%ld]\n",
+		     __func__, src, cnt);
+		ret = -1;
+		goto close;
+	}
+
+	tmp = (struct memdump *)buf;
+
+    /*add SZ_4K, for size less than 4K condition*/
+	kdump_size = (long)(tmp->size + SZ_4K / 4 + KDUMP_SKP_DATASAVE_OFFSET);
+	if (kdump_size > KDUMP_MAX_SIZE) {
+		BB_PRINT_ERR("%s():%d:kdump_size=%ld error\n", __func__, __LINE__, kdump_size);
+		goto close;
+	}
+
+	BB_PRINT_ERR("%s():%d:seek value[%lx]\n", __func__, __LINE__, tmp->size);
+
+    /*偏移地址读取, seek to resize addr again*/
+	seek_return = (long)sys_lseek((unsigned int)fdsrc, seek_value, SEEK_SET);
+	if (seek_return < 0) {
+		BB_PRINT_ERR("%s():%d:lseek fail[%ld]\n", __func__, __LINE__, seek_return);
+		goto close;
+	}
+
+	/*start to dump flash to data partiton*/
+	while (kdump_size > 0 && kdump_size <= KDUMP_MAX_SIZE) {
+		cnt = sys_read((unsigned int)fdsrc, buf, SZ_4K / 4);
+		if (cnt == 0)
+			break;
+		if (cnt < 0) {
+			BB_PRINT_ERR
+			    ("rdr:%s():read %s failed, return [%ld]\n",
+			     __func__, src, cnt);
+			ret = -1;
+			goto close;
+		}
+
+		cnt = sys_write((unsigned int)fddst, buf, SZ_4K / 4);
+		if (cnt <= 0) {
+			BB_PRINT_ERR
+			    ("rdr:%s():write %s failed, return [%ld]\n",
+			     __func__, dst, cnt);
+			ret = -1;
+			goto close;
+		}
+
+		kdump_size = kdump_size - (SZ_4K / 4);
+	}
+
+close:
+	sys_close((unsigned int)fdsrc);
+	sys_close((unsigned int)fddst);
+out:
+	return ret;
+}
+
 /*******************************************************************************
 Function:       save_pstore_info
 Description:    copy file from /sys/fs/pstore to dst_dir_str
@@ -2164,7 +2448,7 @@ Return:         NA
 static void save_pstore_info(const char *dst_dir_str)
 {
 	int i, ret, len, tmp_cnt;
-	char *pbuff;
+	char *pbuff = NULL;
 	char dst_str[NEXT_LOG_PATH_LEN];
 	char fullpath_arr[LOG_PATH_LEN];
 
@@ -2187,7 +2471,10 @@ static void save_pstore_info(const char *dst_dir_str)
 	}
 
 	/* 清空申请的buff */
-	memset((void *)pbuff, 0, tmp_cnt);
+	if (EOK != memset_s((void *)pbuff,tmp_cnt, 0, tmp_cnt))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 
 	/* 调用接口将/sys/fs/pstore/目录下的所有文件名字存入pbuff中 */
 	tmp_cnt =
@@ -2250,20 +2537,40 @@ Return:         NA
 ********************************************************************************/
 static void save_fastboot_log(const char *dst_dir_str)
 {
-	int ret, len;
+	int ret;
+	u32 len;
 	char fastbootlog_path[NEXT_LOG_PATH_LEN];
 	char last_fastbootlog_path[NEXT_LOG_PATH_LEN];
 
 	/* 组合fastbootlog的文件的绝对路径 */
-	memset(last_fastbootlog_path, 0, NEXT_LOG_PATH_LEN);
+	if (EOK != memset_s(last_fastbootlog_path,NEXT_LOG_PATH_LEN ,0, NEXT_LOG_PATH_LEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	memset(fastbootlog_path, 0, NEXT_LOG_PATH_LEN);
 	len = strlen(dst_dir_str);
-	memcpy(last_fastbootlog_path, dst_dir_str, len + 1);
-	memcpy(&last_fastbootlog_path[len], "/last_fastboot_log",
+	ret = memcpy_s(last_fastbootlog_path, NEXT_LOG_PATH_LEN - 1, dst_dir_str, len);
+	if (ret < 0) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
+	ret = memcpy_s(&last_fastbootlog_path[len], NEXT_LOG_PATH_LEN - strlen(last_fastbootlog_path),"/last_fastboot_log",
 	       strlen("/last_fastboot_log") + 1);
-	memcpy(fastbootlog_path, dst_dir_str, len + 1);
-	memcpy(&fastbootlog_path[len], "/fastboot_log",
+	if (ret != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
+	ret = memcpy_s(fastbootlog_path, NEXT_LOG_PATH_LEN - 1, dst_dir_str, len);
+	if (ret < 0) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
+	ret = memcpy_s(&fastbootlog_path[len], NEXT_LOG_PATH_LEN - strlen(fastbootlog_path),"/fastboot_log",
 	       strlen("/fastboot_log") + 1);
+	if (ret != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
 
 	/* 生成last_fastbootlog文件 */
 	ret = rdr_copy_file_apend(last_fastbootlog_path,
@@ -2292,7 +2599,8 @@ Return:         -1 : error, 0 : ok
 ********************************************************************************/
 int save_exception_info(void *arg)
 {
-	int fd, ret, len;
+	int fd, ret;
+	u32 len;
 	char date[DATATIME_MAXLEN];
 	char exce_dir[LOG_PATH_LEN];
 	char dst_dir_str[DEST_LOG_PATH_LEN];
@@ -2302,12 +2610,19 @@ int save_exception_info(void *arg)
 	ret = 0;
 
 	/* 从全局变量中获取此次异常的log目录路径 */
-	memset(exce_dir, 0, LOG_PATH_LEN);
+	if (EOK != memset_s(exce_dir,LOG_PATH_LEN ,0, LOG_PATH_LEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
 	if (LOG_PATH_LEN - 1 < strlen(g_log_path)) {
 		BB_PRINT_ERR("g_log_path's len too large\n");
 		return -1;
 	}
-	memcpy(exce_dir, g_log_path, strlen(g_log_path) + 1);
+	ret = memcpy_s(exce_dir, LOG_PATH_LEN, g_log_path, strlen(g_log_path) + 1);
+	if (ret != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return -1;
+	}
 	BB_PRINT_PN("exce_dir is [%s]\n", exce_dir);
 
 	/* 打开异常目录，如果不存在则以当前时间为目录创建 */
@@ -2333,16 +2648,32 @@ int save_exception_info(void *arg)
 		}
 		memset(dst_dir_str, 0, DEST_LOG_PATH_LEN);
 		len = strlen(default_dir);
-		memcpy(dst_dir_str, default_dir, len + 1);
-		memcpy(&dst_dir_str[len], "/ap_log",
+		ret = memcpy_s(dst_dir_str, DEST_LOG_PATH_LEN - 1, default_dir, len);
+		if (ret < 0) {
+			BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+			return -1;
+		}
+		ret = memcpy_s(&dst_dir_str[len], DEST_LOG_PATH_LEN - strlen(dst_dir_str), "/ap_log",
 		       strlen("/ap_log") + 1);
+		if (ret != EOK) {
+			BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+			return -1;
+		}
 	} else {
 		sys_close(fd);
 		memset(dst_dir_str, 0, DEST_LOG_PATH_LEN);
 		len = strlen(exce_dir);
-		memcpy(dst_dir_str, exce_dir, len + 1);
-		memcpy(&dst_dir_str[len], "/ap_log",
+		ret = memcpy_s(dst_dir_str, DEST_LOG_PATH_LEN - 1, exce_dir, len);
+		if (ret != EOK) {
+			BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+			return -1;
+		}
+		ret = memcpy_s(&dst_dir_str[len], DEST_LOG_PATH_LEN - strlen(dst_dir_str), "/ap_log",
 		       strlen("/ap_log") + 1);
+		if (ret != EOK) {
+			BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+			return -1;
+		}
 	}
 
 	/* 打开异常目录下的ap_log目录，如果不存在则创建 */
@@ -2396,17 +2727,20 @@ int record_reason_task(void *arg)
 	struct rdr_exception_info_s temp = {
 		{0, 0}, 0x80000001, 0x80000001, RDR_ERR, RDR_REBOOT_NOW,
 		(u64)RDR_AP, (u64)RDR_AP, (u64)RDR_AP,(u32)RDR_REENTRANT_DISALLOW,
-		(u32)COLDBOOT, 0, (u32)RDR_UPLOAD_YES, "ap", "ap", 0, (void *)0, 0
+		(u32)COLDBOOT, 0, (u32)RDR_UPLOAD_YES, "ap", "ap", 0, 0, (void *)0, 0
 	};
 	temp.e_from_core = RDR_AP;
 	temp.e_exce_type = rdr_get_reboot_type();
 
 	while (rdr_wait_partition("/data/lost+found", 1000) != 0)
 		;
-	memset(date, 0, DATATIME_MAXLEN);
-	snprintf(date, DATATIME_MAXLEN, "%s-%08lld",
+	if (EOK != memset_s(date,DATATIME_MAXLEN, 0, DATATIME_MAXLEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+	snprintf(date, DATATIME_MAXLEN,"%s-%08lld",
 		 rdr_get_timestamp(), rdr_get_tick());
-	rdr_save_history_log(&temp, &date[0], true, get_last_boot_keypoint());
+	rdr_save_history_log(&temp, &date[0], DATATIME_MAXLEN, true, get_last_boot_keypoint());
 	return 0;
 }
 
@@ -2414,10 +2748,37 @@ int record_reason_task(void *arg)
 static int acpu_panic_loop_notify(struct notifier_block *nb,
 				  unsigned long event, void *buf)
 {
-	if (check_himntn(HIMNTN_PANIC_INTO_LOOP) == 1) {
-		do {
-		} while (1);
+	if (check_himntn(HIMNTN_PANIC_INTO_LOOP)) {
+		do {} while (1);
 	}
+
+	return 0;
+}
+
+
+static int rdr_hisiap_early_panic_notify(struct notifier_block *nb,
+				   unsigned long event, void *buf)
+{
+	BB_PRINT_PN("%s ++\n", __func__);
+
+	if (g_logbuff_dump_info) {
+		g_logbuff_dump_info->reboot_reason = AP_S_PANIC;
+	}
+
+	__dma_map_area((void *)hisirdr_ex_log_buf,
+		       hisirdr_ex_log_buf_len, DMA_TO_DEVICE);
+	__dma_map_area((void *)hisirdr_ex_log_first_idx,
+		       sizeof(u32), DMA_TO_DEVICE);
+	__dma_map_area((void *)hisirdr_ex_log_next_idx,
+		       sizeof(u32), DMA_TO_DEVICE);
+
+	if (check_himntn(HIMNTN_PANIC_INTO_LOOP)) {
+		do {} while (1);
+	}
+
+	hisiap_nmi_notify_lpm3();
+
+	BB_PRINT_PN("%s --\n", __func__);
 
 	return 0;
 }
@@ -2426,7 +2787,9 @@ static int acpu_panic_loop_notify(struct notifier_block *nb,
 static int rdr_hisiap_panic_notify(struct notifier_block *nb,
 				   unsigned long event, void *buf)
 {
+
 	BB_PRINT_PN("[%s], ===> enter panic notify!\n", __func__);
+
 
 	if (watchdog_softlockup_happen()) {
 		rdr_syserr_process_for_ap(MODID_AP_S_PANIC_SOFTLOCKUP, 0, 0);
@@ -2459,10 +2822,9 @@ int __init rdr_hisiap_init(void)
 
 	mutex_init(&dump_mem_mutex);
 
-	g_mi_notify_lpm3_addr = (uintptr_t)ioremap(NMI_NOTIFY_LPM3_ADDR, 0x4);
-	if (!g_mi_notify_lpm3_addr) {
-		BB_PRINT_ERR("[%s]", __func__);
-		return -1;
+	ret = hisiap_nmi_notify_init();
+	if (ret) {
+		return ret;
 	}
 
 	rdr_hisiap_register_exception();
@@ -2511,10 +2873,14 @@ int __init rdr_hisiap_init(void)
 		       __func__, recordTask);
 	}
 
+	atomic_notifier_chain_unregister(&panic_notifier_list,
+						&rdr_hisiap_early_panic_block);
+
 	atomic_notifier_chain_register(&panic_notifier_list,
 				       &acpu_panic_loop_block);
 	atomic_notifier_chain_register(&panic_notifier_list,
 				       &rdr_hisiap_panic_block);
+
 	panic_on_oops = 1;
 	register_die_notifier(&rdr_hisiap_die_block);
 	hisi_powerkey_register_notifier(&rdr_hisiap_powerkey_block);
@@ -2522,6 +2888,7 @@ int __init rdr_hisiap_init(void)
 	bbox_diaginfo_init();
 
 	rdr_ap_init = 1;
+
 	BB_PRINT_PN("%s init end\n", __func__);
 
 	return 0;
@@ -2534,6 +2901,35 @@ static void __exit rdr_hisiap_exit(void)
 
 module_init(rdr_hisiap_init);
 module_exit(rdr_hisiap_exit);
+
+int rdr_hisiap_early_init(void)
+{
+	int ret;
+
+	ret = hisiap_nmi_notify_init();
+	if (ret) {
+		return ret;
+	}
+
+	ret = register_mntn_dump(MNTN_DUMP_LOGBUF, sizeof(struct log_buf_dump_info),
+							(void **)&g_logbuff_dump_info);
+	if (ret < 0) {
+		BB_PRINT_ERR("[%s]register_mntn_dump error\n", __func__);
+		return ret;
+	}
+
+	g_logbuff_dump_info->reboot_reason = 0;
+	g_logbuff_dump_info->logbuf_addr = virt_to_phys(hisirdr_ex_log_buf);
+	g_logbuff_dump_info->logbuf_size = hisirdr_ex_log_buf_len;
+	g_logbuff_dump_info->idx_size = sizeof(u32);
+	g_logbuff_dump_info->log_first_idx_addr = virt_to_phys(hisirdr_ex_log_first_idx);
+	g_logbuff_dump_info->log_next_idx_addr = virt_to_phys(hisirdr_ex_log_next_idx);
+	g_logbuff_dump_info->magic = LOGBUF_DUMP_MAGIC;
+
+	atomic_notifier_chain_register(&panic_notifier_list,
+				       &rdr_hisiap_early_panic_block);
+	return 0;
+}
 
 MODULE_LICENSE("GPL");
 

@@ -12,22 +12,7 @@
 #include "hisi_usb3_misctrl.h"
 #include "hisi_usb3_31phy.h"
 #include "common.h"
-
-/* CRGPERIPH */
-#define PERI_CRG_PERRSTSTAT0		0xC
-#define PERI_CRG_PERRSTEN4		0x90
-#define PERI_CRG_PERRSTDIS4		0x94
-#define PERI_CRG_PERRSTSTAT4		0x98
-
-/* bits of PERI_CRG_PERRSTEN4 PERI_CRG_PERRSTDIS4 PERI_CRG_PERRSTSTAT4 */
-#define IP_RST_USB3OTG_32K		(1 << 6)
-#define IP_RST_USB3OTG_MISC		(1 << 7)
-
-/* bits of PERI_CRG_PERRSTSTAT0 */
-#define GT_HCLK_USB3OTG_MISC		(1 << 25)
-
-/* bits of PERI_CRG_ISODIS */
-#define USB_REFCLK_ISO_EN               (1 << 25)
+#include "combophy_regcfg.h"
 
 #define USB31PHY_CR_ACK			BIT(7)
 #define USB31PHY_CR_WR_EN		BIT(5)
@@ -42,16 +27,10 @@
 #define USB_MISC_REG_PHY_CR_PARA_CTRL	0x54
 #define USB_MISC_REG_PHY_CR_PARA_DATA	0x58
 
-#define USB_MISC_REG_CFGA0		0xA0
-
-/* bits of USB_MISC_REG_CONFIG_A0 */
-#define USB3_PHY_RESET_N		(1)
-
 #define combophy_to_hisi_usb3_31phy(ptr) container_of(ptr, struct hisi_usb3_31phy, combophy)
 
 struct hisi_usb3_31phy {
 	struct hisi_usb_combophy combophy;
-	void __iomem *crgperi_reg_base;
 	void __iomem *usb3_misc_ctrl_base;
 };
 
@@ -270,141 +249,17 @@ static void usb31phy_cr_32clk(void)
 
 static void _reset_phy(struct hisi_usb_combophy *combophy)
 {
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *usb3_misc_ctrl_base;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	usb3_misc_ctrl_base = usb3_31phy->usb3_misc_ctrl_base;
-	usb3_rw_reg_clrbit(USB3_PHY_RESET_N,
-			usb3_misc_ctrl_base, USB_MISC_REG_CFGA0);
+	combophy_regcfg_phyreset();
 }
 
 static void _reset_misc_ctrl(struct hisi_usb_combophy *combophy)
 {
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *pericfg_base;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	pericfg_base = usb3_31phy->crgperi_reg_base;
-	writel(IP_RST_USB3OTG_MISC | IP_RST_USB3OTG_32K,
-			pericfg_base + PERI_CRG_PERRSTEN4);
+	combophy_regcfg_reset_misc();
 }
 
 static void _unreset_misc_ctrl(struct hisi_usb_combophy *combophy)
 {
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *pericfg_base;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	pericfg_base = usb3_31phy->crgperi_reg_base;
-	writel(IP_RST_USB3OTG_MISC | IP_RST_USB3OTG_32K,
-			pericfg_base + PERI_CRG_PERRSTDIS4);
-}
-
-static bool _is_misc_ctrl_reset(struct hisi_usb_combophy *combophy)
-{
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *pericfg_base;
-	volatile uint32_t regval;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return 1;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	pericfg_base = usb3_31phy->crgperi_reg_base;
-
-	regval = (uint32_t)readl(PERI_CRG_PERRSTSTAT4 + pericfg_base);
-	return !!((IP_RST_USB3OTG_MISC | IP_RST_USB3OTG_32K) & regval);
-}
-
-static bool _is_misc_ctrl_unreset(struct hisi_usb_combophy *combophy)
-{
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *pericfg_base;
-	volatile uint32_t regval;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return 0;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	pericfg_base = usb3_31phy->crgperi_reg_base;
-
-	regval = (uint32_t)readl(PERI_CRG_PERRSTSTAT4 + pericfg_base);
-	return ((IP_RST_USB3OTG_MISC | IP_RST_USB3OTG_32K) & regval) == 0;
-}
-
-static bool _is_misc_ctrl_clk_enable(struct hisi_usb_combophy *combophy)
-{
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *pericfg_base;
-	volatile uint32_t regval;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return 0;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	pericfg_base = usb3_31phy->crgperi_reg_base;
-
-	regval = (uint32_t)readl(PERI_CRG_PERRSTSTAT0 + pericfg_base);
-	return !!(GT_HCLK_USB3OTG_MISC & regval);
-}
-
-static void _combophy_isodis(struct hisi_usb_combophy *combophy)
-{
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *pericfg_base;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	pericfg_base = usb3_31phy->crgperi_reg_base;
-	writel(USB_REFCLK_ISO_EN, PERI_CRG_ISODIS + pericfg_base);
-}
-
-static void _combophy_exit_testpowerdown(struct hisi_usb_combophy *combophy)
-{
-	struct hisi_usb3_31phy *usb3_31phy;
-	void __iomem *usb3_misc_ctrl_base;
-
-	if (!combophy) {
-		usb_err("combophy is NULL\n");
-		return;
-	}
-
-	usb3_31phy = combophy_to_hisi_usb3_31phy(combophy);
-	usb3_misc_ctrl_base = usb3_31phy->usb3_misc_ctrl_base;
-
-	clr_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG50_usb3_phy_test_powerdown_START),
-			SOC_USB31_MISC_CTRL_USB_MISC_CFG50_ADDR(usb3_misc_ctrl_base));
-	udelay(50);
-	set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_ana_pwr_en_START)|
-			BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_phy0_pcs_pwr_stable_START)|
-			BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_phy0_pma_pwr_stable_START),
-			SOC_USB31_MISC_CTRL_USB_MISC_CFG54_ADDR(usb3_misc_ctrl_base));
+	combophy_regcfg_unreset_misc();
 }
 
 #ifdef COMBOPHY_FW_UPDATE
@@ -414,9 +269,8 @@ static void _combophy_firmware_write(struct hisi_usb_combophy *combophy)
 {
 	int i, cnt;
 	int fw_size = sizeof(firmware)/sizeof(firmware[0]);
-	unsigned short int reg;
 	void __iomem *usb3_misc_ctrl_base;
-	struct hisi_usb3_31phy *usb3_31phy;
+	struct hisi_usb3_31phy *usb3_31phy = NULL;
 
 	if (!combophy) {
 		usb_err("combophy is NULL\n");
@@ -463,26 +317,6 @@ static void _combophy_firmware_write(struct hisi_usb_combophy *combophy)
 	/*toggle clock * 32次： MISC54[2] =  1； MISC54[2] =  0；循环32次*/
 	usb31phy_cr_32clk();
 
-	if (hisi_dwc3_is_es()) {
-		pr_notice("[USB.DBG] in es platform!\n");
-
-		reg = usb31phy_cr_read(0x411e);
-		reg |= 1;
-		usb31phy_cr_write(0x411e, reg);
-
-		reg = usb31phy_cr_read(0x421e);
-		reg |= 1;
-		usb31phy_cr_write(0x421e, reg);
-
-		reg = usb31phy_cr_read(0x411f);
-		reg |= 1;
-		usb31phy_cr_write(0x411f, reg);
-
-		reg = usb31phy_cr_read(0x421f);
-		reg |= 1;
-		usb31phy_cr_write(0x421f, reg);
-	}
-
 	set_bits(BIT(SOC_USB31_MISC_CTRL_USB_MISC_CFG54_usb3_phy0_cr_para_ack_START),
 		SOC_USB31_MISC_CTRL_USB_MISC_CFGB4_ADDR(usb3_misc_ctrl_base));
 
@@ -500,7 +334,7 @@ static void _combophy_firmware_write(struct hisi_usb_combophy *combophy)
 
 static void _combophy_firmware_update_prepare(struct hisi_usb_combophy *combophy)
 {
-	struct hisi_usb3_31phy *usb3_31phy;
+	struct hisi_usb3_31phy *usb3_31phy = NULL;
 
 	if (!combophy) {
 		usb_err("combophy is NULL\n");
@@ -515,28 +349,12 @@ static void _combophy_firmware_update_prepare(struct hisi_usb_combophy *combophy
 
 static int __init hisi_usb3_31phy_module_init(void)
 {
-	struct device_node *np;
+	struct device_node *np = NULL;
 	int ret;
 
 	_hisi_usb3_31phy = kzalloc(sizeof(*_hisi_usb3_31phy), GFP_KERNEL);
 	if (!_hisi_usb3_31phy)
 		return -ENOMEM;
-
-	/*
-	 * map PERI CRG region
-	 */
-	np = of_find_compatible_node(NULL, NULL, "hisilicon,crgctrl");
-	if (!np) {
-		usb_err("get peri cfg node failed!\n");
-		ret = -EINVAL;
-		goto err_free;
-	}
-
-	_hisi_usb3_31phy->crgperi_reg_base = of_iomap(np, 0);
-	if (!_hisi_usb3_31phy->crgperi_reg_base) {
-		ret = -ENOMEM;
-		goto err_free;
-	}
 
 	/*
 	 * map usb3 misc ctrl region
@@ -545,13 +363,13 @@ static int __init hisi_usb3_31phy_module_init(void)
 	if (!np) {
 		usb_err("get peri cfg node failed!\n");
 		ret = -EINVAL;
-		goto err_unmap_crgperi;
+		goto err_free;
 	}
 
 	_hisi_usb3_31phy->usb3_misc_ctrl_base = of_iomap(np, 0);
 	if (!_hisi_usb3_31phy->usb3_misc_ctrl_base) {
 		ret = -ENOMEM;
-		goto err_unmap_crgperi;
+		goto err_free;
 	}
 
 #ifdef COMBOPHY_FW_UPDATE
@@ -562,16 +380,9 @@ static int __init hisi_usb3_31phy_module_init(void)
 	_hisi_usb3_31phy->combophy.reset_phy = _reset_phy;
 	_hisi_usb3_31phy->combophy.reset_misc_ctrl = _reset_misc_ctrl;
 	_hisi_usb3_31phy->combophy.unreset_misc_ctrl = _unreset_misc_ctrl;
-	_hisi_usb3_31phy->combophy.is_misc_ctrl_reset = _is_misc_ctrl_reset;
-	_hisi_usb3_31phy->combophy.is_misc_ctrl_unreset = _is_misc_ctrl_unreset;
-	_hisi_usb3_31phy->combophy.is_misc_ctrl_clk_enable = _is_misc_ctrl_clk_enable;
-	_hisi_usb3_31phy->combophy.isodis = _combophy_isodis;
-	_hisi_usb3_31phy->combophy.exit_testpowerdown = _combophy_exit_testpowerdown;
 
 	return 0;
 
-err_unmap_crgperi:
-	iounmap(_hisi_usb3_31phy->crgperi_reg_base);
 err_free:
 	kfree(_hisi_usb3_31phy);
 	_hisi_usb3_31phy = NULL;
@@ -580,7 +391,6 @@ err_free:
 
 static void __exit hisi_usb3_31phy_module_exit(void)
 {
-	iounmap(_hisi_usb3_31phy->crgperi_reg_base);
 	iounmap(_hisi_usb3_31phy->usb3_misc_ctrl_base);
 	kfree(_hisi_usb3_31phy);
 	_hisi_usb3_31phy = NULL;

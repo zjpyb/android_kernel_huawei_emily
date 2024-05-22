@@ -24,6 +24,7 @@
 #include <linux/module.h>
 #include <linux/scatterlist.h>
 #include <linux/sched.h>
+#include <linux/sched/stat.h>
 #include <linux/slab.h>
 #include <linux/hardirq.h>
 
@@ -533,7 +534,8 @@ static int mcryptd_create_hash(struct crypto_template *tmpl, struct rtattr **tb,
 	inst->alg.finup  = mcryptd_hash_finup_enqueue;
 	inst->alg.export = mcryptd_hash_export;
 	inst->alg.import = mcryptd_hash_import;
-	inst->alg.setkey = mcryptd_hash_setkey;
+	if (crypto_hash_alg_has_setkey(halg))
+		inst->alg.setkey = mcryptd_hash_setkey;
 	inst->alg.digest = mcryptd_hash_digest_enqueue;
 
 	err = ahash_register_instance(tmpl, inst);

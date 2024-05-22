@@ -15,6 +15,7 @@
 #include <linux/ioctl.h>
 #include <linux/device.h>
 #include <huawei_platform/log/hw_log.h>
+#include <securec.h>
 
 /* ----ioctrl cmd macroes--------------------------------------------------- */
 #define TCRYPT_IOCTL_BASE 0xEE
@@ -33,7 +34,8 @@ HWLOG_REGIST();
 static ssize_t tcrypt_result_show(struct device *pdev,
 				struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%d\n", g_latest_result);
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1,
+			"%d\n", g_latest_result);
 }
 
 /*
@@ -73,9 +75,8 @@ static long tcrypt_base_ioctl(struct file *file, unsigned int cmd, unsigned long
 		break;
 	case TCRYPT_READ_RESULT:
 		if (copy_to_user((int *)arg, &g_latest_result,
-				sizeof(g_latest_result))) {
+				sizeof(g_latest_result)))
 			ret = -EFAULT;
-		}
 		hwlog_info("tcrypt read selftest ret=%d result: %d\n",
 				ret, g_latest_result);
 		break;
@@ -124,7 +125,7 @@ static struct miscdevice tcrypt_miscdev = {
 
 static int __init tcrypt_selftest_init(void)
 {
-	int ret = -1;
+	int ret;
 
 	/* (1) register misc dev */
 	ret = misc_register(&tcrypt_miscdev);
@@ -159,4 +160,5 @@ MODULE_AUTHOR("HUAWEI Technologies Co., Ltd.");
 MODULE_DESCRIPTION("Tests for a subset of crypto algo");
 MODULE_VERSION("1.0");
 MODULE_LICENSE("GPL v2");
+
 

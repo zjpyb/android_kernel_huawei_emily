@@ -1143,8 +1143,8 @@ VL53L1_Error VL53L1_get_and_avg_xtalk_samples(
 	VL53L1_range_results_t      range_results;
 	VL53L1_range_results_t      *prange_results = &range_results;
 
-	VL53L1_range_data_t         *prange_data;
-	VL53L1_xtalk_range_data_t   *pxtalk_range_data;
+	VL53L1_range_data_t         *prange_data = NULL;
+	VL53L1_xtalk_range_data_t   *pxtalk_range_data = NULL;
 
 	uint8_t i                = 0;
 	uint8_t j                = 0;
@@ -1462,7 +1462,7 @@ VL53L1_Error VL53L1_get_and_avg_all_xtalk_samples(
 	VL53L1_range_results_t      range_results;
 	VL53L1_range_results_t      *prange_results = &range_results;
 
-	VL53L1_range_data_t         *prange_data;
+	VL53L1_range_data_t         *prange_data = NULL;
 
 
 	VL53L1_histogram_bin_data_t z_sum[4];

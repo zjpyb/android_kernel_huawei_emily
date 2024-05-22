@@ -17,9 +17,10 @@
 #include <linux/types.h>
 #include <linux/string.h>
 #include <asm/pgtable.h>
-#include<linux/vmalloc.h>
+#include <linux/vmalloc.h>
 #include <asm/io.h>
 #include <linux/mm.h>
+#include <linux/types.h>
 
 #include "drv_mailbox_cfg.h"
 #include "drv_mailbox_platform.h"
@@ -34,7 +35,6 @@ extern int logMsg(char *fmt, ...);
 #undef	_MAILBOX_FILE_
 #define _MAILBOX_FILE_	 "gut"
 
-#define mem_remap_nocache(phys_addr, size) mem_remap_type(phys_addr, size, pgprot_writecombine(PAGE_KERNEL))
 /*****************************************************************************
 2 全局变量定义
 *****************************************************************************/
@@ -65,16 +65,16 @@ MAILBOX_EXTERN int mailbox_queue_write(
     /*若写指针距环形缓存尾部长度大于要写的内容长度，则直接拷贝内容，并更新写指针*/
     if (SizeToBottom > size){
         /*写入pucData到写指针处*/
-        mailbox_memcpy((void*)queue->front, (const void*)data, size);
+        mailbox_memcpy((void*)(uintptr_t)queue->front, (const void*)data, size);
 
 		/*更新写指针*/
 		queue->front += size;
 	} else {
 		/*写入pucData前R长度到写指针处*/
-        mailbox_memcpy((void*)(queue->front), (const void*)data, SizeToBottom);
+        mailbox_memcpy((void*)(uintptr_t)(queue->front), (const void*)data, SizeToBottom);
 
         /*写入pucData+R到环形缓存起始处*/
-        mailbox_memcpy((void*)(queue->base),  (const void*)(data + SizeToBottom),
+        mailbox_memcpy((void*)(uintptr_t)(queue->base),  (const void*)(data + SizeToBottom),
                        (size - SizeToBottom));
 
         /*更新写指针*/
@@ -98,16 +98,16 @@ MAILBOX_GLOBAL int mailbox_queue_read(
     /*若读指针距环形缓存尾部长度大于要写的内容长度，则直接拷贝内容，并更新读指针*/
     if (to_bottom > size) {
         /*将读指针处数据拷贝至pData处*/
-        mailbox_memcpy((void*)buff, (const void*)(queue->rear), size);
+        mailbox_memcpy((void*)buff, (const void*)(uintptr_t)(queue->rear), size);
 
         /*更新读指针*/
         queue->rear += size;
     } else {
         /*将读指针处数据前若干byte拷贝到pData处*/
-        mailbox_memcpy((void*)buff, (const void*)(queue->rear), to_bottom);
+        mailbox_memcpy((void*)buff, (const void*)(uintptr_t)(queue->rear), to_bottom);
 
         /*从环形缓存起始处拷贝剩余内容到pData*/
-        mailbox_memcpy((void*)(buff + to_bottom), (const void*)(queue->base),
+        mailbox_memcpy((void*)(uintptr_t)(buff + to_bottom), (const void*)(uintptr_t)(queue->base),
                         (size - to_bottom));
 
         /*更新读指针*/
@@ -149,8 +149,10 @@ MAILBOX_LOCAL int mailbox_check_mail(struct mb_buff *mbuff,
 
     msg_head->ulReadSlice = time_stamp;
 
+#ifdef MAILBOX_OPEN_MNTN
     mailbox_record_transport(&(mbuff->mntn), msg_head->ulMailCode ,
                     msg_head->ulWriteSlice, msg_head->ulReadSlice, data_addr);
+#endif
     return ret_val;
 }
 
@@ -247,7 +249,7 @@ MAILBOX_LOCAL int mailbox_request_channel(
     }
 
 	/*通过判断通道保护字，检查通道有没有初始化*/
-	head = (struct mb_head*)mbuff->config->head_addr;
+	head = (struct mb_head*)(uintptr_t)mbuff->config->head_addr;
 	if ((  (MAILBOX_PROTECT1 != head->ulProtectWord1) )
 		|| (MAILBOX_PROTECT2 != head->ulProtectWord2)
 		||(MAILBOX_PROTECT1 != head->ulProtectWord3)
@@ -322,9 +324,9 @@ MAILBOX_LOCAL int mailbox_read_mail(struct mb_buff *mbuff)
     unsigned int         use_id;
     unsigned int         slice_start;
     unsigned int         to_bottom;
-    void                 *usr_handle;
-    void                 *usr_data;
-    void (*usr_func)(void *mbuf, void *handle, void *data);
+    void                 *usr_handle = NULL;
+    void                 *usr_data = NULL;
+    void (*usr_func)(void *mbuf, void *handle, void *data) = NULL;
 
 	m_queue = &(mbuff->mail_queue);
 	usr_queue = &(mbuff->usr_queue);
@@ -365,7 +367,9 @@ MAILBOX_LOCAL int mailbox_read_mail(struct mb_buff *mbuff)
 		usr_func(mbuff, usr_handle , usr_data);
 
 		/*记录可维可测信息*/
+#ifdef MAILBOX_OPEN_MNTN
          mailbox_record_receive(&mbuff->mntn, mail.ulMailCode, slice_start);
+#endif
 	} else {
         (void)mailbox_logerro_p1(MAILBOX_ERR_GUT_READ_CALLBACK_NOT_FIND, mail.ulMailCode);
 	}
@@ -466,8 +470,8 @@ MAILBOX_LOCAL int mailbox_read_channel(unsigned int channel_id)
 
 MAILBOX_LOCAL int mailbox_init_mem(struct mb_cfg *config)
 {
-    struct mb_head       *head = (struct mb_head*)config->head_addr;
-    unsigned long         data_addr       = config->data_addr;
+    struct mb_head       *head = (struct mb_head*)(uintptr_t)config->head_addr;
+    uintptr_t            data_addr       = (uintptr_t)config->data_addr;
     unsigned int         data_size       = config->data_size;
 
 	/*这里也属于入参判断*/
@@ -562,7 +566,7 @@ MAILBOX_LOCAL int mailbox_calculate_space(
 }
 
 
-MAILBOX_LOCAL int mailbox_init_all_handle(
+MAILBOX_LOCAL unsigned int mailbox_init_all_handle(
                 struct mb           *mb,
                 struct mb_cfg    *config,
                 unsigned int     cpu_id)
@@ -570,7 +574,7 @@ MAILBOX_LOCAL int mailbox_init_all_handle(
     struct mb_queue        *queue  = MAILBOX_NULL;
     unsigned int           direct= MIALBOX_DIRECTION_INVALID; /*标记当前邮箱通道
                                             是不是本核相关的有效通道*/
-    int           ret_val      = MAILBOX_OK;
+    unsigned int           ret_val      = MAILBOX_OK;
     struct mb_link         *send_link    = MAILBOX_NULL;/*指向主结构体的发送通道
                                                           数组基地址*/
     struct mb_link         *recv_link = MAILBOX_NULL;   /*指向主结构体的接收通道
@@ -614,7 +618,7 @@ MAILBOX_LOCAL int mailbox_init_all_handle(
 				mbuf_prob += (send_link[dst_id].carrier_butt);
 				channel_sum  += (send_link[dst_id].carrier_butt);
 				if (channel_sum > MAILBOX_CHANNEL_NUM) {
-					return mailbox_logerro_p1(MAILBOX_CRIT_GUT_INIT_CHANNEL_POOL_TOO_SMALL,
+					return (unsigned int)mailbox_logerro_p1(MAILBOX_CRIT_GUT_INIT_CHANNEL_POOL_TOO_SMALL,
 											  channel_sum);
 				}
 			}
@@ -631,7 +635,7 @@ MAILBOX_LOCAL int mailbox_init_all_handle(
 				mbuf_prob += (recv_link[src_id].carrier_butt);
 				channel_sum  += (recv_link[src_id].carrier_butt);
 				if (channel_sum > MAILBOX_CHANNEL_NUM) {
-					return mailbox_logerro_p1(MAILBOX_CRIT_GUT_INIT_CHANNEL_POOL_TOO_SMALL,
+					return (unsigned int)mailbox_logerro_p1(MAILBOX_CRIT_GUT_INIT_CHANNEL_POOL_TOO_SMALL,
 											  channel_sum);
 				}
 			}
@@ -643,7 +647,7 @@ MAILBOX_LOCAL int mailbox_init_all_handle(
 			cb_prob += use_max;
 			use_sum   += use_max;
 			if (use_sum > MAILBOX_USER_NUM) {
-				return mailbox_logerro_p1(MAILBOX_CRIT_GUT_INIT_USER_POOL_TOO_SMALL, use_sum);
+				return (unsigned int)mailbox_logerro_p1(MAILBOX_CRIT_GUT_INIT_USER_POOL_TOO_SMALL, use_sum);
 			}
 
 			/*3.注册邮箱线程回调接口，用于获取共享内存邮箱数据的处理*/
@@ -662,8 +666,10 @@ MAILBOX_LOCAL int mailbox_init_all_handle(
 			/*给控制句柄赋予邮箱ID号*/
 			mbuf_cur->channel_id = mailbox_get_channel_id(config->butt_id);
 			mbuf_cur->seq_num = MAILBOX_SEQNUM_START;
+#ifdef MAILBOX_OPEN_MNTN
 			mbuf_cur->mntn.peak_traffic_left = MAILBOX_QUEUE_LEFT_INVALID;
 			mbuf_cur->mntn.mbuff	= mbuf_cur;
+#endif
 			/*给邮箱配置物理资源*/
 			mbuf_cur->config = config;
 
@@ -695,19 +701,19 @@ MAILBOX_LOCAL int mailbox_init_all_handle(
 	g_mailbox_user_cb_pool[MAILBOX_USER_NUM];
 	*/
     if((unsigned int)MAILBOX_CHANNEL_NUM != channel_sum ) {
-		ret_val = mailbox_logerro_p1(MAILBOX_ERR_GUT_INIT_CHANNEL_POOL_TOO_LARGE,
+		ret_val = (unsigned int)mailbox_logerro_p1(MAILBOX_ERR_GUT_INIT_CHANNEL_POOL_TOO_LARGE,
                                     ((MAILBOX_CHANNEL_NUM<<16) | channel_sum));
 	}
 
 	if(MAILBOX_USER_NUM != use_sum) {
-		ret_val = mailbox_logerro_p1(MAILBOX_ERR_GUT_INIT_USER_POOL_TOO_LARGE, use_sum);
+		ret_val = (unsigned int)mailbox_logerro_p1(MAILBOX_ERR_GUT_INIT_USER_POOL_TOO_LARGE, use_sum);
 	}
 
 	return ret_val;
 }
 
 
-MAILBOX_LOCAL int mailbox_create_box(
+MAILBOX_LOCAL unsigned int mailbox_create_box(
                 struct mb          *mb,
                 struct mb_cfg   *config,
                 unsigned int    cpu_id)
@@ -718,7 +724,7 @@ MAILBOX_LOCAL int mailbox_create_box(
 
 	/*第一次循环检查通道号的有效性，并统计每个核间通道数组的空间*/
 	if(MAILBOX_OK !=   mailbox_calculate_space(mb, config, cpu_id)) {
-		return mailbox_logerro_p0(MAILBOX_ERR_GUT_CALCULATE_SPACE);
+		return (unsigned int)mailbox_logerro_p0(MAILBOX_ERR_GUT_CALCULATE_SPACE);
 	}
 
 	/*第二次循环对每个通道句柄分配空间,并赋值。*/
@@ -737,10 +743,10 @@ MAILBOX_LOCAL int mailbox_create_box(
 日	期	  : 2014年11月17日
 修改内容  :  新生成函数
 *****************************************************************************/
-void *mem_remap_type(unsigned long phys_addr, size_t size, pgprot_t pgprot)
+static void *mem_remap_type(unsigned long phys_addr, size_t size, pgprot_t pgprot)
 {
     int i;
-    u8* vaddr;
+    u8* vaddr = NULL;
     int npages = PAGE_ALIGN((phys_addr & (PAGE_SIZE - 1)) + size) >> PAGE_SHIFT;
     unsigned long offset = phys_addr & (PAGE_SIZE - 1);
     struct page **pages;
@@ -764,7 +770,7 @@ void *mem_remap_type(unsigned long phys_addr, size_t size, pgprot_t pgprot)
         vaddr += offset;
     }
     vfree(pages);
-    printk(KERN_DEBUG "%s: phys_addr:0x%pK size:0x%08lx npages:%d vaddr:%pK offset:0x%08lx\n", __FUNCTION__, (void *)phys_addr, (unsigned long)size, npages, vaddr, offset);
+    printk(KERN_DEBUG "%s: phys_addr:0x%pK size:0x%08lx npages:%d vaddr:%pK offset:0x%08lx\n", __FUNCTION__, (void *)(uintptr_t)phys_addr, (unsigned long)size, npages, vaddr, offset);
     return (void *)vaddr;
 }
 
@@ -781,27 +787,25 @@ MAILBOX_GLOBAL int mailbox_init(void)
 		return mailbox_logerro_p1(MAILBOX_ERR_GUT_ALREADY_INIT, g_mailbox_handle.init_flag);
 	}
 
-	printk("func = %s, line = %d baseaddr = 0x%pK\n", __func__, __LINE__, (void *)(unsigned int)MAILBOX_MEM_BASEADDR);
+	printk("func = %s, line = %d baseaddr = 0x%pK\n", __func__, __LINE__, (void *)(uintptr_t)MAILBOX_MEM_BASEADDR);
 
-	g_shareMemBase = mem_remap_nocache(MAILBOX_MEM_BASEADDR, MAILBOX_MEM_LENGTH);
-	/*初始化邮箱中的数据*/
-//memset(g_shareMemBase,0x0,MAILBOX_MEM_LENGTH);
+	g_shareMemBase = mem_remap_type(MAILBOX_MEM_BASEADDR, MAILBOX_MEM_LENGTH, pgprot_writecombine(PAGE_KERNEL));
 
 	if(NULL == g_shareMemBase) {
 		printk("func = %s, mmap mailbox mem error!!\n", __func__);
 		return mailbox_logerro_p0(MAILBOX_CRIT_GUT_MEMORY_CONFIG);
 	}
 
-	offset = (unsigned long)g_shareMemBase - MAILBOX_MEM_BASEADDR;
+	offset = (uintptr_t)g_shareMemBase - MAILBOX_MEM_BASEADDR;
 	for(i = 0; i < MAILBOX_GLOBAL_CHANNEL_NUM; i++) {
 		g_mailbox_global_cfg_tbl[i].head_addr = g_mailbox_global_cfg_tbl[i].head_addr + offset;
 		g_mailbox_global_cfg_tbl[i].data_addr = g_mailbox_global_cfg_tbl[i].data_addr + offset;
 
 		printk("i = %d, head_addr = 0x%pK, data_addr = 0x%pK\n", i,
-			   (void *)(g_mailbox_global_cfg_tbl[i].head_addr), (void *)(g_mailbox_global_cfg_tbl[i].data_addr));
+			   (void *)(uintptr_t)(g_mailbox_global_cfg_tbl[i].head_addr), (void *)(uintptr_t)(g_mailbox_global_cfg_tbl[i].data_addr));
 
 		/*初始化邮箱头*/
-		head = (struct mb_head *)g_mailbox_global_cfg_tbl[i].head_addr;
+		head = (struct mb_head *)(uintptr_t)g_mailbox_global_cfg_tbl[i].head_addr;
 		head->ulFront = 0x0;
 		head->ulRear = 0x0;
 		head->ulFrontslice = 0x0;
@@ -811,6 +815,7 @@ MAILBOX_GLOBAL int mailbox_init(void)
 	/*TODO:进行单核下电重启特性开发时，这行需要删除*/
 	mailbox_memset(&g_mailbox_handle, 0x00, sizeof(struct mb));
 
+#ifdef MAILBOX_OPEN_MNTN
     if ((MAILBOX_HEAD_BOTTOM_ADDR > (MAILBOX_MEM_BASEADDR + MAILBOX_MEM_HEAD_LEN)) ||/*lint !e574*/
        (MAILBOX_MEMORY_BOTTOM_ADDR > (MAILBOX_MEM_BASEADDR + MAILBOX_MEM_LENGTH)))
     {
@@ -820,6 +825,7 @@ MAILBOX_GLOBAL int mailbox_init(void)
         (void *)(unsigned long)(MAILBOX_MEM_BASEADDR + MAILBOX_MEM_LENGTH), (void *)(unsigned long)MAILBOX_MEMORY_BOTTOM_ADDR));
         return mailbox_logerro_p0(MAILBOX_CRIT_GUT_MEMORY_CONFIG);
     }
+#endif
 
 	/*初始化邮箱主体部分，创建邮箱总句柄。*/
 	if (MAILBOX_OK != mailbox_create_box(&g_mailbox_handle,
@@ -833,8 +839,6 @@ MAILBOX_GLOBAL int mailbox_init(void)
 	}
 
 	g_mailbox_handle.init_flag = MAILBOX_INIT_MAGIC;
-
-//mailbox_ifc_test_init();
 
 //fixme: there isn't go to unremap
 	g_slice_reg = (void*)ioremap(SYS_TIME_STAMP_REG, 0x4);
@@ -885,9 +889,6 @@ MAILBOX_EXTERN int mailbox_register_cb(
 
 	/*检查OK, 赋值给回调函数指针*/
 	read_cb = &mbuf->read_cb[mailbox_get_use_id(mailcode)];
-	if (MAILBOX_NULL != read_cb->func) {
-		/*mailbox_logerro_p1(MAILBOX_WARNING_USER_CALLBACK_ALREADY_EXIST, mailcode);*/
-	}
 
 	mailbox_mutex_lock(&mbuf->mutex);
 	read_cb->handle = usr_handle;
@@ -1020,8 +1021,10 @@ MAILBOX_EXTERN int mailbox_sealup_buff(struct mb_buff * mb_buf , unsigned int us
 
 	mailbox_flush_buff(mb_buf); /*把邮箱通道操作符的信息写回邮箱头。*/
 
+#ifdef MAILBOX_OPEN_MNTN
 
 	mailbox_record_send(&(mb_buf->mntn), mb_buf->mailcode, time_stamp, mail_addr);
+#endif
 
 	/*准备下一封邮件写入*/
 	return mailbox_init_usr_queue(mb_buf);
@@ -1035,7 +1038,7 @@ MAILBOX_EXTERN int mailbox_flush_buff( struct mb_buff *mbuff)
     unsigned int         channel_id    = mbuff->channel_id;
     struct mb *mb         = mbuff->mb;
     /*把邮箱通道操作符的信息写回邮箱头。*/
-    head = (struct mb_head*)mbuff->config->head_addr;
+    head = (struct mb_head*)(uintptr_t)mbuff->config->head_addr;
     queue   = &mbuff->mail_queue;
 
     /*需要区分是读还是写*/
@@ -1069,7 +1072,7 @@ MAILBOX_EXTERN unsigned long mailbox_virt_to_phy(unsigned long  virt_addr)
 	if(NULL == g_shareMemBase) {
 		g_shareMemBase = ioremap(MAILBOX_MEM_BASEADDR, MAILBOX_MEM_LENGTH);
 	}
-	offset = (unsigned long)g_shareMemBase - MAILBOX_MEM_BASEADDR;
+	offset = (uintptr_t)g_shareMemBase - MAILBOX_MEM_BASEADDR;
 
 	return (virt_addr - offset);
 }
@@ -1080,7 +1083,7 @@ MAILBOX_EXTERN unsigned long mailbox_phy_to_virt(unsigned long  phy_addr)
 	if(NULL == g_shareMemBase) {
 		g_shareMemBase = ioremap(MAILBOX_MEM_BASEADDR, MAILBOX_MEM_LENGTH);
 	}
-	offset = (unsigned long)g_shareMemBase - MAILBOX_MEM_BASEADDR;
+	offset = (uintptr_t)g_shareMemBase - MAILBOX_MEM_BASEADDR;
 
 
 	return (phy_addr + offset);

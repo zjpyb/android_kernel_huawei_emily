@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 # ==========================================================================
 # Building
 # ==========================================================================
@@ -164,6 +165,7 @@ cmd_gensymtypes_c =                                                         \
     $(CPP) -D__GENKSYMS__ $(c_flags) $< |                                   \
     $(GENKSYMS) $(if $(1), -T $(2))                                         \
      $(patsubst y,-s _,$(CONFIG_HAVE_UNDERSCORE_SYMBOL_PREFIX))             \
+     $(patsubst y,-R,$(CONFIG_MODULE_REL_CRCS))                             \
      $(if $(KBUILD_PRESERVE),-p)                                            \
      -r $(firstword $(wildcard $(2:.symtypes=.symref) /dev/null))
 
@@ -191,12 +193,7 @@ $(obj)/%.ll: $(src)/%.c FORCE
 quiet_cmd_cc_o_c = CC $(quiet_modtag)  $@
 
 ifndef CONFIG_MODVERSIONS
-
-ifdef CONFIG_HISI_CLANG
-cmd_cc_o_c = $(CC) $(filter-out -Werror ,$(c_flags)) -c -o $@ $<
-else
 cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $<
-endif
 
 else
 # When module versioning is enabled the following steps are executed:
@@ -215,7 +212,6 @@ cmd_cc_o_c = $(CC) $(filter-out -Werror ,$(c_flags)) -c -o $(@D)/.tmp_$(@F) $<
 else
 cmd_cc_o_c = $(CC) $(c_flags) -c -o $(@D)/.tmp_$(@F) $<
 endif
-
 
 ifdef CONFIG_LTO_CLANG
 # Generate .o.symversions files for each .o with exported symbols, and link these
@@ -261,8 +257,8 @@ export RECORDMCOUNT_FLAGS
 else
 # Due to recursion, we must skip empty.o.
 # The empty.o file is created in the make process in order to determine
-#  the target endianness and word size. It is made before all other C
-#  files, including recordmcount.
+# the target endianness and word size. It is made before all other C
+# files, including recordmcount.
 sub_cmd_record_mcount =					\
 	if [ $(@) != "scripts/mod/empty.o" ]; then	\
 		$(objtree)/scripts/recordmcount $(RECORDMCOUNT_FLAGS) "$(@)";	\
@@ -296,12 +292,29 @@ ifneq ($(SKIP_STACK_VALIDATION),1)
 
 __objtool_obj := $(objtree)/tools/objtool/objtool
 
-objtool_args = check
+objtool_args = $(if $(CONFIG_UNWINDER_ORC),orc generate,check)
+
+objtool_args += $(if $(part-of-module), --module,)
+
 ifndef CONFIG_FRAME_POINTER
 objtool_args += --no-fp
 endif
 ifdef CONFIG_GCOV_KERNEL
 objtool_args += --no-unreachable
+else
+objtool_args += $(call cc-ifversion, -lt, 0405, --no-unreachable)
+endif
+ifdef CONFIG_RETPOLINE
+ifneq ($(RETPOLINE_CFLAGS),)
+  objtool_args += --retpoline
+endif
+endif
+
+
+ifdef CONFIG_MODVERSIONS
+objtool_o = $(@D)/.tmp_$(@F)
+else
+objtool_o = $(@)
 endif
 
 # 'OBJECT_FILES_NON_STANDARD := y': skip objtool checking for a directory
@@ -309,7 +322,7 @@ endif
 # 'OBJECT_FILES_NON_STANDARD_foo.o := 'n': override directory skip for a file
 cmd_objtool = $(if $(patsubst y%,, \
 	$(OBJECT_FILES_NON_STANDARD_$(basetarget).o)$(OBJECT_FILES_NON_STANDARD)n), \
-	$(__objtool_obj) $(objtool_args) "$(@)";)
+	$(__objtool_obj) $(objtool_args) "$(objtool_o)";)
 objtool_obj = $(if $(patsubst y%,, \
 	$(OBJECT_FILES_NON_STANDARD_$(basetarget).o)$(OBJECT_FILES_NON_STANDARD)n), \
 	$(__objtool_obj))
@@ -325,18 +338,23 @@ $(hide) $(if $(KBUILD_SRC),$(srctree)/)../../vendor/huawei/chipset_common/build/
 	$(filter -I% -D%, $(c_flags))
 endef
 
+# Rebuild all objects when objtool changes, or is enabled/disabled.
+objtool_dep = $(objtool_obj)					\
+	      $(wildcard include/config/orc/unwinder.h		\
+			 include/config/stack/validation.h)
+
 define rule_cc_o_c
 	$(call echo-cmd,checksrc) $(cmd_checksrc)			  \
 	$(call cmd_and_fixdep,cc_o_c)					  \
+	$(call echo-cmd,objtool) $(cmd_objtool)				  \
 	$(cmd_modversions_c)						  \
-	$(cmd_objtool)						          \
 	$(call echo-cmd,record_mcount) $(cmd_record_mcount)
 endef
 
 define rule_as_o_S
 	$(call cmd_and_fixdep,as_o_S)					  \
-	$(cmd_modversions_S)						  \
-	$(cmd_objtool)
+	$(call echo-cmd,objtool) $(cmd_objtool)				  \
+	$(cmd_modversions_S)
 endef
 
 # List module undefined symbols (or empty line if not enabled)
@@ -347,7 +365,7 @@ cmd_undef_syms = echo
 endif
 
 # Built-in and composite module parts
-$(obj)/%.o: $(src)/%.c $(recordmcount_source) FORCE
+$(obj)/%.o: $(src)/%.c $(recordmcount_source) $(objtool_dep) FORCE
 ifeq ($(MAKECMDGOALS),new_pc_lint)
 	@cat $(LINT_PATH)/empty.o > $@
 ifeq ($(ARCH), arm64)
@@ -363,10 +381,9 @@ ifeq (true, $(CLANG_PERFCHECK))
 endif
 endif
 
-
 # Single-part modules are special since we need to mark them in $(MODVERDIR)
 
-$(single-used-m): $(obj)/%.o: $(src)/%.c $(recordmcount_source) $(objtool_obj) FORCE
+$(single-used-m): $(obj)/%.o: $(src)/%.c $(recordmcount_source) $(objtool_dep) FORCE
 	$(call cmd,force_checksrc)
 	$(call if_changed_rule,cc_o_c)
 	@{ echo $(@:.o=.ko); echo $@; \
@@ -408,6 +425,7 @@ cmd_gensymtypes_S =                                                         \
     $(CPP) -D__GENKSYMS__ $(c_flags) -xc - |                                \
     $(GENKSYMS) $(if $(1), -T $(2))                                         \
      $(patsubst y,-s _,$(CONFIG_HAVE_UNDERSCORE_SYMBOL_PREFIX))             \
+     $(patsubst y,-R,$(CONFIG_MODULE_REL_CRCS))                             \
      $(if $(KBUILD_PRESERVE),-p)                                            \
      -r $(firstword $(wildcard $(2:.symtypes=.symref) /dev/null))
 
@@ -460,7 +478,7 @@ cmd_modversions_S =								\
 endif
 endif
 
-$(obj)/%.o: $(src)/%.S $(objtool_obj) FORCE
+$(obj)/%.o: $(src)/%.S $(objtool_dep) FORCE
 ifeq ($(MAKECMDGOALS),new_pc_lint)
 	@cat $(LINT_PATH)/empty.o > $@
 else
@@ -473,7 +491,7 @@ targets += $(extra-y) $(MAKECMDGOALS) $(always)
 # Linker scripts preprocessor (.lds.S -> .lds)
 # ---------------------------------------------------------------------------
 quiet_cmd_cpp_lds_S = LDS     $@
-      cmd_cpp_lds_S = $(CPP) $(cpp_flags) -P -C -U$(ARCH) \
+      cmd_cpp_lds_S = $(CPP) $(cpp_flags) -P -U$(ARCH) \
 	                     -D__ASSEMBLY__ -DLINKER_SCRIPT -o $@ $<
 
 $(obj)/%.lds: $(src)/%.lds.S FORCE
@@ -713,7 +731,6 @@ endif
 
 .PHONY: $(PHONY)
 
-
 export LINT_PATH = $(if $(KBUILD_SRC),$(srctree)/)../../vendor/hisi/llt/ci/tools/pc-lint
 
 lint_flags = $(filter -I% -D%, $(c_flags)) -I$(LINT_PATH) -header"(generated/autoconf.h)" -D_lint -DLINUX_PC_LINT
@@ -725,5 +742,3 @@ lint-a = $(always)
 new_pc_lint: build = -f $(if $(KBUILD_SRC),$(srctree)/)scripts/Makefile.build new_pc_lint obj
 new_pc_lint: $(lint-y) $(lint-m) $(subdir-ym) $(lint-a)
 	@:
-
-

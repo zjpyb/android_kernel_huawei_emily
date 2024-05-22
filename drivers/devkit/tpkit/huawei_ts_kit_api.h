@@ -23,7 +23,7 @@ extern struct dsm_client *ts_dclient;
 #include <linux/debugfs.h>
 #include <linux/platform_device.h>
 #include <huawei_platform/log/hw_log.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 
 
 void ts_proc_bottom_half(struct ts_cmd_node* in_cmd, struct ts_cmd_node* out_cmd);

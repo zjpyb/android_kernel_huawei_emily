@@ -31,11 +31,13 @@ config DEVFREQ_GOV_GPU_SCENE_AWARE
     tristate "Hisilicon GPU Scene Aware"
     depends on ARCH_HISI && PM_DEVFREQ
     select PM_OPP
+    select HISI_DEVFREQ
 
 config DEVFREQ_GOV_NPU_PM_QOS
     tristate "Hisilicon NPU PM QOS"
     depends on ARCH_HISI && PM_DEVFREQ
     select PM_OPP
+    select HISI_DEVFREQ
 
 config HISI_DDR_CHINTLV
     bool "Hisilicon ddr devfreq chintlv"

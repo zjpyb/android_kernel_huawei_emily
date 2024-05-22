@@ -9,6 +9,7 @@
  * (at your option) any later version.
  */
 
+#include <securec.h>
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -18,6 +19,10 @@
 #include <log/log_usertype.h>
 #include <linux/hisi/hw_cmdline_parse.h> /*for runmode_is_factory*/
 #endif
+
+#define TIME_LOG_SIZE  80
+#define TS_BUF_SIZE  80
+
 
 static unsigned int scbbpdrxstat1;
 static unsigned int scbbpdrxstat2;
@@ -60,6 +65,8 @@ u64 hisi_getcurtime(void)
 size_t print_time(u64 ts, char *buf)
 {
 	int temp = 0;
+	int ret = 0;
+	char ts_buf[TS_BUF_SIZE]={0};
 	unsigned long rem_nsec;
 
 	rem_nsec = do_div(ts, 1000000000);
@@ -67,14 +74,19 @@ size_t print_time(u64 ts, char *buf)
 	if (!printk_time)
 		return 0;
 	if (!buf) {
-		return (unsigned int)snprintf(NULL, 0, "[%5lu.000000s]",
+		ret = snprintf_s(ts_buf, TS_BUF_SIZE, TS_BUF_SIZE -1, "[%5lu.000000s]",
 				(unsigned long)ts
 				);/* [false alarm]:buffer will not overflow  */
+		if(ret >= 0){
+			return (unsigned int)ret;
+		} else {
+			return 0;
+		}
 	}
 
 	// cppcheck-suppress *
 	/*lint -save -e421 */
-	temp = sprintf(buf, "[%5lu.%06lus]",
+	temp = sprintf_s(buf, TIME_LOG_SIZE, "[%5lu.%06lus]",
 			(unsigned long)ts, rem_nsec/1000
 			);/* [false alarm]:buffer will not overflow  */
 	/*lint -restore */
@@ -126,7 +138,7 @@ void panic_print_msg(struct printk_log *msg)
 {
 	char *text = (char *)msg + sizeof(struct printk_log);
 	size_t text_size = msg->text_len;
-	char time_log[80] = "";
+	char time_log[TIME_LOG_SIZE] = "";
 	size_t tlen = 0;
 	char *ptime_log;
 	ptime_log = time_log;
@@ -157,6 +169,8 @@ void hisi_log_store_add_time(char *hisi_char, u32 sizeof_hisi_char, u16 *hisi_le
 	unsigned long cur_secs = 0;
 	static unsigned long prev_jffy;
 	static unsigned int prejf_init_flag;
+	int ret = 0;
+
 	if (prejf_init_flag == 0) {
 		prejf_init_flag = 1;
 		prev_jffy = jiffies;
@@ -166,15 +180,26 @@ void hisi_log_store_add_time(char *hisi_char, u32 sizeof_hisi_char, u16 *hisi_le
 	time_to_tm(cur_secs, 0, &tm_rtc);
 	if (time_after(jiffies, prev_jffy + 1 * HZ)) {
 		prev_jffy = jiffies;
-		*hisi_len += snprintf(hisi_char, sizeof_hisi_char, "[%lu:%.2d:%.2d %.2d:%.2d:%.2d]",
+		ret = snprintf_s(hisi_char, sizeof_hisi_char, sizeof_hisi_char, "[%lu:%.2d:%.2d %.2d:%.2d:%.2d]",
 					1900 + tm_rtc.tm_year, tm_rtc.tm_mon + 1, tm_rtc.tm_mday, tm_rtc.tm_hour, tm_rtc.tm_min, tm_rtc.tm_sec
 					);
+		if (ret < 0) {
+			pr_err("%s: snprintf_s failed\n", __func__);
+			return;
+		}
+		*hisi_len += ret;
 	}
 
 #if defined(CONFIG_HISI_PRINTK_EXTENSION)
-	*hisi_len += snprintf(hisi_char + *hisi_len, sizeof_hisi_char-*hisi_len, "[pid:%d,cpu%d,%s]",
+	ret = snprintf_s(hisi_char + *hisi_len, sizeof_hisi_char-*hisi_len, sizeof_hisi_char-*hisi_len, "[pid:%d,cpu%d,%s]",
 						current->pid, smp_processor_id(), in_irq() ? "in irq" : current->comm);
 #endif
+	if (ret < 0) {
+		pr_err("%s: snprintf_s failed\n", __func__);
+		return;
+	}
+	*hisi_len += ret;
+
 	return;
 }
 pure_initcall(uniformity_timer_init);
@@ -195,18 +220,26 @@ int get_console_index(void)
 
 int get_console_name(char *name, int name_buf_len)
 {
+	int ret = -1;
+	u32 strcount = 0;
+
 #if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
 	if ((preferred_console != -1) && (preferred_console < MAX_CMDLINECONSOLES)) {
-		strncpy(name, console_cmdline[preferred_console].name, min((int)(sizeof(console_cmdline[preferred_console].name)), name_buf_len)); /*lint !e574 !e58*/
-		return 0;
+		strcount =  min((int)(sizeof(console_cmdline[preferred_console].name)), name_buf_len);
+		ret = strncpy_s(name, name_buf_len, console_cmdline[preferred_console].name, strcount); /*lint !e574 !e58*/
 	}
 #else
 	if ((selected_console != -1) && (selected_console < MAX_CMDLINECONSOLES)) {
-		strncpy(name, console_cmdline[selected_console].name, min((int)(sizeof(console_cmdline[selected_console].name)), name_buf_len)); /*lint !e574 !e58*/
-		return 0;
+		strcount = min((int)(sizeof(console_cmdline[selected_console].name)), name_buf_len);
+		ret = strncpy_s(name, name_buf_len, console_cmdline[selected_console].name, strcount); /*lint !e574 !e58*/
 	}
 #endif
-	return -1;
+
+	if (ret) {
+		pr_err("%s: strncpy_s failed\n", __func__);
+		return -1;
+	} else
+		return 0;
 }
 #endif
 
@@ -220,9 +253,7 @@ extern raw_spinlock_t *g_logbuf_level_lock_ex;
  */
 void printk_level_setup(int level)
 {
-	unsigned int type = get_logusertype_flag();
-
-	if (type != COMMERCIAL_USER || runmode_is_factory())
+	if (runmode_is_factory())
 		return;
 
 	pr_alert("printk_level_setup: %d\n", level);
@@ -238,7 +269,7 @@ static int __init early_printk_timer_setup(char *str)
 {
 	int i = 0;
 	int ret;
-	char *token;
+	char *token = NULL;
 	unsigned long long regs[REG_NUMS] = {};
 
 	while ((token = strsep(&str, ",")) != NULL) {

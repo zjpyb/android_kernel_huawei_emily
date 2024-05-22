@@ -23,6 +23,8 @@
 #define HISEE_COS_FLASH_IMG_FULLNAME    "/mnt/hisee_fs/cos_flash.img"
 #define HISEE_CASD_IMG_FULLNAME         "/mnt/hisee_fs/casd.img"
 
+#define HISEE_COS_STORAGE_ID_OFF     16
+#define HISEE_COS_STORAGE_ID_MASK    0xFFFF
 
 /* Hisee module specific error code*/
 #define HISEE_COS_VERIFICATITON_ERROR  (-1002)
@@ -96,6 +98,7 @@
 #define HISEE_IMG_SUB_FILE_DATA_LEN (4)
 #define HISEE_IMG_SUB_FILES_LEN     (HISEE_IMG_SUB_FILE_NAME_LEN + HISEE_IMG_SUB_FILE_OFFSET_LEN + HISEE_IMG_SUB_FILE_DATA_LEN)
 #define HISEE_IMG_SLOADER_NAME		"SLOADER"
+#define HISEE_IMG_ULOADER_NAME		"ULOADER"
 #define HISEE_IMG_COS_NAME		"COS"
 #define HISEE_IMG_COS1_NAME		"COS1"
 #define HISEE_IMG_COS2_NAME		"COS2"
@@ -185,7 +188,6 @@ typedef struct _MULTICOS_UPGRADE_INFO {
 	upgrade_timestamp_info sw_upgrade_timestamp[HISEE_MAX_COS_IMAGE_NUMBER_RESERVED];
 } multicos_upgrade_info;
 
-
 typedef struct _HISEE_IMG_HEADER {
 	char magic[HISEE_IMG_MAGIC_LEN];
 	char time_stamp[HISEE_IMG_TIME_STAMP_LEN];
@@ -201,8 +203,10 @@ typedef struct _HISEE_IMG_HEADER {
 #ifdef CONFIG_HISEE_SUPPORT_MULTI_COS
 	unsigned int is_cos_exist[HISEE_SUPPORT_COS_FILE_NUMBER];
 #endif
+#ifdef CONFIG_HISEE_SUPPORT_DCS
+	unsigned int dcs_image_cnt[HISEE_SUPPORT_COS_FILE_NUMBER];
+#endif
 } hisee_img_header;
-
 
 #ifdef CONFIG_HISEE_SUPPORT_MULTI_COS
 #define HISEE_ENCOS_MAGIC_LEN 8
@@ -246,6 +250,9 @@ typedef enum _HISEE_IMAGE_A_ACCESS_TYPE_ {
 
 typedef enum  _HISEE_IMG_FILE_TYPE {
 	SLOADER_IMG_TYPE = 0,
+#ifdef CONFIG_HISEE_SUPPORT_ULOADER
+	ULOADER_IMG_TYPE,
+#endif
 	COS_IMG_TYPE,
 #ifdef CONFIG_HISEE_SUPPORT_MULTI_COS
 	COS1_IMG_TYPE,
@@ -255,6 +262,28 @@ typedef enum  _HISEE_IMG_FILE_TYPE {
 	COS5_IMG_TYPE,
 	COS6_IMG_TYPE,
 	COS7_IMG_TYPE,
+#endif
+#ifdef CONFIG_HISEE_SUPPORT_DCS
+	DCS0_IMG_TYPE,
+	DCS1_IMG_TYPE,
+	DCS2_IMG_TYPE,
+	DCS3_IMG_TYPE,
+	DCS4_IMG_TYPE,
+	DCS5_IMG_TYPE,
+	DCS6_IMG_TYPE,
+	DCS7_IMG_TYPE,
+	DCS8_IMG_TYPE,
+	DCS9_IMG_TYPE,
+	DCS10_IMG_TYPE,
+	DCS11_IMG_TYPE,
+	DCS12_IMG_TYPE,
+	DCS13_IMG_TYPE,
+	DCS14_IMG_TYPE,
+	DCS15_IMG_TYPE,
+	DCS16_IMG_TYPE,
+	DCS17_IMG_TYPE,
+	DCS18_IMG_TYPE,
+	DCS19_IMG_TYPE,
 #endif
 	OTP_IMG_TYPE,
 	OTP1_IMG_TYPE,
@@ -284,6 +313,11 @@ typedef enum  _HISEE_IMG_FILE_TYPE {
 	MAX_IMG_TYPE,
 } hisee_img_file_type;
 
+/* hisee_img partition struct */
+struct img_name_info_t {
+	hisee_img_file_type img_type;
+	char img_file_name[HISEE_IMG_SUB_FILE_NAME_LEN];
+};
 
 typedef struct _COSIMAGE_VERSION_INFO_ {
 	unsigned int magic;
@@ -322,5 +356,17 @@ int check_cos_flash_file_exist(unsigned int *exist_flg);
 
 int access_hisee_image_partition(char *data_buf, hisee_image_a_access_type access_type);
 void parse_timestamp(const char timestamp_str[HISEE_IMG_TIME_STAMP_LEN], timestamp_info *timestamp_value);
+
+/*************************************************************
+函数原型：int hisee_atoi(const char *str)
+函数功能：实现和libc的atoi函数相同的功能，字符串转成整型值，只支持正数
+参数：
+输入：str:指向一串整型值的字符串
+输出：无。
+返回值：HISEE_U32_MAX_VALUE:错误值；不是HISEE_U32_MAX_VALUE:转换后的整型值
+前置条件：无。
+后置条件： 无
+*************************************************************/
+unsigned int hisee_atoi(const char *str);
 
 #endif

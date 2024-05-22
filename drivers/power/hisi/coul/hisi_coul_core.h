@@ -31,7 +31,7 @@
 #include <linux/rtc.h>
 #include <linux/syscalls.h>
 #include <linux/semaphore.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #ifdef CONFIG_HUAWEI_CHARGER
 #include <huawei_platform/power/huawei_charger.h>
 #else
@@ -202,9 +202,10 @@ enum ocv_level {
 #define LOW_INT_STATE_SLEEP 0
 #define LOW_INT_VOL_OFFSET 10     /* mv */
 #define BATTERY_VOL_2_PERCENT 3350
+#define LOW_INT_TEMP_THRED   (-50) /* -5 */
 
 #define ZERO_VOLTAGE_PLUS_5 3200
-#define ZERO_VOLTAGE_MINUS_10 3200
+#define ZERO_VOLTAGE_MINUS_10 2900
 
 #define MAX_TEMPS 10
 #define MAX_RECORDS_CNT 5
@@ -408,7 +409,29 @@ enum ocv_level {
 
 #define CURRENT_FULL_TERM_SOC 95
 #define DELTA_MAX_FULL_FCC_PERCENT 10
+#define SUPPLY_PARA_LEVEL 5
 
+#define NTC_FIT_CASE_NUM                3
+#define NTC_FIT_COEF_NUM                3
+#define NTC_FIT_BUND_NUM                2
+#define NTC_BUG_LOWTH                   -5
+#define NTC_DO_FIT_TEMP_GAP_TH          10
+#define COUL_SENS_MAX                   10
+#define SEN_NAME_MAX_LEN                15
+#define NTC_TEMP_SMP_TIME               1
+#define NTC_TEMP_DFT                    4
+#define PRORATE_OF_INIT                 1000
+#define I_IMPOSSIBLE_LARGE              1000000
+#define NTC_BUG_REPORT_TH               30
+#define TEMP_BUFF_LEN                   7
+#define WAIT_TZ_READY                   5000 /* 5 seconds */
+#define NTC_FIT_RESOLUTION              10000
+
+enum ntc_fit_case {
+	NTC_FIT_USB_CHGR = 0,
+	NTC_FIT_RFB_CHGR,
+	NTC_FIT_USB_RFB,
+};
 
 enum ISCD_LEVEL_CONFIG {
     ISCD_ISC_MIN,
@@ -515,11 +538,11 @@ struct coul_device_ops{
     void  (*cali_adc)(void);
     int   (*get_battery_voltage_uv)(void);
     int   (*get_battery_current_ua)(void);
-    int   (*get_battery_vol_uv_from_fifo)(unsigned int fifo_order);
-    int   (*get_battery_cur_ua_from_fifo)(unsigned int fifo_order);
-    int   (*get_eco_vol_uv_from_fifo)(unsigned int fifo_order);
-    int   (*get_eco_cur_ua_from_fifo)(unsigned int fifo_order);
-    int   (*get_eco_temp_from_fifo)(unsigned int fifo_order);
+    int   (*get_battery_vol_uv_from_fifo)(short fifo_order);
+    int   (*get_battery_cur_ua_from_fifo)(short fifo_order);
+    int   (*get_eco_vol_uv_from_fifo)(short fifo_order);
+    int   (*get_eco_cur_ua_from_fifo)(short fifo_order);
+    int   (*get_eco_temp_from_fifo)(short fifo_order);
     short (*get_offset_current_mod)(void);
     short (*get_offset_vol_mod)(void);
     void  (*set_offset_vol_mod)(void);
@@ -540,7 +563,7 @@ struct coul_device_ops{
     void  (*get_ocv_level)(u8 *level);
     void  (*set_i_in_event_gate)(int ma);
     void  (*set_i_out_event_gate)(int ma);
-    int   (*get_chip_temp)(enum CHIP_TEMP_TYPE type);
+	int   (*get_chip_temp)(void);
     int   (*get_bat_temp)(void);
     int   (*convert_regval2uv)(unsigned int reg_val);
     int   (*convert_regval2ua)(unsigned int reg_val);
@@ -718,6 +741,32 @@ struct iscd_info {
     int iscd_file_magic_num;
 };
 
+struct polar_ishort_info {
+	int enable;
+	int reported;
+	int report_urgent;
+	int time_interval;
+	int dischg_interval;
+	int report_curr_ma;
+	int has_chg_done;
+	int curr_ua;
+	int ocv0;
+	s64 cc0;
+	int time0;
+	int last_time;
+	int last_chg_cycle;
+	int last_curr_ua;
+	s64 cc_all;
+};
+
+struct polar_supply_data{
+    int soc_min;
+    int soc_max;
+    int supply_curr1;
+    int supply_curr2;
+    int temp_back;
+};
+
 struct smartstar_coul_device
 {
     int batt_exist;
@@ -751,6 +800,7 @@ struct smartstar_coul_device
     unsigned int dischg_ocv_enable;
     int dischg_ocv_soc;
     int batt_soc;
+    int last_powerdown_soc;
     int batt_soc_real;
     int batt_soc_with_uuc;
     int batt_soc_est;
@@ -761,6 +811,7 @@ struct smartstar_coul_device
     int cc_end_value;
     unsigned int v_cutoff;
     unsigned int v_cutoff_sleep;
+	int v_cutoff_low_temp;
     unsigned int v_low_int_value;
     unsigned int 	get_cc_end_time;
     unsigned int   suspend_time; // time when suspend
@@ -803,9 +854,10 @@ struct smartstar_coul_device
     int startup_delta_soc;
     int soc_at_term;
     unsigned int  enable_current_full;
-    unsigned int basp_level;
-    unsigned int basp_total_level;
+	unsigned int basp_level;
+	unsigned int basp_total_level;
 	unsigned int basp_records_avg;
+	unsigned int nondc_volt_dec;
 	unsigned short basp_delay_config;
 	int basp_need_delay;
 	int basp_batt_matched;
@@ -815,7 +867,11 @@ struct smartstar_coul_device
     int soc_monitor_limit;
     unsigned char last_ocv_level;
     unsigned int low_vol_filter_cnt;
+    unsigned int polar_ocv_enable;
+    unsigned int supply_enable;
     struct polar_calc_info polar;
+    struct polar_supply_data supply_info[SUPPLY_PARA_LEVEL];
+	struct polar_ishort_info ishort_info;
     struct bat_ocv_info eco_info;
     struct notifier_block bat_lpm3_ipc_block;
     int chg_done_max_avg_cur_flag;/*acr max currrent flag*/
@@ -832,6 +888,14 @@ struct smartstar_coul_device
     unsigned int dbg_ocv_fc_failed; /*full charged can't update OCV*/
 #endif
 	char real_fcc_record_time[MAX_RECORDS_CNT][TIMESTAMP_STR_SIZE];
+	int ntc_fit;
+	int ntc_fit_dc_ilimit;
+	bool ntc_temp_fitted;
+	int ntc_fit_case;
+	int btemp_msur;
+	int ntc_fit_coef[NTC_FIT_CASE_NUM][NTC_FIT_COEF_NUM];
+	struct chrg_para_lut ntc_fit_temp_para;
+	struct delayed_work wait_tz_ready;
 };
 
 struct OCV_LEVEL_PARAM {
@@ -857,6 +921,7 @@ struct bit_delay_config {
 	unsigned char config_tag:7;
 	unsigned char delayed:1;
 };
+
 extern struct device *coul_dev;
 extern int v_offset_a;
 extern int v_offset_b;
@@ -864,7 +929,7 @@ extern int c_offset_a;
 extern int c_offset_b;
 extern int coul_core_ops_register(struct coul_device_ops *ops);
 extern int charger_dsm_report(int err_no, int *val);
-
+extern struct atomic_notifier_head coul_fault_notifier_list;
 #endif
 
 

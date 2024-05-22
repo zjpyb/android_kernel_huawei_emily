@@ -27,14 +27,6 @@
 #include "qtaguid_pid_internal.h"
 #include "qtaguid_pid.h"
 
-#ifdef CONFIG_HUAWEI_DUBAI
-#include <log/log_usertype.h>
-#include <huawei_platform/log/hwlog_kernel.h>
-extern unsigned long get_wakeuptime(void);
-extern const char *get_sourcename(void);
-extern int get_gpio(void);
-unsigned long g_latt_wakeuptime_tmp = 0;
-#endif
 static LIST_HEAD(iface_pid_stat_list);
 static DEFINE_SPINLOCK(iface_pid_stat_list_lock);
 
@@ -700,35 +692,6 @@ void if_pid_stat_update(const char *ifname, uid_t uid,
 		"pid=%s sk=%p dir=%d proto=%d bytes=%d)\n",
 		 ifname, task_comm, sk, direction, proto, bytes);
 
-#ifdef CONFIG_HUAWEI_DUBAI
-    if (BETA_USER == get_logusertype_flag()) {
-        unsigned long last_wakeup_time = 0;
-
-        last_wakeup_time = get_wakeuptime();
-        if (last_wakeup_time > 0
-            && last_wakeup_time != g_latt_wakeuptime_tmp
-            && ((hisi_getcurtime() / 1000000 - last_wakeup_time) < 500)) {
-            int32_t protocol = -1, port = -1;
-
-            if (skb) {
-                const struct iphdr *iph = ip_hdr(skb);
-                if (iph) {
-                    protocol = iph->protocol;
-                    if (iph->protocol == IPPROTO_TCP || iph->protocol == IPPROTO_UDP) {
-                        struct udphdr hdr, *hp = 0;
-                        hp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(hdr), &hdr);
-                        if (hp) {
-                            port = (int32_t)ntohs(hp->dest);
-                        }
-                    }
-                }
-            }
-            HWDUBAI_LOGE("DUBAI_TAG_APP_WAKEUP", "uid=%d protocol=%d port=%d procname=%s source=%s gpio=%d",
-                real_uid, protocol, port, task_comm, get_sourcename(), get_gpio());
-            g_latt_wakeuptime_tmp = last_wakeup_time;
-        }
-    }
-#endif
 	spin_lock_bh(&iface_entry->pid_stat_list_lock);
 
 	pid_stat_entry = pid_stat_tree_search(&iface_entry->pid_stat_tree, tag);

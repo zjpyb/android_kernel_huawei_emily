@@ -227,8 +227,8 @@ static void hisi_dma_enable_dma(struct hisi_dma_dev *d, bool on)
 static irqreturn_t hisi_dma_int_handler(int irq, void *dev_id)
 {
 	struct hisi_dma_dev *d = (struct hisi_dma_dev *)dev_id;
-	struct hisi_dma_phy *p;
-	struct hisi_dma_chan *c;
+	struct hisi_dma_phy *p = NULL;
+	struct hisi_dma_chan *c = NULL;
 	u32 stat = (u32)readl(d->base + INT_STAT);
 	u32 tc1  = (u32)readl(d->base + INT_TC1);
 	u32 err1 = (u32)readl(d->base + INT_ERR1);
@@ -323,8 +323,8 @@ static int hisi_dma_start_txd(struct hisi_dma_chan *c)
 static void hisi_dma_tasklet(unsigned long arg)
 {
 	struct hisi_dma_dev *d = (struct hisi_dma_dev *)(uintptr_t)arg;
-	struct hisi_dma_phy *p;
-	struct hisi_dma_chan *c, *cn;
+	struct hisi_dma_phy *p = NULL;
+	struct hisi_dma_chan *c = NULL, *cn = NULL;
 	unsigned pch, pch_alloc = 0;
 	unsigned long flags;
     int ret = 0;
@@ -424,8 +424,8 @@ static enum dma_status hisi_dma_tx_status(struct dma_chan *chan,
 {
 	struct hisi_dma_chan *c = to_hisi_chan(chan);
 	struct hisi_dma_dev *d = to_hisi_dma(chan->device);
-	struct hisi_dma_phy *p;
-	struct virt_dma_desc *vd;
+	struct hisi_dma_phy *p = NULL;
+	struct virt_dma_desc *vd = NULL;
 	unsigned long flags;
 	enum dma_status ret;
 	size_t bytes = 0;
@@ -519,7 +519,7 @@ static struct dma_async_tx_descriptor *hisi_dma_prep_memcpy(
     struct dma_chan *chan,	dma_addr_t dst, dma_addr_t src,
     size_t len, unsigned long flags) {
 	struct hisi_dma_chan *c = to_hisi_chan(chan);
-	struct hisi_dma_desc_sw *ds;
+	struct hisi_dma_desc_sw *ds = NULL;
 	size_t copy = 0;
 	u32 num;
 
@@ -571,9 +571,9 @@ static struct dma_async_tx_descriptor *hisi_dma_prep_slave_sg(
     struct dma_chan *chan, struct scatterlist *sgl, unsigned int sglen,
     enum dma_transfer_direction dir, unsigned long flags, void *context) {
 	struct hisi_dma_chan *c = to_hisi_chan(chan);
-	struct hisi_dma_desc_sw *ds;
+	struct hisi_dma_desc_sw *ds = NULL;
 	size_t len, avail, total = 0;
-	struct scatterlist *sg;
+	struct scatterlist *sg = NULL;
 	dma_addr_t addr, src = 0, dst = 0;
 	u32 num = sglen, i;
 
@@ -923,9 +923,9 @@ static int hisi_dma_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
 #endif
 void show_dma64_reg(struct dma_chan *chan)
 {
-	struct hisi_dma_chan *c;
-	struct hisi_dma_dev *d;
-    struct hisi_dma_phy *p;
+	struct hisi_dma_chan *c = NULL;
+	struct hisi_dma_dev *d = NULL;
+    struct hisi_dma_phy *p = NULL;
     u32 i;
 
 	if (!chan) {
@@ -1040,10 +1040,27 @@ static struct dma_chan *hisi_of_dma_simple_xlate(struct of_phandle_args *dma_spe
 	return dma_get_slave_channel(&(d->chans[request].vc.chan));
 }
 
+#define DMAC_REGISTER_FN_ID			(0xc501de00)
+noinline int atfd_hisi_service_dmac_smc(u64 _function_id, u64 _arg0, u64 _arg1,
+                                        u64 _arg2)
+{
+	register u64 function_id asm("x0") = _function_id;
+	register u64 arg0 asm("x1") = _arg0;
+	register u64 arg1 asm("x2") = _arg1;
+	register u64 arg2 asm("x3") = _arg2;
+	asm volatile (__asmeq("%0", "x0")
+                  __asmeq("%1", "x1")
+                  __asmeq("%2", "x2")
+                  __asmeq("%3", "x3") "smc    #0\n":"+r"(function_id)
+                  : "r"(arg0), "r"(arg1), "r"(arg2));
+
+	return (int)function_id;
+}
+
 static int hisi_dma_probe(struct platform_device *op)
 {
-	struct hisi_dma_dev *d;
-	const struct of_device_id *of_id;
+	struct hisi_dma_dev *d = NULL;
+	const struct of_device_id *of_id = NULL;
 	struct resource *iores;
 	u32 i, irq;
     int ret = 0;
@@ -1084,7 +1101,8 @@ static int hisi_dma_probe(struct platform_device *op)
 
 	of_property_read_u32((&op->dev)->of_node,
 		"dma-min-chan", &d->dma_min_chan);
-    of_property_read_u32((&op->dev)->of_node,
+	atfd_hisi_service_dmac_smc(DMAC_REGISTER_FN_ID, d->dma_min_chan, 0, 0);
+	of_property_read_u32((&op->dev)->of_node,
 		"dma-used-chans", &d->dma_used_chans);
 	d->dma_share = of_property_read_bool((&op->dev)->of_node,
 		"dma-share");
@@ -1211,7 +1229,7 @@ of_dma_register_fail:
 
 static int hisi_dma_remove(struct platform_device *op)
 {
-	struct hisi_dma_chan *c, *cn;
+	struct hisi_dma_chan *c = NULL, *cn = NULL;
 	struct hisi_dma_dev *d = platform_get_drvdata(op);
 
 	if (!d){
@@ -1375,9 +1393,6 @@ static int hisi_dma_runtime_resume(struct device *dev)
 #define hisi_dma_pltfm_suspend	NULL
 #define hisi_dma_pltfm_resume	NULL
 #endif /* CONFIG_PM_SLEEP || CONFIG_HISI_DMA_PM_RUNTIME*/
-
-//SIMPLE_DEV_PM_OPS(hisi_dma_pltfm_pmops, hisi_dma_pltfm_suspend, hisi_dma_pltfm_resume);
-
 
 const struct dev_pm_ops hisi_dma64_pm_ops = {
 #ifdef CONFIG_HISI_DMA_PM_RUNTIME

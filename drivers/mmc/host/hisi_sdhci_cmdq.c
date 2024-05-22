@@ -52,7 +52,7 @@ static int sdhci_cmdq_send_status(struct mmc_host *mmc, u32* status)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
 	u32 mask, arg, opcode, val, timeout;
-	int flags;
+	unsigned int flags;
 
 	sdhci_reset(host, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
 
@@ -458,7 +458,7 @@ void sdhci_cmdq_init(struct sdhci_host *host, struct mmc_host *mmc)
 		bool dma64;
 		int ret;
 
-		dma64 = (host->flags & SDHCI_USE_64_BIT_DMA) ?
+		dma64 = ((unsigned int)(host->flags) & SDHCI_USE_64_BIT_DMA) ?
 			true : false;
 		ret = cmdq_init(host->cq_host, mmc, dma64);
 		if (ret)

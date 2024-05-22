@@ -1,32 +1,19 @@
 /*
-* Copyright (C), 2001-2011, Hisilicon Tech. Co., Ltd.
-*
-* File Name     : hi_type.h
-* Version       : Initial Draft
-* Author        : Hisilicon multimedia software group
-* Created       : 2005/4/23
-*
-* Last Modified :
-* Description   : The common data type defination
-*
-* Function List :
-* History       :
-* 1.Date        : 2008/06/28
-* Author      : c42025
-* Modification: modified definition for HI_S8
-* 2.Date        :   2008/10/31
-* Author      :   z44949
-* Modification:   Translate the chinese comment
-*/
+ * Copyright (c) Huawei Technologies Co., Ltd. 2008-2019. All rights reserved.
+ * Description: The common data type defination
+ * Author: z44949
+ * Create: 2008-10-31
+ */
 #ifndef __HI_TYPE_H__
 #define __HI_TYPE_H__
 #include <linux/fs.h>
 #include <linux/platform_device.h>
+#include <linux/kfifo.h>
+#include <linux/timer.h>
 
-
-/*----------------------------------------------*
- * The common data type, will be used in the whole project.*
- *----------------------------------------------*/
+/*
+ * The common data type, will be used in the whole project.
+*/
 typedef unsigned char           HI_U8;
 typedef unsigned char           HI_UCHAR;
 typedef unsigned short          HI_U16;
@@ -45,7 +32,7 @@ typedef __int64                 HI_S64;
 #endif
 
 typedef char                    HI_CHAR;
-typedef char*                   HI_PCHAR;
+typedef char                   *HI_PCHAR;
 
 typedef float                   HI_FLOAT;
 typedef double                  HI_DOUBLE;
@@ -56,9 +43,15 @@ typedef unsigned long           HI_LENGTH_T;
 
 typedef HI_U64 HI_HANDLE;
 
-/*----------------------------------------------*
- * const defination                             *
- *----------------------------------------------*/
+#ifdef HIVCODECV500
+typedef unsigned long long  UADDR;
+#else
+typedef unsigned int        UADDR;
+#endif
+
+/*
+ * const defination
+*/
 typedef enum {
 	HI_FALSE = 0,
 	HI_TRUE  = 1,

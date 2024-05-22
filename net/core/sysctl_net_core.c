@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /* -*- linux-c -*-
  * sysctl_net_core.c: sysctl interface to net core subsystem.
  *
@@ -21,10 +22,6 @@
 #include <net/net_ratelimit.h>
 #include <net/busy_poll.h>
 #include <net/pkt_sched.h>
-
-#ifdef CONFIG_HW_NETWORK_MEASUREMENT
-#include <huawei_platform/emcom/smartcare/network_measurement/nm.h>
-#endif /* CONFIG_HW_NETWORK_MEASUREMENT */
 
 #ifdef CONFIG_HUAWEI_BASTET
 extern int g_FastGrabDscp;
@@ -86,10 +83,13 @@ static int rps_sock_flow_sysctl(struct ctl_table *table, int write,
 
 		if (sock_table != orig_sock_table) {
 			rcu_assign_pointer(rps_sock_flow_table, sock_table);
-			if (sock_table)
+			if (sock_table) {
 				static_key_slow_inc(&rps_needed);
+				static_key_slow_inc(&rfs_needed);
+			}
 			if (orig_sock_table) {
 				static_key_slow_dec(&rps_needed);
+				static_key_slow_dec(&rfs_needed);
 				synchronize_rcu();
 				vfree(orig_sock_table);
 			}
@@ -226,6 +226,21 @@ static int set_default_qdisc(struct ctl_table *table, int write,
 }
 #endif
 
+static int proc_do_dev_weight(struct ctl_table *table, int write,
+			   void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	if (ret != 0)
+		return ret;
+
+	dev_rx_weight = weight_p * dev_weight_rx_bias;
+	dev_tx_weight = weight_p * dev_weight_tx_bias;
+
+	return ret;
+}
+
 static int proc_do_rss_key(struct ctl_table *table, int write,
 			   void __user *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -277,7 +292,21 @@ static struct ctl_table net_core_table[] = {
 		.data		= &weight_p,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec
+		.proc_handler	= proc_do_dev_weight,
+	},
+	{
+		.procname	= "dev_weight_rx_bias",
+		.data		= &dev_weight_rx_bias,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_do_dev_weight,
+	},
+	{
+		.procname	= "dev_weight_tx_bias",
+		.data		= &dev_weight_tx_bias,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_do_dev_weight,
 	},
 	{
 		.procname	= "netdev_max_backlog",
@@ -311,6 +340,13 @@ static struct ctl_table net_core_table[] = {
 	{
 		.procname	= "bpf_jit_harden",
 		.data		= &bpf_jit_harden,
+		.maxlen		= sizeof(int),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "bpf_jit_kallsyms",
+		.data		= &bpf_jit_kallsyms,
 		.maxlen		= sizeof(int),
 		.mode		= 0600,
 		.proc_handler	= proc_dointvec,
@@ -426,6 +462,14 @@ static struct ctl_table net_core_table[] = {
 		.extra1		= &one,
 		.extra2		= &max_skb_frags,
 	},
+	{
+		.procname	= "netdev_budget_usecs",
+		.data		= &netdev_budget_usecs,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
 #ifdef CONFIG_HUAWEI_BASTET
 	{
 		.procname	= "fg_dscp",
@@ -435,34 +479,6 @@ static struct ctl_table net_core_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 #endif
-#ifdef CONFIG_HW_NETWORK_MEASUREMENT
-	{
-		.procname	= "netmeasure",
-		.maxlen		= NM_SAMPLE_VALVE_BUF_MAX,
-		.mode		= 0600,
-		.proc_handler	= proc_sample_valve
-	},
-	{
-		.procname	= "netmeasure_timeout",
-		.data		= &network_measure_timeouts,
-		.maxlen		= sizeof(int),
-		.mode		= 0600,
-		.proc_handler	= proc_dointvec
-	},
-	{
-		.procname	= "netmeasure_tcp",
-		.data		= &network_measure_tcp,
-		.maxlen		= sizeof(int),
-		.mode		= 0600,
-		.proc_handler	= proc_dointvec
-	},
-	{
-		.procname	= "netmeasure_sampled_uids",
-		.maxlen		= NM_SAMPLE_UID_BUF_MAX,
-		.mode		= 0600,
-		.proc_handler	= proc_sample_uid_list
-	},
-#endif /* CONFIG_HW_NETWORK_MEASUREMENT */
 	{ }
 };
 

@@ -47,6 +47,8 @@ static int system_reseted_up = 0;
 static int system_reseted_down =0;
 
 #define FTS_POLLFORRVENT_TEMPSIZE 128
+#define ADDR_FLASH_STATUS ((u64)0x0000000020000068)
+#define ADDR_INFO_LOCKDOWN ((u64)0x0000000000041800)
 
 /**
   * Initialize core variables of the library.
@@ -628,7 +630,9 @@ int readSysInfo(int request)
 
 	u8ToU16(&data[index], &systemInfo.u16_dbgInfoAddr);
 	index += 2;
-
+	u8ToU16(&data[index], &systemInfo.st_matrix_info_addr);
+	TS_LOG_INFO("%s st_matrix_info_addr = 0x%04X\n", __func__,
+		systemInfo.st_matrix_info_addr);
 	index += 6;	/* skip reserved area */
 
 	u8ToU16(&data[index], &systemInfo.u16_msTchRawAddr);
@@ -753,11 +757,12 @@ FAIL:
 int readConfig(u16 offset, u8 *outBuf, int len)
 {
 	int ret = 0;
-	u64 final_address = offset + ADDR_CONFIG_OFFSET;
+	u64 final_offset = offset + ADDR_CONFIG_OFFSET;
 
-	TS_LOG_INFO("%s: Starting to read config memory at %08llX ...\n",__func__, final_address);
-	ret = fts_writeReadU8UX(FTS_CMD_CONFIG_R, BITS_16, final_address,
-				outBuf, len, DUMMY_CONFIG);
+	TS_LOG_INFO("%s: Starting to read config memory at %08llX\n",
+		__func__, final_offset);
+	ret = fts_writeReadU8UX(FTS_CMD_CONFIG_R, BITS_16, final_offset,
+		outBuf, len, DUMMY_CONFIG);
 	if (ret < OK) {
 		TS_LOG_ERR(" %s: Impossible to read Config Memory... ERROR %08X!\n",__func__,ret);
 		return ret;
@@ -777,11 +782,11 @@ int readConfig(u16 offset, u8 *outBuf, int len)
 int writeConfig(u16 offset, u8 *data, int len)
 {
 	int ret = 0;
-	u64 final_address = offset + ADDR_CONFIG_OFFSET;
+	u64 final_offset = offset + ADDR_CONFIG_OFFSET;
 
-	TS_LOG_INFO( "%s: Starting to write config memory at %08llX ...\n",
-		 __func__, final_address);
-	ret = fts_writeU8UX(FTS_CMD_CONFIG_W, BITS_16, final_address, data, len);
+	TS_LOG_INFO("%s: Starting to write config memory at %08llX\n",
+		 __func__, final_offset);
+	ret = fts_writeU8UX(FTS_CMD_CONFIG_W, BITS_16, final_offset, data, len);
 	if (ret < OK) {
 		TS_LOG_ERR("%s: Impossible to write Config Memory... ERROR %08X!\n",__func__, ret);
 		return ret;
@@ -1126,80 +1131,141 @@ int writeLockDownInfo(u8 *data, int size,u8 lock_id)
 	return ret;
 }
 
-
-int readLockDownInfo(u8 *lockData,u8 lock_id,int size)
+static int lock_down_info_check(u8 *data, u8 lock_id, int data_length)
 {
-	int ret =0,i = 0;
-	int loaded_cnt=0;
-	int loaded_cnt_after=0;
-	u8 *temp =NULL;
-	u8 cmd_lockdown[3]={0xA4,0x06,0x00};
-	char temp_buf[100] = { 0 };
-	char * temp1 = NULL;
-	TS_LOG_INFO("%s :enter",__func__);
-	if(lock_id< 0x70 || lock_id > 0x77 || size <=0 || size > LOCKDOWN_LENGTH-20){
-		TS_LOG_ERR("%s the lock id type is:%02X not support\n",__func__,lock_id);
+	int i;
+	int index = 0;
+	int res = -1;
+	int foundid[FTS_FOUND_ID_SIZE] = {0x00};
+	int lockindex;
+	int data_len;
+	u8 crc_data = 0;
+	u8 crc_head = 0;
+	u8 crc_head_data[FTS_CRC_HEAD_SIZE] = {0x00};
+
+	if (!data || (data_length < LOCKDOWN_LENGTH)) {
+		TS_LOG_ERR("%s data null\n", __func__);
+		res = ERROR_LOCKDOWN_CODE;
+		return res;
+	}
+	for (i = 0; i < LOCKDOWN_LENGTH; i++) {
+		if (data[i] == lock_id) {
+			if (index >= FTS_FOUND_ID_SIZE - 1) {
+				TS_LOG_ERR("%s index error\n", __func__);
+				res = ERROR_LOCKDOWN_CODE;
+				return res;
+			}
+			foundid[index++] = i;
+			TS_LOG_INFO("the index=%d %d\n", index,
+				foundid[index - 1]);
+		}
+	}
+	if (index == 0) {
+		TS_LOG_ERR("%s lockdown data doesnot exist\n", __func__);
+		res = ERROR_LOCKDOWN_CODE;
+		return res;
+	}
+	for (i = index - 1; i >= 0; i--) {
+		lockindex = foundid[i];
+		if (lockindex < FTS_DATA_LEN_SIZE)
+			continue;
+		data_len = data[lockindex - FTS_DATA_LEN_SIZE];
+		if (lockindex > (LOCKDOWN_LENGTH - FTS_DATA_LEN_SIZE -
+			data_len))
+			continue;
+		TS_LOG_INFO("lockindex=%d data_len=%d\n", lockindex, data_len);
+		calculateCRC8(&data[lockindex + FTS_DATA_LEN_SIZE], data_len,
+			&crc_data);
+		TS_LOG_INFO("%s:CRC data:%02X crc data mem:%02X\n", __func__,
+			crc_data, data[lockindex - 1]);
+		if (crc_data != data[lockindex - 1])
+			continue;
+		crc_head_data[0] = data_len;
+		crc_head_data[1] = crc_data;
+		crc_head_data[2] = lock_id;
+		calculateCRC8(&crc_head_data[0], FTS_CRC_HEAD_SIZE, &crc_head);
+		TS_LOG_INFO("%s:CRC head:%02X crc head mem:%02X\n", __func__,
+			crc_head, data[lockindex + 1]);
+		if (crc_head != data[lockindex + 1])
+			continue;
+		TS_LOG_ERR("%s lockdown crc: %02X crc head: %02X len:%d\n",
+			__func__, crc_data, crc_head, data_len);
+		res = lockindex;
+		break;
+	}
+	return res;
+}
+
+static int lock_down_info_init(u8 valueoriginal, u8 **data)
+{
+	int res;
+	u8 value;
+
+	value = (valueoriginal & 0xFC);
+	res = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
+		ADDR_FLASH_STATUS, &value, 1);
+	if (res < OK) {
+		TS_LOG_ERR("%s fts write read u8ux failed\n", __func__);
+		return res;
+	}
+	*data = kzalloc((LOCKDOWN_LENGTH * sizeof(u8)), GFP_KERNEL);
+	if (*data == NULL) {
+		TS_LOG_ERR("%s kzalloc data failed\n", __func__);
+		res = ERROR_LOCKDOWN_CODE;
+		return res;
+	}
+	res = fts_writeReadU8UX(FTS_CMD_HW_REG_R, ADDR_SIZE_HW_REG,
+		ADDR_INFO_LOCKDOWN, *data, LOCKDOWN_LENGTH, DUMMY_HW_REG);
+	if (res < OK)
+		TS_LOG_ERR("%s read lockdown data failed\n", __func__);
+	return res;
+}
+
+int read_lock_down_info(u8 *lock_data, u8 lock_id, int size)
+{
+	u8 valueoriginal = 0;
+	int value;
+	int res;
+	u8 *data = NULL;
+	char data_temp[FTS_TEMP_DATA_SIZE] = {0};
+	int foundindex = -1;
+	char *datatemp = NULL;
+
+	TS_LOG_INFO("%s: enter\n", __func__);
+	if ((!lock_data) || lock_id < FTS_LOCK_ID ||
+		lock_id > FTS_LOCK_ID_MAX) {
+		TS_LOG_ERR("%s the lock id type is not support\n", __func__);
 		return ERROR_LOCKDOWN_CODE;
 	}
-
-	temp = (u8*)kmalloc(LOCKDOWN_LENGTH*sizeof(u8), GFP_KERNEL);
-	if(temp==NULL){
-		TS_LOG_ERR("FTS temp alloc  memory failed \n");
-		return -ENOMEM;
+	res = fts_writeReadU8UX(FTS_CMD_HW_REG_R, ADDR_SIZE_HW_REG,
+		ADDR_FLASH_STATUS, &valueoriginal, 1, DUMMY_HW_REG);
+	if (res < OK) {
+		TS_LOG_ERR("%s fts write read u8ux failed\n", __func__);
+		return res;
 	}
-	memset(temp,0,LOCKDOWN_LENGTH*sizeof(u8));
-
-	fts_disableInterrupt();
-	for(i=0;i<3;i++){
-		ret = fts_writeReadU8UX(LOCKDOWN_WRITEREAD_CMD, BITS_16, ADDR_LOCKDOWN, temp,LOCKDOWN_HEAD_LENGTH, DUMMY_CONFIG);
-		if ( ret < OK) {
-			TS_LOG_ERR("%s: error while reading data ERROR %08X \n", __func__, ret);
-			goto END;
-		}
-		loaded_cnt = (int)((temp[3] & 0xFF) << 8) + (temp[2] & 0xFF);
-		cmd_lockdown[2] = lock_id;
-		ret = fts_write(cmd_lockdown,3);
-		if (ret < OK) {
-			TS_LOG_ERR( "%s: fts_write ERROR %08X\n",__func__, ret);
-		}
-		mdelay(10);
-		ret = checkEcho(cmd_lockdown,3);
-		if(ret<OK){
-			TS_LOG_ERR( "%s No Echo received.. ERROR %08X !\n", __func__, ret);
-			continue;
-		}else{
-			TS_LOG_ERR( "%s Echo FOUND... OK!\n", __func__);
-		}
-		ret = fts_writeReadU8UX(LOCKDOWN_WRITEREAD_CMD, BITS_16, ADDR_LOCKDOWN, temp, size+LOCKDOWN_DATA_OFFSET, DUMMY_CONFIG);
-		if ( ret < OK) {
-			TS_LOG_ERR("%s: error while reading data ERROR %08X \n",  __func__, ret);
-			goto END;
-		}
-
-		loaded_cnt_after = (int)((temp[3] & 0xFF) << 8) + (temp[2] & 0xFF);
-		if(temp[4] == EVT_TYPE_ERROR_LOCKDOWN_FLASH || temp[4] == EVT_TYPE_ERROR_LOCKDOWN_NO_DATA){
-			TS_LOG_ERR("%s: can not read the lockdown code ERROR type:%02X\n",  __func__, temp[4]);
-			ret = ERROR_LOCKDOWN_CODE;
-			goto END;
-		}
-
-		TS_LOG_ERR("%s signature:%02X id:%02X %02X beforecnt:%d,aftercnt:%d\n", __func__,temp[0],temp[1],lock_id,loaded_cnt,loaded_cnt_after);
-		if( loaded_cnt_after == loaded_cnt + 1){
-			ret = OK;
-			memcpy(lockData, &temp[LOCKDOWN_DATA_OFFSET], size);
-			break;
-		}
-
+	res = lock_down_info_init(valueoriginal, &data);
+	if (res < OK) {
+		TS_LOG_ERR("%s lock_down_info_init failed\n", __func__);
+		goto end;
 	}
-	temp1 =  printHex("Lockdown Code = ",lockData,size,temp_buf);
-	if(temp1){
-		TS_LOG_ERR("%s %s\n", __func__,temp1);
+	foundindex = lock_down_info_check(data, lock_id, LOCKDOWN_LENGTH);
+	if (foundindex < OK) {
+		TS_LOG_ERR("%s cannot get the id %02X lockdown data\n",
+			__func__, lock_id);
+		res = ERROR_LOCKDOWN_CODE;
+		goto end;
 	}
-
-END:
-	fts_enableInterrupt();
-	if(temp){
-		kfree(temp);
-	}
-	return ret;
+	TS_LOG_INFO("%s found the lockdown id\n", __func__);
+	memcpy(lock_data, &data[foundindex + FTS_DATA_LEN_SIZE], size);
+	datatemp = printHex("Lockdown Code = ", lock_data, size, data_temp);
+	if (datatemp)
+		TS_LOG_INFO("%s %s\n", __func__, datatemp);
+end:
+	kfree(data);
+	value = fts_writeU8UX(FTS_CMD_HW_REG_W, ADDR_SIZE_HW_REG,
+		ADDR_FLASH_STATUS, &valueoriginal, 1);
+	if (value < OK)
+		TS_LOG_ERR("%s fts write read u8ux failed\n", __func__);
+	return res;
 }
+

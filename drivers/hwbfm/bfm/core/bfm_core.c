@@ -64,27 +64,28 @@
 #define BFM_BYTES_REDUNDANT_ON_LOG_PART (4 * 1024)
 #define BFM_DONE_FILE_NAME "DONE"
 #define BFM_TIME_FIELD_NAME "time:"
+#define BFM_PERCENT 100
 #define BFM_BFI_FILE_CONTENT_FORMAT \
-    "time%s:%s\r\n" \
-    "bootFailErrno%s:%s\r\n" \
-    "boot_stage%s:%s_%s\r\n" \
-    "isSystemRooted%s:%d\r\n" \
-    "isUserPerceptible%s:%d\r\n" \
-    "SpaceLeftOnData%s:%lldMB [%lld%%]\r\n" \
-    "iNodesUsedOnData%s:%lld [%lld%%]\r\n" \
-    "\r\n" \
-    "time%s:0x%llx\r\n" \
-    "bootFailErrno%s:0x%x\r\n" \
-    "boot_stage%s:0x%x\r\n" \
-    "isSystemRooted%s:%d\r\n" \
-    "isUserPerceptible%s:%d\r\n"\
-    "dmdErrNo%s:%d\r\n"\
-    "bootFailDetail%s:%s\r\n"\
-    "bootup_time:%dS\r\n" \
-    "isBootUpSuccessfully%s:%s\r\n" \
-    "RebootType%s:0x%x\r\n" \
-    "\r\n"\
-    "the bootlock field in cmdline is: [%s] this time\r\n"
+	"time%s:%s\r\n" \
+	"bootFailErrno:%s\r\n" \
+	"boot_stage:%s_%s\r\n" \
+	"isSystemRooted:%d\r\n" \
+	"isUserPerceptible:%d\r\n" \
+	"SpaceLeftOnData:%lldMB [%lld%%]\r\n" \
+	"iNodesUsedOnData:%lld [%lld%%]\r\n" \
+	"\r\n" \
+	"time%s:0x%llx\r\n" \
+	"bootFailErrno:0x%x\r\n" \
+	"boot_stage:0x%x\r\n" \
+	"isSystemRooted:%d\r\n" \
+	"isUserPerceptible:%d\r\n"\
+	"dmdErrNo:%d\r\n"\
+	"bootFailDetail:%s\r\n"\
+	"bootup_time:%dS\r\n" \
+	"isBootUpSuccessfully:%s\r\n" \
+	"RebootType:0x%x\r\n" \
+	"\r\n"\
+	"the bootlock field in cmdline is: [%s] this time\r\n"
 
 #define BFM_RCV_FILE_CONTENT_FORMAT \
     "rcvMethod%s:%s\r\n" \
@@ -220,7 +221,7 @@ static int bfm_save_bootfail_info_txt(bfmr_log_dst_t *pdst,
 static int bfm_save_recovery_info_txt(bfmr_log_dst_t *pdst,
     bfmr_log_src_t *psrc,
     bfm_process_bootfail_param_t *pparam);
-static char *bfm_get_file_name(char *file_full_path);
+static char *bfm_get_file_name(const char *file_full_path);
 static int bfm_process_upper_layer_boot_fail(void *param);
 static int bfm_process_bottom_layer_boot_fail(void *param);
 static int bfmr_capture_and_save_bottom_layer_boot_fail_log(void);
@@ -289,37 +290,37 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_BL1_SAFE_MODE
     },
     {
-        FRM_GOTO_ERECOVERY_FACTORY_RESET,
+        FRM_FACTORY_RST,
         BL1_STAGE_START,
         SH_BL1_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_FORMAT_DATA_PART,
+        FRM_FORMAT_DATA_PART,
         BL1_STAGE_START,
         SH_BL1_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA,
+        FRM_LOWLEVEL_FORMAT_DATA,
         BL1_STAGE_START,
         SH_BL1_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY,
+        FRM_DOWNLOAD,
         BL1_STAGE_START,
         SH_BL1_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES,
+        FRM_DOWNLOAD_AND_DEL_FILES,
         BL1_STAGE_START,
         SH_BL1_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET,
+        FRM_DOWNLOAD_AND_FACTORY_RST,
         BL1_STAGE_START,
         SH_BL1_DOWNLOAD_VERSION
     },
     {
-        FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY,
+        FRM_FACTORY_RST_AFTER_DOWNLOAD,
         BL1_STAGE_START,
         SH_BL1_FACTORY_RESET
     },
@@ -340,37 +341,37 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_BL2_SAFE_MODE
     },
     {
-        FRM_GOTO_ERECOVERY_FACTORY_RESET,
+        FRM_FACTORY_RST,
         BL2_STAGE_START,
         SH_BL2_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_FORMAT_DATA_PART,
+        FRM_FORMAT_DATA_PART,
         BL2_STAGE_START,
         SH_BL2_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA,
+        FRM_LOWLEVEL_FORMAT_DATA,
         BL2_STAGE_START,
         SH_BL2_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY,
+        FRM_DOWNLOAD,
         BL2_STAGE_START,
         SH_BL2_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES,
+        FRM_DOWNLOAD_AND_DEL_FILES,
         BL2_STAGE_START,
         SH_BL2_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET,
+        FRM_DOWNLOAD_AND_FACTORY_RST,
         BL2_STAGE_START,
         SH_BL2_DOWNLOAD_VERSION
     },
     {
-        FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY,
+        FRM_FACTORY_RST_AFTER_DOWNLOAD,
         BL2_STAGE_START,
         SH_BL2_FACTORY_RESET
     },
@@ -392,37 +393,37 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_KERNEL_SAFE_MODE
     },
     {
-        FRM_GOTO_ERECOVERY_FACTORY_RESET,
+        FRM_FACTORY_RST,
         KERNEL_STAGE_START,
         SH_KERNEL_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_FORMAT_DATA_PART,
+        FRM_FORMAT_DATA_PART,
         KERNEL_STAGE_START,
         SH_KERNEL_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA,
+        FRM_LOWLEVEL_FORMAT_DATA,
         KERNEL_STAGE_START,
         SH_KERNEL_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY,
+        FRM_DOWNLOAD,
         KERNEL_STAGE_START,
         SH_KERNEL_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES,
+        FRM_DOWNLOAD_AND_DEL_FILES,
         KERNEL_STAGE_START,
         SH_KERNEL_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET,
+        FRM_DOWNLOAD_AND_FACTORY_RST,
         KERNEL_STAGE_START,
         SH_KERNEL_DOWNLOAD_VERSION
     },
     {
-        FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY,
+        FRM_FACTORY_RST_AFTER_DOWNLOAD,
         KERNEL_STAGE_START,
         SH_KERNEL_FACTORY_RESET
     },
@@ -437,7 +438,7 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_KERNEL_STORAGE_RDONLY_BOPD
     },
     {
-        FRM_HARDWARE_DEGRADE_BOPD,
+        FRM_HW_DEGRADE_BOPD,
         KERNEL_STAGE_START,
         SH_KERNEL_HARDWARE_DEGRADE_BOPD
     },
@@ -447,7 +448,7 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_KERNEL_BOPD_AFTER_DOWNLOAD
     },
     {
-        FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD,
+        FRM_HW_DEGRADE_BOPD_AFTER_DOWNLOAD,
         KERNEL_STAGE_START,
         SH_KERNEL_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD
     },
@@ -468,37 +469,37 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_NATIVE_SAFE_MODE
     },
     {
-        FRM_GOTO_ERECOVERY_FACTORY_RESET,
+        FRM_FACTORY_RST,
         NATIVE_STAGE_START,
         SH_NATIVE_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_FORMAT_DATA_PART,
+        FRM_FORMAT_DATA_PART,
         NATIVE_STAGE_START,
         SH_NATIVE_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA,
+        FRM_LOWLEVEL_FORMAT_DATA,
         NATIVE_STAGE_START,
         SH_NATIVE_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY,
+        FRM_DOWNLOAD,
         NATIVE_STAGE_START,
         SH_NATIVE_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES,
+        FRM_DOWNLOAD_AND_DEL_FILES,
         NATIVE_STAGE_START,
         SH_NATIVE_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET,
+        FRM_DOWNLOAD_AND_FACTORY_RST,
         NATIVE_STAGE_START,
         SH_NATIVE_DOWNLOAD_VERSION
     },
     {
-        FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY,
+        FRM_FACTORY_RST_AFTER_DOWNLOAD,
         NATIVE_STAGE_START,
         SH_NATIVE_FACTORY_RESET
     },
@@ -513,7 +514,7 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_NATIVE_STORAGE_RDONLY_BOPD
     },
     {
-        FRM_HARDWARE_DEGRADE_BOPD,
+        FRM_HW_DEGRADE_BOPD,
         NATIVE_STAGE_START,
         SH_NATIVE_HARDWARE_DEGRADE_BOPD
     },
@@ -523,7 +524,7 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_NATIVE_BOPD_AFTER_DOWNLOAD
     },
     {
-        FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD,
+        FRM_HW_DEGRADE_BOPD_AFTER_DOWNLOAD,
         NATIVE_STAGE_START,
         SH_NATIVE_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD
     },
@@ -545,37 +546,37 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_FRAMEWORK_SAFE_MODE
     },
     {
-        FRM_GOTO_ERECOVERY_FACTORY_RESET,
+        FRM_FACTORY_RST,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_FORMAT_DATA_PART,
+        FRM_FORMAT_DATA_PART,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_LOWLEVEL_FORMAT_DATA,
+        FRM_LOWLEVEL_FORMAT_DATA,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_FACTORY_RESET
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY,
+        FRM_DOWNLOAD,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_DEL_FILES,
+        FRM_DOWNLOAD_AND_DEL_FILES,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_DOWNLOAD_VERSION
     },
     {
-        FRM_GOTO_ERECOVERY_DOWNLOAD_RECOVERY_AND_FACTORY_RESET,
+        FRM_DOWNLOAD_AND_FACTORY_RST,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_DOWNLOAD_VERSION
     },
     {
-        FRM_FACTORY_RESET_AFTER_DOWNLOAD_RECOVERY,
+        FRM_FACTORY_RST_AFTER_DOWNLOAD,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_FACTORY_RESET
     },
@@ -590,7 +591,7 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_FRAMEWORK_STORAGE_RDONLY_BOPD
     },
     {
-        FRM_HARDWARE_DEGRADE_BOPD,
+        FRM_HW_DEGRADE_BOPD,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_HARDWARE_DEGRADE_BOPD
     },
@@ -600,7 +601,7 @@ static bfmr_recovery_method_maptable_t s_bfmr_recovery_method_maptable[] = {
         SH_FRAMEWORK_BOPD_AFTER_DOWNLOAD
     },
     {
-        FRM_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD,
+        FRM_HW_DEGRADE_BOPD_AFTER_DOWNLOAD,
         ANDROID_FRAMEWORK_STAGE_START,
         SH_FRAMEWORK_HARDWARE_DEGRADE_BOPD_AFTER_DOWNLOAD
     },
@@ -824,10 +825,10 @@ static bfmr_selfheal_code_e bfm_get_selfheal_code(bfr_recovery_method_e recovery
 
     for (i = 0; i < count; i++) {
         if (recovery_method == s_bfmr_recovery_method_maptable[i].recovery_method) {
-            if ((boot_stage >> BFM_SELF_HEAL_STAGE_OFF_LEN) == (s_bfmr_recovery_method_maptable[i].boot_stage >> BFM_SELF_HEAL_STAGE_OFF_LEN))
-            {
+            if (((unsigned int)boot_stage >> BFM_SELF_HEAL_STAGE_OFF_LEN) ==
+	        ((unsigned int)s_bfmr_recovery_method_maptable[i].boot_stage >>
+		BFM_SELF_HEAL_STAGE_OFF_LEN))
                 return s_bfmr_recovery_method_maptable[i].selfheal_code;
-            }
         }
     }
 
@@ -837,20 +838,21 @@ static bfmr_selfheal_code_e bfm_get_selfheal_code(bfr_recovery_method_e recovery
 
 static void bfm_update_bootfail_logs(bfm_bootfail_log_info_t *pbootfail_log_info)
 {
-    char *src_file_path = NULL;
-    char *pdata = NULL;
-    long src_file_len = 0L;
-    long buf_len = 0L;
-    char start_time[BFM_MAX_INT_NUMBER_LEN] = {0};
-    char *ptemp = NULL;
-    unsigned long long end_time = 0;
-    char *temp_str = NULL;
-	int log_dir_cnt = 0;
+	char *src_file_path = NULL;
+	char *pdata = NULL;
+	long src_file_len;
+	long buf_len;
+	char start_time[BFM_MAX_INT_NUMBER_LEN] = { 0 };
+	char *ptemp = NULL;
+	unsigned long long end_time;
+	char *temp_str = NULL;
+	int log_dir_cnt;
+	int str_len;
 
-    if (unlikely(NULL == pbootfail_log_info)) {
-        BFMR_PRINT_INVALID_PARAMS("pbootfail_log_info.\n");
-        return;
-    }
+	if (unlikely(pbootfail_log_info == NULL)) {
+		BFMR_PRINT_INVALID_PARAMS("pbootfail_log_info.\n");
+		return;
+	}
 
 	log_dir_cnt = pbootfail_log_info->log_dir_count;
 	if (log_dir_cnt == 0) {
@@ -858,83 +860,93 @@ static void bfm_update_bootfail_logs(bfm_bootfail_log_info_t *pbootfail_log_info
 		return;
 	}
 
-    src_file_path = bfmr_malloc(BFMR_MAX_PATH);
-    if (NULL == src_file_path) {
-        BFMR_PRINT_ERR("bfmr_malloc failed!\n");
-        goto __out;
-    }
+	src_file_path = bfmr_malloc(BFMR_MAX_PATH);
+	if (src_file_path == NULL) {
+		BFMR_PRINT_ERR("bfmr_malloc failed!\n");
+		goto __out;
+	}
 
-    memset(src_file_path, 0, BFMR_MAX_PATH);
-    snprintf(src_file_path, BFMR_MAX_PATH - 1, "%s/%s", pbootfail_log_info->bootfail_logs[0].log_dir, BFM_BFI_FILE_NAME);
+	memset(src_file_path, 0, BFMR_MAX_PATH);
+	snprintf(src_file_path, BFMR_MAX_PATH - 1, "%s/%s",
+		 pbootfail_log_info->bootfail_logs[0].log_dir,
+		 BFM_BFI_FILE_NAME);
 
-    /* continue if the src file doesn't exist */
-    if (!bfmr_is_file_existed(src_file_path)) {
-         goto __out;
-    }
+	/* continue if the src file doesn't exist */
+	if (!bfmr_is_file_existed(src_file_path))
+		goto __out;
 
-    /* get file length of src file */
-    src_file_len = bfmr_get_file_length(src_file_path);
-    if (src_file_len <= 0L) {
-        BFMR_PRINT_ERR("the length of [%s] is :%ld\n", src_file_path, src_file_len);
-        goto __out;
-    }
+	/* get file length of src file */
+	src_file_len = bfmr_get_file_length(src_file_path);
+	if (src_file_len <= 0L) {
+		BFMR_PRINT_ERR("the length of [%s] is :%ld\n", src_file_path, src_file_len);
+		goto __out;
+	}
 
-    /* allocate mem */
-    buf_len = src_file_len + BFM_SELF_HEAL_CHAIN_MAX_LEN + 1;
-    pdata = (char *)bfmr_malloc(buf_len);
-    if (NULL == pdata) {
-        BFMR_PRINT_ERR("bfmr_malloc pdata failed!\n");
-        goto __out;
-    }
-    memset(pdata, 0, buf_len);
+	/* allocate mem */
+	buf_len = src_file_len + BFM_SELF_HEAL_CHAIN_MAX_LEN + 1;
+	pdata = bfmr_malloc(buf_len);
+	if (pdata == NULL) {
+		BFMR_PRINT_ERR("bfmr_malloc pdata failed!\n");
+		goto __out;
+	}
+	memset(pdata, 0, buf_len);
 
-    temp_str = (char *)bfmr_malloc(buf_len);
-    if (NULL == temp_str) {
-        BFMR_PRINT_ERR("bfmr_malloc temp_str failed!\n");
-        goto __out;
-    }
-    memset(temp_str, 0, buf_len);
+	temp_str = bfmr_malloc(buf_len);
+	if (temp_str == NULL) {
+		BFMR_PRINT_ERR("bfmr_malloc temp_str failed!\n");
+		goto __out;
+	}
+	memset(temp_str, 0, buf_len);
 
-    /* read src file */
-    src_file_len = bfmr_full_read_with_file_path(src_file_path, pdata, src_file_len);
-    if (src_file_len <= 0) {
-        BFMR_PRINT_ERR("read [%s] failed!\n", src_file_path);
-        goto __out;
-    }
+	/* read src file */
+	src_file_len = bfmr_full_read_with_file_path(src_file_path, pdata, src_file_len);
+	if (src_file_len <= 0) {
+		BFMR_PRINT_ERR("read [%s] failed!\n", src_file_path);
+		goto __out;
+	}
 
-    end_time = bfm_get_system_time();
+	end_time = bfm_get_system_time();
 	snprintf(start_time, sizeof(start_time) - 1, "%u",
-		pbootfail_log_info->real_recovery_info.
-			boot_fail_rtc_time[log_dir_cnt - 1]);
+		 pbootfail_log_info->real_recovery_info.
+		 boot_fail_rtc_time[log_dir_cnt - 1]);
 
-	BFMR_PRINT_ERR("TONYZXB  starttime %s; endtime %llu\n",
-			start_time, end_time);
+	ptemp = bfmr_reverse_find_string(pdata, "RebootType");
+	if (ptemp == NULL) {
+		BFMR_PRINT_ERR("Can not find RebootType\n");
 
-    ptemp =bfmr_reverse_find_string(pdata,"RebootType");
-    if (NULL == ptemp) {
-        BFMR_PRINT_ERR("Can not find RebootType\n");
-
-        snprintf(temp_str, BFM_SELF_HEAL_CHAIN_MAX_LEN - 1, BFM_TEXT_LOG_SEPRATOR_ADD_TIME, start_time, end_time, "");
-        buf_len = strlen(temp_str);
-        if (0 != buf_len) {
-            bfmr_save_log(pbootfail_log_info->bootfail_logs[0].log_dir, BFM_BFI_FILE_NAME, temp_str, buf_len, 1);
-        }
-    }
-    else {
-        strncpy(temp_str, ptemp, BFM_SELF_HEAL_CHAIN_MAX_LEN - 1);
-        snprintf(ptemp, BFM_SELF_HEAL_CHAIN_MAX_LEN + strlen(temp_str) -1, BFM_TEXT_LOG_SEPRATOR_ADD_TIME, start_time, end_time, temp_str);
-        bfmr_save_log(pbootfail_log_info->bootfail_logs[0].log_dir, BFM_BFI_FILE_NAME, pdata, buf_len, 0);
-    }
+		snprintf(temp_str, BFM_SELF_HEAL_CHAIN_MAX_LEN - 1,
+			 BFM_TEXT_LOG_SEPRATOR_ADD_TIME, start_time, end_time,
+			 "");
+		buf_len = strlen(temp_str);
+		if (buf_len != 0)
+			bfmr_save_log(pbootfail_log_info->bootfail_logs[0].
+				      log_dir, BFM_BFI_FILE_NAME, temp_str,
+				      buf_len, 1);
+	} else {
+		strncpy(temp_str, ptemp, buf_len);
+		str_len = src_file_len - strlen(temp_str);
+		if (str_len > 0)
+			snprintf(ptemp, buf_len - str_len,
+				 BFM_TEXT_LOG_SEPRATOR_ADD_TIME, start_time,
+				 end_time, temp_str);
+		bfmr_save_log(pbootfail_log_info->bootfail_logs[0].log_dir,
+			      BFM_BFI_FILE_NAME, pdata, buf_len, 0);
+	}
 
 __out:
-    if (pdata) {
-        bfmr_free(pdata);
+	if (pdata != NULL) {
+		bfmr_free(pdata);
+		pdata = NULL;
+	}
+
+	if (temp_str != NULL) {
+		bfmr_free(temp_str);
+		temp_str = NULL;
     }
-    if (temp_str) {
-        bfmr_free(temp_str);
-    }
-    if (src_file_path) {
-        bfmr_free(src_file_path);
+
+	if (src_file_path != NULL) {
+		bfmr_free(src_file_path);
+		src_file_path = NULL;
     }
 }
 
@@ -1045,26 +1057,31 @@ static int bfm_save_bootfail_info_txt(bfmr_log_dst_t *pdst, bfmr_log_src_t *psrc
 	}
     bytes_formatted = snprintf(pdata, BFMR_TEMP_BUF_LEN - 1, BFM_BFI_FILE_CONTENT_FORMAT,
         record_count_str, bfmr_convert_rtc_time_to_asctime(pparam->bootfail_time),
-        record_count_str, bfm_get_boot_fail_no_desc(pparam->bootfail_errno, pparam),
-        record_count_str, bfm_get_platform_name(),
-        bfm_get_boot_stage_name((unsigned int)pparam->boot_stage),
-        record_count_str, pparam->is_system_rooted,
-        record_count_str, pparam->is_user_sensible,
-        record_count_str, (0 == ret) ? ((long long)(statfsbuf.f_bavail * statfsbuf.f_bsize) / (long long)(BFMR_SIZE_1K * BFMR_SIZE_1K)) : (0L),
-        (0 == ret) ? ((statfsbuf.f_blocks <= 0) ? (0LL) : ((long long)(100 * statfsbuf.f_bavail) / (long long)statfsbuf.f_blocks)) : (0LL),
-        record_count_str, (0 == ret) ? ((long long)(statfsbuf.f_files - statfsbuf.f_ffree)) : (0L),
-        (0 == ret) ? ((statfsbuf.f_files <= 0) ? (0LL) : ((long long)(100 * (statfsbuf.f_files - statfsbuf.f_ffree)) / (long long)statfsbuf.f_files)): (0LL),
-        record_count_str, pparam->bootfail_time,
-        record_count_str, (unsigned int)pparam->bootfail_errno,
-        record_count_str, (unsigned int)pparam->boot_stage,
-        record_count_str, pparam->is_system_rooted,
-        record_count_str, pparam->is_user_sensible,
-        record_count_str, pparam->dmd_num,
-        record_count_str, pparam->excepInfo,
-        (unsigned int)pparam->bootup_time,
-        record_count_str, pparam->is_bootup_successfully ? "yes" : "no",
-        record_count_str, pparam->reboot_type,
-        bfm_get_bootlock_value_from_cmdline());
+	bfm_get_boot_fail_no_desc(pparam->bootfail_errno, pparam),
+	bfm_get_platform_name(),
+	bfm_get_boot_stage_name((unsigned int)pparam->boot_stage),
+	pparam->is_system_rooted,
+	pparam->is_user_sensible,
+	(ret == 0) ? ((long long)(statfsbuf.f_bavail * statfsbuf.f_bsize) /
+	(long long)(BFMR_SIZE_1K * BFMR_SIZE_1K)) : (0L),
+	(ret == 0) ? ((statfsbuf.f_blocks <= 0) ? (0LL) :
+	((long long)(BFM_PERCENT * statfsbuf.f_bavail) /
+	(long long)statfsbuf.f_blocks)) :(0LL),
+	(ret == 0) ? ((long long)(statfsbuf.f_files - statfsbuf.f_ffree)) : (0L),
+	(ret == 0) ? ((statfsbuf.f_files <= 0) ? (0LL) :
+	((long long)(BFM_PERCENT * (statfsbuf.f_files - statfsbuf.f_ffree)) /
+	(long long)statfsbuf.f_files)): (0LL),
+	record_count_str, pparam->bootfail_time,
+	(unsigned int)pparam->bootfail_errno,
+	(unsigned int)pparam->boot_stage,
+	pparam->is_system_rooted,
+	pparam->is_user_sensible,
+	pparam->dmd_num,
+	pparam->excepInfo,
+	(unsigned int)pparam->bootup_time,
+	pparam->is_bootup_successfully ? "yes" : "no",
+	pparam->reboot_type,
+	bfm_get_bootlock_value_from_cmdline());
 
     if ((bytes_formatted < (BFMR_TEMP_BUF_LEN - 1)) &&
         ((BOOTUP_SLOWLY == pparam->bootfail_errno) || (KERNEL_BOOT_TIMEOUT == pparam->bootfail_errno)))
@@ -1090,7 +1107,8 @@ static int bfm_save_bootfail_info_txt(bfmr_log_dst_t *pdst, bfmr_log_src_t *psrc
                 pdst->dst_info.raw_part.offset,
                 (void *)pdata, bytes_formatted);
             psrc->log_type = LOG_TYPE_BFM_BFI_LOG;
-            strncpy(psrc->src_log_file_path, BFM_BFI_FILE_NAME, BFMR_MAX_PATH);
+		strncpy(psrc->src_log_file_path, BFM_BFI_FILE_NAME,
+			BFMR_SIZE_1K - 1);
             bfmr_update_raw_log_info(psrc, pdst, bytes_formatted);
             break;
         }
@@ -1172,7 +1190,8 @@ static int bfm_save_recovery_info_txt(bfmr_log_dst_t *pdst,
                 pdst->dst_info.raw_part.offset,
                 (void *)pdata, strlen(pdata));
             psrc->log_type = LOG_TYPE_BFM_RECOVERY_LOG;
-            strncpy(psrc->src_log_file_path, BFM_RECOVERY_FILE_NAME, BFMR_MAX_PATH);
+		strncpy(psrc->src_log_file_path, BFM_RECOVERY_FILE_NAME,
+			BFMR_SIZE_1K - 1);
             bfmr_update_raw_log_info(psrc, pdst, strlen(pdata));
             break;
         }
@@ -1596,7 +1615,7 @@ static int bfm_capture_and_save_ramoops_bootfail_log(bfmr_log_dst_t *pdst,
 }
 
 
-static char *bfm_get_file_name(char *file_full_path)
+static char *bfm_get_file_name(const char *file_full_path)
 {
     char *ptemp = NULL;
 
@@ -1609,7 +1628,7 @@ static char *bfm_get_file_name(char *file_full_path)
     ptemp = strrchr(file_full_path, '/');
     if (NULL == ptemp)
     {
-        return file_full_path;
+        return (char *)file_full_path;
     }
 
     return (ptemp + 1);
@@ -2400,7 +2419,8 @@ static void bfm_merge_bootfail_logs(bfm_bootfail_log_info_t *pbootfail_log_info)
             }
 
             /* allocate mem */
-            buf_len = src_file_len + strlen(BFM_TEXT_LOG_SEPRATOR_WITH_FIRST_NEWLINE) + strlen(time) + 1;
+		buf_len = strlen(BFM_TEXT_LOG_SEPRATOR_WITH_FIRST_NEWLINE) +
+				src_file_len + sizeof(time) + 1;
             pdata = (char *)bfmr_malloc(buf_len);
             if (NULL == pdata)
             {
@@ -2768,6 +2788,7 @@ static int bfm_notify_boot_success(void *param)
     /* 3. update recovery result in recovery_info.txt */
     bfm_update_info_for_each_log();
     s_is_process_boot_success = true;
+    release_rrecord_param();
     mutex_unlock(&s_process_boot_fail_mutex);
 
 	/* 4. check bootup slowly event */
@@ -3035,8 +3056,7 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         return -EPERM;
     }
 
-    if (NULL == (void *)arg)
-    {
+    if ((void *)(uintptr_t)arg == NULL) {
         BFMR_PRINT_INVALID_PARAMS("arg.\n");
         return -EINVAL;
     }
@@ -3048,8 +3068,8 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             int state;
 
             bfmr_get_timer_state(&state);
-            if (0 != copy_to_user((int *)arg, &state, sizeof(state)))
-            {
+            if (copy_to_user((int *)(uintptr_t)arg, &state,
+                             sizeof(state)) != 0) {
                 BFMR_PRINT_ERR("copy_to_user failed!\n");
                 ret = -EFAULT;
                 break;
@@ -3070,8 +3090,8 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case BFMR_GET_TIMER_TIMEOUT_VALUE:
         {
             bfmr_get_timer_timeout_value(&timeout_value);
-            if (0 != copy_to_user((int *)arg, &timeout_value, sizeof(timeout_value)))
-            {
+            if (copy_to_user((int *)(uintptr_t)arg, &timeout_value,
+                             sizeof(timeout_value)) != 0) {
                 BFMR_PRINT_ERR("copy_to_user failed!\n");
                 ret = -EFAULT;
                 break;
@@ -3081,8 +3101,8 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         }
     case BFMR_SET_TIMER_TIMEOUT_VALUE:
         {
-            if (0 != copy_from_user(&timeout_value, (int *)arg, sizeof(timeout_value)))
-            {
+            if (copy_from_user(&timeout_value, (int *)(uintptr_t)arg,
+                               sizeof(timeout_value)) != 0) {
                 BFMR_PRINT_ERR("copy_from_user failed!\n");
                 ret = -EFAULT;
                 break;
@@ -3094,8 +3114,8 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case BFMR_GET_BOOT_STAGE:
         {
             bfmr_get_boot_stage(&boot_stage);
-            if (0 != copy_to_user((bfmr_detail_boot_stage_e *)arg, &boot_stage, sizeof(boot_stage)))
-            {
+            if (copy_to_user((bfmr_detail_boot_stage_e *)(uintptr_t)arg,
+                             &boot_stage, sizeof(boot_stage)) != 0) {
                 BFMR_PRINT_ERR("copy_to_user failed!\n");
                 ret = -EFAULT;
                 break;
@@ -3108,8 +3128,8 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             bfmr_detail_boot_stage_e old_boot_stage;
 
             bfmr_get_boot_stage(&old_boot_stage);
-            if (0 != copy_from_user(&boot_stage, (int *)arg, sizeof(boot_stage)))
-            {
+            if (copy_from_user(&boot_stage, (int *)(uintptr_t)arg,
+                               sizeof(boot_stage)) != 0) {
                 BFMR_PRINT_ERR("copy_from_user failed!\n");
                 ret = -EFAULT;
                 break;
@@ -3129,8 +3149,9 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 break;
             }
             memset((void *)pboot_fail_info, 0, sizeof(struct bfmr_boot_fail_info));
-            if (0 != copy_from_user(pboot_fail_info, ((struct bfmr_boot_fail_info *)arg), sizeof(struct bfmr_boot_fail_info)))
-            {
+            if (copy_from_user(pboot_fail_info,
+                               ((struct bfmr_boot_fail_info *)(uintptr_t)arg),
+                               sizeof(struct bfmr_boot_fail_info)) != 0) {
                 BFMR_PRINT_ERR("copy_from_user failed!\n");
                 bfmr_free(pboot_fail_info);
                 ret = -EFAULT;
@@ -3152,8 +3173,8 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case BFMR_ENABLE_CTRL:
         {
             int bfmr_enbale_flag;
-            if (0 != copy_from_user(&bfmr_enbale_flag, (int *)arg, sizeof(int)))
-            {
+            if (copy_from_user(&bfmr_enbale_flag, (int *)(uintptr_t)arg,
+                               sizeof(int)) != 0) {
                 BFMR_PRINT_KEY_INFO("Failed to copy bfmr enable flag from user!\n");
                 ret = -EFAULT;
                 break;
@@ -3172,7 +3193,7 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             }
 
 			if (copy_from_user(pact_data,
-				(struct action_ioctl_data *)arg,
+				(struct action_ioctl_data *)(uintptr_t)arg,
 				sizeof(struct action_ioctl_data)) != 0) {
 				BFMR_PRINT_KEY_INFO("Failed to copy "
 				"acttion_ioctl data from user buffer!\n");
@@ -3188,63 +3209,61 @@ static long bfmr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             bfmr_free(pact_data);
             break;
         }
-
 #ifdef CONFIG_HUAWEI_DYNAMIC_BRD
-    case BFMR_IOC_CREATE_DYNAMIC_RAMDISK:
-        {
-            ret = create_dynamic_ramdisk(
-                (struct bfmr_dbrd_ioctl_block __user *)arg);
-            break;
-        }
-    case BFMR_IOC_DELETE_DYNAMIC_RAMDISK:
-        {
-            ret = delete_dynamic_ramdisk(
-                (struct bfmr_dbrd_ioctl_block __user *)arg);
-            break;
-        }
+	case BFMR_IOC_CREATE_DYNAMIC_RAMDISK:
+		{
+			ret = create_dynamic_ramdisk(
+				(struct bfmr_dbrd_ioctl_block __user *)(uintptr_t)arg);
+			break;
+		}
+	case BFMR_IOC_DELETE_DYNAMIC_RAMDISK:
+		{
+			ret = delete_dynamic_ramdisk(
+				(struct bfmr_dbrd_ioctl_block __user *)(uintptr_t)arg);
+			break;
+		}
 #endif
-
 #ifdef CONFIG_HUAWEI_STORAGE_ROFA
     case BFMR_IOC_CHECK_BOOTDISK_WP:
         {
             ret = storage_rochk_ioctl_check_bootdisk_wp(
-                (struct bfmr_bootdisk_wp_status_iocb __user *)arg);
+                (struct bfmr_bootdisk_wp_status_iocb __user *)(uintptr_t)arg);
             break;
         }
     case BFMR_IOC_ENABLE_MONITOR:
         {
             ret = storage_rochk_ioctl_enable_monitor(
-                (struct bfmr_storage_rochk_iocb __user *)arg);
+                (struct bfmr_storage_rochk_iocb __user *)(uintptr_t)arg);
             break;
         }
     case BFMR_IOC_DO_STORAGE_WRTRY:
         {
             ret = storage_rochk_ioctl_run_storage_wrtry_sync(
-                (struct bfmr_storage_rochk_iocb __user *)arg);
+                (struct bfmr_storage_rochk_iocb __user *)(uintptr_t)arg);
             break;
         }
     case BFMR_IOC_GET_STORAGE_ROFA_INFO:
         {
             ret = storage_rofa_ioctl_get_rofa_info(
-                (struct bfmr_storage_rofa_info_iocb __user *)arg);
+                (struct bfmr_storage_rofa_info_iocb __user *)(uintptr_t)arg);
             break;
         }
     case BFMR_IOC_GET_BOOTDEVICE_DISK_COUNT:
         {
             ret = storage_rochk_ioctl_get_bootdevice_disk_count(
-                (struct bfmr_storage_rochk_iocb __user *)arg);
+                (struct bfmr_storage_rochk_iocb __user *)(uintptr_t)arg);
             break;
         }
     case BFMR_IOC_GET_BOOTDEVICE_DISK_INFO:
         {
             ret = storage_rochk_ioctl_get_bootdevice_disk_info(
-                (struct bfmr_bootdevice_disk_info_iocb __user *)arg);
+                (struct bfmr_bootdevice_disk_info_iocb __user *)(uintptr_t)arg);
             break;
         }
     case BFMR_IOC_GET_BOOTDEVICE_PROD_INFO:
         {
             ret = storage_rochk_ioctl_get_bootdevice_prod_info(
-                (struct bfmr_bootdevice_prod_info_iocb __user *)arg);
+                (struct bfmr_bootdevice_prod_info_iocb __user *)(uintptr_t)arg);
             break;
         }
 #endif

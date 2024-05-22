@@ -1,36 +1,55 @@
+/*
+ * hiview_selinux.c
+ *
+ * Hisilicon K3 SOC DFX source file
+ *
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
-
-#include <linux/audit.h>
-#include <linux/types.h>
-#include <linux/slab.h>
-#include <linux/workqueue.h>
-#include <linux/ctype.h>
-#include <linux/string.h>
-#include <linux/random.h>
-#include <asm/page.h>
 #include <chipset_common/hiview_selinux/hiview_selinux.h>
 
+#include <asm/page.h>
+#include <linux/audit.h>
+#include <linux/ctype.h>
+#include <linux/random.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/types.h>
+#include <linux/workqueue.h>
+
 #define CREATE_TRACE_POINTS
-#include <trace/events/hiview_selinux.h>
 #include <log/log_usertype.h>
+#include <trace/events/hiview_selinux.h>
 
 #define PATH_LEN		128
-#define COMM_LEN 		64
+#define COMM_LEN		64
 #define MAX_WORKER		256
-#define TMP_TOTAL_COUNT	 	10000
+#define TMP_TOTAL_COUNT		10000
 
-static struct workqueue_struct *s_wq = NULL;
+static struct workqueue_struct *s_wq;
 
+/* log_usertype must be initialized to 0 to prevent version errors */
 static unsigned int usertype = 0;
 static unsigned int max_count = 500;
 static atomic_t s_c_queued;
 static atomic_t s_c_finished;
-static int s_c_old = 0;
-static u32 droped_worker = 0;
-static unsigned int temp_worker = 0;
-static u64 real_begin = 0, real_end = 0;
+static int s_c_old;
+static u32 droped_worker;
+static unsigned int temp_worker;
+static u64 real_begin;
+static u64 real_end;
 static unsigned long wait_time = 1000000000;
-static unsigned int randnum = 0;
+static unsigned int randnum;
 
 /*
  * We only need this data after we have decided to send an audit message.
@@ -45,24 +64,23 @@ struct selinux_audit_data {
 	int result;
 };
 
-typedef struct _tag_hiview_fs_work
-{
-    struct work_struct          work;
+struct hiview_fs_work_t {
+	struct work_struct work;
 
-    u64                         timestamp;
-    ino_t 			ino;
-    char			*fullpath;
-    char 			path[PATH_LEN];
-    char 			comm[COMM_LEN];
-    struct selinux_audit_data   audit;
-    struct task_struct          *task;
-    struct dentry               *dentry;
-    struct inode                *inode;
-} hiview_fs_work_t;
+	u64 timestamp;
+	ino_t ino;
+	char *fullpath;
+	char path[PATH_LEN];
+	char comm[COMM_LEN];
+	struct selinux_audit_data audit;
+	struct task_struct *task;
+	struct dentry *dentry;
+	struct inode *inode;
+};
 
-static inline hiview_fs_work_t* create_work_item(struct common_audit_data *cad)
+static inline struct hiview_fs_work_t *create_work_item(struct common_audit_data *cad)
 {
-	hiview_fs_work_t *w = NULL;
+	struct hiview_fs_work_t *w = NULL;
 	struct dentry *d = NULL;
 	struct inode *i = NULL;
 
@@ -70,28 +88,22 @@ static inline hiview_fs_work_t* create_work_item(struct common_audit_data *cad)
 	case LSM_AUDIT_DATA_PATH:
 		d = cad->u.path.dentry;
 		break;
-
 	case LSM_AUDIT_DATA_INODE:
 		i = cad->u.inode;
 		break;
-
 	case LSM_AUDIT_DATA_DENTRY:
 		d = cad->u.dentry;
 		break;
-
 	case LSM_AUDIT_DATA_IOCTL_OP:
 		d = cad->u.op->path.dentry;
 		break;
-
-	default:  //  only care about filesystem related actions
-		goto end;
+	default:	/* only care about filesystem related actions */
+		return NULL;
 	}
 
-	w = kzalloc(sizeof(hiview_fs_work_t), GFP_KERNEL);
-	if (!w) {
-		printk(KERN_WARNING "%s(%d): kzalloc failed!\n", __func__, __LINE__);
-		goto end;
-	}
+	w = kzalloc(sizeof(*w), GFP_KERNEL);
+	if (!w)
+		return NULL;
 
 	w->timestamp = local_clock();
 	w->audit = *cad->selinux_audit_data;
@@ -123,34 +135,34 @@ static inline hiview_fs_work_t* create_work_item(struct common_audit_data *cad)
 	if (w->inode)
 		iput(w->inode);
 
-end:
 	return w;
 }
 
-static inline void destroy_work_item(hiview_fs_work_t *w)
+static inline void destroy_work_item(struct hiview_fs_work_t *w)
 {
 	put_task_struct(w->task);
 
 	kfree(w);
 }
 
-static inline void hiview_log_out(hiview_fs_work_t *w)
+static inline void hiview_log_out(struct hiview_fs_work_t *w)
 {
-	if (IS_ERR(w->fullpath) || (w->fullpath == NULL))
+	if (IS_ERR(w->fullpath) || (!w->fullpath))
 		return;
 
 	get_cmdline(w->task, w->comm, COMM_LEN);
 
-	trace_hiview_log_out(task_tgid_nr(w->task), w->ino, w->audit.requested, w->audit.denied, w->audit.tclass,
-			     w->fullpath, w->comm, droped_worker);
+	trace_hiview_log_out(task_tgid_nr(w->task), w->ino, w->audit.requested,
+			     w->audit.denied, w->audit.tclass, w->fullpath,
+			     w->comm, droped_worker);
 }
 
 static void hiview_fs_do(struct work_struct *ws)
 {
-    hiview_fs_work_t *w;
+	struct hiview_fs_work_t *w = NULL;
 
 	if (ws) {
-		w = container_of(ws, hiview_fs_work_t, work);
+		w = container_of(ws, struct hiview_fs_work_t, work);
 		hiview_log_out(w);
 		atomic_inc(&s_c_finished);
 		destroy_work_item(w);
@@ -160,47 +172,46 @@ static void hiview_fs_do(struct work_struct *ws)
 static void hiview_fs_do_work(struct work_struct *ws)
 {
 #ifdef CONFIG_HUAWEI_HIVIEW_SELINUX_PERFORMANCE
-    struct timespec64 begin, end;
-    int queued;
-    int finished;
+	struct timespec64 begin, end;
+	int queued;
+	int finished;
 
-    getnstimeofday64(&begin);
+	getnstimeofday64(&begin);
 #endif
 
-    hiview_fs_do(ws);
+	hiview_fs_do(ws);
 
 #ifdef CONFIG_HUAWEI_HIVIEW_SELINUX_PERFORMANCE
-    getnstimeofday64(&end);
-    begin = timespec64_sub(end, begin);
+	getnstimeofday64(&end);
+	begin = timespec64_sub(end, begin);
 
-    queued = atomic_read(&s_c_queued);
-    finished = atomic_read(&s_c_finished);
+	queued = atomic_read(&s_c_queued);
+	finished = atomic_read(&s_c_finished);
 
-    printk(KERN_WARNING "%s takes %ldns (wait=%d q=%d f=%d)!\n",
-            __func__, (long)begin.tv_sec * NSEC_PER_SEC + begin.tv_nsec,
-            queued - finished, queued, finished);
+	pr_warn("%s takes %ldns (wait=%d q=%d f=%d)!\n",
+		__func__, (long)begin.tv_sec * NSEC_PER_SEC + begin.tv_nsec,
+		queued - finished, queued, finished);
 #endif
 }
 
 static int __init hiview_fs_init(void)
 {
-    atomic_set(&s_c_queued, 0);
-    atomic_set(&s_c_finished, 0);
-    real_begin = local_clock();
+	atomic_set(&s_c_queued, 0);
+	atomic_set(&s_c_finished, 0);
+	real_begin = local_clock();
 
-    s_wq = alloc_workqueue("hiviewsa", 0, 1);
-    if (s_wq == NULL) {
-        return EFAULT;
-    }
-    return 0;
+	s_wq = alloc_workqueue("hiviewsa", 0, 1);
+	if (!s_wq)
+		return -EFAULT;
+
+	return 0;
 }
 
 late_initcall(hiview_fs_init)
 
 static inline int hiview_fs(struct common_audit_data *cad)
 {
-	hiview_fs_work_t *w;
-	int ret = 1;
+	struct hiview_fs_work_t *w = NULL;
 
 	if ((atomic_read(&s_c_queued) - s_c_old) > max_count) {
 		real_end = local_clock();
@@ -210,17 +221,16 @@ static inline int hiview_fs(struct common_audit_data *cad)
 		} else {
 			droped_worker++;
 #ifdef CONFIG_HUAWEI_HIVIEW_SELINUX_PERFORMANCE
-			printk(KERN_DEBUG "%s queue larger than excepted, droped:%d, queued = %d!\n",
-					__func__, droped_worker, atomic_read(&s_c_queued));
+			pr_devel("%s larger than excepted, droped:%d, queued:%d!\n",
+				 __func__, droped_worker, atomic_read(&s_c_queued));
 #endif
-			goto out;
+			return 1;
 		}
 	}
 
 	if (atomic_read(&s_c_queued) - atomic_read(&s_c_finished) < MAX_WORKER) {
 		w = create_work_item(cad);
-
-		if (w != NULL) {
+		if (w) {
 			INIT_WORK(&w->work, hiview_fs_do_work);
 			queue_work(s_wq, &w->work);
 			atomic_inc(&s_c_queued);
@@ -228,19 +238,21 @@ static inline int hiview_fs(struct common_audit_data *cad)
 	} else {
 		droped_worker++;
 #ifdef CONFIG_HUAWEI_HIVIEW_SELINUX_PERFORMANCE
-		printk(KERN_WARNING "%s wait_queue larger than 256, droped:%d!\n",
-				__func__, droped_worker);
+		pr_warn("%s wait_queue larger than 256, droped:%d!\n", __func__,
+			droped_worker);
 #endif
 	}
-out:
-	return ret;
+
+	return 1;
 }
 
 int hw_hiview_selinux_avc_audit(struct common_audit_data *cad)
 {
 	int ret = 1;
 #ifdef CONFIG_HUAWEI_HIVIEW_SELINUX_PERFORMANCE
-	struct timespec64 begin, end;
+	struct timespec64 begin;
+	struct timespec64 end;
+
 	getnstimeofday64(&begin);
 #endif
 
@@ -250,8 +262,7 @@ int hw_hiview_selinux_avc_audit(struct common_audit_data *cad)
 	case LSM_AUDIT_DATA_DENTRY:
 	case LSM_AUDIT_DATA_IOCTL_OP:
 		break;
-
-	default:  //  only care about filesystem related actions
+	default:		/*  only care about filesystem related actions */
 		goto out;
 	}
 
@@ -263,7 +274,7 @@ int hw_hiview_selinux_avc_audit(struct common_audit_data *cad)
 		if (randnum == 0)
 			randnum = get_random_int() % TMP_TOTAL_COUNT;
 
-		if (temp_worker ==  randnum) {
+		if (temp_worker == randnum) {
 			ret = hiview_fs(cad);
 		} else {
 			droped_worker++;
@@ -280,7 +291,7 @@ out:
 #ifdef CONFIG_HUAWEI_HIVIEW_SELINUX_PERFORMANCE
 	getnstimeofday64(&end);
 	begin = timespec64_sub(end, begin);
-	printk(KERN_WARNING "%s takes %ldns!\n", __func__,
+	pr_warn("%s takes %ldns!\n", __func__,
 		(long)begin.tv_sec * NSEC_PER_SEC + begin.tv_nsec);
 #endif
 	return ret;

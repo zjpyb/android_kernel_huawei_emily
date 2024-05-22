@@ -3,6 +3,10 @@
 #include <linux/module.h>
 #include <net/mptcp.h>
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#define tcp_time_stamp tcp_jiffies32
+#endif
+
 static DEFINE_SPINLOCK(mptcp_sched_list_lock);
 static LIST_HEAD(mptcp_sched_list);
 
@@ -492,7 +496,7 @@ static void defsched_adv_init(struct sock *sk)
 	struct defsched_priv *dsp = defsched_get_priv(tp);
 	struct sock *meta_sk = tp->meta_sk;
 	struct mptcp_cb *mpcb	= tcp_sk(meta_sk)->mpcb;
-	struct defsched_cb_data *cb_data;
+	struct defsched_cb_data *cb_data = NULL;
 	u32 now = tcp_time_stamp;
 
 	dsp->last_rbuf_opti = now;
@@ -521,11 +525,11 @@ static void defsched_adv_calc(struct sock *sk, u32 now, u32 *max_rate,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct mptcp_cb *mpcb = tp->mpcb;
-	struct sock *sub_sk;
-	struct tcp_sock *sub_tp;
-	struct defsched_priv *sub_dsp;
+	struct sock *sub_sk = NULL;
+	struct tcp_sock *sub_tp = NULL;
+	struct defsched_priv *sub_dsp = NULL;
 	u32 rtt_us, rate, tmp;
-	struct dst_entry *dst;
+	struct dst_entry *dst = NULL;
 	char iface[IFNAMSIZ];
 
 	mptcp_for_each_sk(mpcb, sub_sk) {
@@ -551,7 +555,11 @@ static void defsched_adv_calc(struct sock *sk, u32 now, u32 *max_rate,
 		if ((sub_dsp->rcv_rate >> SHIFT_8X) > *max_rate)
 			*max_rate = (sub_dsp->rcv_rate >> SHIFT_8X);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		rtt_us = jiffies_to_usecs(sub_tp->rcv_rtt_est.rtt_us) >> SHIFT_8X;
+#else
 		rtt_us = jiffies_to_usecs(sub_tp->rcv_rtt_est.rtt) >> SHIFT_8X;
+#endif
 		if (!rtt_us)
 			rtt_us = sub_tp->srtt_us >> SHIFT_8X;
 
@@ -587,10 +595,10 @@ static void defsched_adv_rcv_skb(struct sock *sk, unsigned int len,
 	u32 delta_us;
 	u32 delta_prio_ts;
 	u32 rtt_us;
-	struct sock *sub_sk;
-	struct tcp_sock *sub_tp;
+	struct sock *sub_sk = NULL;
+	struct tcp_sock *sub_tp = NULL;
 	struct tcp_sock *good_tp = NULL;
-	struct defsched_priv *sub_dsp;
+	struct defsched_priv *sub_dsp = NULL;
 	u32 max_rate = 0;
 	u32 max_sampling_rtt = MIN_SAMPLING_INTERVAL;
 	u32 min_rtt = 0;
@@ -646,7 +654,11 @@ static void defsched_adv_rcv_skb(struct sock *sk, unsigned int len,
 			continue;
 		}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		rtt_us = jiffies_to_usecs(sub_tp->rcv_rtt_est.rtt_us) >> SHIFT_8X;
+#else
 		rtt_us = jiffies_to_usecs(sub_tp->rcv_rtt_est.rtt) >> SHIFT_8X;
+#endif
 		if (!rtt_us)
 			rtt_us = sub_tp->srtt_us >> SHIFT_8X;
 		if ((sub_dsp->rcv_rate < max_rate) &&

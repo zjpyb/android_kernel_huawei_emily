@@ -94,9 +94,9 @@
 #define MIN_CHARGING_CURRENT_OFFSET          (-10)
 #define BATTERY_FULL_CHECK_TIMIES            (2)
 
-#define WATCHDOG_TIMER_DISABLE     (0)
-#define WATCHDOG_TIMER_40_S     (40)
-#define WATCHDOG_TIMER_80_S     (80)
+#define WATCHDOG_TIMER_DISABLE    0
+#define WATCHDOG_TIMER_40_S       40
+#define WATCHDOG_TIMER_80_S       80
 
 /*options of charge voltage (for dpm voltage setting,also ovp & uvp protect)*/
 #define CHARGE_VOLTAGE_4360_MV    (4360)
@@ -244,8 +244,8 @@ struct charge_device_ops{
     int (*set_term_enable)(int enable);
     int (*get_charge_state)(unsigned int *state);
     int (*reset_watchdog_timer)(void);
-    int (*dump_register)(char *reg_value);
-    int (*get_register_head)(char *reg_head);
+    int (*dump_register)(char *reg_value, int size);
+    int (*get_register_head)(char *reg_head, int size);
     int (*set_watchdog_timer)(int value);
     int (*set_batfet_disable)(int disable);
     int (*get_ibus)(void);

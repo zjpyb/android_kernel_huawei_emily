@@ -16,6 +16,7 @@
 #include "nb_netlink.h"
 #include "video_acceleration.h"
 #include "smart_switch.h"
+#include "pcie_config.h"
 
 #undef HWLOG_TAG
 #define HWLOG_TAG nb_netlink
@@ -177,6 +178,12 @@ static void process_settings_params_request(struct setting_params_request *reque
 		set_alpha_filter_alg_params(request->param1, request->param2);
 	} else if (request->msg_id == REQ_TYPE_SET_FILTER_ALG_CHANGE_THRESHOLD) {
 		set_alpha_filter_alg_change_thresh(request->param1);
+	} else if (request->msg_id == REQ_TYPE_SET_PCIE_POWER_LEVEL) {
+		pr_info("process_settings_params_request REQ_TYPE_SET_PCIE_POWER_LEVEL,%d,%d,%d\n",
+			request->param1, request->param2, request->param3);
+		config_pcie_power_level(request->param1, request->param2);
+	} else {
+		pr_info("process_settings_params_request ,msg_id=%d\n", request->msg_id);
 	}
 }
 

@@ -81,6 +81,9 @@ extern int is_cvdr_cfg_update(void);
 #define CVDR_AXI_JPEG_NR_RD_CFG_4                   0x1570
 #define CVDR_AXI_JPEG_LIMITER_NR_RD_4               0x1578
 
+#define CVDR_AXI_JPEG_NR_RD_CFG_4_DEFAULT_VALUE     0x00000000
+#define CVDR_AXI_JPEG_LIMITER_NR_RD_4_DEFAULT_VALUE 0x0F00FFFF
+
 typedef enum _cvdr_wr_port_update
 {
    CVDR_WR_PORT_UPDATE_0,

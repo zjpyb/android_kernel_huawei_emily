@@ -28,8 +28,6 @@
 #include <linux/uaccess.h>
 #include <hisi_hw_vote.h>
 
-
-
 #define HV_DEBUG(fmt, arg...)	pr_err("[hw vote]"fmt, ##arg)
 
 #define MODULE_NAME		"hisi_hw_vote"
@@ -298,8 +296,8 @@ int hisi_hvdev_remove(struct hvdev *hvdev)
 /*lint -save -e429 */
 static int get_member_data(struct device *dev, struct device_node *np, struct hv_channel *channel)
 {
-	struct hvdev *hvdev_array;
-	struct device_node *child;
+	struct hvdev *hvdev_array = NULL;
+	struct device_node *child = NULL;
 	struct dtsi_reg_info reg_info;
 	int count, id = 0;
 	int ret = 0;
@@ -354,7 +352,7 @@ static int hisi_hv_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *root = dev->of_node;
-	struct device_node *child;
+	struct device_node *child = NULL;
 	struct dtsi_reg_info reg_info;
 	void __iomem *base;
 	u32 ratio = 1;
@@ -450,17 +448,22 @@ out:
 
 static int hisi_hv_remove(struct platform_device *pdev)
 {
+	mutex_lock(&hv_array_mutex);
 	hv_channel_array = NULL;
 	hv_channel_size  = 0;
+	mutex_unlock(&hv_array_mutex);
+
 	return 0;
 }
 
+#ifdef CONFIG_OF
 static const struct of_device_id hisi_hv_of_match[] = {
 	{.compatible = "hisi,freq-hw-vote",},
 	{},
 };
 
 MODULE_DEVICE_TABLE(of, hisi_hv_of_match);
+#endif
 
 static struct platform_driver hisi_hv_driver = {
 	.probe  = hisi_hv_probe,

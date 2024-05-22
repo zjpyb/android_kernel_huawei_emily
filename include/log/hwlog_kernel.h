@@ -1,20 +1,31 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2012-2018. All rights reserved.
+ * hwlog_kernel.h
  *
- * Description: hwlog expansion interfaces, supporting jank and dubai
- *      Author: wangtanyun <wangtanyun@huawei.com>
+ * hwlog expansion interfaces, supporting jank and dubai
+ *
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
-#ifndef __LINUX_HWLOG_KERNEL_H
-#define __LINUX_HWLOG_KERNEL_H
+#ifndef _LINUX_HWLOG_KERNEL_H
+#define _LINUX_HWLOG_KERNEL_H
 
 #include <log/janklogconstants.h>
 
-#define HW_LOG_PRIO_VERBOSE (2)
-#define HW_LOG_PRIO_DEBUG   (3)
-#define HW_LOG_PRIO_INFO    (4)
-#define HW_LOG_PRIO_WARN    (5)
-#define HW_LOG_PRIO_ERROR   (6)
+#define HW_LOG_PRIO_VERBOSE	2
+#define HW_LOG_PRIO_DEBUG	3
+#define HW_LOG_PRIO_INFO	4
+#define HW_LOG_PRIO_WARN	5
+#define HW_LOG_PRIO_ERROR	6
 
 enum hwlog_id {
 	HW_LOG_ID_MIN       = 0,
@@ -115,4 +126,5 @@ int hwlog_to_jank(int tag, int prio, const char *fmt, ...);
 #define HWDUBAI_LOGW(tag, fmt, ...)	(-ENOENT)
 #define HWDUBAI_LOGE(tag, fmt, ...)	(-ENOENT)
 #endif
+
 #endif

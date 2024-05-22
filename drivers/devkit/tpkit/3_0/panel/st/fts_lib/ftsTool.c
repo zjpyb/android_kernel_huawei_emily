@@ -115,7 +115,7 @@ int u8ToU16(u8 *src, u16 *dst)
   * @param dst pointer to the destination u16.
   * @return OK
   */
-int u8ToU16_be(u8 *src, u16 *dst)
+int u8_to_u16_be(u8 *src, u16 *dst)
 {
 	if ((src == NULL) || (dst == NULL)) {
 		TS_LOG_INFO("%s error!\n", __func__);
@@ -725,7 +725,7 @@ void print_frame_int(char *label, int **matrix, int row, int column)
   * @param size size of src (can be <= 8)
   * @return OK if success or ERROR_OP_NOT_ALLOW if size exceed 8
   */
-int u8ToU64_be(u8 *src, u64 *dest, int size)
+int u8_to_u64_be(u8 *src, u64 *dest, int size)
 {
 	int i = 0;
 
@@ -778,14 +778,10 @@ int u64ToU8_be(u64 src, u8 *dest, int size)
 int fromIDtoMask(u8 id, u8 *mask, int size)
 {
 	if (((int)((id) / 8)) < size) {
-		TS_LOG_INFO("%s: ID = %d Index = %d Position = %d !\n",
-			 __func__, id, ((int)((id) / 8)), (id % 8));
 		mask[((int)((id) / 8))] |= 0x01 << (id % 8);
 		return OK;
 	} else {
-		TS_LOG_ERR("%s: Bitmask too small! Impossible contain ID = %d %d>=%d! ERROR %08X\n",
-			__func__, id, ((int)((id) / 8)), size,
-			 ERROR_OP_NOT_ALLOW);
+		TS_LOG_ERR("%s: Bitmask too small\n", __func__);
 		return ERROR_OP_NOT_ALLOW;
 	}
 }

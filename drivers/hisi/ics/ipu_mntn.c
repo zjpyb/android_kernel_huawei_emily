@@ -242,7 +242,9 @@ static void ipu_mntn_write_reg_log(void)
 			ipu_mntn_write_adapter_info();
 			ipu_mntn_write_peri_reg_info();
 			ipu_mntn_write_mstr_reg_info();
+#ifdef CONFIG_HUAWEI_DSM
 			ipu_mntn_copy_reg_to_bbox(register_info, strlen(register_info));
+#endif
 			break;
 
 		case MODID_NPU_EXC_SET_BACK_CLOCK_FAIL:  //lint !e650

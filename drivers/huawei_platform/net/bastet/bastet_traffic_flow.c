@@ -123,7 +123,7 @@ static int ipproto_to_ifsproto(int32_t protocol)
 /*
  * call flow update interface to adjust APP flow
  */
-static void handle_traffic_flow_update(char *name,
+static void handle_traffic_flow_update(const char *name,
 		struct sock *sk, int proto, uid_t uid,
 		unsigned long tx_bytes, unsigned long rx_bytes)
 {

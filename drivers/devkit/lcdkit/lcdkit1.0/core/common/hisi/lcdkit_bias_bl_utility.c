@@ -100,29 +100,18 @@ int lcdkit_get_bias_ic_name(char* buf, int len)
 
 struct device_node* lcdkit_get_lcd_node(void)
 {
-    struct device_node* np = NULL;
-    struct lcdkit_panel_data* plcdkit_info = NULL;
-
-    plcdkit_info = lcdkit_get_panel_info();
-    if(NULL == plcdkit_info)
-    {
-        printk("lcdkit_info is NULL Point!\n");
-        return NULL;
-    }
-    np = of_find_compatible_node(NULL, NULL, plcdkit_info->panel_infos.lcd_compatible);
-    if(!np)
-    {
-        printk("NOT FOUND device node %s!\n", plcdkit_info->panel_infos.lcd_compatible);
-        return NULL;
-    }
-    lcdkit_lcd_np = np;
-
     return lcdkit_lcd_np;
 }
 
 void lcdkit_set_lcd_node(struct device_node* pnode)
 {
-    return;
+	if (pnode) {
+		printk("lcdkit_set_lcd_node ok!\n");
+		lcdkit_lcd_np = pnode;
+	} else {
+		printk("lcdkit pnode is NULL Point!\n");
+	}
+	return;
 }
 
 uint32_t lcdkit_check_lcd_plugin(void)

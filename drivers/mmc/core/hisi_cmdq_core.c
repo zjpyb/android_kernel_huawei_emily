@@ -9,6 +9,7 @@
  *
  * =============================================================================
  */
+#include <linux/version.h>
 #include <linux/dma-mapping.h>
 #include <linux/mmc/core.h>
 #include <linux/mmc/ioctl.h>
@@ -20,6 +21,9 @@
 #include <linux/delay.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <trace/events/mmc.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include "card.h"
+#endif
 
 /*move from core.c*/
 #define CMDQ_RETRY 32
@@ -86,12 +90,12 @@ int mmc_start_cmdq_request(struct mmc_host *host,
 	mrq->cmd->mrq = mrq;
 	if (mrq->data) {
 		if (mrq->data->blksz > host->max_blk_size)
-			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 		if (mrq->data->blocks > host->max_blk_count)
-			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 		if (mrq->data->blocks * mrq->data->blksz >
 			host->max_req_size)
-			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 
 		mrq->cmd->data = mrq->data;
 		mrq->data->error = 0;

@@ -47,10 +47,7 @@ static void cpufreq_gov_performance_hisi_exit(struct cpufreq_policy *policy)
 }
 #endif
 
-#ifdef CONFIG_CPU_FREQ_GOV_PERFORMANCE_MODULE
-static
-#endif
-struct cpufreq_governor cpufreq_gov_performance = {
+static struct cpufreq_governor cpufreq_gov_performance = {
 	.name		= "performance",
 	.owner		= THIS_MODULE,
 	.limits		= cpufreq_gov_performance_limits,

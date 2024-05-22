@@ -117,4 +117,8 @@ extern int ipu_mem_mngr_check_valid(unsigned int inst_addr);
 extern void ipu_mem_mngr_dump(void);
 extern void ipu_smmu_dump_strm(void);
 
+#define IPU_ERR(format, arg...) printk(KERN_ERR "[%s][%d]: IPU_ERROR " format "\n", __func__, __LINE__, ##arg)
+#define IPU_INFO(format, arg...) printk(KERN_INFO "[%s][%d]: IPU_INFO " format "\n", __func__, __LINE__, ##arg)
+#define IPU_DEBUG(format, arg...) printk(KERN_DEBUG "[%s][%d]: IPU_DEBUG " format "\n", __func__, __LINE__, ##arg)
+
 #endif

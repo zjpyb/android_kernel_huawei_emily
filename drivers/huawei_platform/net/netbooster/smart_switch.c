@@ -571,6 +571,13 @@ static bool is_app_qoe_level_changed(void)
 		if ((2*num_max <= g_no_rx_num) || is_no_rx_timeout || (num_max <= g_slow_num)) {
 			return true;
 		}
+		if (g_no_rx_num > 0) {
+			if (g_slow_count >= num_max) {
+				pr_info("[AppQoe]is_app_qoe_level_changed,g_slow_count=%d",
+					g_slow_count);
+				return true;
+			}
+		}
 	}
 	if (NETWORK_STATUS_APP_QOE_NORMAL != g_app_qoe_level) {
 		if (num_max <= g_normal_num) {
@@ -652,9 +659,10 @@ static void hidata_app_qoe_ai_predict(void)
 
 	rlt_info1 = judge_single_smp_using_clf_info_int_exp(clf_info, para, g_app_qoe_level);
 
-	if ((stat.out_pkt + stat.syn) >= g_no_rx_thresh && stat.in_pkt == 0) {
+	if (((stat.out_pkt + stat.syn) > 0) && (stat.in_pkt == 0)) {
 		pr_info("[AppQoe]ai_predict no rx");
-		g_no_rx_num++;
+		if ((stat.out_pkt + stat.syn) >= g_no_rx_thresh)
+			g_no_rx_num++;
 		g_slow_num = 0;
 		g_normal_num = 0;
 		rlt_info1.is_ps_slow = TRUE;
@@ -943,7 +951,6 @@ static unsigned int hook_in(void *ops, struct sk_buff *skb,
 			&& 0 != strncmp(skb->dev->name, DS_NET_SLAVE, DS_NET_LEN))
 			return NF_ACCEPT;
 
-		g_no_rx_num = 0;
 		g_no_rx_time_stamp = 0;
 
 		if (skb->sk == NULL)

@@ -57,21 +57,16 @@ static tree handle_user_attribute(tree *node, tree name, tree args, int flags, b
 	return NULL_TREE;
 }
 
-static struct attribute_spec user_attr = {
-	.name			= "user",
-	.min_length		= 0,
-	.max_length		= 0,
-	.decl_required		= false,
-	.type_required		= false,
-	.function_type_required	= false,
-	.handler		= handle_user_attribute,
-#if BUILDING_GCC_VERSION >= 4007
-	.affects_type_identity	= true
-#endif
-};
+static struct attribute_spec user_attr = { };
 
 static void register_attributes(void *event_data, void *data)
 {
+	user_attr.name			= "user";
+	user_attr.handler		= handle_user_attribute;
+#if BUILDING_GCC_VERSION >= 4007
+	user_attr.affects_type_identity	= true;
+#endif
+
 	register_attribute(&user_attr);
 }
 
@@ -207,41 +202,6 @@ static unsigned int structleak_execute(void)
 #define PROPERTIES_REQUIRED PROP_cfg
 #define TODO_FLAGS_FINISH TODO_verify_il | TODO_verify_ssa | TODO_verify_stmts | TODO_dump_func | TODO_remove_unused_locals | TODO_update_ssa | TODO_ggc_collect | TODO_verify_flow
 #include "gcc-generate-gimple-pass.h"
-/**
- * Checks the compatibility of GCC and the plugin.
- * gcc_version: GCC's version
- * plugin_version: This plugin's version. i.e. version of the gcc header file
- * used to compile this plugin.
- */
-static bool version_check(struct plugin_gcc_version *gcc_version,
-		struct plugin_gcc_version *plugin_version)
-{
-	if (!gcc_version || !plugin_version)
-		return false;
-
-#if BUILDING_GCC_VERSION >= 5000
-	if (strncmp(gcc_version->basever, plugin_version->basever, 4)) {
-		fprintf(stderr, "gcc basever: %s, plugin basever: %s\n", gcc_version->basever, plugin_version->basever);
-#else
-	if (strcmp(gcc_version->basever, plugin_version->basever)) {
-		fprintf(stderr, "gcc basever: %s, plugin basever: %s\n", gcc_version->basever, plugin_version->basever);
-#endif
-		return false;
-	}
-	if (strcmp(gcc_version->datestamp, plugin_version->datestamp)) {
-		fprintf(stderr, "gcc datestamp: %s, plugin datestamp: %s\n", gcc_version->datestamp, plugin_version->datestamp);
-		return false;
-	}
-	if (strcmp(gcc_version->devphase, plugin_version->devphase)) {
-		fprintf(stderr, "gcc devphase: %s, plugin devphase: %s\n", gcc_version->devphase, plugin_version->devphase);
-		return false;
-	}
-	if (strcmp(gcc_version->revision, plugin_version->revision)) {
-		fprintf(stderr, "gcc revision: %s, plugin revision: %s\n", gcc_version->revision, plugin_version->revision);
-		return false;
-	}
-	return true;
-}
 
 __visible int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gcc_version *version)
 {
@@ -253,13 +213,10 @@ __visible int plugin_init(struct plugin_name_args *plugin_info, struct plugin_gc
 
 	PASS_INFO(structleak, "early_optimizations", 1, PASS_POS_INSERT_BEFORE);
 
-	if (!version_check(version, &gcc_version)) {
-			error(G_("incompatible gcc/plugin versions"));
-			error(G_("input version %s--%s--%s--%s"),version->basever,version->datestamp,version->devphase,version->revision);
-			error(G_("golbal version %s--%s--%s--%s"),gcc_version.basever,gcc_version.datestamp,gcc_version.devphase,gcc_version.revision);
-			return 1;
-		}
-
+	if (!plugin_default_version_check(version, &gcc_version)) {
+		error(G_("incompatible gcc/plugin versions"));
+		return 1;
+	}
 
 	if (strncmp(lang_hooks.name, "GNU C", 5) && !strncmp(lang_hooks.name, "GNU C+", 6)) {
 		inform(UNKNOWN_LOCATION, G_("%s supports C only, not %s"), plugin_name, lang_hooks.name);

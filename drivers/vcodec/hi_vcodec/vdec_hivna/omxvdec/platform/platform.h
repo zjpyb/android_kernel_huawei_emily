@@ -1,3 +1,5 @@
+
+
 #ifndef __PLATFORM_H__
 #define	__PLATFORM_H__
 
@@ -22,28 +24,27 @@
 
 #include "regulator.h"
 
-#define RETURN_FAIL_IF_COND_IS_TRUE(cond, str)  \
-do {                                       \
-    if (cond)                              \
-    {                                      \
-        dprint(PRN_FATAL, "[%s : %d]- %s\n", __func__, __LINE__, str); \
-        return HI_FAILURE;                 \
-    }                                      \
-}while(0)
+#define return_fail_if_cond_is_ture(cond, str) \
+	do { \
+		if (cond) { \
+			dprint(PRN_FATAL, "[%s : %d]- %s\n", __func__, __LINE__, str); \
+			return HI_FAILURE; \
+		} \
+	} while (0)
 
-#define VDEC_INIT_MUTEX(lock)              \
-do {                                       \
-	mutex_init(lock);                  \
-} while(0)
+#define vdec_init_mutex(lock) \
+do { \
+	mutex_init(lock); \
+} while (0)
 
-#define VDEC_MUTEX_LOCK(lock)              \
-do {                                       \
-	mutex_lock(lock);                  \
-} while(0)
+#define vdec_mutex_lock(lock) \
+do { \
+	mutex_lock(lock); \
+} while (0)
 
-#define VDEC_MUTEX_UNLOCK(lock)            \
-do {                                       \
-	mutex_unlock(lock);                \
-} while(0)
+#define vdec_mutex_unlock(lock) \
+do { \
+	mutex_unlock(lock); \
+} while (0)
 
 #endif

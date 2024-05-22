@@ -73,8 +73,19 @@
 #define COMPAT_PT_TEXT_ADDR		0x10000
 #define COMPAT_PT_DATA_ADDR		0x10004
 #define COMPAT_PT_TEXT_END_ADDR		0x10008
+
+/*
+ * If pt_regs.syscallno == NO_SYSCALL, then the thread is not executing
+ * a syscall -- i.e., its most recent entry into the kernel from
+ * userspace was not via SVC, or otherwise a tracer cancelled the syscall.
+ *
+ * This must have the value -1, for ABI compatibility with ptrace etc.
+ */
+#define NO_SYSCALL (-1)
+
 #ifndef __ASSEMBLY__
 #include <linux/bug.h>
+#include <linux/types.h>
 
 /* sizeof(struct user) for AArch32 */
 #define COMPAT_USER_SZ	296
@@ -117,11 +128,33 @@ struct pt_regs {
 		};
 	};
 	u64 orig_x0;
-	u64 syscallno;
+#ifdef __AARCH64EB__
+	u32 unused2;
+	s32 syscallno;
+#else
+	s32 syscallno;
+	u32 unused2;
+#endif
+
 	u64 orig_addr_limit;
+#ifdef CONFIG_HISI_HHEE_ADDR_LIMIT_PROTECTION
 	u32 orig_addr_limit_hkip[2];
+#else
+	u64 unused;
+#endif
 	// maintain 16 byte alignment
+	u64 stackframe[2];
 };
+
+static inline bool in_syscall(struct pt_regs const *regs)
+{
+	return regs->syscallno != NO_SYSCALL;
+}
+
+static inline void forget_syscall(struct pt_regs *regs)
+{
+	regs->syscallno = NO_SYSCALL;
+}
 
 #define MAX_REG_OFFSET offsetof(struct pt_regs, pstate)
 
@@ -196,6 +229,26 @@ static inline u64 regs_get_register(struct pt_regs *regs, unsigned int offset)
 	return val;
 }
 
+/*
+ * Read a register given an architectural register index r.
+ * This handles the common case where 31 means XZR, not SP.
+ */
+static inline unsigned long pt_regs_read_reg(const struct pt_regs *regs, int r)
+{
+	return (r == 31) ? 0 : regs->regs[r];
+}
+
+/*
+ * Write a register given an architectural register index r.
+ * This handles the common case where 31 means XZR, not SP.
+ */
+static inline void pt_regs_write_reg(struct pt_regs *regs, int r,
+				     unsigned long val)
+{
+	if (r != 31)
+		regs->regs[r] = val;
+}
+
 /* Valid only for Kernel mode traps. */
 static inline unsigned long kernel_stack_pointer(struct pt_regs *regs)
 {
@@ -219,9 +272,16 @@ int valid_user_regs(struct user_pt_regs *regs, struct task_struct *task);
 
 #include <asm-generic/ptrace.h>
 
+#define procedure_link_pointer(regs)	((regs)->regs[30])
+
+static inline void procedure_link_pointer_set(struct pt_regs *regs,
+					   unsigned long val)
+{
+	procedure_link_pointer(regs) = val;
+}
+
 #undef profile_pc
 extern unsigned long profile_pc(struct pt_regs *regs);
-
 
 #ifdef CONFIG_HISI_BB
 /*

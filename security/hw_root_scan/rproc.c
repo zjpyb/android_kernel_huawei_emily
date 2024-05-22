@@ -64,9 +64,8 @@ static void paths_implode(char *paths,  char **const tokens, int ntoken)
 		return;
 	}
 
-	for (ti = 0; ti < ntoken; ti++) {
+	for (ti = 0; ti < ntoken; ti++)
 		paths += sprintf(paths, ti == 0 ? "%s" : ":%s", tokens[ti]);
-	}
 }
 
 static int tokens_cmp(const void *p1, const void *p2)
@@ -84,14 +83,12 @@ static char *g_whitelist_proc_buf;
 bool is_dup_token(char **const tokens, int index)
 {
 	/* we should delete empty token */
-	if (tokens[index][0]  == '\0') {
+	if (tokens[index][0]  == '\0')
 		return true;
-	}
 
 	/* the current token is same with the last, so it's dup token */
-	if ((index > 0) && (strcmp(tokens[index - 1], tokens[index]) == 0)) {
+	if ((index > 0) && (strcmp(tokens[index - 1], tokens[index]) == 0))
 		return true;
-	}
 
 	return false;
 }
@@ -104,9 +101,8 @@ static bool format_rprocs(char **const tokens, int *ntoken, char *whitelist)
 	int cur;
 	int token_count;
 
-	if ((tokens == NULL) || (whitelist == NULL) || (ntoken == NULL)) {
+	if ((tokens == NULL) || (whitelist == NULL) || (ntoken == NULL))
 		return false;
-	}
 
 	token_count = paths_explode(whitelist, tokens);
 
@@ -132,9 +128,17 @@ static bool format_rprocs(char **const tokens, int *ntoken, char *whitelist)
 
 bool init_rprocs_whitelist(const char *whitelist)
 {
-	if (g_whitelist_proc_buf == NULL) {
+	if (whitelist == NULL)
+		return false;
 
-		/* never freed */
+	if (strlen(whitelist) >= PAGE_SIZE) {
+		RSLogError(TAG, "whitelist over the PAGE_SIZE, %u",
+				(unsigned int)strlen(whitelist));
+		return false;
+	}
+
+	if (g_whitelist_proc_buf == NULL) {
+		/* never freed, the maximum size of whitelist is PAGE_SIZE */
 		g_whitelist_proc_buf = (char *)__get_free_page(GFP_KERNEL);
 
 		if (g_whitelist_proc_buf != NULL) {
@@ -153,9 +157,8 @@ bool find_proc_in_init_list(const char *proc_name)
 	int begin = 0;
 	int end = g_whitelist_count - 1;
 
-	if (proc_name == NULL) {
+	if (proc_name == NULL)
 		return false;
-	}
 
 	while (begin <= end) {
 		int pos = (begin + end) / 2;
@@ -177,16 +180,16 @@ bool find_proc_in_init_list(const char *proc_name)
 /*
  * "::sbin/c:sbin/a:sbin/b::sbin/a"  ->   "sbin/a:sbin/b:sbin/c"
  */
-void _rprocs_strip_whitelist(char **const tokens, char **final_tokens,
+void _rprocs_strip_whitelist(char **const exec_path, char **final_tokens,
 					char *rprocs, ssize_t rprocs_len)
 {
 	int ntoken = 0;
 	int final_ntoken = 0;
 	int i;
-	char *tmp;
+	char *tmp = NULL;
 
-	if ((tokens == NULL) || (final_tokens == NULL) ||
-		(rprocs == NULL) || (rprocs_len > MAX_RPROC_SIZE)) {
+	if ((exec_path == NULL) || (final_tokens == NULL) || (rprocs == NULL) ||
+			(rprocs_len > MAX_RPROC_SIZE) || (rprocs_len <= 0)) {
 		RSLogError(TAG, "strip white list failed, input value invalid");
 		return;
 	}
@@ -198,13 +201,14 @@ void _rprocs_strip_whitelist(char **const tokens, char **final_tokens,
 	}
 	memcpy(tmp, rprocs, rprocs_len);
 
-	if (!format_rprocs(tokens, &ntoken, tmp))
+	if (!format_rprocs(exec_path, &ntoken, tmp))
 		RSLogError(TAG, "strip white list failed, format_rprocs error");
 
 	/* strip whitelist */
 	for (i = 0; i < ntoken; i++) {
-		if (!find_proc_in_init_list(tokens[i])) {
-			final_tokens[final_ntoken++] = tokens[i];
+		if (!find_proc_in_init_list(exec_path[i])) {
+			final_tokens[final_ntoken++] = exec_path[i];
+			RSLogError(TAG, "the root proc is abnormal: %s", exec_path[i]);
 		}
 	}
 
@@ -222,8 +226,8 @@ void _rprocs_strip_whitelist(char **const tokens, char **final_tokens,
  */
 void rprocs_strip_whitelist(char *rprocs, ssize_t rprocs_len)
 {
-	char **tokens;
-	char **final_tokens;
+	char **tokens = NULL;
+	char **final_tokens = NULL;
 
 	tokens = kmalloc((ulong)MAX_PROC_NUM * sizeof(char *), GFP_KERNEL);
 	if (tokens == NULL) {
@@ -258,15 +262,13 @@ void rprocs_strip_whitelist(char *rprocs, ssize_t rprocs_len)
 #else
 static struct file *my_get_mm_exe_file(struct mm_struct *mm)
 {
-	struct file *exe_file;
+	struct file *exe_file = NULL;
 
-	if (!down_read_trylock(&mm->mmap_sem)) {
+	if (!down_read_trylock(&mm->mmap_sem))
 		return NULL;
-	}
 	exe_file = mm->exe_file;
-	if (exe_file != NULL) {
+	if (exe_file != NULL)
 		get_file(exe_file);
-	}
 	up_read(&mm->mmap_sem);
 	return exe_file;
 }
@@ -282,18 +284,17 @@ static struct file *my_get_mm_exe_file(struct mm_struct *mm)
 static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 					int outlen, char *dbuf, int dbuflen)
 {
-	struct file *exe_file;
-	char *pathname;
-	char *blank_spaces;
+	struct file *exe_file = NULL;
+	char *pathname = NULL;
+	char *blank_spaces = NULL;
 	size_t len;
 
 	if ((mm == NULL) || (out == NULL) || (dbuf == NULL)) {
 		RSLogError(TAG, "input parameter invalid");
 		return -EINVAL;
 	}
-	if (&mm->mmap_sem == NULL) {
+	if (&mm->mmap_sem == NULL)
 		return -EINVAL;
-	}
 	exe_file = my_get_mm_exe_file(mm);
 
 	if (exe_file == NULL) {
@@ -308,9 +309,9 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 	}
 
 	blank_spaces = strchr(pathname, ' ');
-	if (blank_spaces != NULL) { /* handle "/path/file (deleted)" */
+	/* handle "/path/file (deleted)" */
+	if (blank_spaces != NULL)
 		blank_spaces[0] = '\0';
-	}
 
 	len = strlen(pathname);
 	if (len >= SIZE_MAX) {
@@ -331,7 +332,7 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 
 int get_root_procs(char *out, size_t outlen)
 {
-	char *tmp;
+	char *tmp = NULL;
 	struct task_struct *task = NULL;
 	int pos = 0;
 
@@ -355,9 +356,8 @@ int get_root_procs(char *out, size_t outlen)
 		 * last char must be '\0',
 		 * so the invalid space for the process name must -1
 		 */
-		if (pos >= outlen - 1) {
+		if (pos >= outlen - 1)
 			break;
-		}
 
 		if ((task->flags & PF_KTHREAD) || (task->mm == NULL) ||
 				(from_kuid_munged(&init_user_ns,
@@ -367,21 +367,18 @@ int get_root_procs(char *out, size_t outlen)
 
 		/* follow mm/oom_kill.c:dump_tasks */
 		t = find_lock_task_mm(task);
-		if ((t == NULL) || (t->mm == NULL)) {
+		if ((t == NULL) || (t->mm == NULL))
 			continue;
-		}
 
 		len = get_task_exe(t->mm, t->pid, out + pos, outlen - pos - 1,
 				tmp, PAGE_SIZE);
 		task_unlock(t);
 
-		if (len < 0) {
+		if (len < 0)
 			break;
-		}
 
-		if (len == 0) {
+		if (len == 0)
 			continue;
-		}
 
 		pos += len;
 
@@ -389,7 +386,7 @@ int get_root_procs(char *out, size_t outlen)
 		out[pos++] = ':';
 	}
 	read_unlock(&tasklist_lock);
-	free_page((unsigned long)tmp);
+	free_page((uintptr_t)tmp);
 
 	/* replace last split char to '\0' */
 	if (pos > 0) {
@@ -399,3 +396,4 @@ int get_root_procs(char *out, size_t outlen)
 
 	return pos;
 }
+

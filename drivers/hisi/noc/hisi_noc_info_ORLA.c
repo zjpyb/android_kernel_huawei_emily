@@ -1,16 +1,13 @@
 /*
-* NoC. (NoC Mntn Module.)
-*
-* Copyright (c) 2016 Huawei Technologies CO., Ltd.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*/
+ * NoC. (NoC Mntn Module.)
+ *
+ * Copyright (c) 2016 Huawei Technologies CO., Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
-/*****************************************************************************
-  1 头文件包含
- *****************************************************************************/
 #include <linux/io.h>
 #include <linux/string.h>
 
@@ -34,10 +31,10 @@
 #define VCODEC_TARGETFLOW_ARRAY_SIZE    16
 #define VIVO_INITFLOW_ARRAY_SIZE        32
 #define VIVO_TARGETFLOW_ARRAY_SIZE      16
-#define FCM_INITFLOW_ARRAY_SIZE        	2
-#define FCM_TARGETFLOW_ARRAY_SIZE     	4
-#define NPU_INITFLOW_ARRAY_SIZE        	16
-#define NPU_TARGETFLOW_ARRAY_SIZE      	16
+#define FCM_INITFLOW_ARRAY_SIZE         2
+#define FCM_TARGETFLOW_ARRAY_SIZE       4
+#define NPU_INITFLOW_ARRAY_SIZE         16
+#define NPU_TARGETFLOW_ARRAY_SIZE       16
 
 static char *cfg_initflow_array[] = {
 	"Audio(noc_asp_mst)",                 /*0 */
@@ -269,7 +266,7 @@ static char *err_code_array[] = {
 	"None"
 };
 
-static const ROUTE_ID_ADDR_STRU cfgsys_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr cfgsys_routeid_addr_tbl[] = {
 	/*Init_flow_bit   Targ_flow_bit    Targ subrange  Init localAddress*/
 	/*-----------------------------------------------------------------*/
 	{0x02, 0x00, 0x0, 0xe9870000},/*aobus_service_target*/
@@ -322,7 +319,7 @@ static const ROUTE_ID_ADDR_STRU cfgsys_routeid_addr_tbl[] = {
 };
 
 /* vcodec_bus */
-static const ROUTE_ID_ADDR_STRU vcodec_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr vcodec_routeid_addr_tbl[] = {
 	/* Init_flow  Targ_flow  Targ_subrange  Init_localAddress*/
 	/* ---------------------------------------------------*/
 	{0x00, 0x00, 0x0, 0xe9380000},/*ivp_service_target*/
@@ -339,7 +336,7 @@ static const ROUTE_ID_ADDR_STRU vcodec_routeid_addr_tbl[] = {
 };
 
 /* vivo_bus */
-static const ROUTE_ID_ADDR_STRU vivo_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr vivo_routeid_addr_tbl[] = {
 	/* Init_flow  Targ_flow  Targ_subrange Init_localAddress */
 	/* ----------------------------------------------------- */
 	{0x00, 0x00, 0x0, 0xe87a0000},/*dss_service_target*/
@@ -379,7 +376,7 @@ static const ROUTE_ID_ADDR_STRU vivo_routeid_addr_tbl[] = {
 };
 
 /* fcm_bus */
-static const ROUTE_ID_ADDR_STRU fcm_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr fcm_routeid_addr_tbl[] = {
 	/* Init_flow  Targ_flow  Targ_subrange Init_localAddress */
 	/* ----------------------------------------------------- */
 	{0x00, 0x00, 0x0, 0xea000000},/*noc_fcm2gic_cfg*/
@@ -389,7 +386,7 @@ static const ROUTE_ID_ADDR_STRU fcm_routeid_addr_tbl[] = {
 };
 
 /* npu_bus */
-static const ROUTE_ID_ADDR_STRU npu_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr npu_routeid_addr_tbl[] = {
 	/* Init_flow  Targ_flow  Targ_subrange Init_localAddress */
 	/* ----------------------------------------------------- */
 	{0x00, 0x01, 0x0, 0xe4800000},/*noc_l2buffer_slv0_rd*/
@@ -497,16 +494,16 @@ struct noc_mid_info noc_mid_ORLA[] = {
 	{2, 0xFF, 0x003f, 0x1B, "dss_rd_ch0_or_DSS_ATGM"},/*dss*/
 	{2, 0xFF, 0x003f, 0x1C, "ISP_R8_OR_ISP_ATGM"},/*ISP*/
 	{2, 0xFF, 0x003f, 0x1D, "IPP_SUBSYS_JPGENC"},/*TPEG_FD_SUBSYS*/
-	{1, 0x04, 0x003f, 0x20, "VENC1"},/*VENC1*/
-	{1, 0x04, 0x003f, 0x21, "VENC2"},/*VENC2*/
-	{1, 0x03, 0x003f, 0x22, "VDEC_OR_VDEC_ATGM"},/*VDEC1*/
-	{1, 0x03, 0x003f, 0x23, "VDEC2"},/*VDEC2*/
-	{1, 0x03, 0x003f, 0x24, "VDEC3"},/*VDEC3*/
-	{1, 0x03, 0x003f, 0x25, "VDEC4"},/*VDEC4*/
-	{1, 0x03, 0x003f, 0x26, "VDEC5"},/*VDEC5*/
-	{1, 0x03, 0x003f, 0x27, "VDEC6"},/*VDEC6*/
-	{2, 0x0C, 0x003f, 0x29, "DSP_CORE_OR_IVP_ATGM"},/*IVP32_DSP*/
-	{2, 0x0C, 0x003f, 0x2A, "IVP32_DSP DSP_DMA"},/*IVP32_DSP*/
+	{1, 0x07, 0x003f, 0x20, "VENC1"},/*VENC1*/
+	{1, 0x07, 0x003f, 0x21, "VENC2"},/*VENC2*/
+	{1, 0x06, 0x003f, 0x22, "VDEC_OR_VDEC_ATGM"},/*VDEC1*/
+	{1, 0x06, 0x003f, 0x23, "VDEC2"},/*VDEC2*/
+	{1, 0x06, 0x003f, 0x24, "VDEC3"},/*VDEC3*/
+	{1, 0x06, 0x003f, 0x25, "VDEC4"},/*VDEC4*/
+	{1, 0x06, 0x003f, 0x26, "VDEC5"},/*VDEC5*/
+	{1, 0x06, 0x003f, 0x27, "VDEC6"},/*VDEC6*/
+	{1, 0xFF, 0x003f, 0x29, "DSP_CORE_OR_IVP_ATGM"},/*IVP32_DSP*/
+	{1, 0xFF, 0x003f, 0x2A, "IVP32_DSP DSP_DMA"},/*IVP32_DSP*/
 	{2, 0xFF, 0x003f, 0x2B, "ISP_A7_CFG"},/*ISP*/
 	{2, 0xFF, 0x003f, 0x2C, "CMDLIST"},/*IPP_SUBSYS*/
 	{2, 0xFF, 0x003f, 0x2D, "ORB"},/*IPP_SUBSYS*/
@@ -514,7 +511,7 @@ struct noc_mid_info noc_mid_ORLA[] = {
 	{3, 0xFF, 0x003f, 0x31, "NPU_1"},/*NPU*/
 	{3, 0xFF, 0x003f, 0x32, "NPU_2"},/*NPU*/
 	{3, 0xFF, 0x003f, 0x33, "NPU_3"},/*NPU*/
-	{1, 0x01, 0x003f, 0x34, "DSP_CORE_DATA"},/*DSP_CORE_DATA*/
+	{1, 0xFF, 0x003f, 0x34, "DSP_CORE_DATA"},/*DSP_CORE_DATA*/
 	{4, 0xFF, 0x003f, 0x38, "FCM_M0"},/*DSP_CORE_DATA*/
 	{4, 0xFF, 0x003f, 0x39, "FCM_M1"},/*DSP_CORE_DATA*/
 };
@@ -691,7 +688,7 @@ const struct noc_bus_info noc_buses_info_ORLA[] = {
 		.noc_sec_info_size = ARRAY_SIZE_NOC(noc_sec_ORLA),
 	},
 	[4] = {
-        .name = "fcm_bus",
+		.name = "fcm_bus",
 		.initflow_mask = ((0x1) << 8),
 		.targetflow_mask = ((0x3) << 6),
 		.targ_subrange_mask = ((0x1) << 5),
@@ -722,7 +719,7 @@ const struct noc_bus_info noc_buses_info_ORLA[] = {
  */
 void hisi_noc_get_array_size_ORLA(unsigned int *bus_info_size, unsigned int *dump_list_size)
 {
-	if ((NULL == bus_info_size)||(NULL == dump_list_size))
+	if ((bus_info_size == NULL) || (dump_list_size == NULL))
 		return;
 
 	*bus_info_size  = ARRAY_SIZE_NOC(noc_buses_info_ORLA);
@@ -744,7 +741,7 @@ unsigned int hisi_noc_clock_enable_ORLA(struct hisi_noc_device *noc_dev,
 	unsigned int i;
 	unsigned int ret = 1;
 
-	if ((NULL == noc_dev)||(NULL == node))
+	if ((noc_dev == NULL) || (node == NULL))
 		return 0;
 
 	if (noc_dev->pcrgctrl_base != NULL)
@@ -755,7 +752,7 @@ unsigned int hisi_noc_clock_enable_ORLA(struct hisi_noc_device *noc_dev,
 	}
 
 	for (i = 0; i < HISI_NOC_CLOCK_MAX; i++) {
-		if (0xFFFFFFFF == node->crg_clk[i].offset)
+		if (node->crg_clk[i].offset == HISI_NOC_CLOCK_REG_DEFAULT)
 			continue;
 
 		reg_value = readl_relaxed((u8 __iomem *)reg_base + node->crg_clk[i].offset);

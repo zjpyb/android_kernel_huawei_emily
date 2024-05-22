@@ -4743,6 +4743,14 @@ static int synaptics_rmi4_f54_attention(void)
 	return synaptics_rmi4_f54_status_work(NULL);
 }
 
+static void syna_rmi4_f54_status_work_func(struct work_struct *work)
+{
+	int ret;
+	ret = synaptics_rmi4_f54_status_work(work);
+	if (ret < 0)
+		TS_LOG_ERR("%s: can not get data\n", __func__);
+}
+
 static void synaptics_rmi4_f54_set_regs(struct synaptics_rmi4_data *rmi4_data,
 					struct synaptics_rmi4_fn_desc *fd,
 					unsigned int intr_count,
@@ -5083,7 +5091,7 @@ pdt_done:
 #endif
 	f54->status_workqueue =
 	    create_singlethread_workqueue("f54_status_workqueue");
-	INIT_DELAYED_WORK(&f54->status_work, synaptics_rmi4_f54_status_work);
+	INIT_DELAYED_WORK(&f54->status_work, syna_rmi4_f54_status_work_func);
 
 #ifdef WATCHDOG_HRTIMER
 	/* Watchdog timer to catch unanswered get report commands */

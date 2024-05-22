@@ -54,6 +54,7 @@
 *****************************************************************************/
 #define    THIS_FILE_ID        PS_FILE_ID_LCP_C
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 /* 保存从NV项中读取的MRU值*/
 VOS_UINT16 g_usPppConfigMru                     = DEF_MRU;
@@ -231,6 +232,12 @@ lcp_Init(struct lcp *lcp, struct link *l, const struct fsm_parent *parent)
 
   lcp->cfg.chap05 = NEG_ACCEPTED;
 /* CDMA模式下只有PC拨号才会用到PPPA,此时只支持PAP不支持CHAP */
+#if (FEATURE_OFF == FEATURE_UE_MODE_CDMA)
+  if (TTF_TRUE == g_stPppEntInfo.enChapEnable)
+  {
+      lcp->cfg.chap05 = NEG_ENABLED|NEG_ACCEPTED;
+  }
+#endif
 
   lcp->cfg.pap  = NEG_ACCEPTED;
   if (TTF_TRUE == g_stPppEntInfo.enPapEnable)
@@ -565,12 +572,16 @@ LcpLayerFinish(struct fsm *fp)
   /* We're now down */
   PPP_MNTN_LOG(PS_PID_APP_PPP, DIAG_MODE_COMM, PS_PRINT_NORMAL, "LcpLayerFinish\r\n");
 
+#if (PPP_FEATURE == PPP_FEATURE_PPP)
   /*通知AT进行PDP去激活*/
   PPP_ProcPppRelEvent(usPppId);
 
   /* 可维可测信息上报*/
   Ppp_EventMntnInfo(usPppId, AT_PPP_RECV_RELEASE_IND);
 
+#else
+  PPPoE_PPPReleaseLink();
+#endif
 
   if (VOS_NULL_PTR != fp->link->lcp.hLcpCloseTimer)
   {
@@ -1194,4 +1205,5 @@ lcp_Input(struct link *l, PPP_ZC_STRU *pstMem)
   return VOS_NULL_PTR;
 }
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

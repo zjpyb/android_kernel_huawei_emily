@@ -30,7 +30,9 @@
 #include <linux/slab.h>
 #include <linux/err.h>
 #include "thermal_hwmon.h"
+#ifdef CONFIG_HISI_IPA_THERMAL
 #include <asm/page.h>
+#endif
 /* hwmon sys I/F */
 /* thermal zone devices with the same type share one hwmon device */
 struct thermal_hwmon_device {
@@ -64,7 +66,7 @@ name_show(struct device *dev, struct device_attribute *attr, char *buf)
 	struct thermal_hwmon_device *hwmon = dev_get_drvdata(dev);
 	return sprintf(buf, "%s\n", hwmon->type);
 }
-static DEVICE_ATTR(name, 0444, name_show, NULL);
+static DEVICE_ATTR_RO(name);
 
 static ssize_t
 temp_input_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -102,7 +104,11 @@ temp_crit_show(struct device *dev, struct device_attribute *attr, char *buf)
 	if (ret)
 		return ret;
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", temperature);
+#ifdef CONFIG_HISI_IPA_THERMAL
+	return snprintf(buf, PAGE_SIZE, "%d\n", temperature); /* unsafe_function_ignore: snprintf */
+#else
+	return sprintf(buf, "%d\n", temperature); /* unsafe_function_ignore: snprintf */
+#endif
 }
 
 

@@ -292,7 +292,6 @@ static uint32_t gpio_lcd_p5v5_enable;
 static uint32_t gpio_lcd_n5v5_enable;
 static uint32_t gpio_lcd_reset;
 static uint32_t gpio_lcd_bl_enable;
-static uint32_t gpio_lcd_tp2v85;
 static uint32_t gpio_lcd_tp1v8;
 
 
@@ -587,7 +586,6 @@ static int mipi_jdi_panel_on(struct platform_device *pdev)
 		while (status & 0x10) {
 			udelay(50);
 			if (++try_times > 100) {
-				try_times = 0;
 				HISI_FB_ERR("Read lcd power status timeout!\n");
 				break;
 			}
@@ -940,7 +938,6 @@ static int mipi_jdi_probe(struct platform_device *pdev)
 		gpio_lcd_n5v5_enable = of_get_named_gpio(np, "gpios", 2);
 		gpio_lcd_reset = of_get_named_gpio(np, "gpios", 3);
 		gpio_lcd_bl_enable = of_get_named_gpio(np, "gpios", 4);
-		gpio_lcd_tp2v85 = of_get_named_gpio(np, "gpios", 5);
 		gpio_lcd_tp1v8 = of_get_named_gpio(np, "gpios", 6);
 	} else {
 		gpio_lcd_p5v5_enable = of_get_named_gpio(np, "gpios", 0);

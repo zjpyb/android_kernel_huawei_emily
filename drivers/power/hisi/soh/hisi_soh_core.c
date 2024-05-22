@@ -21,7 +21,10 @@
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/mtd/hisi_nve_interface.h>
-#include "securec.h"
+#include <securec.h>
+#ifdef CONFIG_HUAWEI_DUBAI
+#include <huawei_platform/log/hwlog_kernel.h>
+#endif
 
 
 
@@ -87,8 +90,8 @@ static void soh_wake_lock(struct hisi_soh_device *di)
 {
     if (!di)
         return ;
-    if (!wake_lock_active(&di->soh_wake_lock)) {
-        wake_lock(&di->soh_wake_lock);
+    if (!di->soh_wake_lock.active) {
+        __pm_stay_awake(&di->soh_wake_lock);
         hisi_soh_info("soh core wake lock!\n");
     }
 }/*lint !e454 !e456*/
@@ -102,8 +105,8 @@ static void soh_wake_unlock(struct hisi_soh_device *di)
 {
     if (!di)
         return ;
-    if (wake_lock_active(&di->soh_wake_lock)) {
-        wake_unlock(&di->soh_wake_lock);/*lint !e455*/
+    if (di->soh_wake_lock.active) {
+        __pm_relax(&di->soh_wake_lock);/*lint !e455*/
         hisi_soh_info("soh core wake unlock!\n");
     }
 }
@@ -316,18 +319,30 @@ static int soh_acr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
 
     if (!di)
         return -1;
-    memset_s(&nve, sizeof(nve), 0, sizeof(nve));
-    strncpy_s(nve.nv_name, sizeof(nve.nv_name), SOH_ACR_NV_NAME, sizeof(SOH_ACR_NV_NAME));
+    err = memset_s(&nve, sizeof(nve), 0, sizeof(nve));
+	if(err != EOK) {
+		hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+	}
+    err = strncpy_s(nve.nv_name, sizeof(nve.nv_name), SOH_ACR_NV_NAME, sizeof(SOH_ACR_NV_NAME));
+	if(err != EOK) {
+		hisi_soh_err("[%s]strncpy_s fail, err=%d\n",__func__, err);
+	}
     nve.nv_number = SOH_ACR_NV_NUM;
     nve.valid_size = sizeof(acrinfo);
     /*save battery info for acr*/
     if (NV_WRITE == rw) {
         /*get nv data from read nv to Block overwrite*/
-        memcpy_s(&acrinfo, sizeof(struct acr_nv_info), &di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info));
+        err = memcpy_s(&acrinfo, sizeof(struct acr_nv_info), &di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         if (acrinfo.order_num < 0)
             acrinfo.order_num = -1;
         acrinfo.order_num = (acrinfo.order_num +1)%SOH_ACR_NV_DATA_NUM;
-        memcpy_s(&acrinfo.soh_nv_acr_info[acrinfo.order_num],sizeof(struct acr_info), &di->soh_acr_dev.soh_acr_info, sizeof(struct acr_info));
+        err = memcpy_s(&acrinfo.soh_nv_acr_info[acrinfo.order_num],sizeof(struct acr_info), &di->soh_acr_dev.soh_acr_info, sizeof(struct acr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         nve.nv_operation = NV_WRITE;
         err = memcpy_s(nve.nv_data, sizeof(acrinfo), &acrinfo, sizeof(acrinfo));
         if(err != EOK) {
@@ -337,8 +352,12 @@ static int soh_acr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("[%s]acr save nv fail, ret=%d\n", __func__, ret);
-        else/*succ, writeback to acr_nv*/
-            memcpy_s(&di->soh_acr_dev.acr_nv, sizeof(acrinfo), &acrinfo, sizeof(acrinfo));
+        else {/*succ, writeback to acr_nv*/
+            err = memcpy_s(&di->soh_acr_dev.acr_nv, sizeof(acrinfo), &acrinfo, sizeof(acrinfo));
+			if(err != EOK) {
+				hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+			}
+		}
 
     } else {/*read acr nv data*/
         nve.nv_operation = NV_READ;
@@ -375,19 +394,30 @@ static int soh_dcr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
     if (!di)
         return -1;
 
-    memset_s(&nve, sizeof(nve), 0, sizeof(nve));
-    strncpy_s(nve.nv_name, sizeof(nve.nv_name), SOH_DCR_NV_NAME, sizeof(SOH_DCR_NV_NAME));
+    err = memset_s(&nve, sizeof(nve), 0, sizeof(nve));
+	if(err != EOK) {
+		hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+	}
+    err = strncpy_s(nve.nv_name, sizeof(nve.nv_name), SOH_DCR_NV_NAME, sizeof(SOH_DCR_NV_NAME));
+	if(err != EOK) {
+		hisi_soh_err("[%s]strncpy_s fail, err=%d\n",__func__, err);
+	}
     nve.nv_number = SOH_DCR_NV_NUM;
     nve.valid_size = sizeof(dcrinfo);
     /*save battery info for dcr*/
     if (NV_WRITE == rw) {
         /*get nv data from read nv to Block overwrite*/
-        memcpy_s(&dcrinfo, sizeof(struct dcr_nv_info), &di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info));
-
+        err = memcpy_s(&dcrinfo, sizeof(struct dcr_nv_info), &di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         if (dcrinfo.order_num < 0)
             dcrinfo.order_num = -1;
         dcrinfo.order_num = (dcrinfo.order_num +1)%SOH_DCR_NV_DATA_NUM;
-        memcpy_s(&dcrinfo.soh_nv_dcr_info[dcrinfo.order_num], sizeof(struct dcr_info), &di->soh_dcr_dev.soh_dcr_info, sizeof(struct dcr_info));
+        err = memcpy_s(&dcrinfo.soh_nv_dcr_info[dcrinfo.order_num], sizeof(struct dcr_info), &di->soh_dcr_dev.soh_dcr_info, sizeof(struct dcr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         nve.nv_operation = NV_WRITE;
         err = memcpy_s(nve.nv_data, sizeof(dcrinfo), &dcrinfo, sizeof(dcrinfo));
         if(err != EOK) {
@@ -397,8 +427,12 @@ static int soh_dcr_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         ret = hisi_nve_direct_access(&nve);
         if (ret)
             hisi_soh_err("[%s]dcr save nv fail, ret=%d\n", __func__, ret);
-        else/*succ, writeback to dcr_nv*/
-            memcpy_s(&di->soh_dcr_dev.dcr_nv, sizeof(dcrinfo), &dcrinfo, sizeof(dcrinfo));
+        else{/*succ, writeback to dcr_nv*/
+            err = memcpy_s(&di->soh_dcr_dev.dcr_nv, sizeof(dcrinfo), &dcrinfo, sizeof(dcrinfo));
+			if(err != EOK) {
+				hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+			}
+		}
     } else { /*read dcr nv data*/
         nve.nv_operation = NV_READ;
         ret = hisi_nve_direct_access(&nve);
@@ -434,19 +468,30 @@ static int soh_pd_leak_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
     if (!di)
         return -1;
 
-    memset_s(&nve, sizeof(nve), 0, sizeof(nve));
-    strncpy_s(nve.nv_name, sizeof(nve.nv_name), SOH_PD_LEAK_NV_NAME, sizeof(SOH_PD_LEAK_NV_NAME));
+    err = memset_s(&nve, sizeof(nve), 0, sizeof(nve));
+	if(err != EOK) {
+		hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+	}
+    err = strncpy_s(nve.nv_name, sizeof(nve.nv_name), SOH_PD_LEAK_NV_NAME, sizeof(SOH_PD_LEAK_NV_NAME));
+	if(err != EOK) {
+		hisi_soh_err("[%s]strncpy_s fail, err=%d\n",__func__, err);
+	}
     nve.nv_number  = SOH_PD_LEAK_NV_NUM;
     nve.valid_size = sizeof(pdinfo);
     /*save battery data for pd*/
     if (NV_WRITE == rw) {
         /*get nv data from read nv to Block overwrite*/
-        memcpy_s(&pdinfo, sizeof(struct pd_leak_nv_info), &di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info));
-
+        err = memcpy_s(&pdinfo, sizeof(struct pd_leak_nv_info), &di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         if (pdinfo.order_num < 0)
             pdinfo.order_num = -1;
         pdinfo.order_num = (pdinfo.order_num +1)%SOH_PD_NV_DATA_NUM;
-        memcpy_s(&pdinfo.soh_nv_pd_leak_current_info[pdinfo.order_num], sizeof(struct pd_leak_current_info), &di->soh_pd_leak_dev.soh_pd_leak_current_info, sizeof(struct pd_leak_current_info));
+        err = memcpy_s(&pdinfo.soh_nv_pd_leak_current_info[pdinfo.order_num], sizeof(struct pd_leak_current_info), &di->soh_pd_leak_dev.soh_pd_leak_current_info, sizeof(struct pd_leak_current_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         nve.nv_operation = NV_WRITE;
         err = memcpy_s(nve.nv_data, sizeof(pdinfo), &pdinfo, sizeof(pdinfo));
         if(err != EOK) {
@@ -457,7 +502,10 @@ static int soh_pd_leak_rw_nv(struct hisi_soh_device *di, enum nv_rw_type rw)
         if (ret)
             hisi_soh_err("[%s]pd leak save nv fail, ret=%d\n", __func__, ret);
         else/*succ, writeback to pdinfo nv*/
-            memcpy_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(pdinfo), &pdinfo, sizeof(pdinfo));
+            err = memcpy_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(pdinfo), &pdinfo, sizeof(pdinfo));
+			if(err != EOK) {
+				hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+			}
     } else {/*read pd leak nv data*/
         nve.nv_operation = NV_READ;
         ret = hisi_nve_direct_access(&nve);
@@ -546,8 +594,9 @@ static int __init soh_get_nv_info_from_boot(void)
 **************************************************************************/
 static int parse_soh_ovp_dts(struct hisi_soh_device *di)
 {
-    struct device_node* np;
+    struct device_node* np = NULL;
     int ret;
+    errno_t err = EOK;
     if (!di)
         return -1;
 
@@ -566,7 +615,10 @@ static int parse_soh_ovp_dts(struct hisi_soh_device *di)
     /*get ovp discharge  threshold*/
 	ret = of_property_read_u32_array(np, "soh_ovh_thd", (u32 *)&di->soh_ovp_dev.soh_ovh_thres[0], sizeof(di->soh_ovp_dev.soh_ovh_thres)/sizeof(int));
 	if (ret) {
-        memcpy_s(&di->soh_ovp_dev.soh_ovh_thres, sizeof(default_ovh_thres), &default_ovh_thres[0], sizeof(default_ovh_thres));
+        err = memcpy_s(&di->soh_ovp_dev.soh_ovh_thres, sizeof(default_ovh_thres), &default_ovh_thres[0], sizeof(default_ovh_thres));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
 		hisi_soh_err("[%s] get ovp dis thred  fail!\n", __func__);
 	}
     hisi_soh_info("[%s] addr:soh_ovh_thres[0].temp[%d],[0].vol[%d], [1].temp[%d],[1].vol[%d],[2].temp[%d],[2].vol[%d]!\n",
@@ -577,7 +629,10 @@ static int parse_soh_ovp_dts(struct hisi_soh_device *di)
     /*get ovp stop discharge threshold*/
 	ret = of_property_read_u32_array(np, "soh_ovl_thd", (u32 *)&di->soh_ovp_dev.soh_ovl_thres[0], sizeof(di->soh_ovp_dev.soh_ovl_thres)/sizeof(int));
 	if (ret) {
-        memcpy_s(&di->soh_ovp_dev.soh_ovl_thres, sizeof(default_ovl_thres), &default_ovl_thres[0], sizeof(default_ovl_thres));
+        err = memcpy_s(&di->soh_ovp_dev.soh_ovl_thres, sizeof(default_ovl_thres), &default_ovl_thres[0], sizeof(default_ovl_thres));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
 		hisi_soh_err("[%s] get soh_ovl_thd fail!\n", __func__);
 	}
     hisi_soh_info("[%s] addr:soh_ovl_thd[0].temp[%d],[0].vol[%d], [1].temp[%d],[1].vol[%d],[2].temp[%d],[2].vol[%d]!\n",
@@ -589,7 +644,10 @@ static int parse_soh_ovp_dts(struct hisi_soh_device *di)
     /*get ovp stop discharge safe threshold*/
 	ret = of_property_read_u32_array(np, "soh_ovl_safe_thd", (u32 *)&di->soh_ovp_dev.soh_ovl_safe_thres, sizeof(struct soh_ovp_temp_vol_threshold)/sizeof(int));
 	if (ret) {
-        memcpy_s(&di->soh_ovp_dev.soh_ovl_safe_thres, sizeof(default_ovl_safe_thres), &default_ovl_safe_thres, sizeof(default_ovl_safe_thres));
+        err = memcpy_s(&di->soh_ovp_dev.soh_ovl_safe_thres, sizeof(default_ovl_safe_thres), &default_ovl_safe_thres, sizeof(default_ovl_safe_thres));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         hisi_soh_err("[%s] get soh_ovl_safe_thres  fail!\n", __func__);
 	}
     hisi_soh_info("[%s] addr:soh_ovl_safe_thres temp[%d],vol[%d] !\n", __func__,di->soh_ovp_dev.soh_ovl_safe_thres.temp,di->soh_ovp_dev.soh_ovl_safe_thres.bat_vol_mv);
@@ -615,7 +673,7 @@ static int parse_soh_ovp_dts(struct hisi_soh_device *di)
 **************************************************************************/
 static int parse_soh_acr_dts(struct hisi_soh_device *di)
 {
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di) {
         hisi_soh_err("%s di is null!\n", __func__);
@@ -647,7 +705,7 @@ static int parse_soh_acr_dts(struct hisi_soh_device *di)
 **************************************************************************/
 static int parse_soh_dcr_dts(struct hisi_soh_device *di)
 {
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di) {
         hisi_soh_err("%s di is null!\n", __func__);
@@ -679,7 +737,7 @@ static int parse_soh_dcr_dts(struct hisi_soh_device *di)
 **************************************************************************/
 static int parse_soh_pd_leak_dts(struct hisi_soh_device *di)
 {
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di) {
         hisi_soh_err("%s di is null!\n", __func__);
@@ -765,6 +823,9 @@ ssize_t nv_clear(struct device *dev, struct device_attribute *attr, const char *
     int status = count;
     long val = 0;
     struct hisi_soh_device *di = g_di;
+#ifdef CONFIG_HISI_DEBUG_FS
+    errno_t err = EOK;
+#endif
 
     if (strict_strtol(buf, 0, &val) < 0)
         return -EINVAL;
@@ -775,18 +836,36 @@ ssize_t nv_clear(struct device *dev, struct device_attribute *attr, const char *
 #ifdef CONFIG_HISI_DEBUG_FS
     switch (val) {
     case SOH_ACR:
-        memset_s(&di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info), 0, sizeof(struct acr_nv_info));
-        memset_s(&di->soh_acr_dev.soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+        err = memset_s(&di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info), 0, sizeof(struct acr_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
+        err = memset_s(&di->soh_acr_dev.soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         soh_rw_nv_info(di, SOH_ACR, NV_WRITE);
         break;
     case SOH_DCR:
-        memset_s(&di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info), 0, sizeof(struct dcr_nv_info));
-        memset_s(&di->soh_dcr_dev.soh_dcr_info, sizeof(struct dcr_info), 0, sizeof(struct dcr_info));
+        err = memset_s(&di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info), 0, sizeof(struct dcr_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
+        err = memset_s(&di->soh_dcr_dev.soh_dcr_info, sizeof(struct dcr_info), 0, sizeof(struct dcr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         soh_rw_nv_info(di, SOH_DCR, NV_WRITE);
         break;
     case SOH_PD_LEAK:
-        memset_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info), 0, sizeof(struct pd_leak_nv_info));
-        memset_s(&di->soh_pd_leak_dev.soh_pd_leak_current_info, sizeof(struct pd_leak_current_info), 0, sizeof(struct pd_leak_current_info));
+        err = memset_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info), 0, sizeof(struct pd_leak_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
+        err = memset_s(&di->soh_pd_leak_dev.soh_pd_leak_current_info, sizeof(struct pd_leak_current_info), 0, sizeof(struct pd_leak_current_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         soh_rw_nv_info(di, SOH_PD_LEAK, NV_WRITE);
         break;
     default:
@@ -949,6 +1028,7 @@ ssize_t nv_read(struct device *dev, struct device_attribute *attr, char *buf)
     int val14,val15,val16,val17,val18,val19,val20;
     int val21,val22,val23,val24;
     struct hisi_soh_device *di = g_di;
+    errno_t err = EOK;
     if (!di)
         return -1;
 
@@ -975,10 +1055,13 @@ ssize_t nv_read(struct device *dev, struct device_attribute *attr, char *buf)
         val18  = di->soh_acr_dev.acr_nv.soh_nv_acr_info[2].chip_temp[1];
         val19  = di->soh_acr_dev.acr_nv.soh_nv_acr_info[2].batt_vol;
         val20  = di->soh_acr_dev.acr_nv.soh_nv_acr_info[2].batt_temp;
-        snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "ACR: order[%d]  ctrl [%d]  Arrary[0]: cycle:%d  acr:%d  chip_temp0:%d  chip_temp1:%d  vol:%d  bat_temp:%d"
+        err = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "ACR: order[%d]  ctrl [%d]  Arrary[0]: cycle:%d  acr:%d  chip_temp0:%d  chip_temp1:%d  vol:%d  bat_temp:%d"
                  "Arrary[1]: cycle:%d  acr:%d  chip_temp0:%d  chip_temp1:%d  vol:%d  bat_temp:%d"
                  "Arrary[2]: cycle:%d  acr:%d  chip_temp0:%d  chip_temp1:%d  vol:%d  bat_temp:%d",
                   val1,val2,val3,val4,val5,val6,val7,val8,val9,val10,val11,val12,val13,val14,val15,val16,val17,val18,val19,val20);
+		if(err < 0) {
+			hisi_soh_err("[%s]snprintf_s fail, err=%d\n",__func__, err);
+		}
         break;
     case SOH_DCR:
         soh_rw_nv_info(di, SOH_DCR, NV_READ);
@@ -999,10 +1082,13 @@ ssize_t nv_read(struct device *dev, struct device_attribute *attr, char *buf)
         val14 = di->soh_dcr_dev.dcr_nv.soh_nv_dcr_info[2].batt_r0;
         val15 = di->soh_dcr_dev.dcr_nv.soh_nv_dcr_info[2].batt_vol;
         val16 = di->soh_dcr_dev.dcr_nv.soh_nv_dcr_info[2].batt_temp;
-        snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "DCR:order[%d] ctrl[%d]  array[0]: cycle[%d]  dcr[%d]  r0[%d]  vol[%d]  bat_temp[%d]"
+        err = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "DCR:order[%d] ctrl[%d]  array[0]: cycle[%d]  dcr[%d]  r0[%d]  vol[%d]  bat_temp[%d]"
                 "array[1]:cycle[%d]  dcr[%d]  r0[%d]  vol[%d]  bat_temp[%d] "
                 "array[2]:cycle[%d]  dcr[%d]  r0[%d]  vol[%d]  bat_temp[%d] ",
                  val0,val1,val2,val3,val4,val5,val6,val7,val8,val9,val10,val11,val12,val13,val14,val15,val16);
+		if(err < 0) {
+			hisi_soh_err("[%s]snprintf_s fail, err=%d\n",__func__, err);
+		}
         break;
     case SOH_PD_LEAK:
         soh_rw_nv_info(di, SOH_PD_LEAK, NV_READ);
@@ -1030,10 +1116,13 @@ ssize_t nv_read(struct device *dev, struct device_attribute *attr, char *buf)
         val22   = di->soh_pd_leak_dev.pd_leak_nv.soh_nv_pd_leak_current_info[1].rtc_time[0];
         val23   = di->soh_pd_leak_dev.pd_leak_nv.soh_nv_pd_leak_current_info[1].rtc_time[1];
         val24   = di->soh_pd_leak_dev.pd_leak_nv.soh_nv_pd_leak_current_info[1].sys_pd_leak_cc;
-        snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "PD_LEAK order[%d]  ctrl[%d]"
+        err = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "PD_LEAK order[%d]  ctrl[%d]"
             "array[0]: cycle[%d]  leak_ma[%d]  chip_t0[%d]  chip_t1[%d]  cur0[%d]  cur1[%d] vol0[%d] vol1[%d] rtc0[%d] rtc1[%d] sys_cc[%d]"
             "array[1]: cycle[%d]  leak_ma[%d]  chip_t0[%d]  chip_t1[%d]  cur0[%d]  cur1[%d] vol0[%d] vol1[%d] rtc0[%d] rtc1[%d] sys_cc[%d]",
             val1,val2,val3,val4,val5,val6,val7,val8,val9,val10,val11,val12,val13,val14,val15,val16,val17,val18,val19,val20,val21,val22,val23,val24);
+		if(err < 0) {
+			hisi_soh_err("[%s]snprintf_s fail, err=%d\n",__func__, err);
+		}
         break;
     default:
         break;
@@ -1043,8 +1132,8 @@ ssize_t nv_read(struct device *dev, struct device_attribute *attr, char *buf)
 
 ssize_t acr_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    struct hisi_soh_device *di;
-    struct soh_acr_device *acr_dev;
+    struct hisi_soh_device *di = NULL;
+    struct soh_acr_device *acr_dev = NULL;
     errno_t err = EOK;
     di = g_di;
     if(!di) {
@@ -1061,8 +1150,8 @@ ssize_t acr_raw_show(struct device *dev, struct device_attribute *attr, char *bu
 
 ssize_t dcr_raw_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    struct hisi_soh_device *di;
-    struct soh_dcr_device *dcr_dev;
+    struct hisi_soh_device *di = NULL;
+    struct soh_dcr_device *dcr_dev = NULL;
     errno_t err = EOK;
     di = g_di;
     if(!di) {
@@ -1208,7 +1297,6 @@ int soh_acr_start_check(void)
     /*check battery real soc*/
     if (real_soc  < ACR_CAL_BAT_SOC_MIN) {
         hisi_soh_err("%s read soc low  ,real_soc = [%d]!!\n",__func__ , real_soc);
-        /*return -1;*/
     }
 
     hisi_soh_info("[%s]sucess, ibat = [%d], tbat = [%d], cycle_now = [%d], cycle_pre = [%d], soc =[%d]!!\n",
@@ -1374,6 +1462,7 @@ static void soh_acr_calculate_work(struct work_struct *work)
 {
     struct soh_acr_device *di = container_of(work, struct soh_acr_device, acr_work.work);
     int ret;
+    errno_t err = EOK;
     // cppcheck-suppress *
     int acr_data[CAL_CNT + 1] = {0};
     int acr_temp[CAL_CNT + 1] = {0};
@@ -1397,11 +1486,17 @@ static void soh_acr_calculate_work(struct work_struct *work)
     if (ACR_NORMAL == ret)
         acr_data_err_cnt = 0;
     else if (ACR_ERROR == ret) {
-        memset_s(&di->soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+        err = memset_s(&di->soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         goto acr_exit;
     }
     else if (ACR_FATAL == ret) {
-        memset_s(&di->soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+        err = memset_s(&di->soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         goto fatal_acr_not_stop;
     }
 
@@ -1419,8 +1514,12 @@ static void soh_acr_calculate_work(struct work_struct *work)
             di->acr_prec_type = ACR_H_PRECISION;
         hisi_soh_info("[%s] acr cal success!!\n", __func__);
         sysfs_notify(&g_di->dev->kobj, NULL, "acr_raw");
-    } else
-        memset_s(&di->soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+    } else {
+        err = memset_s(&di->soh_acr_info, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
+	}
 
 acr_exit:
     hisi_soh_err("%s acr exit!!\n", __func__);
@@ -1507,6 +1606,7 @@ static int soh_acr_notifier_call(struct notifier_block *acr_nb,unsigned long eve
 static int soh_acr_init(struct hisi_soh_device *di)
 {
     int ret;
+    errno_t err = EOK;
 
     if (!di)
         return -1;
@@ -1521,10 +1621,11 @@ static int soh_acr_init(struct hisi_soh_device *di)
         return 0;
     }
 
-    /*get init data from NV*/
-    /*ret = soh_rw_nv_info(di, SOH_ACR, NV_READ);*/
 	if (boot_acr_nv_info) {
-        memcpy_s(&di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info), boot_acr_nv_info, sizeof(struct acr_nv_info));
+        err = memcpy_s(&di->soh_acr_dev.acr_nv, sizeof(struct acr_nv_info), boot_acr_nv_info, sizeof(struct acr_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         soh_nv_printf(di, SOH_ACR);
         /*acr nv close*/
         if (di->soh_acr_dev.acr_nv.acr_control) {
@@ -1902,7 +2003,6 @@ int soh_dcr_start_check(void)
     /*check battery real soc*/
     if (real_soc  < DCR_CAL_BAT_SOC_MIN) {
         hisi_soh_err("%s read soc low  ,real_soc = [%d]!!\n",__func__ , real_soc);
-        /*return -1;*/
     }
 
     hisi_soh_info("[%s]sucess, ibat = [%d], tbat = [%d], cycle_now = [%d], cycle_pre = [%d], soc =[%d]!!\n",
@@ -2220,6 +2320,7 @@ static int soh_dcr_notifier_call(struct notifier_block *dcr_nb,unsigned long eve
 static int soh_dcr_init(struct hisi_soh_device *di)
 {
     int ret;
+    errno_t err = EOK;
 
     if (!di)
         return -1;
@@ -2234,10 +2335,11 @@ static int soh_dcr_init(struct hisi_soh_device *di)
         return 0;
     }
 
-    /*get init data from NV*/
-    /*ret = soh_rw_nv_info(di, SOH_DCR, NV_READ);*/
 	if (boot_dcr_nv_info) {
-        memcpy_s(&di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info), boot_dcr_nv_info, sizeof(struct dcr_nv_info));
+        err = memcpy_s(&di->soh_dcr_dev.dcr_nv, sizeof(struct dcr_nv_info), boot_dcr_nv_info, sizeof(struct dcr_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         soh_nv_printf(di, SOH_DCR);
 
         /*dcr nv close*/
@@ -2321,8 +2423,8 @@ static int soh_pd_get_valid_data_cal_pd_current(struct hisi_soh_device *di, stru
     int sys_leak_cc;
     int max_num = 0;
     int min_num = 0;
-    struct pd_leak_chip_info *max_value;
-    struct pd_leak_chip_info *min_value;
+    struct pd_leak_chip_info *max_value = NULL;
+    struct pd_leak_chip_info *min_value = NULL;
 
     if (!pdata || !di || size < PD_OCV_CAL_MIN_NUM) {
         hisi_soh_err("[%s] not start pd ocv sample, size = %d", __func__, size);
@@ -2355,9 +2457,7 @@ static int soh_pd_get_valid_data_cal_pd_current(struct hisi_soh_device *di, stru
 
     /*check ocv and rtc*/
     if (max_value->ocv_vol_uv > min_value->ocv_vol_uv && max_value->ocv_rtc > min_value->ocv_rtc ) {
-        /*
-        hisi_soh_err("[%s] err:rtc not match ocv,min rtc = %d, max rtc = %d uv!\n", __func__, min_value->ocv_rtc, max_value->ocv_rtc);
-        return -1;*/
+        /**/
     }
 
     /*get pd leak cal data*/
@@ -2389,6 +2489,21 @@ static int soh_pd_get_valid_data_cal_pd_current(struct hisi_soh_device *di, stru
         leak_cc_ua = (abs(max_current_ocv_uah - min_current_ocv_uah) - sys_leak_cc) * SEC_PER_H / ocv_interval;
 
     di->soh_pd_leak_dev.soh_pd_leak_current_info.leak_current_ma = leak_cc_ua/UA_PER_MA;
+#ifdef CONFIG_HUAWEI_DUBAI
+    HWDUBAI_LOGE("DUBAI_TAG_POWER_OFF_LEAK", "lcurr=%d cycle=%d temp0=%d temp1=%d bcurr0=%d bcurr1=%d "
+        "bvol0=%d bvol1=%d rtc0=%d rtc1=%d cc=%d",
+        leak_cc_ua,
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.batt_cycle,
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.chip_temp[0],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.chip_temp[1],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.batt_current[0],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.batt_current[1],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.batt_vol[0],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.batt_vol[1],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.rtc_time[0],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.rtc_time[1],
+        di->soh_pd_leak_dev.soh_pd_leak_current_info.sys_pd_leak_cc);
+#endif
 
     hisi_soh_info("[%s] suc, ocv_interval_s = %d, pd_current = [%d]mA!\n", __func__, ocv_interval, leak_cc_ua/UA_PER_MA);
     return 0;
@@ -2406,7 +2521,7 @@ static void soh_pd_leak_cal(struct hisi_soh_device *di)
     u32 fifo_cnt;
     u32 i;
     int ret;
-    struct pd_leak_chip_info *pd_chip_data;
+    struct pd_leak_chip_info *pd_chip_data = NULL;
 
     if (!di)
         return ;
@@ -2469,6 +2584,7 @@ static void soh_pd_leak_calculate_work(struct work_struct *work)
 **********************************************************/
 static int soh_pd_leak_init(struct hisi_soh_device *di)
 {
+    errno_t err = EOK;
     if (!di)
         return -1;
 
@@ -2482,10 +2598,11 @@ static int soh_pd_leak_init(struct hisi_soh_device *di)
         return 0;
     }
 
-    /*get init data from NV*/
-    /*ret = soh_rw_nv_info(di, SOH_PD_LEAK, NV_READ);*/
 	if (boot_pdleak_nv_info) {
-        memcpy_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info), boot_pdleak_nv_info, sizeof(struct pd_leak_nv_info));
+        err = memcpy_s(&di->soh_pd_leak_dev.pd_leak_nv, sizeof(struct pd_leak_nv_info), boot_pdleak_nv_info, sizeof(struct pd_leak_nv_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
         soh_nv_printf(di, SOH_PD_LEAK);
         /*pd nv close*/
         if (di->soh_pd_leak_dev.pd_leak_nv.pd_control) {
@@ -2551,6 +2668,7 @@ static int soh_pd_leak_uninit(struct hisi_soh_device *di)
 int soh_get_acr_resistance(struct acr_info *r, enum acr_type type)
 {
     struct hisi_soh_device *di = g_di;
+    errno_t err = EOK;
 
     if (!r) {
         hisi_soh_err("%s pointer null!\n", __func__);
@@ -2568,14 +2686,25 @@ int soh_get_acr_resistance(struct acr_info *r, enum acr_type type)
         if (di->soh_acr_dev.acr_nv.order_num < 0 || di->soh_acr_dev.acr_nv.order_num >= SOH_ACR_NV_DATA_NUM)
             di->soh_acr_dev.acr_nv.order_num = -1;
 
-        if (-1 == di->soh_acr_dev.acr_nv.order_num)
-            memset_s(r, sizeof(struct acr_info), 0, sizeof(struct acr_info));
-        else
-            memcpy_s(r, sizeof(struct acr_info), &di->soh_acr_dev.acr_nv.soh_nv_acr_info[di->soh_acr_dev.acr_nv.order_num], sizeof(struct acr_info));
+        if (-1 == di->soh_acr_dev.acr_nv.order_num) {
+            err = memset_s(r, sizeof(struct acr_info), 0, sizeof(struct acr_info));
+			if(err != EOK) {
+				hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+			}
+		}
+        else {
+            err = memcpy_s(r, sizeof(struct acr_info), &di->soh_acr_dev.acr_nv.soh_nv_acr_info[di->soh_acr_dev.acr_nv.order_num], sizeof(struct acr_info));
+			if(err != EOK) {
+				hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+			}
+		}
         break;
 
     case ACR_L_PRECISION:
-        memcpy_s(r, sizeof(struct acr_info), &di->soh_acr_dev.soh_acr_info, sizeof(struct acr_info));
+        err = memcpy_s(r, sizeof(struct acr_info), &di->soh_acr_dev.soh_acr_info, sizeof(struct acr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
         break;
     default:
         break;
@@ -2595,6 +2724,7 @@ int soh_get_acr_resistance(struct acr_info *r, enum acr_type type)
 int soh_get_dcr_resistance(struct dcr_info *r)
 {
     struct hisi_soh_device *di = g_di;
+    errno_t err = EOK;
 
     if (!r) {
         hisi_soh_err("%s pointer null!\n", __func__);
@@ -2609,10 +2739,18 @@ int soh_get_dcr_resistance(struct dcr_info *r)
     if (di->soh_dcr_dev.dcr_nv.order_num < 0 || di->soh_dcr_dev.dcr_nv.order_num >= SOH_DCR_NV_DATA_NUM)
         di->soh_dcr_dev.dcr_nv.order_num = -1;
 
-    if (-1 == di->soh_dcr_dev.dcr_nv.order_num)
-        memset_s(r, sizeof(struct dcr_info), 0, sizeof(struct dcr_info));
-    else
-        memcpy_s(r, sizeof(struct dcr_info), &di->soh_dcr_dev.dcr_nv.soh_nv_dcr_info[di->soh_dcr_dev.dcr_nv.order_num], sizeof(struct dcr_info));
+    if (-1 == di->soh_dcr_dev.dcr_nv.order_num) {
+        err = memset_s(r, sizeof(struct dcr_info), 0, sizeof(struct dcr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
+	}
+    else {
+        err = memcpy_s(r, sizeof(struct dcr_info), &di->soh_dcr_dev.dcr_nv.soh_nv_dcr_info[di->soh_dcr_dev.dcr_nv.order_num], sizeof(struct dcr_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
+	}
 
     hisi_soh_info("[%s] num = %d, r0 = %d, dcr = %d, cycle = %d, vol = %d, batt_temp = %d!\n", __func__,
                         di->soh_dcr_dev.dcr_nv.order_num, r->batt_r0,r->batt_dcr, r->batt_cycle, r->batt_vol, r->batt_temp);
@@ -2628,6 +2766,7 @@ int soh_get_dcr_resistance(struct dcr_info *r)
 int soh_get_poweroff_leakage(struct pd_leak_current_info *i)
 {
     struct hisi_soh_device *di = g_di;
+    errno_t err = EOK;
 
     if (!i) {
         hisi_soh_err("%s pointer null!\n", __func__);
@@ -2642,10 +2781,18 @@ int soh_get_poweroff_leakage(struct pd_leak_current_info *i)
     if (di->soh_pd_leak_dev.pd_leak_nv.order_num < 0 || di->soh_pd_leak_dev.pd_leak_nv.order_num >= SOH_PD_NV_DATA_NUM)
         di->soh_pd_leak_dev.pd_leak_nv.order_num = -1;
 
-    if (-1 == di->soh_pd_leak_dev.pd_leak_nv.order_num)
-        memset_s(i, sizeof(struct pd_leak_current_info), 0, sizeof(struct pd_leak_current_info));
-    else
-        memcpy_s(i, sizeof(struct pd_leak_current_info), &di->soh_pd_leak_dev.pd_leak_nv.soh_nv_pd_leak_current_info[di->soh_pd_leak_dev.pd_leak_nv.order_num], sizeof(struct pd_leak_current_info));
+    if (-1 == di->soh_pd_leak_dev.pd_leak_nv.order_num) {
+        err = memset_s(i, sizeof(struct pd_leak_current_info), 0, sizeof(struct pd_leak_current_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memset_s fail, err=%d\n",__func__, err);
+		}
+	}
+    else {
+        err = memcpy_s(i, sizeof(struct pd_leak_current_info), &di->soh_pd_leak_dev.pd_leak_nv.soh_nv_pd_leak_current_info[di->soh_pd_leak_dev.pd_leak_nv.order_num], sizeof(struct pd_leak_current_info));
+		if(err != EOK) {
+			hisi_soh_err("[%s]memcpy_s fail, err=%d\n",__func__, err);
+		}
+	}
 
     hisi_soh_info("[%s] num = %d, leak_ma = %d, cycle = %d, sys_cc =%d, curr[0] =%d, curr[1] = %d,"
                        "vol[0] = %d, vol[1]=%d, chip_temp[0]=%d, chip_temp[1]=%d, rtc[0]=%d, rtc[1]=%d!\n", __func__,
@@ -2815,7 +2962,7 @@ static int soh_probe(struct platform_device *pdev)
 
     platform_set_drvdata(pdev, di);
 
-    wake_lock_init(&di->soh_wake_lock, WAKE_LOCK_SUSPEND, "soh_wakelock");
+    wakeup_source_init(&di->soh_wake_lock, "soh_wakelock");
 
     mutex_init(&di->soh_mutex);
 
@@ -2864,7 +3011,7 @@ soh_fail_2:
 soh_fail_1:
     soh_acr_uninit(di);
 soh_fail_0:
-    wake_lock_destroy(&di->soh_wake_lock);
+    wakeup_source_trash(&di->soh_wake_lock);
     mutex_destroy(&di->soh_mutex);
     platform_set_drvdata(pdev, NULL);
     return ret;
@@ -2889,7 +3036,7 @@ static int  soh_remove(struct platform_device *pdev)
     soh_dcr_uninit(di);
     soh_ovp_uninit(di);
     soh_pd_leak_uninit(di);
-	wake_lock_destroy(&di->soh_wake_lock);
+	wakeup_source_trash(&di->soh_wake_lock);
     mutex_destroy(&di->soh_mutex);
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev,di);

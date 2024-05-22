@@ -21,7 +21,7 @@
 #include <asm/compiler.h>
 #include <linux/debugfs.h>
 #include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/kthread.h>
 
 #include "../blackbox/rdr_inner.h"
@@ -92,7 +92,7 @@ static void kernel_cpuid_notify_bl31(void *info)
  * func name: kernel_init_notify_bl31
  *
  * As soon as the blackbox in kernel finish it's initialization, blakcbox will notify bl31 to
- * start bl31 mntn initialization. 
+ * start bl31 mntn initialization.
  *
  * return value
  * 0 success
@@ -133,7 +133,7 @@ static int kernel_notify_bl31(void *arg)
 
 	down(&kernel_notify_bl31_sem);
 
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu(cpu) { //lint !e574
 		ret = smp_call_function_single(cpu, kernel_cpuid_notify_bl31, (void *)((uintptr_t)cpu), 0);
 		if (unlikely(ret)) {
 			BB_PRINT_ERR("[%s] fail, cpu %d\n", __func__, cpu);
@@ -198,7 +198,7 @@ static int bl31_trace_exception_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
  */
 static int bl31_trace_irq_smc_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 {
-	bl31_trace_irq_smc_head_t *head;
+	bl31_trace_irq_smc_head_t *head = NULL;
 	u64                       i, cpu_num = num_possible_cpus(), head_len, min_size, offset, size;
 	int                       ret;
   	u32                       ratio[8][8] = {
@@ -218,10 +218,10 @@ static int bl31_trace_irq_smc_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 	}
 
 	head_len = sizeof(bl31_trace_irq_smc_head_t) + sizeof(u64)*cpu_num;
-	BB_PRINT_DBG("[%s], num_online_cpus [%llu] head_len %llu field_count %u!\n", 
+	BB_PRINT_DBG("[%s], num_online_cpus [%llu] head_len %llu field_count %u!\n",
 		__func__, cpu_num, head_len, (u32)sizeof(bl31_trace_t));
 
-	min_size = 
+	min_size =
 		head_len + cpu_num * (sizeof(struct hisiap_ringbuffer_s) + 16 * sizeof(bl31_trace_t));
 	if (unlikely(log_len < min_size)) {
 		BB_PRINT_ERR("[%s] fail, log_len %u < min_size %llu\n", __func__, log_len, min_size);
@@ -279,10 +279,10 @@ static pfn_exception_init_ops g_bl31_trace_init_fn[BL31_TRACE_ENUM] =
  */
 static int bl31_trace_addr_len_set(u64 addr, u64 len)
 {
-	struct device_node *np;
+	struct device_node *np = NULL;
 	uint32_t           data[2];
 	int                ret;
-	u8                 *bl31_ctrl_addr;
+	u8                 *bl31_ctrl_addr = NULL;
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon, bl31_mntn");
 	if (unlikely(!np)) {
@@ -327,8 +327,8 @@ static int bl31_trace_addr_len_set(u64 addr, u64 len)
  */
 int rdr_exception_trace_bl31_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 {
-	pfn_exception_init_ops ops_fn;
-	struct task_struct     *cpuid_notify_thread;
+	pfn_exception_init_ops ops_fn = NULL;
+	struct task_struct     *cpuid_notify_thread = NULL;
 	static bool            init;
 	u32                    i, offset;
 
@@ -340,7 +340,8 @@ int rdr_exception_trace_bl31_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 		return 0;
 	}
 
-	if (EOK != memset_s(virt_addr, log_len, 0, log_len)) {
+	if (EOK != memset_s(virt_addr, log_len, 0, log_len))
+	{
 		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
 	}
 
@@ -353,7 +354,7 @@ int rdr_exception_trace_bl31_init(u8 *phy_addr, u8 *virt_addr, u32 log_len)
 		}
 
 		ops_fn = g_bl31_trace_init_fn[i];
-		if ( unlikely(ops_fn 
+		if ( unlikely(ops_fn
 			&& ops_fn(phy_addr + offset, virt_addr + offset, bl31_trace_size[i])) ) {
 			BB_PRINT_ERR("[%s] fail, exception bl31 init fail: index %u size %u ops_fn 0x%pK\n",
 					 __func__, i, bl31_trace_size[i], ops_fn);
@@ -443,14 +444,18 @@ int rdr_exception_analysis_bl31(u64                         etime,
 /*lint -e679*/
 static int bl31_cleartext_exception_print(char *dir_path, u64 log_addr, u32 log_len)
 {
-	struct hisiap_ringbuffer_s *q, temp;
-	rdr_exception_trace_t      *trace;
-	struct file                *fp;
-	bool                       error;
+	struct hisiap_ringbuffer_s *q = NULL;
+	struct hisiap_ringbuffer_s temp;
+	rdr_exception_trace_t      *trace = NULL;
+	struct file                *fp = NULL;
+	bool                       error = false;
 	u32                        start, end, i;
 
 	q = (struct hisiap_ringbuffer_s *)(uintptr_t)log_addr;
-	memcpy_s(&temp, sizeof(struct hisiap_ringbuffer_s), q, sizeof(struct hisiap_ringbuffer_s));
+	if (EOK != memcpy_s(&temp, sizeof(struct hisiap_ringbuffer_s), q, sizeof(struct hisiap_ringbuffer_s)))
+	{
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	}
 	if (unlikely(is_ringbuffer_invalid(sizeof(rdr_exception_trace_t), log_len, &temp))) {
 		BB_PRINT_ERR("%s() fail:check_ringbuffer_invalid.\n", __func__);
 		return -1;
@@ -478,7 +483,7 @@ static int bl31_cleartext_exception_print(char *dir_path, u64 log_addr, u32 log_
 	for (i = start; i <= end; i++) {
 		trace = (rdr_exception_trace_t *)&q->data[(i % q->max_num) * q->field_count];
 		rdr_cleartext_print(fp, &error, "%-15llu0x%-16llx%-15s%-25s%-25s\n",
-			trace->e_32k_time, trace->e_reset_core_mask, rdr_get_exception_core(trace->e_from_core), 
+			trace->e_32k_time, trace->e_reset_core_mask, rdr_get_exception_core(trace->e_from_core),
 			rdr_get_exception_type(trace->e_exce_type),
 			rdr_get_subtype_name(trace->e_exce_type, trace->e_exce_subtype)
 		);
@@ -511,15 +516,16 @@ static int bl31_cleartext_exception_print(char *dir_path, u64 log_addr, u32 log_
  */
 /*lint -e679*/
 static int bl31_cleartext_irq_smc_print_on_cpu(struct file *fp,
-                                               u64         log_addr, 
+                                               u64         log_addr,
                                                u32         log_len,
                                                u8          *addr,
                                                u32         len,
                                                u32         cpu)
 {
-	struct hisiap_ringbuffer_s *q, temp;
-	bl31_trace_t               *irq;
-	bool                       error;
+	struct hisiap_ringbuffer_s *q = NULL;
+	struct hisiap_ringbuffer_s temp;
+	bl31_trace_t               *irq = NULL;
+	bool                       error = false;
 	u32                        start, end, i;
 
 	if ( unlikely((addr < (u8 *)(uintptr_t)log_addr) || (addr + len > (u8 *)(uintptr_t)(log_addr + log_len))) ) {
@@ -529,7 +535,10 @@ static int bl31_cleartext_irq_smc_print_on_cpu(struct file *fp,
 	}
 
 	q = (struct hisiap_ringbuffer_s *)addr;
-	memcpy_s(&temp, sizeof(struct hisiap_ringbuffer_s), q, sizeof(struct hisiap_ringbuffer_s));
+	if (EOK != memcpy_s(&temp, sizeof(struct hisiap_ringbuffer_s), q, sizeof(struct hisiap_ringbuffer_s)))
+	{
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	}
 	if (unlikely(is_ringbuffer_invalid(sizeof(bl31_trace_t), len, &temp))) {
 		BB_PRINT_ERR("%s() fail:check_ringbuffer_invalid.\n", __func__);
 		return -1;
@@ -548,9 +557,9 @@ static int bl31_cleartext_irq_smc_print_on_cpu(struct file *fp,
 	get_ringbuffer_start_end(&temp, &start, &end);
 	for (i = start; i <= end; i++) {
 		irq = (bl31_trace_t *)&q->data[(i % q->max_num) * q->field_count];
-		rdr_cleartext_print(fp, &error, "%-15llu%-5s%-4s%-3s", 
+		rdr_cleartext_print(fp, &error, "%-15llu%-5s%-4s%-3s",
 			irq->bl31_32k_time,
-			(BL31_TRACE_TYPE_SMC == irq->type) ? "smc" : 
+			(BL31_TRACE_TYPE_SMC == irq->type) ? "smc" :
 				(( BL31_TRACE_TYPE_INTERRUPT == irq->type) ? "irq" : "out" ),
 			(BL31_TRACE_IN == irq->dir) ? "in" : "out",
 			(0 == irq->ns) ? "s" : ( (1 == irq->ns) ? "ns" : "un" )
@@ -591,10 +600,10 @@ exit:
  */
 static int bl31_cleartext_irq_smc_print(char *dir_path, u64 log_addr, u32 log_len)
 {
-	bl31_trace_irq_smc_head_t *head;
-	struct file               *fp;
+	bl31_trace_irq_smc_head_t *head = NULL;
+	struct file               *fp = NULL;
 	u64                       i, head_len, cpu_num, len, next_offset;
-	u8                        *addr;
+	u8                        *addr = NULL;
 	int                       ret = 0;
 
 	/* get the file descriptor from the specified directory path */
@@ -642,7 +651,7 @@ static int bl31_cleartext_irq_smc_print(char *dir_path, u64 log_addr, u32 log_le
 		addr = (u8 *)(uintptr_t)log_addr + head->offset[i];
 		len = next_offset - head->offset[i];
 
-		if (unlikely(bl31_cleartext_irq_smc_print_on_cpu(fp, log_addr + head_len, 
+		if (unlikely(bl31_cleartext_irq_smc_print_on_cpu(fp, log_addr + head_len,
 				log_len - head_len, addr, len, i))) {
 			ret = -1;
 			goto exit;
@@ -678,7 +687,7 @@ static pfn_cleartext_ops g_bl31_cleartext_fn[BL31_TRACE_ENUM] =
  */
 int rdr_exception_trace_bl31_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 {
-	pfn_cleartext_ops ops_fn;
+	pfn_cleartext_ops ops_fn = NULL;
 	u32               i, offset;
 
 	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr)) ) {

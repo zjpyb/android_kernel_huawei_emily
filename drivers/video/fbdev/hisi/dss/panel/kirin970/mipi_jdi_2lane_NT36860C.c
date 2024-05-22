@@ -598,7 +598,6 @@ static int mipi_jdi_2lane_NT36860C_panel_on(struct platform_device *pdev)
 		while (status & 0x10) {
 			udelay(50);
 			if (++try_times > 100) {
-				try_times = 0;
 				HISI_FB_ERR("fb%d, Read lcd power status timeout!\n", hisifd->index);
 				break;
 			}
@@ -787,14 +786,14 @@ static int mipi_jdi_2lane_NT36860C_panel_set_display_region(struct platform_devi
 	hisifd = platform_get_drvdata(pdev);
 	BUG_ON(hisifd == NULL);
 
-	lcd_disp_x[1] = (dirty->x >> 8) & 0xff;
-	lcd_disp_x[2] = dirty->x & 0xff;
-	lcd_disp_x[3] = ((dirty->x + dirty->w - 1) >> 8) & 0xff;
-	lcd_disp_x[4] = (dirty->x + dirty->w - 1) & 0xff;
-	lcd_disp_y[1] = (dirty->y >> 8) & 0xff;
-	lcd_disp_y[2] = dirty->y & 0xff;
-	lcd_disp_y[3] = ((dirty->y + dirty->h - 1) >> 8) & 0xff;
-	lcd_disp_y[4] = (dirty->y + dirty->h - 1) & 0xff;
+	lcd_disp_x[1] = ((unsigned)dirty->x >> 8) & 0xff;
+	lcd_disp_x[2] = (unsigned)dirty->x & 0xff;
+	lcd_disp_x[3] = ((unsigned)(dirty->x + dirty->w - 1) >> 8) & 0xff;
+	lcd_disp_x[4] = (unsigned)(dirty->x + dirty->w - 1) & 0xff;
+	lcd_disp_y[1] = ((unsigned)dirty->y >> 8) & 0xff;
+	lcd_disp_y[2] = (unsigned)dirty->y & 0xff;
+	lcd_disp_y[3] = ((unsigned)(dirty->y + dirty->h - 1) >> 8) & 0xff;
+	lcd_disp_y[4] = (unsigned)(dirty->y + dirty->h - 1) & 0xff;
 
 	HISI_FB_DEBUG("x[1] = 0x%2x, x[2] = 0x%2x, x[3] = 0x%2x, x[4] = 0x%2x.\n",
 		lcd_disp_x[1], lcd_disp_x[2], lcd_disp_x[3], lcd_disp_x[4]);

@@ -88,10 +88,18 @@
 #include "v_MemCfg.inc"
 
 /* LINUX 不支持 */
+#if(VOS_VXWORKS == VOS_OS_VER)
+#include "stdio.h"
+#include "stdlib.h"
+#endif
 
+#if (VOS_OS_VER == VOS_LINUX)
 #include <asm/dma-mapping.h>
 #include <linux/version.h>
+#ifdef CONFIG_ARM64
 #include <linux/of_device.h>
+#endif
+#endif
 
 
 
@@ -167,11 +175,21 @@ VOS_UINT_PTR g_ulVosMemCtrlSpaceStart;
 VOS_UINT_PTR g_ulVosMemCtrlSpaceEnd;
 
 /* the buf of VOS's mem */
+#if ((OSA_CPU_CCPU == VOS_OSA_CPU) || (VOS_WIN32 == VOS_OS_VER))
+#if (FEATURE_ON == FEATURE_VOS_REDUCE_MEM_CFG)
+VOS_CHAR g_acVosMemBuf[4166960];
+#else
+VOS_CHAR g_acVosMemBuf[4610192];
+#endif
+#endif
 
+#if ((OSA_CPU_ACPU == VOS_OSA_CPU) && (VOS_WIN32 != VOS_OS_VER))
 /* the buf of VOS's mem */
 VOS_CHAR g_acVosMemBuf[1577424]; /* 由于A核支持64位，内存需要增大 */
+#endif
 
 
+#if VOS_YES == VOS_MEMORY_CHECK
 
 VOS_UINT32 g_ulAutoCheckMemoryThreshold;
 
@@ -180,6 +198,7 @@ VOS_VOID VOS_PrintUsedMsgInfo(VOS_VOID);
 VOS_VOID VOS_PrintUsedMemoryInfo(VOS_MEM_CTRL_BLOCK *pstMemCtrl, VOS_INT lCycle);
 
 VOS_VOID VOS_PrintUsedTimerMsgInfo(VOS_VOID);
+#endif
 
 VOS_VOID VOS_MemDump(VOS_UINT32 ulInfo, VOS_UINT32 ulSize,VOS_UINT32 ulFileID,
                 VOS_INT32 ulLineNo,VOS_MEM_CTRL_BLOCK *pstMemCtrl, VOS_INT lCycle);
@@ -187,6 +206,12 @@ VOS_VOID VOS_MemDump(VOS_UINT32 ulInfo, VOS_UINT32 ulSize,VOS_UINT32 ulFileID,
 VOS_VOID VOS_MsgDump(VOS_UINT32 ulInfo, VOS_UINT32 ulSize,
                     VOS_UINT32 ulFileID, VOS_INT32 ulLineNo);
 
+#if (VOS_DEBUG == VOS_DOPRA_VER)
+
+MEMORY_HOOK_FUNC  g_pfnAllocMemHook = VOS_NULL_PTR;
+MEMORY_HOOK_FUNC  g_pfnFreeMemHook = VOS_NULL_PTR;
+
+#endif
 
 extern VOS_UINT32 VOS_GetMsgName(VOS_UINT_PTR ulAddrress);
 
@@ -201,7 +226,13 @@ VOS_SPINLOCK             g_stVosDumpMemSpinLock;
 VOS_UINT32               g_ulVosDumpMemFlag;
 
 
+#if(VOS_VXWORKS == VOS_OS_VER)
+extern void* cacheDmaMalloc(unsigned int  bytes);
+extern unsigned int cacheDmaFree(void*  pBuf);
+#endif
 
+#if (VOS_LINUX == VOS_OS_VER)
+#ifdef CONFIG_ARM64
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 
 struct platform_device *modem_osa_pdev;
@@ -237,6 +268,8 @@ static struct platform_driver osa_driver = {
     },
 };
 
+#endif
+#endif
 #endif
 
 /*****************************************************************************
@@ -320,13 +353,17 @@ VOS_VOID VOS_MemCtrlBlkInit( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
     *ulCtrlAddress = (VOS_UINT_PTR)Block;
     *ulSpaceAddress = ulTemp;
 
+#if VOS_YES == VOS_MEMORY_CHECK
     VOS_MemCtrlBlock->BusyBlocks = VOS_NULL_PTR;
+#endif
 
+#if VOS_YES == VOS_MEMORY_COUNT
     VOS_MemCtrlBlock->MinIdleBlockNumber = ulTotalBlockNumber;
     VOS_MemCtrlBlock->MinSize = 0x0fffffff;
     VOS_MemCtrlBlock->MaxSize = 0;
     VOS_MemCtrlBlock->lRealNumber = 0;
     VOS_MemCtrlBlock->lMaxRealNumber = 0;
+#endif
 }
 
 /*****************************************************************************
@@ -347,8 +384,12 @@ VOS_UINT32 VOS_MemInit( VOS_VOID )
     VOS_UINT_PTR ulSpaceEnd;
     VOS_UINT_PTR ulCtrlStart;
 
+#if (VOS_LINUX == VOS_OS_VER)
+#ifdef CONFIG_ARM64
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
     VOS_INT32 lRegResult = 0;
+#endif
+#endif
 #endif
 
     /* calculate msg+mem's size */
@@ -438,6 +479,8 @@ VOS_UINT32 VOS_MemInit( VOS_VOID )
     VOS_SpinLockInit(&g_stVosDumpMemSpinLock);
     g_ulVosDumpMemFlag = VOS_TRUE;
 
+#if (VOS_LINUX == VOS_OS_VER)
+#ifdef CONFIG_ARM64
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 
     lRegResult = platform_driver_register(&osa_driver);
@@ -447,6 +490,8 @@ VOS_UINT32 VOS_MemInit( VOS_VOID )
         LogPrint1("<VOS_MemInit> platform_driver_register fail, lRegResult=%d.\n",lRegResult);
     }
 
+#endif
+#endif
 #endif
 
     return VOS_OK;
@@ -532,6 +577,7 @@ VOS_VOID* VOS_MemCtrlBlkMalloc( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
         VOS_MemCtrlBlock->Blocks = Block->pstNext;
     }
 
+#if VOS_YES == VOS_MEMORY_CHECK
     Block->pstPre = VOS_NULL_PTR;
     Block->pstNext = VOS_MemCtrlBlock->BusyBlocks;
     if ( VOS_NULL_PTR != VOS_MemCtrlBlock->BusyBlocks )
@@ -539,16 +585,19 @@ VOS_VOID* VOS_MemCtrlBlkMalloc( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
         VOS_MemCtrlBlock->BusyBlocks->pstPre = Block;
     }
     VOS_MemCtrlBlock->BusyBlocks = Block;
+#endif
 
     /*VOS_Splx(intLockLevel);*/
     VOS_SpinUnlockIntUnlock(&g_stVosMemSpinLock, ulLockLevel);
 
+#if VOS_YES == VOS_MEMORY_COUNT
     /* record the usage of control block */
     if(VOS_MemCtrlBlock->IdleBlockNumber < VOS_MemCtrlBlock->MinIdleBlockNumber)
     {
         VOS_MemCtrlBlock->MinIdleBlockNumber
             = VOS_MemCtrlBlock->IdleBlockNumber;
     }
+#endif
 
     /* check memory */
     pulTemp = (VOS_UINT_PTR*)(Block->ulMemAddress);
@@ -582,10 +631,13 @@ VOS_VOID* VOS_TIMER_MemCtrlBlkMalloc( VOS_PID PID, VOS_INT ulLength )
         &VOS_MemCtrlBlk[VOS_MEM_CTRL_BLOCK_NUMBER-1], ulLength, 0, 0);
     if( VOS_NULL_PTR != pulSpace )
     {
+#if VOS_YES == VOS_MEMORY_CHECK
         pstTemp = (VOS_MEM_HEAD_BLOCK *)(*pulSpace);
         pstTemp->ulcputickAlloc = VOS_GetSlice();
         pstTemp->ulAllocPid = PID;
+#endif
 
+#if VOS_YES == VOS_MEMORY_COUNT
         pstTemp->ulRealCtrlAddr
             = (VOS_UINT_PTR)(&VOS_MemCtrlBlk[VOS_MEM_CTRL_BLOCK_NUMBER-1]);
         VOS_MemCtrlBlk[VOS_MEM_CTRL_BLOCK_NUMBER-1].lRealNumber++;
@@ -596,6 +648,7 @@ VOS_VOID* VOS_TIMER_MemCtrlBlkMalloc( VOS_PID PID, VOS_INT ulLength )
             VOS_MemCtrlBlk[VOS_MEM_CTRL_BLOCK_NUMBER-1].lMaxRealNumber
                 = VOS_MemCtrlBlk[VOS_MEM_CTRL_BLOCK_NUMBER-1].lRealNumber;
         }
+#endif
 
         /* offset space which be reserved of OSA */
         pulSpace += VOS_MEMORY_RESERVED_WORD_HEAD;
@@ -625,7 +678,9 @@ VOS_UINT32 VOS_MemCtrlBlkFree( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
                                VOS_UINT32 ulFileID, VOS_PID Pid )
 {
     VOS_ULONG             ulLockLevel;
+#if VOS_YES == VOS_MEMORY_COUNT
     VOS_MEM_CTRL_BLOCK   *pstTemp;
+#endif
 
     /*intLockLevel = VOS_SplIMP();*/
     VOS_SpinLockIntLock(&g_stVosMemSpinLock, ulLockLevel);
@@ -644,6 +699,7 @@ VOS_UINT32 VOS_MemCtrlBlkFree( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
         return VOS_ERR;
     }
 
+#if VOS_YES == VOS_MEMORY_CHECK
     if ( Block == VOS_MemCtrlBlock->BusyBlocks )
     {
         VOS_MemCtrlBlock->BusyBlocks = Block->pstNext;
@@ -661,10 +717,14 @@ VOS_UINT32 VOS_MemCtrlBlkFree( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
         }
     }
 
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+    VOS_DecreasePidMemory(Block->ulAllocPid, Block->ulAllocSize, Block->aulMemRecord[3]);
+#endif
 
     Block->aulMemRecord[6] = (ulFileID << 16)|((VOS_UINT32)Pid & 0x0000ffff);
     Block->aulMemRecord[7] = VOS_GetSlice();
 
+#endif
 
     Block->ulMemUsedFlag = VOS_NOT_USED;
 
@@ -674,10 +734,12 @@ VOS_UINT32 VOS_MemCtrlBlkFree( VOS_MEM_CTRL_BLOCK *VOS_MemCtrlBlock,
 
     VOS_MemCtrlBlock->IdleBlockNumber++;/*[false alarm]:屏蔽Fortify的Redundant Null Check告警*/
 
+#if VOS_YES == VOS_MEMORY_COUNT
     /*lint -e613*/
     pstTemp = (VOS_MEM_CTRL_BLOCK *)(Block->ulRealCtrlAddr);
     /*lint +e613*/
     pstTemp->lRealNumber--;
+#endif
 
     /*VOS_Splx(intLockLevel);*/
     VOS_SpinUnlockIntUnlock(&g_stVosMemSpinLock, ulLockLevel);
@@ -699,27 +761,34 @@ VOS_VOID * VOS_MemBlkMalloc( VOS_PID PID, VOS_INT ulLength,
     VOS_INT              i;
     VOS_UINT_PTR         *pulSpace;
     VOS_MEM_HEAD_BLOCK   *pstTemp;
+#if VOS_YES == VOS_MEMORY_COUNT
     VOS_BOOL             ulFlag = VOS_TRUE;
     VOS_INT              lTempSuffix = 0;
+#endif
 
+#if (VOS_YES == VOS_CHECK_PARA)
     if( 0 == ulLength )
     {
         return( VOS_NULL_PTR );
     }
+#endif
 
     for ( i=0; i<VOS_MEM_CTRL_BLOCK_NUMBER-1; i++ )
     {
         if( ulLength <= MsgBlockInfo[i].size )
         {
+#if VOS_YES == VOS_MEMORY_COUNT
             if ( VOS_TRUE == ulFlag )
             {
                 ulFlag = VOS_FALSE;
                 lTempSuffix = i;
             }
+#endif
             pulSpace = (VOS_UINT_PTR *)VOS_MemCtrlBlkMalloc( &VOS_MemCtrlBlk[i],
                 ulLength, ulFileID, usLineNo);
             if( VOS_NULL_PTR != pulSpace )
             {
+#if VOS_YES == VOS_MEMORY_CHECK
                 pstTemp = (VOS_MEM_HEAD_BLOCK *)(*pulSpace);
                 pstTemp->ulAllocSize = (VOS_UINT32)ulLength;
                 pstTemp->aulMemRecord[4] = (pstTemp->aulMemRecord[0] << 16)|(pstTemp->ulAllocPid & 0x0000ffff);
@@ -728,8 +797,14 @@ VOS_VOID * VOS_MemBlkMalloc( VOS_PID PID, VOS_INT ulLength,
                 pstTemp->ulAllocPid = PID;
                 pstTemp->aulMemRecord[0] = ulFileID;
                 pstTemp->aulMemRecord[1] = (VOS_UINT32)usLineNo;
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+                pstTemp->aulMemRecord[3] = VOS_LOCATION_MSG;
+                VOS_IncreasePidMemory(PID, ulLength, VOS_LOCATION_MSG);
+#endif
 
+#endif
 
+#if VOS_YES == VOS_MEMORY_COUNT
                 pstTemp->ulRealCtrlAddr
                     = (VOS_UINT_PTR)(&VOS_MemCtrlBlk[lTempSuffix]);
                 VOS_MemCtrlBlk[lTempSuffix].lRealNumber++;
@@ -750,6 +825,7 @@ VOS_VOID * VOS_MemBlkMalloc( VOS_PID PID, VOS_INT ulLength,
                 {
                     VOS_MemCtrlBlk[lTempSuffix].MinSize = ulLength;
                 }
+#endif
 
                 /* offset space which be reserved of OSA */
                 pulSpace += VOS_MEMORY_RESERVED_WORD_HEAD;
@@ -785,9 +861,12 @@ VOS_VOID * V_MemAlloc( VOS_UINT32 ulInfo, VOS_UINT8  ucPtNo, VOS_UINT32 ulSize,
     VOS_MEM_BLOCK_INFO   *pstMemInfo;
     VOS_MEM_CTRL_BLOCK   *pstMemCtrl;
     VOS_INT              lCycle;
+#if VOS_YES == VOS_MEMORY_COUNT
     VOS_BOOL             ulFlag = VOS_TRUE;
     VOS_INT              lTempSuffix = 0;
+#endif
 
+#if (VOS_YES == VOS_CHECK_PARA)
     if( MEM_PT_BUTT <= ucPtNo )
     {
         (VOS_VOID)VOS_SetErrorNo(VOS_ERRNO_MEMORY_ALLOC_INPUTMSGISNULL);
@@ -812,6 +891,7 @@ VOS_VOID * V_MemAlloc( VOS_UINT32 ulInfo, VOS_UINT8  ucPtNo, VOS_UINT32 ulSize,
 
         return VOS_NULL_PTR;
     }
+#endif
 
     pstMemInfo = MemBlockInfo;
 
@@ -823,15 +903,18 @@ VOS_VOID * V_MemAlloc( VOS_UINT32 ulInfo, VOS_UINT8  ucPtNo, VOS_UINT32 ulSize,
     {
         if( (VOS_INT)ulSize <= pstMemInfo[i].size )
         {
+#if VOS_YES == VOS_MEMORY_COUNT
             if ( VOS_TRUE == ulFlag )
             {
                 ulFlag = VOS_FALSE;
                 lTempSuffix = i;
             }
+#endif
             pulSpace = (VOS_UINT_PTR *)VOS_MemCtrlBlkMalloc(
                 &(pstMemCtrl[i]), (VOS_INT)ulSize, ulFileID, usLineNo);
             if( VOS_NULL_PTR != pulSpace )
             {
+#if VOS_YES == VOS_MEMORY_CHECK
                 pstTemp = (VOS_MEM_HEAD_BLOCK *)(*pulSpace);
                 pstTemp->ulAllocSize = ulSize;
                 pstTemp->aulMemRecord[4] = (pstTemp->aulMemRecord[0] << 16)|(pstTemp->ulAllocPid & 0x0000ffff);
@@ -842,8 +925,14 @@ VOS_VOID * V_MemAlloc( VOS_UINT32 ulInfo, VOS_UINT8  ucPtNo, VOS_UINT32 ulSize,
                 pstTemp->aulMemRecord[1] = (VOS_UINT32)usLineNo;
                 /* record for check the leak of memory automatic */
                 pstTemp->aulMemRecord[2] = (VOS_UINT32)ucPtNo;
+#if VOS_YES == VOS_ANALYZE_PID_MEM
+                pstTemp->aulMemRecord[3] = VOS_LOCATION_MEM;
+                VOS_IncreasePidMemory(ulInfo, ulSize, VOS_LOCATION_MEM);
+#endif
 
+#endif
 
+#if VOS_YES == VOS_MEMORY_COUNT
                 pstTemp->ulRealCtrlAddr
                     = (VOS_UINT_PTR)(&(pstMemCtrl[lTempSuffix]));
 
@@ -865,10 +954,18 @@ VOS_VOID * V_MemAlloc( VOS_UINT32 ulInfo, VOS_UINT8  ucPtNo, VOS_UINT32 ulSize,
                 {
                     pstMemCtrl[lTempSuffix].MinSize = (VOS_INT)ulSize;
                 }
+#endif
 
                 /* offset space which be reserved of OSA */
                 pulSpace += VOS_MEMORY_RESERVED_WORD_HEAD;
 
+#if (VOS_DEBUG == VOS_DOPRA_VER)
+
+                if ( VOS_NULL_PTR != g_pfnAllocMemHook )
+                {
+                    g_pfnAllocMemHook(ulSize);
+                }
+#endif
 
                 return (VOS_VOID *)pulSpace;
             }
@@ -1074,6 +1171,7 @@ VOS_UINT32 VOS_MemCheck( VOS_VOID *pAddr, VOS_UINT_PTR *pulBlock,
 
     ulTempAddress = (VOS_UINT_PTR)pAddr;
 
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( ulTempAddress < gulVosSpaceAndProtectionStart
         || ulTempAddress > gulVosSpaceAndProtectionEnd )
     {
@@ -1095,6 +1193,7 @@ VOS_UINT32 VOS_MemCheck( VOS_VOID *pAddr, VOS_UINT_PTR *pulBlock,
 
         return(VOS_ERRNO_MEMORY_DOPRAMEM_OVERFLOW);
     }
+#endif
 
     pulTemp = (VOS_UINT_PTR *)pAddr;
 
@@ -1173,6 +1272,7 @@ VOS_UINT32 V_MemFree( VOS_UINT32 ulInfo, VOS_VOID **ppAddr,
     VOS_UINT_PTR                        ulBlockAdd;
     VOS_UINT_PTR                        ulCtrlkAdd;
 
+#if (VOS_YES == VOS_CHECK_PARA)
     if( VOS_NULL_PTR == ppAddr )
     {
         (VOS_VOID)VOS_SetErrorNo(VOS_ERRNO_MEMORY_FREE_INPUTPIDINVALID);
@@ -1187,6 +1287,7 @@ VOS_UINT32 V_MemFree( VOS_UINT32 ulInfo, VOS_VOID **ppAddr,
         (VOS_VOID)VOS_SetErrorNo(VOS_ERRNO_MEMORY_FREE_INPUTPIDINVALID);
         return(VOS_ERRNO_MEMORY_FREE_INPUTPIDINVALID);
     }
+#endif
 
     if ( VOS_OK != VOS_MemCheck( *ppAddr, &ulBlockAdd, &ulCtrlkAdd,
         ulFileID, usLineNo ) )
@@ -1196,6 +1297,14 @@ VOS_UINT32 V_MemFree( VOS_UINT32 ulInfo, VOS_VOID **ppAddr,
 
     *ppAddr = VOS_NULL_PTR;
 
+#if (VOS_DEBUG == VOS_DOPRA_VER)
+
+    if ( VOS_NULL_PTR != g_pfnFreeMemHook )
+    {
+        g_pfnFreeMemHook(0);
+    }
+
+#endif
 
     return VOS_MemCtrlBlkFree( (VOS_MEM_CTRL_BLOCK *)ulCtrlkAdd,
             (VOS_MEM_HEAD_BLOCK *)ulBlockAdd, ulFileID, (VOS_PID)ulInfo );
@@ -1257,6 +1366,7 @@ VOS_VOID *VOS_MemReAlloc ( VOS_UINT32 ulPid, VOS_UINT8 ucPtNo,
 VOS_VOID VOS_RefreshMemInfo( VOS_MEM_RECORD_ST *pstPara,
                                 VOS_MEM_CTRL_BLOCK *pstMemCtrl, VOS_INT lCycle)
 {
+#if VOS_YES == VOS_MEMORY_COUNT
     VOS_INT           i;
 
     for ( i=0; i<lCycle; i++ )
@@ -1276,6 +1386,7 @@ VOS_VOID VOS_RefreshMemInfo( VOS_MEM_RECORD_ST *pstPara,
             pstPara[i].lMaxRealNumber = pstMemCtrl[i].lMaxRealNumber;
         }
     }
+#endif
 
     return;
 }
@@ -1290,6 +1401,7 @@ VOS_VOID VOS_RefreshMemInfo( VOS_MEM_RECORD_ST *pstPara,
  *****************************************************************************/
 VOS_VOID VOS_RecordmemInfo( VOS_MEM_RECORD_ST *pstPara )
 {
+#if VOS_YES == VOS_MEMORY_COUNT
     VOS_MEM_RECORD_ST *pstTemp;
 
     pstTemp = pstPara;
@@ -1300,11 +1412,13 @@ VOS_VOID VOS_RecordmemInfo( VOS_MEM_RECORD_ST *pstPara )
 
     VOS_RefreshMemInfo(pstTemp, VOS_SimpleMemCtrlBlk, VOS_SIMPLE_MEM_CTRL_BLOCK_NUMBER);
 
+#endif
 
     return;
 }
 
 
+#if VOS_YES == VOS_MEMORY_COUNT
 /*****************************************************************************
  Function   : VOS_show_memory_info
  Description: print memory use info
@@ -1338,8 +1452,10 @@ VOS_VOID VOS_show_memory_info(VOS_VOID)
         Print1("%s", "\r\n");
     }
 }
+#endif
 
 
+#if VOS_YES == VOS_MEMORY_CHECK
 
 /*****************************************************************************
  Function   : VOS_show_used_msg_info
@@ -1449,9 +1565,35 @@ VOS_VOID VOS_show_used_memory_info(VOS_UINT32 Para0, VOS_UINT32 Para1,
  *****************************************************************************/
 VOS_VOID VOS_PrintUsedMsgInfo(VOS_VOID)
 {
+#if ((VOS_VXWORKS == VOS_OS_VER)||(VOS_NUCLEUS == VOS_OS_VER)||(VOS_WIN32 == VOS_OS_VER)||(VOS_RTOSCK== VOS_OS_VER))
+    VOS_UINT32      TempTaskID;
+    VOS_UINT32      Argument[4] = {0};
 
+#endif
 
+#if ((VOS_VXWORKS == VOS_OS_VER) || (VOS_NUCLEUS == VOS_OS_VER))
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_msg_info, 115,
+        32768, Argument );
 
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 118,
+        32768, Argument );
+#endif
+
+#if (VOS_RTOSCK== VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_msg_info, 25,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 26,
+        32768, Argument );
+#endif
+
+#if (VOS_WIN32 == VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_msg_info, 225,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 224,
+        32768, Argument );
+#endif
 
 }
 
@@ -1464,9 +1606,34 @@ VOS_VOID VOS_PrintUsedMsgInfo(VOS_VOID)
  *****************************************************************************/
 VOS_VOID VOS_PrintUsedTimerMsgInfo(VOS_VOID)
 {
+#if ((VOS_VXWORKS == VOS_OS_VER)||(VOS_NUCLEUS == VOS_OS_VER)||(VOS_WIN32 == VOS_OS_VER)||(VOS_RTOSCK== VOS_OS_VER))
+    VOS_UINT32      TempTaskID;
+    VOS_UINT32      Argument[4] = {0};
+#endif
 
+#if ((VOS_VXWORKS == VOS_OS_VER) || (VOS_NUCLEUS == VOS_OS_VER))
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_timer_msg_info, 115,
+        32768, Argument );
 
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 118,
+        32768, Argument );
+#endif
 
+#if (VOS_RTOSCK== VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_timer_msg_info, 25,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 26,
+        32768, Argument );
+#endif
+
+#if (VOS_WIN32 == VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_timer_msg_info, 225,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 224,
+        32768, Argument );
+#endif
 
 }
 
@@ -1480,9 +1647,39 @@ VOS_VOID VOS_PrintUsedTimerMsgInfo(VOS_VOID)
  *****************************************************************************/
 VOS_VOID VOS_PrintUsedMemoryInfo(VOS_MEM_CTRL_BLOCK *pstMemCtrl, VOS_INT lCycle)
 {
+#if ((VOS_VXWORKS == VOS_OS_VER)||(VOS_NUCLEUS == VOS_OS_VER)||(VOS_WIN32 == VOS_OS_VER)||(VOS_RTOSCK== VOS_OS_VER))
+    VOS_UINT32      TempTaskID;
+    VOS_UINT32      Argument[4] = {0};
 
+    Argument[0] = (VOS_UINT32)pstMemCtrl;
+    Argument[1] = (VOS_UINT32)lCycle;
+    Argument[2] = 0;
+    Argument[3] = 0;
+#endif
 
+#if ((VOS_VXWORKS == VOS_OS_VER) || (VOS_NUCLEUS == VOS_OS_VER))
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_memory_info, 115,
+        32768, Argument );
 
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 118,
+        32768, Argument );
+#endif
+
+#if (VOS_RTOSCK== VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_memory_info, 25,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 26,
+        32768, Argument );
+#endif
+
+#if (VOS_WIN32 == VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_memory_info, 225,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 224,
+        32768, Argument );
+#endif
 }
 
 /*****************************************************************************
@@ -1502,9 +1699,48 @@ VOS_VOID VOS_FatalError(VOS_VOID)
 
     LogPrint("# VOS_FatalError,system halt.\r\n");
 
+#if ((VOS_VXWORKS == VOS_OS_VER) || (VOS_NUCLEUS == VOS_OS_VER))
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_msg_info, 115,
+        32768, Argument );
+
+    /*VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_memory_info, 115,
+        32768, Argument );*/
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_ShowFidsQueueInfo, 115,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 118,
+        32768, Argument );
+#endif
+
+#if (VOS_RTOSCK == VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_msg_info, 25,
+        32768, Argument );
+
+    /*VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_memory_info, 115,
+        32768, Argument );*/
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_ShowFidsQueueInfo, 25,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 26,
+        32768, Argument );
+#endif
 
 
+#if (VOS_WIN32 == VOS_OS_VER)
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_msg_info, 225,
+        32768, Argument );
 
+    /*VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_show_used_memory_info, 225,
+        32768, Argument );*/
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_ShowFidsQueueInfo, 225,
+        32768, Argument );
+
+    (VOS_VOID)VOS_CreateTask(VOS_NULL_PTR, &TempTaskID, VOS_SuspendAllTask, 224,
+        32768, Argument );
+#endif
 
 }
 
@@ -1541,8 +1777,13 @@ VOS_VOID VOS_FindLeakMem(VOS_MEM_CTRL_BLOCK *pstMemCtrl, VOS_INT lCycle, VOS_UIN
             }
 
 
+#if (VOS_WIN32 != VOS_OS_VER)
             if ( (ulTempTick - pstTemp->ulcputickAlloc)
                 >= g_ulAutoCheckMemoryThreshold )
+#else
+            if ( (ulTempTick - pstTemp->ulcputickAlloc)
+                >= g_ulAutoCheckMemoryThreshold )
+#endif
             {
                 LogPrint5("# V_AutoCheckMemory: F %d L %d P %d S %d T %u.\r\n",
                         (VOS_INT)pstTemp->aulMemRecord[0],
@@ -1589,7 +1830,40 @@ VOS_VOID VOS_AutoCheckMemory( VOS_VOID )
     return;
 }
 
+#endif
 
+#if (VOS_DEBUG == VOS_DOPRA_VER)
+
+/*****************************************************************************
+ Function   : VOS_RegisterMemAllocHook
+ Description: register a hook to mem alloc
+ Input      : void
+ Return     : void
+ Other      : only for designer
+ *****************************************************************************/
+VOS_UINT32 VOS_RegisterMemAllocHook( VOS_UINT32 ulMode, MEMORY_HOOK_FUNC pfnHook)
+{
+    if ( VOS_ALLOC_MODE == ulMode )
+    {
+        g_pfnAllocMemHook = pfnHook;
+
+        return VOS_OK;
+    }
+    else if ( VOS_FREE_MODE == ulMode )
+    {
+        g_pfnFreeMemHook = pfnHook;
+
+        return VOS_OK;
+    }
+    else
+    {
+        LogPrint("VOS_RegisterMemAllocHook mode error.\r\n");
+
+        return VOS_ERR;
+    }
+}
+
+#endif
 /********************************************************************
  Function   : VOS_MemDump
  Description: Record the info. of every memory block, before UE reboots.
@@ -1881,6 +2155,7 @@ VOS_BOOL VOS_CalcAppMemInfo(VOS_VOID)
 VOS_UINT32 VOS_GetMemOccupyingInfo(VOS_MEM_OCCUPYING_INFO_ST *pstInfo,
                                    VOS_UINT32 ulLen)
 {
+#if VOS_YES == VOS_MEMORY_CHECK
     VOS_INT                    i;
     VOS_UINT32                 ulSuffix;
     VOS_MEM_HEAD_BLOCK         *pstTemp;
@@ -1916,6 +2191,9 @@ VOS_UINT32 VOS_GetMemOccupyingInfo(VOS_MEM_OCCUPYING_INFO_ST *pstInfo,
     (VOS_VOID)VOS_TaskUnlock();
 
     return VOS_OK;
+#else
+    return VOS_ERR;
+#endif
 }
 
 /*****************************************************************************
@@ -1931,6 +2209,7 @@ VOS_UINT32 VOS_GetMemOccupyingInfo(VOS_MEM_OCCUPYING_INFO_ST *pstInfo,
 VOS_UINT32 VOS_GetMsgOccupyingInfo(VOS_MEM_OCCUPYING_INFO_ST *pstInfo,
                                    VOS_UINT32 ulLen)
 {
+#if VOS_YES == VOS_MEMORY_CHECK
     VOS_INT                    i;
     VOS_UINT32                 ulSuffix;
     VOS_MEM_HEAD_BLOCK         *pstTemp;
@@ -1966,6 +2245,9 @@ VOS_UINT32 VOS_GetMsgOccupyingInfo(VOS_MEM_OCCUPYING_INFO_ST *pstInfo,
     (VOS_VOID)VOS_TaskUnlock();
 
     return VOS_OK;
+#else
+    return VOS_ERR;
+#endif
 }
 
 /*****************************************************************************
@@ -2018,11 +2300,13 @@ VOS_VOID *VOS_StaticMemAlloc( VOS_CHAR *pcBuf, VOS_UINT32 ulBufSize,
  *****************************************************************************/
 VOS_VOID VOS_ModifyMemBlkInfo(VOS_UINT_PTR ulAddr, VOS_PID PID)
 {
+#if VOS_YES == VOS_MEMORY_CHECK
     VOS_MEM_HEAD_BLOCK   *pstTemp;
 
     pstTemp = (VOS_MEM_HEAD_BLOCK *)(ulAddr);
 
     pstTemp->ulAllocPid = PID;
+#endif
 
    return;
 }
@@ -2071,7 +2355,14 @@ VOS_VOID *VOS_ExcDumpMemAlloc(VOS_UINT32 ulNumber)
  *****************************************************************************/
 VOS_VOID *VOS_CacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT32 uwCookie)
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+    return SRE_MemCacheAlloc(ulSize, MEM_ADDR_ALIGN_004);
+
+#elif (VOS_LINUX == VOS_OS_VER)
     return kmalloc(ulSize, GFP_KERNEL);
+#else
+    return malloc(ulSize);
+#endif
 }
 
 
@@ -2085,8 +2376,15 @@ VOS_VOID *VOS_CacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT32 uwCookie)
  *****************************************************************************/
 VOS_UINT32 VOS_CacheMemFree(VOS_VOID *pAddr)
 {
+#if (VOS_RTOSCK == VOS_OS_VER)
+        return SRE_MemCacheFree(pAddr);
+#elif (VOS_LINUX == VOS_OS_VER)
         kfree(pAddr);
         return VOS_OK;
+#else
+        free(pAddr);
+        return VOS_OK;
+#endif
 }
 
 /*****************************************************************************
@@ -2101,13 +2399,17 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
 {
     VOS_VOID                           *pVirtAdd;
 
+#if (VOS_LINUX == VOS_OS_VER)
     dma_addr_t                          ulAddress = 0;
 
+#ifdef CONFIG_ARM64
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #else
     struct device                       dev;
 #endif
+#endif
 
+#endif
 
     if ( 0 == ulSize )
     {
@@ -2123,9 +2425,21 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
     *pulRealAddr = VOS_NULL;
     pVirtAdd     = VOS_NULL_PTR;
 
+#if (VOS_VXWORKS == VOS_OS_VER)
+    pVirtAdd = cacheDmaMalloc(ulSize);
 
+    *pulRealAddr = (VOS_UINT_PTR)pVirtAdd;
+#endif
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+    pVirtAdd = SRE_MemUncacheAlloc(ulSize, MEM_ADDR_ALIGN_4K);
 
+    *pulRealAddr = (VOS_UINT_PTR)pVirtAdd;
+#endif
+
+#if (VOS_LINUX == VOS_OS_VER)
+
+#ifdef CONFIG_ARM64
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
     if (modem_osa_pdev == VOS_NULL_PTR) {
@@ -2147,9 +2461,18 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
     pVirtAdd = dma_alloc_coherent(&dev, ulSize, &ulAddress, GFP_KERNEL);
 #endif
 
+#else
+    pVirtAdd = dma_alloc_coherent(VOS_NULL_PTR, ulSize, &ulAddress, GFP_KERNEL);
+#endif
 
     *pulRealAddr = (VOS_UINT_PTR)ulAddress;
+#endif
 
+#if (VOS_WIN32 == VOS_OS_VER)
+    pVirtAdd = (VOS_VOID *)malloc(ulSize);
+
+    *pulRealAddr = (VOS_UINT_PTR)pVirtAdd;
+#endif
 
     return pVirtAdd;
 }
@@ -2164,13 +2487,17 @@ VOS_VOID *VOS_UnCacheMemAllocDebug(VOS_UINT32 ulSize, VOS_UINT_PTR *pulRealAddr,
  *****************************************************************************/
 VOS_VOID VOS_UnCacheMemFree(VOS_VOID *pVirtAddr, VOS_VOID *pPhyAddr, VOS_UINT32 ulSize)
 {
+#if (VOS_LINUX == VOS_OS_VER)
     dma_addr_t                          ulAddress;
 
+#ifdef CONFIG_ARM64
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #else
     struct device                       dev;
 #endif
+#endif
 
+#endif
 
     if ( 0 == ulSize )
     {
@@ -2182,10 +2509,18 @@ VOS_VOID VOS_UnCacheMemFree(VOS_VOID *pVirtAddr, VOS_VOID *pPhyAddr, VOS_UINT32 
         return;
     }
 
+#if (VOS_VXWORKS == VOS_OS_VER)
+    cacheDmaFree(pVirtAddr);
+#endif
 
+#if (VOS_RTOSCK == VOS_OS_VER)
+    (VOS_VOID)SRE_MemUncacheFree(pVirtAddr);
+#endif
 
+#if (VOS_LINUX == VOS_OS_VER)
     *(dma_addr_t *)(&ulAddress) = (dma_addr_t)pPhyAddr;
 
+#ifdef CONFIG_ARM64
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
     if (modem_osa_pdev == VOS_NULL_PTR) {
@@ -2207,8 +2542,15 @@ VOS_VOID VOS_UnCacheMemFree(VOS_VOID *pVirtAddr, VOS_VOID *pPhyAddr, VOS_UINT32 
     dma_free_coherent(&dev, ulSize, pVirtAddr, ulAddress);
 #endif
 
+#else
+    dma_free_coherent(VOS_NULL_PTR, ulSize, pVirtAddr, ulAddress);
+#endif
 
+#endif
 
+#if (VOS_WIN32 == VOS_OS_VER)
+    free(pVirtAddr);
+#endif
 
     return;
 }
@@ -2216,6 +2558,7 @@ VOS_VOID VOS_UnCacheMemFree(VOS_VOID *pVirtAddr, VOS_VOID *pPhyAddr, VOS_UINT32 
 
 VOS_UINT_PTR VOS_UncacheMemPhyToVirt(VOS_UINT8 *pucCurPhyAddr, VOS_UINT8 *pucPhyStart, VOS_UINT8 *pucVirtStart, VOS_UINT32 ulBufLen)
 {
+#if (VOS_LINUX == VOS_OS_VER)
     if((pucCurPhyAddr < pucPhyStart) || (pucCurPhyAddr >= (pucPhyStart+ulBufLen)))
     {
         (VOS_VOID)vos_printf("\r\n VOS_UncacheMemPhyToVirt: The PHY Addr 0x%p, pucPhyStart: 0x%p, pucVirtStart: 0x%p, ulBufLen: 0x%x.\r\n",
@@ -2228,11 +2571,15 @@ VOS_UINT_PTR VOS_UncacheMemPhyToVirt(VOS_UINT8 *pucCurPhyAddr, VOS_UINT8 *pucPhy
     }
 
     return (VOS_UINT_PTR)((pucCurPhyAddr - pucPhyStart) + pucVirtStart);
+#else
+    return (VOS_UINT_PTR)(pucCurPhyAddr);
+#endif
 }
 
 
 VOS_UINT_PTR VOS_UncacheMemVirtToPhy(VOS_UINT8 *pucCurVirtAddr, VOS_UINT8 *pucPhyStart, VOS_UINT8 *pucVirtStart, VOS_UINT32 ulBufLen)
 {
+#if (VOS_LINUX == VOS_OS_VER)
     if((pucCurVirtAddr < pucVirtStart) || (pucCurVirtAddr >= (pucVirtStart+ulBufLen)))
     {
         (VOS_VOID)vos_printf("\r\n VOS_UncacheMemVirtToPhy: The VIRT Addr 0x%p, pucPhyStart: 0x%p, pucVirtStart: 0x%p, ulBufLen: 0x%x.\r\n",
@@ -2245,16 +2592,29 @@ VOS_UINT_PTR VOS_UncacheMemVirtToPhy(VOS_UINT8 *pucCurVirtAddr, VOS_UINT8 *pucPh
     }
 
     return (VOS_UINT_PTR)((pucCurVirtAddr - pucVirtStart) + pucPhyStart);
+#else
+    return (VOS_UINT_PTR)(pucCurVirtAddr);
+#endif
 }
 
 
 /*lint -e522*/
 VOS_VOID VOS_FlushCpuWriteBuf(VOS_VOID)
 {
+#if (VOS_WIN32 != VOS_OS_VER)
 
+#if (VOS_LINUX == VOS_OS_VER)
     __asm(" DSB sy ");
     __asm(" ISB sy ");
+#else
+    __asm(" DSB ");
+#if(VOS_RTOSCK == VOS_OS_VER)
+    SRE_L2CacheWait();
+#endif
+    __asm(" ISB ");
+#endif
 
+#endif
     return ;
 }
 /*lint +e522*/
@@ -2262,11 +2622,27 @@ VOS_VOID VOS_FlushCpuWriteBuf(VOS_VOID)
 
 VOS_VOID VOS_FlushCpuCache( VOS_VOID *pAddress, VOS_UINT ulSize )
 {
+#if(VOS_RTOSCK == VOS_OS_VER)
+    (VOS_VOID)SRE_DCacheFlush(pAddress, ulSize, VOS_TRUE);
+#elif(VOS_VXWORKS == VOS_OS_VER)
+    cacheFlush(1, pAddress, ulSize);
+#elif(VOS_LINUX == VOS_OS_VER)
+#elif(VOS_WIN32 == VOS_OS_VER)
+    ;
+#endif
 }
 
 
 VOS_VOID VOS_InvalidCpuCache( VOS_VOID *pAddress, VOS_INT lSize )
 {
+#if(VOS_RTOSCK == VOS_OS_VER)
+    /*SRE_DCacheFlush(pAddress, lSize, VOS_TRUE);*/
+#elif(VOS_VXWORKS == VOS_OS_VER)
+    /*cacheFlush(1, pAddress, lSize);*/
+#elif(VOS_LINUX == VOS_OS_VER)
+#elif(VOS_WIN32 == VOS_OS_VER)
+    ;
+#endif
 }
 
 

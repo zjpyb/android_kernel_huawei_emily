@@ -1649,6 +1649,24 @@ ssize_t effect_bl_show(struct device* dev,
     return hisifb_display_effect_bl_ctrl_show(dev_get_drvdata(dev), buf);
 }
 
+ssize_t effect_bl_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	if (dev == NULL) {
+		HISI_FB_ERR("NULL Pointer!\n");
+		return LCDKIT_FAIL;
+	}
+
+	if (buf == NULL) {
+		HISI_FB_ERR("NULL Pointer!\n");
+		return LCDKIT_FAIL;
+	}
+
+	ret = hisifb_display_effect_bl_ctrl_store(dev_get_drvdata(dev), buf, count);
+	return ret;
+}
+
 ssize_t effect_bl_enable_show(struct device* dev,
                               struct device_attribute* attr, char* buf)
 {
@@ -4089,6 +4107,29 @@ ssize_t lcd_ldo_check_show(struct device* dev, char* buf)
 err_out:
     up(&hisifd->blank_sem);
     return ret;
+}
+
+ssize_t lcd_panel_sncode_show(struct device *dev, char *buf)
+{
+	ssize_t ret;
+	int i;
+	char str_oem[DDIC_OEM_INFO_SIZE_MAX] = {0};
+	char str_tmp[DDIC_OEM_INFO_SIZE_MAX] = {0};
+
+	if (dev == NULL ||buf == NULL){
+		LCDKIT_ERR("%s: NULL Pointer!\n",__func__);
+		return -EINVAL;
+	}
+	memset(str_oem, 0, sizeof(str_oem));
+	for(i = 0; i < sizeof(lcdkit_info.panel_infos.panel_sncode); i++) {
+		memset(str_tmp, 0, sizeof(str_tmp));
+		snprintf(str_tmp, sizeof(str_tmp), "%d,",
+			lcdkit_info.panel_infos.panel_sncode[i]);
+		strncat(str_oem, str_tmp, strlen(str_tmp));
+	}
+
+	ret = snprintf(buf, PAGE_SIZE, "%s\n", str_oem);
+	return ret;
 }
 
 ssize_t lcd_mipi_config_store(struct device* dev, struct lcdkit_panel_data* lcdkit_info, const char* buf)

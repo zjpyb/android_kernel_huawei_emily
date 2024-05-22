@@ -30,11 +30,12 @@
 #include <linux/fs.h>
 #include <linux/dma-mapping.h>
 #include <linux/input.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/clk.h>
 #include <linux/hwspinlock.h>
 #include <linux/semaphore.h>
 #include <linux/hisi/hi64xx_hifi_misc.h>
+#include <linux/types.h>
 
 #include <sound/core.h>
 #include <sound/dmaengine_pcm.h>
@@ -209,7 +210,7 @@ struct soundtrigger_dma_drv_info {
 	struct workqueue_struct 		*soundtrigger_delay_close_dma_wq;
 	struct delayed_work 			soundtrigger_delay_close_dma_timeout_work;	/* delay work of close dma when timeout */
 
-	struct wake_lock st_wake_lock;
+	struct wakeup_source st_wake_lock;
 	struct mutex ioctl_mutex;
 };
 
@@ -381,8 +382,8 @@ static void dma_dump_addr_info(struct soundtrigger_dma_drv_info *dma_drv_info)
 
 				logi("a count:0x%x, src addr:0x%pK, dest addr:0x%pK, config:0x%x\n",
 					pcm_info->dma_cfg[j][k]->a_count,
-					(void *)(unsigned long)(pcm_info->dma_cfg[j][k]->src_addr),
-					(void *)(unsigned long)(pcm_info->dma_cfg[j][k]->des_addr),
+					(void *)(uintptr_t)(pcm_info->dma_cfg[j][k]->src_addr),
+					(void *)(uintptr_t)(pcm_info->dma_cfg[j][k]->des_addr),
 					pcm_info->dma_cfg[j][k]->config);
 			}
 		}
@@ -395,8 +396,6 @@ static inline int32_t slimbus_register_read(struct soundtrigger_dma_drv_info *dm
 {
 	unsigned long flag = 0;
 	int32_t ret = 0;
-
-	WARN_ON(NULL == dma_drv_info);
 
 	if (hwspin_lock_timeout_irqsave(dma_drv_info->hwlock, HWLOCK_WAIT_TIME, &flag)) {
 		loge("hwspinlock timeout\n");
@@ -413,9 +412,6 @@ static void pcm_valid_data_get(uint32_t *input_buffer, uint16_t *output_buffer, 
 {
 	int32_t count = 0;
 
-	WARN_ON(NULL == input_buffer);
-	WARN_ON(NULL == output_buffer);
-
 	for (count = 0; count < frame_count; count++) {
 		output_buffer[count] = input_buffer[count]>>16;
 	}
@@ -424,9 +420,6 @@ static void pcm_valid_data_get(uint32_t *input_buffer, uint16_t *output_buffer, 
 static void pcm_48K_mono_to_16K_mono(uint16_t *input_buffer, uint16_t *output_buffer, int32_t output_len)
 {
 	int32_t count = 0;
-
-	WARN_ON(NULL == input_buffer);
-	WARN_ON(NULL == output_buffer);
 
 	for (count = 0; count < output_len; count++) {
 		output_buffer[count] = input_buffer[3 * count];/*lint !e679*/
@@ -539,7 +532,7 @@ static int32_t dma_config_clear(struct soundtrigger_dma_drv_info *dma_drv_info)
 	uint32_t i;
 	uint32_t j;
 	uint32_t k;
-	struct   soundtrigger_pcm_info *pcm_info;
+	struct   soundtrigger_pcm_info *pcm_info = NULL;
 
 	if (!dma_drv_info) {
 		return -ENOENT;
@@ -556,7 +549,7 @@ static int32_t dma_config_clear(struct soundtrigger_dma_drv_info *dma_drv_info)
 						dma_free_coherent(dma_drv_info->dev,
 							(unsigned long)pcm_info->buffer_size,
 							pcm_info->buffer[j][k],
-							(dma_addr_t)pcm_info->buffer_physical_addr[j][k]);
+							(dma_addr_t)(uintptr_t)pcm_info->buffer_physical_addr[j][k]);
 					} else {
 						iounmap(pcm_info->buffer[j][k]);
 					}
@@ -567,7 +560,7 @@ static int32_t dma_config_clear(struct soundtrigger_dma_drv_info *dma_drv_info)
 						dma_free_coherent(dma_drv_info->dev,
 							sizeof(struct dma_lli_cfg),
 							pcm_info->dma_cfg[j][k],
-							(dma_addr_t)pcm_info->lli_dma_physical_addr[j][k]);
+							(dma_addr_t)(uintptr_t)pcm_info->lli_dma_physical_addr[j][k]);
 					} else {
 						iounmap(pcm_info->dma_cfg[j][k]);
 					}
@@ -619,13 +612,13 @@ static int32_t soundtrigger_pcm_init(struct soundtrigger_pcm_info *pcm_info,
 				memset(pcm_info->dma_cfg[i][j], 0, sizeof(struct dma_lli_cfg));
 			} else {
 				/*remap the soundtrigger address*/
-				pcm_info->buffer_physical_addr[i][j] = (void *)(*cfg_addr);
+				pcm_info->buffer_physical_addr[i][j] = (void *)(uintptr_t)(*cfg_addr);
 				pcm_info->buffer[i][j] =
 					ioremap_wc((phys_addr_t)(*cfg_addr), (uint64_t)(pcm_info->buffer_size));
 				memset(pcm_info->buffer[i][j], 0, (uint64_t)(pcm_info->buffer_size));
 				*cfg_addr += pcm_info->buffer_size;
 
-				pcm_info->lli_dma_physical_addr[i][j] = (void *)(*cfg_addr);
+				pcm_info->lli_dma_physical_addr[i][j] = (void *)(uintptr_t)(*cfg_addr);
 				pcm_info->dma_cfg[i][j] =
 					ioremap_wc((phys_addr_t)(*cfg_addr), sizeof(struct dma_lli_cfg));
 				memset(pcm_info->dma_cfg[i][j], 0,
@@ -657,8 +650,8 @@ static void soundtrigger_pcm_adjust(struct soundtrigger_pcm_info *pcm_info)
 	for (i = 0; i < ARRAY_SIZE(pcm_info->channel); i++) {
 		for (j = 0; j < buff_size; j++) {
 			real_pos = (j + 1) % buff_size;
-			next_addr = (uint32_t)(uint64_t)pcm_info->lli_dma_physical_addr[i][real_pos];
-			pcm_info->dma_cfg[i][j]->des_addr = (uint32_t)(uint64_t)pcm_info->buffer_physical_addr[i][j];
+			next_addr = (uint32_t)(uintptr_t)pcm_info->lli_dma_physical_addr[i][real_pos];
+			pcm_info->dma_cfg[i][j]->des_addr = (uint32_t)(uintptr_t)pcm_info->buffer_physical_addr[i][j];
 			pcm_info->dma_cfg[i][j]->lli = DRV_DMA_LLI_LINK(next_addr);
 		}
 	}
@@ -745,11 +738,11 @@ static int32_t dma_start(struct st_fast_status * fast_status)
 	if (CODEC_HI6402 == dma_drv_info->type) {
 		slimbus_params.channels = 1;
 		device_type = SLIMBUS_DEVICE_HI6402;
-		track_type = SLIMBUS_TRACK_SOUND_TRIGGER;
+		track_type = (uint32_t)SLIMBUS_TRACK_SOUND_TRIGGER;
 	} else if (CODEC_HI6403 == dma_drv_info->type) {
 		slimbus_params.channels = 1;
 		device_type = SLIMBUS_DEVICE_HI6403;
-		track_type = SLIMBUS_TRACK_SOUND_TRIGGER;
+		track_type = (uint32_t)SLIMBUS_TRACK_SOUND_TRIGGER;
 	}
 	else {
 		err = -EINVAL;
@@ -768,7 +761,7 @@ static int32_t dma_start(struct st_fast_status * fast_status)
 	}
 	dma_drv_info->is_slimbus_enable = 1;
 
-	wake_lock(&dma_drv_info->st_wake_lock);
+	__pm_stay_awake(&dma_drv_info->st_wake_lock);
 
 	if (!queue_delayed_work(dma_drv_info->soundtrigger_delay_close_dma_wq,
 				&dma_drv_info->soundtrigger_delay_close_dma_timeout_work, msecs_to_jiffies(TIMEOUT_CLOSE_DMA_MS))) {
@@ -932,10 +925,10 @@ static int32_t dma_close(void)
 	if (dma_drv_info->is_slimbus_enable) {
 		if (CODEC_HI6402 == dma_drv_info->type) {
 			device_type = SLIMBUS_DEVICE_HI6402;
-			track_type = SLIMBUS_TRACK_SOUND_TRIGGER;
+			track_type = (uint32_t)SLIMBUS_TRACK_SOUND_TRIGGER;
 		} else if (CODEC_HI6403 == dma_drv_info->type) {
 			device_type = SLIMBUS_DEVICE_HI6403;
-			track_type = SLIMBUS_TRACK_SOUND_TRIGGER;
+			track_type = (uint32_t)SLIMBUS_TRACK_SOUND_TRIGGER;
 		}
 		else {
 			loge("device type is err %d\n", dma_drv_info->type);
@@ -975,8 +968,8 @@ static int32_t dma_close(void)
 
 	Static_RingBuffer_DeInit();
 
-	if (wake_lock_active(&dma_drv_info->st_wake_lock))
-		wake_unlock(&dma_drv_info->st_wake_lock);/*lint !e455*/
+	if (dma_drv_info->st_wake_lock.active)
+		__pm_relax(&dma_drv_info->st_wake_lock);/*lint !e455*/
 
 	logi("soundtrigger_dma close aspclk:%d, ++\n", clk_get_enable_count(dma_drv_info->asp_subsys_clk));
 
@@ -986,8 +979,8 @@ static int32_t dma_close(void)
 
 	return 0;
 err_exit:
-	if (wake_lock_active(&dma_drv_info->st_wake_lock))
-		wake_unlock(&dma_drv_info->st_wake_lock);/*lint !e455*/
+	if (dma_drv_info->st_wake_lock.active)
+		__pm_relax(&dma_drv_info->st_wake_lock);/*lint !e455*/
 null_exit:
 	logw( "dma close fail, err:[%d].\n", err);
 	return err;
@@ -1018,7 +1011,7 @@ static int32_t dma_get_max_read_len(enum codec_hifi_type codec_type, size_t *max
 {
 	if (CODEC_HI6402 == codec_type) {
 		*max_read_len = (RINGBUFFER_SIZE > (hi6402_normal_frame_length * VALID_BYTE_COUNT)) ?
-			RINGBUFFER_SIZE : (hi6402_normal_frame_length * VALID_BYTE_COUNT); /*lint !e647*/
+			RINGBUFFER_SIZE : (hi6402_normal_frame_length * VALID_BYTE_COUNT);/*lint !e647*/
 	} else if (CODEC_HI6403 == codec_type) {
 		*max_read_len = (RINGBUFFER_SIZE > (HI6403_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT)) ?
 			RINGBUFFER_SIZE : (HI6403_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT);
@@ -1069,7 +1062,6 @@ static ssize_t dma_fops_read(struct file *file, char __user *buffer, size_t coun
 	}
 
 	if (fast_info->fast_complete_flag == FAST_TRAN_NOT_COMPLETE) {
-		//loge("fast channel not complete.\n");
 		return -EAGAIN;
 	}
 
@@ -1179,15 +1171,15 @@ static long dma_fops_ioctl(struct file *fd, uint32_t cmd, unsigned long arg)
 	int32_t err = 0;
 	struct soundtrigger_io_sync_param param;
 	struct krn_param_io_buf krn_param;
-	struct st_fast_status * fast_status;
+	struct st_fast_status * fast_status = NULL;
 
-	if (!(void __user *)arg) {
+	if (!(void __user *)(uintptr_t)arg) {
 		loge("INPUT ERROR: arg is NULL\n");
 		err = -EINVAL;
 		return (long)err;
 	}
 
-	if (copy_from_user(&param, (void __user *)arg, sizeof(struct soundtrigger_io_sync_param))) {
+	if (copy_from_user(&param, (void __user *)(uintptr_t)arg, sizeof(struct soundtrigger_io_sync_param))) {
 		loge("copy_from_user fail.\n");
 		err = -EIO;
 		return (long)err;
@@ -1216,7 +1208,7 @@ static long dma_fops_ioctl32(struct file *fd, uint32_t cmd, unsigned long arg)
 {
 	void __user *user_arg = (void __user*)compat_ptr(arg);
 
-	return dma_fops_ioctl(fd, cmd, (unsigned long)user_arg);
+	return dma_fops_ioctl(fd, cmd, (uintptr_t)user_arg);
 }
 
 void hi64xx_soundtrigger_dma_close(void)
@@ -1379,7 +1371,7 @@ static uint16_t *alloc_temp_buffer(enum codec_hifi_type codec_type)
 	uint16_t *temp_buf = NULL;
 
 	if (CODEC_HI6402 == codec_type) {
-		temp_buf = (uint16_t *)kzalloc(hi6402_normal_frame_length * VALID_BYTE_COUNT, GFP_KERNEL); /*lint !e647*/
+		temp_buf = (uint16_t *)kzalloc(hi6402_normal_frame_length * VALID_BYTE_COUNT, GFP_KERNEL);/*lint !e647*/
 	} else if (CODEC_HI6403 == codec_type) {
 		temp_buf = (uint16_t *)kzalloc(HI6403_NORMAL_FRAME_LENGTH * VALID_BYTE_COUNT, GFP_KERNEL);
 	}
@@ -1591,7 +1583,9 @@ static const struct file_operations soundtrigger_dma_drv_fops = {
 	.release		= dma_fops_release,
 	.read			= dma_fops_read,
 	.unlocked_ioctl = dma_fops_ioctl,
+#ifdef CONFIG_COMPAT
 	.compat_ioctl	= dma_fops_ioctl32,
+#endif
 };
 
 static struct miscdevice soundtrigger_dma_drv_device = {
@@ -1719,7 +1713,7 @@ static int32_t soundtrigger_dma_drv_probe (struct platform_device *pdev)
 	dma_drv_info->dma_alloc_flag = 0;
 	dma_drv_info->is_dma_enable = 0;
 	dma_drv_info->is_slimbus_enable = 0;
-	wake_lock_init(&dma_drv_info->st_wake_lock, WAKE_LOCK_SUSPEND, "hisi-64xx-soundtrigger");
+	wakeup_source_init(&dma_drv_info->st_wake_lock, "hisi-64xx-soundtrigger");
 	platform_set_drvdata(pdev, dma_drv_info);
 	mutex_init(&dma_drv_info->ioctl_mutex);
 	spin_lock_init(&dma_drv_info->lock);
@@ -1767,7 +1761,7 @@ static int32_t soundtrigger_dma_drv_remove(struct platform_device *pdev)
 
 	dma_drv_info->dma_alloc_flag = 0;
 
-	wake_lock_destroy(&g_dma_drv_info->st_wake_lock);
+	wakeup_source_trash(&g_dma_drv_info->st_wake_lock);
 	mutex_destroy(&g_dma_drv_info->ioctl_mutex);
 
 	misc_deregister(&soundtrigger_dma_drv_device);

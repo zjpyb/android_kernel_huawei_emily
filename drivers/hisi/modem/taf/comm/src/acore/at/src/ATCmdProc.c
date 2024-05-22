@@ -505,10 +505,12 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
     {AT_STRING_IP,(TAF_UINT8*)"\"IP\""},
     {AT_STRING_IPv4,    (VOS_UINT8*)"\"IPv4\""},
     {AT_STRING_PPP,(TAF_UINT8*)"\"PPP\""},
+#if (FEATURE_ON == FEATURE_IPV6)
     {AT_STRING_IPV6,(VOS_UINT8*)"\"IPV6\""},
     {AT_STRING_IPV4V6,(VOS_UINT8*)"\"IPV4V6\""},
     {AT_STRING_IPv6,    (VOS_UINT8*)"\"IPv6\""},
     {AT_STRING_IPv4v6,  (VOS_UINT8*)"\"IPv4v6\""},
+#endif
 
     {AT_STRING_0E0,(TAF_UINT8*)"\"0E0\""},
     {AT_STRING_1E2,(TAF_UINT8*)"\"1E2\""},
@@ -525,9 +527,11 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
 
     {AT_STRING_CREG,(TAF_UINT8*)"+CREG: "},
     {AT_STRING_CGREG,(TAF_UINT8*)"+CGREG: "},
+#if(FEATURE_ON == FEATURE_LTE)
     {AT_STRING_CEREG,(TAF_UINT8*)"+CEREG: "},
 
     {AT_STRING_SIB16TIME, (VOS_UINT8 *)"^SIB16TIME: "},
+#endif
     {AT_STRING_SRVST,(TAF_UINT8*)"^SRVST: "},
     {AT_STRING_MODE,(TAF_UINT8*)"^MODE: "},
     {AT_STRING_RSSI,(TAF_UINT8*)"^RSSI: "},
@@ -554,6 +558,7 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
 
     {AT_STRING_NETSCAN, (VOS_UINT8 *)"^NETSCAN: "},
 
+#if (FEATURE_ON == FEATURE_IMS)
     {AT_STRING_CIREPH, (VOS_UINT8 *)"+CIREPH"},
     {AT_STRING_CIREPI, (VOS_UINT8 *)"+CIREPI"},
     {AT_STRING_CIREGU, (VOS_UINT8 *)"+CIREGU"},
@@ -564,7 +569,9 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
 
     {AT_STRING_ECONFSTATE, (VOS_UINT8 *)"^ECONFSTATE:"},
 
+#endif
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     {AT_STRING_CDISP,       (TAF_UINT8*)"^CDISP: "},
     {AT_STRING_CCONNNUM,    (TAF_UINT8*)"^CCONNNUM: "},
     {AT_STRING_CCALLEDNUM,  (TAF_UINT8*)"^CCALLEDNUM: "},
@@ -573,8 +580,12 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
     {AT_STRING_CSIGTONE,    (TAF_UINT8*)"^CSIGTONE: "},
     {AT_STRING_CLCTR,       (TAF_UINT8*)"^CLCTR: "},
     {AT_STRING_CCWAC,       (TAF_UINT8*)"^CCWAC: "},
+#endif
     {AT_STRING_FILECHANGE, (VOS_UINT8 *)"^FILECHANGE:"},
 
+#if((FEATURE_ON == FEATURE_LTE) && (FEATURE_ON == FEATURE_LTE_MBMS))
+    {AT_STRING_MBMSEV,      (VOS_UINT8 *)"^MBMSEV:"},
+#endif
 
     {AT_STRING_SRCHEDPLMNINFO, (VOS_UINT8 *)"^SRCHEDPLMNINFO:"},
 
@@ -585,7 +596,9 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
     {AT_STRING_CMOLRG,      (VOS_UINT8 *)"+CMOLRG: "},
     {AT_STRING_CMTLR,       (VOS_UINT8 *)"+CMTLR: "},
 
+#if (FEATURE_ON == FEATURE_IMS)
     {AT_STRING_DMCN,        (VOS_UINT8 *)"^DMCN"},
+#endif
 
     {AT_STRING_IMS_REG_FAIL,   (VOS_UINT8 *)"^IMSREGFAIL: "},
 
@@ -625,7 +638,9 @@ const AT_STRING_TYPE_STRU gastAtStringTab[]=
 
     {AT_STRING_IMPU,          (VOS_UINT8 *)"^IMPU: "},
 
+#if (FEATURE_ON == FEATURE_DSDS)
     {AT_STRING_DSDSSTATE,     (VOS_UINT8 *)"^DSDSSTATE: "},
+#endif
     {AT_STRING_PSEUDBTS,      (VOS_UINT8 *)"^PSEUDBTS"},
 
     {AT_STRING_BUTT,(TAF_UINT8*)"\"\""},
@@ -693,7 +708,9 @@ CBTCPM_RCV_FUNC                         g_apAtPortDataRcvFuncTab[AT_PHY_PORT_MAX
                                                 = {VOS_NULL_PTR, VOS_NULL_PTR, VOS_NULL_PTR, VOS_NULL_PTR};
 
 
+#if (FEATURE_ON == FEATURE_SECURITY_SHELL)
 AT_SP_WORD_CTX_STRU                     g_stSpWordCtx = {0};
+#endif
 
 /*****************************************************************************
    3 函数、变量声明
@@ -2156,6 +2173,7 @@ VOS_UINT32 At_ProcSimLockPara(
 
 }
 
+#if (FEATURE_ON == FEATURE_SC_SEC_UPDATE)
 
 VOS_UINT32 AT_HandleFacAuthPubKeyExCmd(
     VOS_UINT8                           ucIndex,
@@ -2305,12 +2323,16 @@ VOS_UINT32 AT_HandleFacAuthPubKeyExCmd(
     g_stATParseCmd.ucCmdOptType = AT_CMD_OPT_SET_PARA_CMD;
     gucAtCmdFmtType = AT_EXTEND_CMD_TYPE;
 
+#if (VOS_OS_VER == VOS_LINUX)
     printk(KERN_ERR "\n AT_HandleFacAuthPubKeyExCmd enter \n");
+    #endif
 
     ulResult = AT_SetFacAuthPubkeyExPara(ucIndex, ulFirstParaVal, ulSecParaVal, usThirdParaLen, (pucData + usSecCommaPos));
     if (AT_WAIT_ASYNC_RETURN != ulResult)
     {
+#if (VOS_OS_VER == VOS_LINUX)
         printk(KERN_ERR "\n AT_HandleFacAuthPubKeyExCmd return OK \n");
+#endif
 
         At_FormatResultData(ucIndex, ulResult);
     }
@@ -2318,6 +2340,158 @@ VOS_UINT32 AT_HandleFacAuthPubKeyExCmd(
     PS_MEM_FREE(WUEPS_PID_AT, pucDataPara);
     return AT_SUCCESS;
 }
+#else
+
+
+VOS_UINT32 AT_HandleFacAuthPubKeyCmd(
+    VOS_UINT8                           ucIndex,
+    VOS_UINT8                          *pucData,
+    VOS_UINT16                          usLen
+)
+{
+    VOS_INT8                            cRet;
+    VOS_UINT16                          usCmdlen;
+    VOS_UINT16                          usPos;
+    VOS_UINT8                          *pucDataPara;
+    VOS_UINT16                          usLoop;
+    VOS_UINT16                          usCommaCnt;
+    VOS_UINT16                          usFirstCommaPos;
+    AT_FACAUTHPUBKEY_SET_REQ_STRU      *pstFacAuthPubKey;
+    VOS_UINT16                          usFirstParaLen;
+    VOS_UINT16                          usSecondParaLen;
+    VOS_UINT32                          ulResult;
+    AT_PARSE_CMD_NAME_TYPE_STRU         stAtCmdName;
+
+    TAF_MEM_SET_S(&stAtCmdName, sizeof(stAtCmdName), 0x00, sizeof(stAtCmdName));
+
+    /* 局部变量初始化 */
+    usPos               = 0;
+    pucDataPara         = VOS_NULL_PTR;
+    usLoop              = 0;
+    usCommaCnt          = 0;
+    usFirstCommaPos     = 0;
+    pstFacAuthPubKey    = VOS_NULL_PTR;
+    usFirstParaLen      = 0;
+    usSecondParaLen     = 0;
+
+    /* 为提高AT解析性能，在入口处判断命令长度是否为AT^FACAUTHPUBKEY设置命令的长度，若不是则直接退出 */
+    if ((VOS_StrLen("AT^FACAUTHPUBKEY=") + AT_FACAUTHPUBKEY_PARA_LEN
+         + VOS_StrLen(",") + AT_FACAUTHPUBKEY_SIGN_PARA_LEN) != usLen)
+    {
+        return AT_FAILURE;
+    }
+
+    usCmdlen = (VOS_UINT16)VOS_StrLen("AT^FACAUTHPUBKEY=");
+
+    pucDataPara = (VOS_UINT8*)PS_MEM_ALLOC(WUEPS_PID_AT, usCmdlen);
+    if (VOS_NULL_PTR == pucDataPara)
+    {
+        AT_ERR_LOG("AT_HandleFacAuthPubKeyCmd: pucDataPara Memory malloc failed!");
+        return AT_FAILURE;
+    }
+
+    /*拷贝命令名，供后续比较使用*/
+    TAF_MEM_CPY_S(pucDataPara, usCmdlen, pucData, usCmdlen);
+
+    /* AT命令头字符转大写 */
+    At_UpString(pucDataPara, usCmdlen);
+
+    /* 待处理的字符串头部不是"AT^FACAUTHPUBKEY="直接返回AT_FAILURE */
+    cRet = VOS_StrNiCmp((VOS_CHAR *)pucDataPara, "AT^FACAUTHPUBKEY=", usCmdlen);
+    if (0 != cRet)
+    {
+        PS_MEM_FREE(WUEPS_PID_AT, pucDataPara);
+        return AT_FAILURE;
+    }
+
+
+    AT_SaveCmdElementInfo(ucIndex, (VOS_UINT8*)"^FACAUTHPUBKEY", AT_EXTEND_CMD_TYPE);
+
+    /* 获取命令(不包含命令前缀AT)名称及长度 */
+    usPos = (VOS_UINT16)VOS_StrLen("AT");
+    stAtCmdName.usCmdNameLen = (VOS_UINT16)VOS_StrLen("^FACAUTHPUBKEY");
+    TAF_MEM_CPY_S(stAtCmdName.aucCmdName,
+               AT_CMD_NAME_LEN + 1,
+               (pucData + usPos),
+               stAtCmdName.usCmdNameLen);
+    stAtCmdName.aucCmdName[stAtCmdName.usCmdNameLen] = '\0';
+    usPos += stAtCmdName.usCmdNameLen;
+
+    usPos += (VOS_UINT16)VOS_StrLen("=");
+
+    /* 获取命令中的逗号位置和个数 */
+    for ( usLoop = usPos; usLoop < usLen; usLoop++ )
+    {
+        if (',' == *(pucData + usLoop))
+        {
+            usCommaCnt++;
+            /* 记录下第一个逗号的位置 */
+            if (0 == usFirstCommaPos)
+            {
+                usFirstCommaPos = usLoop + 1;
+            }
+        }
+    }
+
+    /* 若逗号个数不为1，则AT命令结果返回失败 */
+    if (1 != usCommaCnt)
+    {
+        AT_WARN_LOG("AT_HandleFacAuthPubKeyCmd: usCommaCnt != 1!");
+        PS_MEM_FREE(WUEPS_PID_AT, pucDataPara);
+        At_FormatResultData(ucIndex, AT_CME_INCORRECT_PARAMETERS);
+        return AT_SUCCESS;
+    }
+
+    /* 计算两个参数的长度 */
+    usFirstParaLen  = (usFirstCommaPos - usPos) - 1;
+    usSecondParaLen = usLen - usFirstCommaPos;
+
+    /* 参数长度不正确，则AT命令结果返回失败 */
+    if ((AT_FACAUTHPUBKEY_PARA_LEN != usFirstParaLen )
+     || (AT_FACAUTHPUBKEY_SIGN_PARA_LEN != usSecondParaLen))
+    {
+        PS_MEM_FREE(WUEPS_PID_AT, pucDataPara);
+        At_FormatResultData(ucIndex, AT_CME_INCORRECT_PARAMETERS);
+        return AT_SUCCESS;
+    }
+
+    /* 申请参数解析缓存结构 */
+    pstFacAuthPubKey = (AT_FACAUTHPUBKEY_SET_REQ_STRU*)PS_MEM_ALLOC(WUEPS_PID_AT, sizeof(AT_FACAUTHPUBKEY_SET_REQ_STRU));
+    if (VOS_NULL_PTR == pstFacAuthPubKey)
+    {
+        PS_MEM_FREE(WUEPS_PID_AT, pucDataPara);
+        At_FormatResultData(ucIndex, AT_ERROR);
+        AT_ERR_LOG("AT_HandleFacAuthPubKeyCmd: pstFacAuthPubKey Memory malloc failed!");
+        return AT_SUCCESS;
+    }
+
+    /* 保存第一个参数 */
+    TAF_MEM_CPY_S(pstFacAuthPubKey->aucPubKey, AT_FACAUTHPUBKEY_PARA_LEN, pucData + usPos, usFirstParaLen);
+
+    /* 保存第二个参数 */
+    TAF_MEM_CPY_S(pstFacAuthPubKey->aucPubKeySign, AT_FACAUTHPUBKEY_SIGN_PARA_LEN, pucData + usFirstCommaPos, usSecondParaLen);
+
+    /* 设置命令类型，操作类型和参数个数 */
+    g_stATParseCmd.ucCmdOptType = AT_CMD_OPT_SET_PARA_CMD;
+    gucAtCmdFmtType = AT_EXTEND_CMD_TYPE;
+
+#if (VOS_OS_VER == VOS_LINUX)
+    printk(KERN_ERR "\n AT_HandleFacAuthPubKeyCmd enter\n");
+#endif
+
+    ulResult = AT_SetFacAuthPubkeyPara(ucIndex, pstFacAuthPubKey);
+    if (AT_WAIT_ASYNC_RETURN != ulResult)
+    {
+    #if (VOS_OS_VER == VOS_LINUX)
+        printk(KERN_ERR "\n AT_HandleFacAuthPubKeyCmd return OK\n");
+    #endif
+        At_FormatResultData(ucIndex, ulResult);
+    }
+    PS_MEM_FREE(WUEPS_PID_AT, pucDataPara);
+    PS_MEM_FREE(WUEPS_PID_AT, pstFacAuthPubKey);
+    return AT_SUCCESS;
+}
+#endif
 
 
 VOS_UINT32 AT_HandleSimLockDataWriteCmd(
@@ -2401,12 +2575,16 @@ VOS_UINT32 AT_HandleSimLockDataWriteCmd(
     g_stATParseCmd.ucCmdOptType = AT_CMD_OPT_SET_PARA_CMD;
     gucAtCmdFmtType = AT_EXTEND_CMD_TYPE;
 
+#if (VOS_OS_VER == VOS_LINUX)
     printk(KERN_ERR "\n AT_HandleSimLockDataWriteCmd enter\n");
+#endif
 
     ulResult = AT_SetSimlockDataWritePara(ucIndex, pstSimlockDataWrite);
     if (AT_WAIT_ASYNC_RETURN != ulResult)
     {
+#if (VOS_OS_VER == VOS_LINUX)
         printk(KERN_ERR "\n AT_HandleSimLockDataWriteCmd return OK\n");
+#endif
 
         At_FormatResultData(ucIndex, ulResult);
     }
@@ -2551,6 +2729,7 @@ VOS_UINT32 AT_HandleApSndApduCmd(
     return AT_SUCCESS;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_HandleApXsmsSndCmd(
     VOS_UINT8                           ucIndex,
@@ -2838,6 +3017,7 @@ VOS_UINT32 AT_HandleApXsmsWriteCmd(
 
     return AT_SUCCESS;
 }
+#endif
 
 VOS_UINT32 At_HandleApModemSpecialCmd(
     VOS_UINT8                           ucIndex,
@@ -2855,11 +3035,20 @@ VOS_UINT32 At_HandleApModemSpecialCmd(
         return AT_FAILURE;
     }
 
+#if (FEATURE_ON == FEATURE_SC_SEC_UPDATE)
     /* 处理AT^FACAUTHPUBKEYEX=<index>,<total>,<pubkey>设置命令(参数<pubkey>超长) */
     if (AT_SUCCESS == AT_HandleFacAuthPubKeyExCmd(ucIndex, pucData, usLen))
     {
         return AT_SUCCESS;
     }
+#else
+    /* 处理AT^FACAUTHPUBKEY=<pubkey>,<signature>设置命令(参数<pubkey>超长) */
+    if (AT_SUCCESS == AT_HandleFacAuthPubKeyCmd(ucIndex, pucData, usLen))
+    {
+        return AT_SUCCESS;
+    }
+
+#endif
 
     /* 处理AT^SIMLOCKDATAWRITEEX=<layer>,<total>,<index>,<simlock_data>,[hmac]设置命令(参数<simlock_data>超长) */
     if (AT_SUCCESS == AT_HandleSimLockDataWriteExCmd(ucIndex, pucData, usLen))
@@ -2867,6 +3056,13 @@ VOS_UINT32 At_HandleApModemSpecialCmd(
         return AT_SUCCESS;
     }
 
+#if (FEATURE_ON == FEATURE_SC_NETWORK_UPDATE)
+    /* 处理AT^SIMLOCKNWDATAWRITE=<layer>,<total>,<index>,<simlock_data>,[hmac]设置命令(参数<simlock_data>超长) */
+    if (AT_SUCCESS == AT_HandleSimLockNWDataWriteCmd(ucIndex, pucData, usLen))
+    {
+        return AT_SUCCESS;
+    }
+#endif
 
     /* 处理AT^SIMLOCKDATAWRITE=<simlock_data_write>设置命令(参数<simlock_data_write>超长) */
     if (AT_SUCCESS == AT_HandleSimLockDataWriteCmd(ucIndex, pucData, usLen))
@@ -2880,6 +3076,7 @@ VOS_UINT32 At_HandleApModemSpecialCmd(
         return AT_SUCCESS;
     }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     if (AT_SUCCESS == AT_HandleApXsmsSndCmd(ucIndex, pucData, usLen))
     {
         return AT_SUCCESS;
@@ -2889,6 +3086,7 @@ VOS_UINT32 At_HandleApModemSpecialCmd(
     {
         return AT_SUCCESS;
     }
+#endif
 
     /* 删除对^EOPLMN设置命令的特殊解析 */
 
@@ -2992,6 +3190,20 @@ VOS_VOID At_SetMode(VOS_UINT8 ucIndex, AT_MODE_TYPE Mode, VOS_UINT8 ucSubMode)
         gastAtClientTab[ucIndex].DataState = AT_DATA_STOP_STATE;
     }
 
+#if (FEATURE_ON == FEATURE_AT_HSUART)
+    /*
+     * HSUART端口由DATA模式切换到CMD/ONLINE_CMD模式:
+     * 清除HSUART的缓存队列数据, 防止当前缓存队列满时, 主动上报的命令丢失
+     */
+    if (VOS_TRUE == AT_CheckHsUartUser(ucIndex))
+    {
+        if ( (AT_DATA_MODE == gastAtClientTab[ucIndex].Mode)
+          && ((AT_ONLINE_CMD_MODE == Mode) || (AT_CMD_MODE == Mode)) )
+        {
+            AT_HSUART_ClearDataBuff(ucIndex);
+        }
+    }
+#endif
 
     /* 退出数传模式 */
     if ( ( (AT_ONLINE_CMD_MODE == gastAtClientTab[ucIndex].Mode)
@@ -3130,9 +3342,11 @@ VOS_VOID At_InterTimerOutProc(
             ulResult = AT_ERROR;
             break;
 
+#if(FEATURE_ON == FEATURE_LTE)
         case AT_CMD_SET_TMODE:
             ulResult = AT_ERROR;
             break;
+#endif
 
         case AT_CMD_COPS_ABORT_PLMN_LIST:
             ulResult = AT_ABORT;
@@ -3350,16 +3564,29 @@ TAF_VOID At_TimeOutProc(
                 AT_BlockCmdTimeOutProc(ucIndex);
                 break;
 
+#if (FEATURE_ON == FEATURE_AT_HSUART)
+            case AT_VOICE_RI_TIMER:
+                AT_RcvTiVoiceRiExpired(pMsg);
+                break;
+
+            case AT_SMS_RI_TIMER:
+                AT_RcvTiSmsRiExpired(pMsg);
+                break;
+#endif
 
 
+    #if(FEATURE_ON == FEATURE_LTE)
 
             case AT_SHUTDOWN_TIMER:
                 mdrv_sysboot_shutdown();
                 break;
+    #endif
 
+#if (FEATURE_ON == FEATURE_SC_SEC_UPDATE)
             case AT_AUTH_PUBKEY_TIMER :
                 AT_ClearAuthPubkeyCtx();
                 break;
+#endif
 
             case AT_SIMLOCKWRITEEX_TIMER :
                 AT_ClearSimLockWriteExCtx();
@@ -3951,6 +4178,7 @@ VOS_UINT32 At_ProcXmlText ( TAF_UINT8 ucIndex, TAF_UINT8 *pData, TAF_UINT16 usLe
 }
 
 /* 删除^EOPLMN设置命令的参数解析函数，使用通用AT参数解析器解析 */
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 TAF_UINT32 At_CheckCurrRatModeIsCL (
     VOS_UINT8                           ucIndex
@@ -3982,6 +4210,7 @@ TAF_UINT32 At_CheckCurrRatModeIsCL (
         return VOS_FALSE;
     }
 }
+#endif
 
 VOS_UINT32 AT_ConvertMtaResult(
     MTA_AT_RESULT_ENUM_UINT32           enResult

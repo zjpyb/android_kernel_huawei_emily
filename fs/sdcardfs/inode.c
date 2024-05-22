@@ -21,6 +21,7 @@
 #include "sdcardfs.h"
 #include <linux/fs_struct.h>
 #include <linux/ratelimit.h>
+#include <linux/sched/task.h>
 
 const struct cred *override_fsids(struct sdcardfs_sb_info *sbi,
 		struct sdcardfs_inode_data *data)
@@ -205,7 +206,7 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	struct dentry *lower_dentry;
 	struct vfsmount *lower_mnt;
 	struct dentry *lower_parent_dentry = NULL;
-	struct dentry *parent_dentry = dget_parent(dentry);
+	struct dentry *parent_dentry = NULL;
 	struct path lower_path;
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(dentry->d_sb);
 	const struct cred *saved_cred = NULL;
@@ -228,11 +229,14 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 		return -ENOMEM;
 
 	/* check disk space */
+	parent_dentry = dget_parent(dentry);
 	if (!check_min_free_space(parent_dentry, 0, 1)) {
 		pr_err("sdcardfs: No minimum free space.\n");
 		err = -ENOSPC;
+		dput(parent_dentry);
 		goto out_revert;
 	}
+	dput(parent_dentry);
 
 	/* the lower_dentry is negative here */
 	sdcardfs_get_lower_path(dentry, &lower_path);
@@ -304,21 +308,21 @@ static int sdcardfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	if (make_nomedia_in_obb ||
 		((pd->perm == PERM_ANDROID)
 				&& (qstr_case_eq(&dentry->d_name, &q_data)))) {
-	        revert_fsids(saved_cred);
-	        saved_cred = override_fsids(sbi,
-			    SDCARDFS_I(dentry->d_inode)->data);
-	        if (!saved_cred) {
-	            pr_err("sdcardfs: failed to set up .nomedia in %s: %d\n",
-			        lower_path.dentry->d_name.name,
-			        -ENOMEM);
-	            goto out;
-	        }
+		revert_fsids(saved_cred);
+		saved_cred = override_fsids(sbi,
+					SDCARDFS_I(d_inode(dentry))->data);
+		if (!saved_cred) {
+			pr_err("sdcardfs: failed to set up .nomedia in %s: %d\n",
+						lower_path.dentry->d_name.name,
+						-ENOMEM);
+			goto out;
+		}
 		set_fs_pwd(current->fs, &lower_path);
 		touch_err = touch(".nomedia", 0664);
 		if (touch_err) {
 			pr_err("sdcardfs: failed to create .nomedia in %s: %d\n",
-			       lower_path.dentry->d_name.name,
-			       touch_err);
+						lower_path.dentry->d_name.name,
+						touch_err);
 			goto out;
 		}
 	}
@@ -333,7 +337,6 @@ out_unlock:
 out_revert:
 	revert_fsids(saved_cred);
 out_eacces:
-	dput(parent_dentry);
 	return err;
 }
 
@@ -561,6 +564,7 @@ static int sdcardfs_permission(struct vfsmount *mnt, struct inode *inode, int ma
 
 	if (IS_ERR(mnt))
 		return PTR_ERR(mnt);
+
 	if (!top)
 		return -EINVAL;
 
@@ -585,7 +589,6 @@ static int sdcardfs_permission(struct vfsmount *mnt, struct inode *inode, int ma
 	if (IS_POSIXACL(inode))
 		pr_warn("%s: This may be undefined behavior...\n", __func__);
 	err = generic_permission(&tmp, mask);
-
 #ifdef SDCARDFS_PLUGIN_PRIVACY_SPACE
 	sbi = SDCARDFS_SB(inode->i_sb);
 	if (unlikely(sbi->blocked_userid >= 0)) {
@@ -596,7 +599,6 @@ static int sdcardfs_permission(struct vfsmount *mnt, struct inode *inode, int ma
 	}
 #endif
 	return err;
-
 }
 
 static int sdcardfs_setattr_wrn(struct dentry *dentry, struct iattr *ia)
@@ -767,10 +769,11 @@ static int sdcardfs_fillattr(struct vfsmount *mnt, struct inode *inode,
 	data_put(top);
 	return 0;
 }
-
-static int sdcardfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
-		 struct kstat *stat)
+static int sdcardfs_getattr(const struct path *path, struct kstat *stat,
+				u32 request_mask, unsigned int flags)
 {
+	struct vfsmount *mnt = path->mnt;
+	struct dentry *dentry = path->dentry;
 	struct kstat lower_stat;
 	struct path lower_path;
 	struct dentry *parent;
@@ -784,7 +787,7 @@ static int sdcardfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	dput(parent);
 
 	sdcardfs_get_lower_path(dentry, &lower_path);
-	err = vfs_getattr(&lower_path, &lower_stat);
+	err = vfs_getattr(&lower_path, &lower_stat, request_mask, flags);
 	if (err)
 		goto out;
 	sdcardfs_copy_and_fix_attrs(d_inode(dentry),
@@ -819,8 +822,7 @@ const struct inode_operations sdcardfs_dir_iops = {
 	.setattr	= sdcardfs_setattr_wrn,
 	.setattr2	= sdcardfs_setattr,
 	.getattr	= sdcardfs_getattr,
-
-	.listxattr = sdcardfs_listxattr,
+	.listxattr	= sdcardfs_listxattr,
 };
 
 const struct inode_operations sdcardfs_main_iops = {
@@ -829,6 +831,5 @@ const struct inode_operations sdcardfs_main_iops = {
 	.setattr	= sdcardfs_setattr_wrn,
 	.setattr2	= sdcardfs_setattr,
 	.getattr	= sdcardfs_getattr,
-
-	.listxattr = sdcardfs_listxattr,
+	.listxattr	= sdcardfs_listxattr,
 };

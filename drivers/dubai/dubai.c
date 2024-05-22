@@ -36,13 +36,17 @@
 #define IOCTL_BRIGHTNESS_GET _IOR(DUBAI_MAGIC, 9, uint32_t)
 #define IOCTL_PROC_CPUTIME_ENABLE _IOW(DUBAI_MAGIC, 10, bool)
 #define IOCTL_BINDER_STATS_ENABLE _IOW(DUBAI_MAGIC, 11, bool)
-#define IOCTL_BINDER_STATS_LIST_SET _IOW(DUBAI_MAGIC, 12, struct dev_transmit_t)
 #define IOCTL_BINDER_STATS_REQUEST _IOW(DUBAI_MAGIC, 13, long long)
 #define IOCTL_TASK_CPUPOWER_ENABLE _IOR(DUBAI_MAGIC, 14, bool)
 #define IOCTL_AOD_GET_DURATION _IOR(DUBAI_MAGIC, 15, uint64_t)
-#define IOCTL_BATTERY_RM_GET _IOR(DUBAI_MAGIC, 16, int32_t)
+#define IOCTL_BATTERY_PROP _IOWR(DUBAI_MAGIC, 16, struct dev_transmit_t)
 #define IOCTL_WAKEUP_SOURCE_NAME_REQUEST _IOW(DUBAI_MAGIC, 17, long long)
 #define IOCTL_PROC_DECOMPOSE_SET _IOW(DUBAI_MAGIC, 18, struct dev_transmit_t)
+#define IOCTL_SENSORHUB_TYPE_LIST _IOW(DUBAI_MAGIC, 19, long long)
+#define IOCTL_SENSOR_TIME_GET _IOWR(DUBAI_MAGIC, 20, struct dev_transmit_t)
+#define IOCTL_FP_ICON_STATS _IOR(DUBAI_MAGIC, 21, uint32_t)
+#define IOCTL_SWING_GET _IOWR(DUBAI_MAGIC, 22, struct dev_transmit_t)
+#define IOCTL_RSS_GET _IOR(DUBAI_MAGIC, 23, long long)
 
 static long dubai_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -83,9 +87,6 @@ static long dubai_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case IOCTL_BINDER_STATS_ENABLE:
 		rc = dubai_binder_stats_enable(argp);
 		break;
-	case IOCTL_BINDER_STATS_LIST_SET:
-		rc = dubai_set_binder_list(argp);
-		break;
 	case IOCTL_BINDER_STATS_REQUEST:
 		rc = dubai_get_binder_stats(argp);
 		break;
@@ -95,14 +96,29 @@ static long dubai_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case IOCTL_AOD_GET_DURATION:
 		rc = dubai_get_aod_duration(argp);
 		break;
-	case IOCTL_BATTERY_RM_GET:
-		rc = dubai_get_battery_rm(argp);
-		break;
 	case IOCTL_WAKEUP_SOURCE_NAME_REQUEST:
 		rc = dubai_get_ws_lasting_name(argp);
 		break;
 	case IOCTL_PROC_DECOMPOSE_SET:
 		rc = dubai_set_proc_decompose(argp);
+		break;
+	case IOCTL_BATTERY_PROP:
+		rc = dubai_get_battery_prop(argp);
+		break;
+	case IOCTL_SENSORHUB_TYPE_LIST:
+		rc = dubai_get_sensorhub_type_list(argp);
+		break;
+	case IOCTL_SENSOR_TIME_GET:
+		rc = dubai_get_all_sensor_stats(argp);
+		break;
+	case IOCTL_FP_ICON_STATS:
+		rc = dubai_get_fp_icon_stats(argp);
+		break;
+	case IOCTL_SWING_GET:
+		rc = dubai_get_swing_data(argp);
+		break;
+	case IOCTL_RSS_GET:
+		rc = dubai_get_rss(argp);
 		break;
 	default:
 		rc = -EINVAL;

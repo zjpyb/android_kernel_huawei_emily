@@ -60,11 +60,11 @@ void ufs_fault_inject_fs_setup(void);
 void ufs_fault_inject_fs_remove(void);
 void ufsdbg_error_inject_dispatcher(struct ufs_hba *hba,
 			enum ufsdbg_err_inject_scenario err_scenario,
-			int success_value, int *ret_value);
+			int success_value, unsigned int *ret_value);
 #else
 static inline void ufsdbg_error_inject_dispatcher(struct ufs_hba *hba,
 			enum ufsdbg_err_inject_scenario err_scenario,
-			int success_value, int *ret_value)
+			int success_value, unsigned int *ret_value)
 {
 }
 static inline void ufs_fault_inject_fs_setup(void)

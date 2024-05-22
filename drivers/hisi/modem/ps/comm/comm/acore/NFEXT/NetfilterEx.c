@@ -51,6 +51,7 @@
 ******************************************************************************/
 #include "product_config.h"
 
+#if (FEATURE_ON == FEATURE_NFEXT)
 
 #include "NetfilterEx.h"
 
@@ -603,3 +604,4 @@ unsigned int NFExt_BrForwardFlowCtrlHook(void *priv, struct sk_buff *skb, const 
 
 #endif      /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)) */
 
+#endif      /* #if (FEATURE_ON == FEATURE_NFEXT) */

@@ -35,6 +35,13 @@ config HISEE_APPLET_APDU_TEST_OPTIMIZATION
 	  test cmd.It's orginal name is CONFIG_HISEE_
 	  CHIPTEST_SUPPORT_APPLET_OPTIMIZATION.
 
+config HISEE_SUPPORT_DCS
+	depends on HISI_HISEE
+	bool "Support for Dynamic Binaries upgrade"
+	default n
+	help
+	  whether to support dynamic binaries upgrade in Hisee
+
 config HICOS_MISCIMG_PATCH
 	depends on HISI_HISEE
 	bool "Hisilicon hisee msic patch driver"
@@ -128,3 +135,10 @@ config HISEE_HIGH_TEMP_PROTECT_SWITCH
 	default n
 	help
 	  whether hisee support high temperature protect switch
+
+config HISEE_SUPPORT_ULOADER
+	depends on HISI_HISEE
+	bool "Hisilicon hisee support uloader image process."
+	default n
+	help
+	  whether hisee support uloader image process

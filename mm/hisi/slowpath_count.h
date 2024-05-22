@@ -1,22 +1,13 @@
-/*
- * slowpath_count.h
- *
- * Provide slowpath_count external call interface
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
- *
- * Chenjun <chenjun@hisilicon.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
+ * FileName: slowpath_count.h
+ * Description: Provide slowpath_count external call interface
+ * This program is free software; you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation;
+ * either version 2 of the License,
+ * or (at your option) any later version.
+ * Author: Chenjun
+ * Create: 2019-06-20
  */
 
 #ifndef SLOWPATH_COUNT_H

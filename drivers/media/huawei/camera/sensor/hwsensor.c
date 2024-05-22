@@ -60,7 +60,7 @@ static int hw_sensor_subdev_internal_close(struct v4l2_subdev *sd, struct v4l2_s
         return rc;
 
     rc = s->intf->vtbl->csi_disable(s->intf);
-    rc |= s->intf->vtbl->config(s->intf,(void *)(&cdata));
+    rc += s->intf->vtbl->config(s->intf,(void *)(&cdata));
 
     cam_notice(" enter %s,return value %d", __func__,rc);
     return rc;
@@ -111,7 +111,10 @@ hwsensor_subdev_get_info(
     }
 
     sensor = I2S(s->intf);
-    memset_s(info->name, DEVICE_NAME_SIZE, 0, DEVICE_NAME_SIZE);
+	rc = memset_s(info->name, DEVICE_NAME_SIZE, 0, DEVICE_NAME_SIZE);
+	if (rc != 0) {
+		cam_err("%s memset_s return fail\n", __func__);
+	}
     rc = strncpy_s(info->name, DEVICE_NAME_SIZE - 1, hwsensor_intf_get_name(s->intf),
         strlen(hwsensor_intf_get_name(s->intf))+1);
     if (rc != 0) {
@@ -132,7 +135,12 @@ hwsensor_subdev_get_info(
             return -1;
         }
     } else {
-        memset_s(info->vcm_name, DEVICE_NAME_SIZE, 0, DEVICE_NAME_SIZE);
+		rc = memset_s(info->vcm_name,
+			DEVICE_NAME_SIZE,
+			0,
+			DEVICE_NAME_SIZE);
+		if (rc != 0)
+			cam_err("%s memset failed", __func__);
     }
     info->dev_id = s->cam_dev_num;
     info->mount_position =
@@ -149,7 +157,22 @@ hwsensor_subdev_get_info(
         info->phyinfo_count = sensor->board_info->phyinfo_valid;
         memcpy(&info->phyinfo, &sensor->board_info->phyinfo, sizeof(info->phyinfo));
     }
-    /* for test */
+
+	memset_s(info->bustype, sizeof(info->bustype), 0, DEVICE_BUS_TYPE_SIZE);
+	if (sensor->board_info->bus_type != NULL) {
+		rc = strncpy_s(info->bustype, DEVICE_BUS_TYPE_SIZE - 1,
+				sensor->board_info->bus_type,
+				strlen(sensor->board_info->bus_type) + 1);
+		if (rc != 0) {
+			cam_err("%s bus_type copy error.\n", __func__);
+			return -1;
+		}
+	} else {
+		cam_info("%s maybe not support bus_type.\n", __func__);
+	}
+	info->ao_i2c_index =  sensor->board_info->ao_i2c_id;
+	cam_info("%s bus_type(%s), ao_i2c_id(%d)\n", __func__,
+				info->bustype, info->ao_i2c_index);
 
 #pragma GCC visibility push(default)
         HWCAM_CFG_ERR("%s, info_count = %d\n, for print, not err.\n"

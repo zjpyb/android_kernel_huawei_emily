@@ -6,7 +6,7 @@
 #include <linux/hrtimer.h>                                                      // hrtimer
 #include <linux/workqueue.h>                                                    // work_struct, delayed_work
 #include <linux/delay.h>                                                        // udelay, usleep_range, msleep
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
@@ -63,7 +63,7 @@ const char* FUSB_DT_INTERRUPT_INTN =    "fsc_interrupt_int_n";      // Name of t
 static irqreturn_t _fusb_isr_intn(int irq, void *dev_id);
 #endif  // FSC_INTERRUPT_TRIGGERED
 
-
+#define FUSB_FORCE_ROLESWAP_TIMEOUT  500
 
 
 
@@ -80,7 +80,8 @@ static void fusb_force_source(struct dual_role_phy_instance *dual_role)
 
     FSC_PRINT("FUSB  %s - Force State Source\n", __func__);
     core_set_source();
-    fusb_StartTimers(&chip->timer_force_timeout, 1500); /* ms */
+	fusb_StartTimers(&chip->timer_force_timeout,
+	 			FUSB_FORCE_ROLESWAP_TIMEOUT); /* ms */
     if (dual_role) {
 	dual_role_instance_changed(dual_role);
     }
@@ -98,7 +99,8 @@ static void fusb_force_sink(struct dual_role_phy_instance *dual_role)
 
     FSC_PRINT("FUSB  %s - Force State Sink\n", __func__);
     core_set_sink();
-    fusb_StartTimers(&chip->timer_force_timeout, 1500); /* ms */
+	fusb_StartTimers(&chip->timer_force_timeout,
+				FUSB_FORCE_ROLESWAP_TIMEOUT); /* ms */
     if (dual_role) {
 	dual_role_instance_changed(dual_role);
     }
@@ -609,11 +611,10 @@ void fusb_GPIO_Cleanup(void)
     }
 
 #ifdef FSC_INTERRUPT_TRIGGERED
-    wake_lock_destroy(&chip->fusb302_wakelock);
+    wakeup_source_trash(&chip->fusb302_wakelock);
 #endif // FSC_INTERRUPT_TRIGGERED
 
-    if (gpio_is_valid(chip->gpio_IntN) >= 0)
-    {
+	if (gpio_is_valid(chip->gpio_IntN)) {
 #ifdef FSC_DEBUG
         gpio_unexport(chip->gpio_IntN);
 #endif // FSC_DEBUG
@@ -621,8 +622,7 @@ void fusb_GPIO_Cleanup(void)
         gpio_free(chip->gpio_IntN);
     }
 
-    if (gpio_is_valid(chip->gpio_VBus5V) >= 0)
-    {
+	if (gpio_is_valid(chip->gpio_VBus5V)) {
 #ifdef FSC_DEBUG
         gpio_unexport(chip->gpio_VBus5V);
 #endif // FSC_DEBUG
@@ -630,14 +630,12 @@ void fusb_GPIO_Cleanup(void)
         gpio_free(chip->gpio_VBus5V);
     }
 
-    if (gpio_is_valid(chip->gpio_VBusOther) >= 0)
-    {
+	if (gpio_is_valid(chip->gpio_VBusOther)) {
         gpio_free(chip->gpio_VBusOther);
     }
 
 #ifdef FSC_DEBUG
-    if (gpio_is_valid(chip->dbg_gpio_StateMachine) >= 0)
-    {
+	if (gpio_is_valid(chip->dbg_gpio_StateMachine)) {
         gpio_unexport(chip->dbg_gpio_StateMachine);
         gpio_free(chip->dbg_gpio_StateMachine);
     }
@@ -1057,7 +1055,7 @@ enum hrtimer_restart _fusb_wake_timeout(struct hrtimer* timer)
     }
 
     FSC_PRINT("FUSB  %s - Wake Unlock\n", __func__);
-    wake_unlock(&chip->fusb302_wakelock);
+    __pm_relax(&chip->fusb302_wakelock);
 
     return HRTIMER_NORESTART;
 }
@@ -3601,37 +3599,6 @@ static ssize_t _fusb_Sysfs_TypeCStateLog_show(struct device* dev, struct device_
     return ++numChars;   // Account for newline and return number of bytes to be shown
 }
 
-/* Reinitialize the FUSB302 */
-static ssize_t _fusb_Sysfs_Reinitialize_fusb302(struct device* dev, struct device_attribute* attr, char* buf)
-{
-    struct fusb30x_chip* chip = fusb30x_GetChip();
-    if (chip == NULL)
-    {
-        return sprintf(buf, "FUSB302 Error: Internal chip structure pointer is NULL!\n");
-    }
-
-    /* Make sure that we are doing this in a thread-safe manner */
-#ifdef FSC_INTERRUPT_TRIGGERED
-    disable_irq(chip->gpio_IntN_irq);   // Waits for current IRQ handler to return, then disables it
-#else
-    fusb_StopThreads();                 // Waits for current work to complete, then cancels scheduled work and flushed the work queue
-#endif // FSC_INTERRUPT_TRIGGERED
-
-    core_initialize();
-    pr_debug ("FUSB  %s - Core is initialized!\n", __func__);
-    core_enable_typec(TRUE);
-    pr_debug ("FUSB  %s - Type-C State Machine is enabled!\n", __func__);
-
-#ifdef FSC_INTERRUPT_TRIGGERED
-    enable_irq(chip->gpio_IntN_irq);
-#else
-    // Schedule to kick off the main working thread
-    schedule_work(&chip->worker);
-#endif // FSC_INTERRUPT_TRIGGERED
-
-    return sprintf(buf, "FUSB302 Reinitialized!\n");
-}
-
 static ssize_t _fusb_force_sink(struct device* dev, struct device_attribute* attr, char* buf)
 {
 	//fusb_force_sink();
@@ -3648,7 +3615,6 @@ static ssize_t _fusb_force_source(struct device* dev, struct device_attribute* a
 static DEVICE_ATTR(fusb30x_hostcomm, S_IRWXU | S_IRWXG | S_IROTH, _fusb_Sysfs_Hostcomm_show, _fusb_Sysfs_Hostcomm_store);
 static DEVICE_ATTR(pd_state_log, S_IRUSR | S_IRGRP | S_IROTH, _fusb_Sysfs_PDStateLog_show, NULL);
 static DEVICE_ATTR(typec_state_log, S_IRUSR | S_IRGRP | S_IROTH, _fusb_Sysfs_TypeCStateLog_show, NULL);
-static DEVICE_ATTR(reinitialize, S_IRUSR | S_IRGRP | S_IROTH, _fusb_Sysfs_Reinitialize_fusb302, NULL);
 static DEVICE_ATTR(fusb_force_sink, S_IRUSR | S_IRGRP | S_IROTH, _fusb_force_sink, NULL);
 static DEVICE_ATTR(fusb_force_source, S_IRUSR | S_IRGRP | S_IROTH, _fusb_force_source, NULL);
 
@@ -3656,7 +3622,6 @@ static struct attribute *fusb302_sysfs_attrs[] = {
     &dev_attr_fusb30x_hostcomm.attr,
     &dev_attr_pd_state_log.attr,
     &dev_attr_typec_state_log.attr,
-    &dev_attr_reinitialize.attr,
 	&dev_attr_fusb_force_sink.attr,
 	&dev_attr_fusb_force_source.attr,
     NULL
@@ -3734,12 +3699,29 @@ void fusb_InitChipData(void)
     }
     node = chip->client->dev.of_node;
     /* Get our device tree node */
-    if(node) {
-        chip->vconn_swap_to_on_supported = of_property_read_bool(node, "vconn_swap_to_on_supported");
-        chip->vconn_swap_to_off_supported = of_property_read_bool(node, "vconn_swap_to_off_supported");
-        chip->dp_enabled = of_property_read_bool(node, "dp_enabled");
-        chip->product_type_ama = of_property_read_bool(node, "product_type_ama");
-        chip->modal_operation_supported = of_property_read_bool(node, "modal_operation_supported");
+	if (node) {
+		ret = of_property_read_u32(node, "vconn_swap_to_on_supported",
+			&chip->vconn_swap_to_on_supported);
+		if (ret != 0)
+			chip->vconn_swap_to_on_supported = 1;
+
+		ret = of_property_read_u32(node, "vconn_swap_to_off_supported",
+			&chip->vconn_swap_to_off_supported);
+		if (ret != 0)
+			chip->vconn_swap_to_off_supported = 1;
+
+		ret = of_property_read_u32(node, "dp_enabled",
+			&chip->dp_enabled);
+		if (ret != 0)
+			chip->dp_enabled = 1;
+
+		ret = of_property_read_u32(node, "modal_operation_supported",
+			&chip->modal_operation_supported);
+		if (ret != 0)
+			chip->modal_operation_supported = 1;
+
+		chip->product_type_ama = of_property_read_bool(node,
+			"product_type_ama");
         chip->discover_mode_supported = of_property_read_bool(node, "discover_mode_supported");
         chip->enter_mode_supported = of_property_read_bool(node, "enter_mode_supported");
         chip->discover_svid_supported = of_property_read_bool(node, "discover_svid_supported");
@@ -3873,7 +3855,7 @@ static void fusb302_main_work_handler(struct kthread_work *work)
 
     fusb_StopTimers(&chip->timer_wake_unlock);
     mutex_lock(&chip->thread_lock);
-    wake_lock(&chip->fusb302_wakelock);
+    __pm_stay_awake(&chip->fusb302_wakelock);
 
 
     FSC_PRINT("FUSB %s - Entering State Machine via Timer Interrupt\n", __func__);
@@ -3902,7 +3884,7 @@ FSC_S32 fusb_EnableInterrupts(void)
         return -ENOMEM;
     }
 
-    wake_lock_init(&chip->fusb302_wakelock, WAKE_LOCK_SUSPEND, "fusb302wakelock");
+    wakeup_source_init(&chip->fusb302_wakelock, "fusb302wakelock");
 
     /* Set up IRQ for INT_N GPIO */
     ret = gpio_to_irq(chip->gpio_IntN); // Returns negative errno on error
@@ -4023,7 +4005,7 @@ static irqreturn_t _fusb_isr_intn(FSC_S32 irq, void *dev_id)
 
     fusb_StopTimers(&chip->timer_wake_unlock);
     mutex_lock(&chip->thread_lock);
-    wake_lock(&chip->fusb302_wakelock);
+    __pm_stay_awake(&chip->fusb302_wakelock);
     FSC_PRINT("FUSB %s - Entering ISR\n", __func__);
 
     do

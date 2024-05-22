@@ -21,11 +21,11 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/hwspinlock.h>
-#include <linux/wakelock.h>
 #include <linux/interrupt.h>
 #include <linux/delay.h>
 #include <linux/regulator/consumer.h>
 #include <linux/clk.h>
+#include <linux/types.h>
 #include "asp_cfg.h"
 
 /*lint -e774 -e747 -e502 -e429*/
@@ -43,7 +43,6 @@ struct asp_cfg_priv {
 	spinlock_t lock;
 	spinlock_t h2x_lock;
 	struct resource *res;
-	struct wake_lock wake_lock;
 	void __iomem *asp_cfg_reg_base_addr;
 	unsigned int asp_h2x_module_count;
 	bool usb_h2x_enable;
@@ -59,7 +58,10 @@ static unsigned int asp_cfg_reg_read(unsigned int reg)
 	unsigned int ret = 0;
 	unsigned long flag_sft = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s:priv is null\n", __FUNCTION__);
+		return EINVAL;
+	}
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -76,7 +78,10 @@ static void asp_cfg_reg_write(unsigned int reg, unsigned int value)
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 	unsigned long flag_sft = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s:priv is null\n", __FUNCTION__);
+		return;
+	}
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -92,7 +97,10 @@ static void asp_cfg_reg_set_bit(unsigned int reg, unsigned int offset)
 	unsigned int value = 0;
 	unsigned long flag_sft = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s:priv is null\n", __FUNCTION__);
+		return;
+	}
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -109,7 +117,10 @@ static void asp_cfg_reg_clr_bit(unsigned int reg, unsigned int offset)
 	unsigned int value = 0;
 	unsigned long flag_sft = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s:priv is null\n", __FUNCTION__);
+		return;
+	}
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
@@ -125,7 +136,10 @@ void h2x_module_set(unsigned int module, bool enable)
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 	unsigned long flag_sft = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s:priv is null\n", __FUNCTION__);
+		return;
+	}
 
 	spin_lock_irqsave(&priv->h2x_lock, flag_sft);
 	pr_info("%s:module %d, enable %d \n", __FUNCTION__, module, enable);
@@ -173,7 +187,9 @@ int usb_h2x_on(void)
 		ret = clk_prepare_enable(asp_subsys_clk);
 		if (ret) {
 			pr_err("asp_subsys_clk enable fail, error=%d\n", ret);
-			regulator_bulk_disable(1, &asp_cfg_priv->regu);
+			ret = regulator_bulk_disable(1, &asp_cfg_priv->regu);
+			if (ret)
+				pr_err("[%s:%d] fail to disable regulator, ret:%d\n", __FUNCTION__, __LINE__, ret);
 			return -EFAULT;
 		}
 	}
@@ -187,8 +203,12 @@ int usb_h2x_off(void)
 {
 	struct asp_cfg_priv *priv = asp_cfg_priv;
 	struct clk *asp_subsys_clk = NULL;
+	int ret = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		pr_err("%s:priv is null\n", __FUNCTION__);
+		return -EINVAL;
+	}
 
 	asp_subsys_clk = priv->asp_subsys_clk;
 	h2x_module_set(USB_H2X, false);
@@ -196,7 +216,9 @@ int usb_h2x_off(void)
 	if (asp_subsys_clk)
 		clk_disable_unprepare(asp_subsys_clk);
 
-	regulator_bulk_disable(1, &asp_cfg_priv->regu);
+	ret = regulator_bulk_disable(1, &asp_cfg_priv->regu);
+	if (ret)
+		pr_err("[%s:%d] fail to disable regulator, ret:%d\n", __FUNCTION__, __LINE__, ret);
 	pr_info("%s exit \n",__FUNCTION__);
 	return 0;
 }
@@ -204,8 +226,6 @@ int usb_h2x_off(void)
 static void asp_cfg_h2x_module_enable(void)
 {
 	struct asp_cfg_priv *priv = asp_cfg_priv;
-
-	WARN_ON(NULL == priv);
 
 	if (0 == priv->asp_h2x_module_count)
 		dp_h2x_on();
@@ -217,8 +237,6 @@ static void asp_cfg_h2x_module_enable(void)
 static void asp_cfg_h2x_module_disable(void)
 {
 	struct asp_cfg_priv *priv = asp_cfg_priv;
-
-	WARN_ON(NULL == priv);
 
 	priv->asp_h2x_module_count--;
 	pr_info("[%s:%d],-asp_h2x_module_count = %d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);
@@ -270,7 +288,6 @@ void asp_cfg_hdmi_module_disable(void)
 	asp_cfg_reg_clr_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG, ASP_CFG_GT_HDMIREF_DIV_OFFSET);
 
 	/*enable reset*/
-	/* asp_cfg_reg_write(ASP_CFG_R_RST_CTRLEN_REG, RST_ASP_HDMI_BIT); */
 	asp_cfg_h2x_module_disable();
 }
 
@@ -347,10 +364,8 @@ static int asp_cfg_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	dev_info(dev, "res->start.%pK\n", (void *)priv->res->start);
+	dev_info(dev, "res->start.%pK\n", (void *)(uintptr_t)priv->res->start);
 	dev_info(dev, "asp_cfg_reg_base_addr.%pK\n", (void *)priv->asp_cfg_reg_base_addr);
-
-	wake_lock_init(&priv->wake_lock, WAKE_LOCK_SUSPEND, "asp_cfg");
 
 	spin_lock_init(&priv->lock);
 
@@ -377,8 +392,6 @@ static int asp_cfg_remove(struct platform_device *pdev)
 
 	if (priv->asp_cfg_reg_base_addr)
 		devm_iounmap(priv->dev, priv->asp_cfg_reg_base_addr);
-
-	wake_lock_destroy(&priv->wake_lock);
 
 	asp_cfg_priv = NULL;
 

@@ -106,6 +106,7 @@ VOS_UINT32 RNIC_SendDialInfoMsg(
 
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_UINT32 RNIC_SendCdsImsDataReq(
     struct sk_buff                     *pstSkb,
@@ -190,6 +191,7 @@ VOS_VOID RNIC_TrigImsDataProcEvent(RNIC_RMNET_ID_ENUM_UINT8 enRmNetId)
 
     return;
 }
+#endif
 
 
 VOS_VOID RNIC_FillNetManagerMsgPdnCfgInfo(

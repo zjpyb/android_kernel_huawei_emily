@@ -24,9 +24,11 @@
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
-#include <linux/mmc/slot-gpio.h>
 #include <linux/mmc/cmdq_hci.h>
 #include <linux/pm_runtime.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include <linux/blkdev.h>
+#endif
 #include "sdhci.h"
 #ifdef CONFIG_HISI_DEBUG_FS
 #include "hisi_mmc_debug.h"
@@ -35,6 +37,9 @@
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 extern void sdhci_dsm_handle(struct sdhci_host *host, struct mmc_request *mrq);
 extern void sdhci_dsm_set_host_status(struct sdhci_host *host, u32 error_bits);
+#endif
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+#include <chipset_common/storage_rofa/storage_rofa.h>
 #endif
 
 /* 1 sec FIXME: optimize it */
@@ -58,6 +63,7 @@ void cmdq_dump_task_history(struct cmdq_host *cq_host)
 
 	pr_err(DRV_NAME ": current time:0x%lld\n", ktime_to_ns(ktime_get()));
 	for_each_set_bit(tag, &active_reqs, cq_host->num_slots) {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 		pr_info(DRV_NAME ": req:0x%pK, tag:%d, cmd flag:0x%llx,"
 			"issue time:%lld, start time:%lld, end time:%lld\n",
 			cmdq_task_info[tag].req, cmdq_task_info[tag].req->tag,
@@ -65,6 +71,15 @@ void cmdq_dump_task_history(struct cmdq_host *cq_host)
 			ktime_to_ns(cmdq_task_info[tag].issue_time),
 			ktime_to_ns(cmdq_task_info[tag].start_dbr_time),
 			ktime_to_ns(cmdq_task_info[tag].end_dbr_time));
+#else
+		pr_info(DRV_NAME ": req:0x%pK, tag:%d, cmd flag:0x%u,"
+			"issue time:%lld, start time:%lld, end time:%lld\n",
+			cmdq_task_info[tag].req, cmdq_task_info[tag].req->tag,
+			cmdq_task_info[tag].req->cmd_flags,
+			ktime_to_ns(cmdq_task_info[tag].issue_time),
+			ktime_to_ns(cmdq_task_info[tag].start_dbr_time),
+			ktime_to_ns(cmdq_task_info[tag].end_dbr_time));
+#endif
 	}
 	pr_err(DRV_NAME ": claimed:%d, claimer:%s, claim_cnt:%d\n",
 		mmc->claimed,
@@ -357,7 +372,7 @@ static int cmdq_enable(struct mmc_host *mmc)
 {
 	int err = 0;
 	u32 cqcfg;
-	bool dcmd_enable;
+	bool dcmd_enable = false;
 	struct cmdq_host *cq_host = mmc_cmdq_private(mmc);
 
 	cmdq_runtime_pm_get(mmc);
@@ -410,8 +425,6 @@ static int cmdq_enable(struct mmc_host *mmc)
 	/* leave send queue status timer configs to reset values */
 
 	/* configure interrupt coalescing */
-	/* mmc_cq_host_intr_aggr(host->cq_host, CQIC_DEFAULT_ICCTH,
-	   CQIC_DEFAULT_ICTOVAL); */
 
 	/* leave CQRMEM to reset value */
 
@@ -725,7 +738,7 @@ static void _cmdq_set_tran_desc(u8 *desc, dma_addr_t addr, int len,
 		 END(end ? 1 : 0) |
 		 INT(0) |
 		 ACT(0x4) |
-		 DAT_LENGTH(len));
+		 DAT_LENGTH((unsigned int)len));
 
 	if (is_dma64) {
 		__le64 *dataddr = (__le64 __force *)(desc + 4);
@@ -773,8 +786,8 @@ static int cmdq_prep_tran_desc(struct mmc_request *mrq, struct cmdq_host *cq_hos
 	bool end = false;
 	u8 *trans_desc = NULL;
 	dma_addr_t addr;
-	u8 *desc;
-	struct scatterlist *sg;
+	u8 *desc = NULL;
+	struct scatterlist *sg = NULL;
 
 	mrq->data->bytes_xfered = 0;
 	sg_count = cmdq_dma_map(mrq->host, mrq);
@@ -810,9 +823,9 @@ static void cmdq_prep_dcmd_desc(struct mmc_host *mmc, struct mmc_request *mrq)
 	u64 *task_desc = NULL;
 	u64 data = 0;
 	u8 resp_type;
-	u8 *desc;
+	u8 *desc = NULL;
 	/*__le64 *dataddr;*/
-	u32 *dataddr;
+	u32 *dataddr = NULL;
 	struct cmdq_host *cq_host = mmc_cmdq_private(mmc);
 
 	if (!(mrq->cmd->flags & MMC_RSP_PRESENT)) {
@@ -825,7 +838,7 @@ static void cmdq_prep_dcmd_desc(struct mmc_host *mmc, struct mmc_request *mrq)
 			resp_type = RES_TYPE_R145;
 	} else {
 		pr_err("%s: weird response: 0x%x\n", mmc_hostname(mmc), mrq->cmd->flags);
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 	}
 
 	pr_debug("%s: DCMD->opcode: %d, arg: 0x%x, resp_type = %d\n", __func__, mrq->cmd->opcode, mrq->cmd->arg, resp_type);/*lint !e644 */
@@ -835,9 +848,6 @@ static void cmdq_prep_dcmd_desc(struct mmc_host *mmc, struct mmc_request *mrq)
 	data |= (VALID(1) | END(1) | INT(1) | QBAR(1) | ACT(0x5) | CMD_INDEX(mrq->cmd->opcode) | CMD_TIMING(0) | RESP_TYPE(resp_type));/* [false alarm]: resp_type can be set*/
 	*task_desc |= data;
 	desc = (u8 *) task_desc;
-
-	/*dataddr = (__le64 __force *)(desc + 4);*/
-	/*dataddr[0] = cpu_to_le64((u64)mrq->cmd->arg);*/
 
 	dataddr = (u32 *) (desc + 4);
 	dataddr[0] = (u32) mrq->cmd->arg;
@@ -923,6 +933,10 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
 	unsigned long flags;
 
+#ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
+	iomt_host_latency_mrq_init(mrq);
+#endif
+
 	if (!cq_host->enabled) {
 		pr_err("%s cq_host->enable not true.\n", __func__);
 		err = -EHOSTDOWN;
@@ -948,15 +962,18 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 		cmdq_prep_dcmd_desc(mmc, mrq);
 		if (cq_host->mrq_slot[31])
-			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 
 		cq_host->mrq_slot[31] = mrq;
 
 		if (true == cq_host->fix_qbr)
 			if (cmdq_readl(cq_host, CQTDBR))
-				rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+				rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 
 		mmc->cmdq_task_info[tag].start_dbr_time = ktime_get();
+#ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
+		iomt_host_latency_mrq_start(mrq);
+#endif
 		cmdq_writel(cq_host, (u32)1 << 31, CQTDBR);
 
 		if (cq_host->quirks & CMDQ_QUIRK_CHECK_BUSY)
@@ -976,15 +993,15 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	err = cmdq_prep_tran_desc(mrq, cq_host, tag);
 	if (err) {
 		pr_err("%s: %s: failed to setup tx desc: %d\n", mmc_hostname(mmc), __func__, err);
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 	}
 	wmb();
 
 	if (cmdq_readl(cq_host, CQTDBR) & (1 << tag))
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 
 	if (cq_host->mrq_slot[tag])
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 
 	if (cq_host->ops->set_tranfer_params)
 		cq_host->ops->set_tranfer_params(mmc);
@@ -997,10 +1014,16 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	if (true == cq_host->fix_qbr) {
 		if (0 == cmdq_readl(cq_host, CQTDBR)) {
 			mmc->cmdq_task_info[tag].start_dbr_time = ktime_get();
+#ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
+			iomt_host_latency_mrq_start(mrq);
+#endif
 			cmdq_writel(cq_host, (u32) 1 << tag, CQTDBR);
 		}
 	} else {
 			mmc->cmdq_task_info[tag].start_dbr_time = ktime_get();
+#ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
+			iomt_host_latency_mrq_start(mrq);
+#endif
 			cmdq_writel(cq_host, (u32) 1 << tag, CQTDBR);
 	}
 
@@ -1012,7 +1035,7 @@ out:
 
 static int cmdq_finish_data(struct mmc_host *mmc, unsigned int tag)
 {
-	struct mmc_request *mrq;
+	struct mmc_request *mrq = NULL;
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
 
 	mrq = cq_host->mrq_slot[tag];
@@ -1027,6 +1050,10 @@ static int cmdq_finish_data(struct mmc_host *mmc, unsigned int tag)
 
 	cq_host->mrq_slot[tag] = NULL;
 	cq_host->ops->tuning_move(mmc, TUNING_CLK, TUNING_FLAG_CLEAR_COUNT);
+
+#ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
+	iomt_host_latency_mrq_end(mmc, mrq);
+#endif
 
 	/*TODO: error handle*/
 	mrq->done(mrq);
@@ -1088,7 +1115,7 @@ struct mmc_request* get_mrq_by_tag(struct cmdq_host *cq_host, u32 *tag)
 		mrq = get_first_req(cq_host, tag);
 		if (!mrq) {
 			pr_err("%s: cannot get avalible mrq\n", __func__);
-			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 		}
 	}
 
@@ -1105,9 +1132,9 @@ int cmdq_interrupt_errors_handle(struct mmc_host *mmc, u32 intmask,
 #endif
 {
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
-	struct mmc_request *mrq;
+	struct mmc_request *mrq = NULL;
 	u32 dbr_set = 0;
-	unsigned long tag = 0xFFFF;
+	u32 tag = 0xFFFF;
 	u32 err_info = 0;
 	int poll_ret = 0;
 
@@ -1141,7 +1168,7 @@ int cmdq_interrupt_errors_handle(struct mmc_host *mmc, u32 intmask,
 
 	if (err_info & CQTERRI_RES_ERR) {
 		tag = CQTERRI_RES_TASK(err_info);
-		pr_err("%s: CMD err tag: %lu\n", __func__, tag);
+		pr_err("%s: CMD err tag: %u\n", __func__, tag);
 
 		mrq = get_mrq_by_tag(cq_host, (u32 *)&tag);
 		/* CMD44/45/46/47 will not have a valid cmd */
@@ -1151,7 +1178,7 @@ int cmdq_interrupt_errors_handle(struct mmc_host *mmc, u32 intmask,
 			mrq->data->error = err;
 	} else if (err_info & CQTERRI_DAT_ERR) {
 		tag = CQTERRI_DAT_TASK(err_info);
-		pr_err("%s: Dat err  tag: %lu\n", __func__, tag);
+		pr_err("%s: Dat err  tag: %u\n", __func__, tag);
 		mrq = get_mrq_by_tag(cq_host, (u32 *)&tag);
 		mrq->data->error = err;
 	} else {
@@ -1194,6 +1221,11 @@ int cmdq_interrupt_errors_handle(struct mmc_host *mmc, u32 intmask,
 		if(mrq->cmdq_req)
 			mrq->cmdq_req->resp_err = true;
 		pr_err("%s: RED error %d !!!\n", mmc_hostname(mmc), status);
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+		if (storage_rochk_is_monitor_enabled())
+			storage_rochk_monitor_mmc_readonly(mmc->card, mrq,
+				MMC_STATUS_CQIS_RED, cmdq_readl(cq_host, CQCRA));
+#endif
 	}
 
 #ifdef CONFIG_HUAWEI_EMMC_DSM
@@ -1283,7 +1315,7 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, u32 intmask)
 	if (status & CQIS_TERR) {
 		pr_err("%s: cmd queue task error (invalid task descriptor) %d !!!\n", mmc_hostname(mmc), status);
 		cmdq_dumpregs(cq_host);
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 	}
 
 	if (status & CQIS_TCC) {
@@ -1297,6 +1329,12 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, u32 intmask)
 		for_each_set_bit(tag, &comp_status, cq_host->num_slots) {
 			/* complete the corresponding mrq */
 			mmc->cmdq_task_info[tag].end_dbr_time = ktime_get();
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+			if (storage_rochk_is_monitor_enabled())
+				storage_rochk_monitor_mmc_readonly(mmc->card,
+					cq_host->mrq_slot[tag],
+					MMC_STATUS_OK, MMC_RESP_UNCARE);
+#endif
 			cmdq_finish_data(mmc, tag);
 		}
 		cmdq_ring_dbl_in_irq(mmc);
@@ -1473,7 +1511,7 @@ static void cmdq_populate_dt(struct platform_device *pdev, struct cmdq_host *cq_
 
 struct cmdq_host *cmdq_pltfm_init(struct platform_device *pdev, void __iomem *cmda_ioaddr)
 {
-	struct cmdq_host *cq_host;
+	struct cmdq_host *cq_host = NULL;
 	struct resource *cmdq_memres = NULL;
 
 	if (cmda_ioaddr) {
@@ -1558,7 +1596,7 @@ int cmdq_init(struct cmdq_host *cq_host, struct mmc_host *mmc, bool dma64)
 	INIT_WORK(&cq_host->work_resend, cmdq_work_resend);
 
 	for (i = 0; i < cq_host->num_slots; i++) {
-		setup_timer(&cq_host->timer[i], cmdq_timeout_timer, (unsigned long)cq_host);
+		setup_timer(&cq_host->timer[i], cmdq_timeout_timer, (unsigned long)(uintptr_t)cq_host);
 	}
 
 	pr_err("%s: done.\n", __func__);

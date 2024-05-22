@@ -13,7 +13,8 @@
 #include <linux/i2c.h>      /*for struct device_info*/
 #include <linux/device.h>   /*for struct device_info*/
 #include <linux/workqueue.h>    /*for struct evice_info*/
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <huawei_platform/usb/switch/switch_ap/switch_chip.h>
 #include <huawei_platform/power/direct_charger.h>
 
@@ -25,6 +26,7 @@
 
 #define WEAKSOURCE_FLAG_REG             PMIC_HRST_REG12_ADDR(0)
 #define WAEKSOURCE_FLAG                 BIT(2)
+#define HI6526_DBG_VAL_SIZE (8)
 
 #define HI6526_REG_MAX                  (SOC_SCHARGER_OTG_RO_REG_9_ADDR(0)+1)
 
@@ -63,6 +65,11 @@ struct reg_page {
 #define HI6526_FAIL -1
 #define HI6526_RESTART_TIME 4
 #define FCP_RETRY_TIME 5
+
+#define IRQ_RETRY_TIME  (500)
+#define BUF_MAX_512     (512)
+#define STR_LEN_50      (50)
+#define IRQ_BIT_NUM      (23)
 
 #define FCP_ADAPTER_CNTL_REG			(SOC_SCHARGER_FCP_ADAP_CTRL_ADDR(0))
 #define HI6526_ACCP_CHARGER_DET			(1 << SOC_SCHARGER_FCP_ADAP_CTRL_fcp_set_d60m_r_START)
@@ -136,7 +143,7 @@ struct hi6526_device_info {
         struct mutex ibias_calc_lock;
         struct nty_data dc_nty_data;
         struct delayed_work dbg_work;
-        struct wake_lock hi6526_wake_lock;
+        struct wakeup_source hi6526_wake_lock;
         struct chip_debug_info dbg_info[INFO_LEN];
         unsigned int hi6526_version;
         unsigned int is_board_type;        /*0:sft 1:udp 2:asic */
@@ -171,6 +178,7 @@ struct hi6526_device_info {
 #define CHIP_VERSION_4 (SOC_SCHARGER_VERSION4_RO_REG_0_ADDR(0))
 #define CHIP_ID_6526_V100       (0x3536F3F6)
 #define CHIP_ID_6526            (0x36323536)
+#define CHIP_VERSION_V100	(0xF3F6)
 
 #define CHG_INPUT_SOURCE_REG            (SOC_SCHARGER_BUCK_CFG_REG_0_ADDR(0))
 #define CHG_ILIMIT_SHIFT                (SOC_SCHARGER_BUCK_CFG_REG_0_da_buck_ilimit_START)
@@ -341,12 +349,12 @@ struct hi6526_device_info {
 #define WATCHDOG_CTRL_REG               (SOC_SCHARGER_WDT_CTRL_ADDR(0))
 #define WATCHDOG_TIMER_SHIFT            (SOC_SCHARGER_WDT_CTRL_sc_watchdog_timer_START)
 #define WATCHDOG_TIMER_MSK              (0x07<<WATCHDOG_TIMER_SHIFT)
-#define WATCHDOG_TIMER_01_S             (1)
-#define WATCHDOG_TIMER_02_S             (2)
-#define WATCHDOG_TIMER_10_S             (10)
-#define WATCHDOG_TIMER_20_S             (20)
-#define WATCHDOG_TIMER_40_S             (40)
-#define WATCHDOG_TIMER_80_S             (80)
+#define WATCHDOG_TIMER_01_S             1
+#define WATCHDOG_TIMER_02_S             2
+#define WATCHDOG_TIMER_10_S             10
+#define WATCHDOG_TIMER_20_S             20
+#define WATCHDOG_TIMER_40_S             40
+#define WATCHDOG_TIMER_80_S             80
 
 #define WATCHDOG_SOFT_RST_REG           (SOC_SCHARGER_WDT_SOFT_RST_ADDR(0))
 #define WD_RST_N_SHIFT                  (SOC_SCHARGER_WDT_SOFT_RST_wd_rst_n_START)
@@ -843,7 +851,7 @@ struct hi6526_device_info {
 #define IBUS_ABNORMAL_CNT  (5)
 #define IBUS_ABNORMAL_TIME  (20)
 
-#define BUF_LEN         (27)
+#define BUF_LEN         (80)
 #define DELAY_TIMES     (3)
 
 /* direct charger regulator register*/

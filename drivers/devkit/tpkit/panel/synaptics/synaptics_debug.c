@@ -199,6 +199,7 @@
 #define NO_AUTO_CAL_MASK 0x01
 #define F54_BUF_LEN 80
 #define TP_TEST_FAILED_REASON_LEN 20
+#define COPY_STRING_LEN 20
 
 #define TEST_PASS 1
 #define TEST_FAIL 0
@@ -4250,41 +4251,48 @@ int synap_get_cap_data(struct ts_rawdata_info *info)
 	memcpy(&info->hybrid_buff[2], f54->hybridbuf, (mmi_hybrid_abs_delta/2) * sizeof(int));
 
 	strncat(buf_f54test_result, ";", strlen(";"));
-	if (0 == strlen(buf_f54test_result) || strstr(buf_f54test_result, "F")) {
+	if (strlen(buf_f54test_result) == 0 || (strstr(buf_f54test_result, "F")
+		&& ((F54_BUF_LEN - strlen(buf_f54test_result))
+		> strlen(tp_test_failed_reason)))) {
 		strncat(buf_f54test_result, tp_test_failed_reason,
 			strlen(tp_test_failed_reason));
 	}
 
-	switch (f54->rmi4_data->synaptics_chip_data->ic_type) {
-	case SYNAPTICS_S3207:
-		strncat(buf_f54test_result, "-synaptics_3207",
-			strlen("-synaptics_3207"));
-		break;
-	case SYNAPTICS_S3350:
-		strncat(buf_f54test_result, "-synaptics_3350",
-			strlen("-synaptics_3350"));
-		break;
-	case SYNAPTICS_S3320:
-		strncat(buf_f54test_result, "-synaptics_3320",
-			strlen("-synaptics_3320"));
-		break;
-	case SYNAPTICS_S3706:
-		strncat(buf_f54test_result, "-synaptics_3706",
-			strlen("-synaptics_3706"));
-		break;
-	case SYNAPTICS_S3718:
-	case SYNAPTICS_TD4322:
-	case SYNAPTICS_TD4310:
-		strncat(buf_f54test_result, "-synaptics_",
-			strlen("-synaptics_"));
-		strncat(buf_f54test_result,
-			f54->rmi4_data->rmi4_mod_info.project_id_string,
-			strlen(f54->rmi4_data->rmi4_mod_info.
-			       project_id_string));
-		break;
-	default:
-		TS_LOG_ERR("failed to recognize ic_ver\n");
-		break;
+	if ((F54_BUF_LEN - strlen(buf_f54test_result)) < COPY_STRING_LEN) {
+		TS_LOG_ERR("length error: buf_f54test_result:%s\n",
+			buf_f54test_result);
+	} else {
+		switch (f54->rmi4_data->synaptics_chip_data->ic_type) {
+		case SYNAPTICS_S3207:
+			strncat(buf_f54test_result, "-synaptics_3207",
+				strlen("-synaptics_3207"));
+			break;
+		case SYNAPTICS_S3350:
+			strncat(buf_f54test_result, "-synaptics_3350",
+				strlen("-synaptics_3350"));
+			break;
+		case SYNAPTICS_S3320:
+			strncat(buf_f54test_result, "-synaptics_3320",
+				strlen("-synaptics_3320"));
+			break;
+		case SYNAPTICS_S3706:
+			strncat(buf_f54test_result, "-synaptics_3706",
+				strlen("-synaptics_3706"));
+			break;
+		case SYNAPTICS_S3718:
+		case SYNAPTICS_TD4322:
+		case SYNAPTICS_TD4310:
+			strncat(buf_f54test_result, "-synaptics_",
+				strlen("-synaptics_"));
+			strncat(buf_f54test_result,
+				f54->rmi4_data->rmi4_mod_info.project_id_string,
+				strlen(f54->rmi4_data->rmi4_mod_info.
+					project_id_string));
+			break;
+		default:
+			TS_LOG_ERR("failed to recognize ic_ver\n");
+			break;
+		}
 	}
 
 	memcpy(info->result, buf_f54test_result, strlen(buf_f54test_result));

@@ -78,6 +78,7 @@ u32 g_printlog_transId = 0;
 u32 g_translog_transId = 0;
 print_report_hook g_bsp_print_hook = NULL;
 hds_lock_ctrl_info g_hds_lock_ctrl;
+#if ((FEATURE_HDS_PRINTLOG == FEATURE_ON) || (FEATURE_HDS_TRANSLOG == FEATURE_ON))
 
 static inline void * bsp_MemPhyToVirt(u8 *pucCurPhyAddr, u8 *pucPhyStart, u8 *pucVirtStart, u32 ulBufLen)
 {
@@ -161,6 +162,7 @@ s32 bsp_log_write_socp_chan(u8* data,u32 len)
 /*lint -save -e550 */
 s32 bsp_transreport(TRANS_IND_STRU *pstData)
 {
+#if (FEATURE_HDS_TRANSLOG == FEATURE_ON)
     s32 ret;
     u64 auctime;
     u32 socp_packet_len;
@@ -230,6 +232,9 @@ s32 bsp_transreport(TRANS_IND_STRU *pstData)
 
     spin_unlock_irqrestore(&g_hds_lock_ctrl.trans_lock,lock_flag);
     return HDS_TRANS_RE_SUCC;
+#else
+    return HDS_TRANS_CFG_OFF;
+#endif
 }
 /*lint -restore +e550 */
 
@@ -352,6 +357,7 @@ int bsp_trace_to_hids(u32 module_id, u32 level, char* print_buff)
 /*lint -restore +e550 */
 
 /*lint -save -e429 */
+#if CONFIG_ARM64
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 struct platform_device *g_modem_hds_pdev=NULL;
 
@@ -384,12 +390,14 @@ static struct platform_driver hds_driver = {
 #else
 u64 g_dma_hds_mask = (u64)(-1);
 #endif
+#endif
 s32 bsp_socp_log_chan_cfg(void)
 {
     SOCP_CODER_SRC_CHAN_S EncSrcAttr;
     dma_addr_t  ulAddress = 0;
     u8 *p;
 
+#ifdef CONFIG_ARM64
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
     int ret = platform_driver_register(&hds_driver);
     if(ret != 0)
@@ -410,6 +418,9 @@ s32 bsp_socp_log_chan_cfg(void)
     dma_set_mask_and_coherent(&dev, g_dma_hds_mask);
     of_dma_configure(&dev, NULL);
     p =(u8 *) dma_alloc_coherent(&dev, (unsigned long)LOG_SRC_BUF_LEN, &ulAddress, GFP_KERNEL);
+#endif
+#else
+    p =(u8 *) dma_alloc_coherent(NULL, LOG_SRC_BUF_LEN, &ulAddress, GFP_KERNEL);
 #endif
 
     if(HDS_NULL == p)
@@ -448,14 +459,18 @@ s32 bsp_socp_log_chan_cfg(void)
 }
 /*lint -restore +e429 */
 
+#endif
 
 
 int __init bsp_hds_init(void)
 {
+#if ((FEATURE_HDS_PRINTLOG == FEATURE_ON) || (FEATURE_HDS_TRANSLOG == FEATURE_ON))
     int ret;
+#endif
 
     bsp_hds_service_init();
 
+#if ((FEATURE_HDS_PRINTLOG == FEATURE_ON) || (FEATURE_HDS_TRANSLOG == FEATURE_ON))
     /*上报LOG的SOCP通道*/
     ret=bsp_socp_log_chan_cfg();
     if(ret)
@@ -463,7 +478,9 @@ int __init bsp_hds_init(void)
         printk(KERN_ERR"bsplog src chan fail!\n");
         return HDS_ERR;
     }
+#endif
 
+#if (FEATURE_HDS_PRINTLOG == FEATURE_ON)
     spin_lock_init(&g_hds_lock_ctrl.trace_lock);
     g_bsp_print_hook = (print_report_hook)bsp_trace_to_hids;
 
@@ -478,7 +495,9 @@ int __init bsp_hds_init(void)
     bsp_diag_fill_socp_head(&g_print_sendbuf->socp_head,0);
 
     g_print_init_state=PRINTLOG_CHN_INIT;
+#endif
 
+#if (FEATURE_HDS_TRANSLOG == FEATURE_ON)
     spin_lock_init(&g_hds_lock_ctrl.trans_lock);
     /*为结构化消息数据申请buffer*/
 
@@ -492,6 +511,7 @@ int __init bsp_hds_init(void)
     bsp_diag_fill_socp_head(&g_trans_sendbuf->socp_head,0);
 
     g_trans_init_state=TRANSLOG_CHN_INIT;
+#endif
 
     printk(KERN_ERR"hds_init ok!\n");
     return HDS_OK;

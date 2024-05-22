@@ -1,13 +1,13 @@
 /*
- * hisi loadmonitor driver.
- *
- * Copyright (C) 2017 huawei Ltd.
- * Author:ContextHub team
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2019. All rights reserved.
+ * Description: Contexthub loadmonitor driver.
+ * Author: Huawei
+ * Create: 2017-06-13
  */
+#ifndef __HISI_CONTEXTHUB_LOADMONITOR_H__
+#define __HISI_CONTEXTHUB_LOADMONITOR_H__
+#include <linux/types.h>
+
 #define MAX_SIG_CNT_PER_IP                    32
 enum {
 	DATA_INDEX_IDLE = 0,
@@ -19,6 +19,7 @@ enum {
 struct LOADMONITOR_SIG {
 	uint64_t                 count[DATA_INDEX_MAX];
 	uint32_t                 samples;
+	uint32_t                 reserved;
 };
 
 struct LOADMONITOR_SIGS {
@@ -34,12 +35,22 @@ struct AO_LOADMONITOR_SIG {
 
 /* EXTERNAL FUNCTIONS */
 #if defined(CONFIG_CONTEXTHUB_LOADMONITOR)
+/*
+ * 发送IPC通知contexthub使能loadmonitor
+ */
 int ao_loadmonitor_enable(unsigned int delay_value, unsigned int freq);
+/*
+ * 发送IPC通知contexthub关闭loadmonitor
+ */
 int ao_loadmonitor_disable(void);
+/*
+ * 发送IPC通知contexthub读取loadmonitor数据
+ */
 int32_t _ao_loadmonitor_read(void *data, uint32_t len);
 #else
-inline int ao_loadmonitor_enable(unsigned int delay_value, unsigned int freq) {pr_err("ao_loadmonitor_enable invalid;\n"); return -1;}
-inline int ao_loadmonitor_disable(void) {pr_err("ao_loadmonitor_disable invalid;\n"); return -1;}
-inline int32_t _ao_loadmonitor_read(void *data, uint32_t len) {pr_err("_ao_loadmonitor_read invalid;\n"); return -1;}
+inline int ao_loadmonitor_enable(unsigned int delay_value, unsigned int freq) {pr_err("ao_loadmonitor_enable invalid;\n"); return -EINVAL; }
+inline int ao_loadmonitor_disable(void) {pr_err("ao_loadmonitor_disable invalid;\n"); return -EINVAL; }
+inline int32_t _ao_loadmonitor_read(void *data, uint32_t len) {pr_err("_ao_loadmonitor_read invalid;\n"); return -EINVAL; }
+#endif
 #endif
 

@@ -1,128 +1,122 @@
 /*
- * osal
- *
- * Copyright (c) 2017 Hisilicon Limited
- *
- * Author: gaoyajun<gaoyajun@hisilicon.com>
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation.
- *
- */
-
-#include "public.h"
+  * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+  * Description: This software is licensed under the terms of the GNU General
+  * 	Public License version 2, as published by the Free Software Foundation
+  * Author: gaoyajun<gaoyajun@hisilicon.com>
+  * Create: 2017-03-16
+  */
 #include "linux_kernel_osal.h"
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
 #include <linux/sched/clock.h>
-#endif
+#include "public.h"
 
 #ifdef ENV_ARMLINUX_KERNEL
 
 /* SpinLock */
-OSAL_IRQ_SPIN_LOCK g_SpinLock_SCD;
-OSAL_IRQ_SPIN_LOCK g_SpinLock_VDH;
-OSAL_IRQ_SPIN_LOCK g_SpinLock_Record;
+osal_irq_spin_lock g_spin_lock_scd;
+osal_irq_spin_lock g_spin_lock_vdh;
+osal_irq_spin_lock g_spin_lock_record;
 
 /* Mutext */
-OSAL_TASK_MUTEX g_IntEvent;
+osal_task_mutex g_int_event;
 
-OSAL_TASK_MUTEX g_ScdHwDoneEvent;
-OSAL_TASK_MUTEX g_VdmHwDoneEvent;
+osal_task_mutex g_scd_hw_done_event;
+osal_task_mutex g_vdm_hw_done_event;
 
 /* Semaphore */
-OSAL_SEMA g_SCDSem;
-OSAL_SEMA g_VDHSem;
-OSAL_SEMA g_BPDSem;
+osal_sema g_scd_sem;
+osal_sema g_vdh_sem;
+osal_sema g_bpd_sem;
 
 /* Extern */
-extern Vfmw_Osal_Func_Ptr g_vfmw_osal_fun_ptr;
+extern vfmw_osal_func_ptr g_vfmw_osal_fun_ptr;
 
-#define OSAL_Print  printk
+#define OSAL_PRINT  printk
 #define MAX_WAIT_EVENT_CNT  100
-#define TIME_PERIOD(begin, end) ((end >= begin) ? (end - begin) : (0xffffffff - begin + end))
+#define time_period(begin, end) ((end >= begin) ? (end - begin) : (0xffffffff - begin + end))
 
-UINT32 OSAL_GetTimeInMs(VOID)
+UINT32 oasl_get_time_in_ms(void)
 {
-	UINT64 SysTime;
+	UINT64 sys_time;
 
-	SysTime = sched_clock();
-	do_div(SysTime, 1000000);
+	sys_time = sched_clock();
+	do_div(sys_time, UM_COUNT_OF_A_MM);
 
-	return (UINT32) SysTime;
+	return (UINT32) sys_time;
 }
 
-UINT32 OSAL_GetTimeInUs(VOID)
+UINT32 osal_get_time_in_us(void)
 {
-	UINT64 SysTime;
+	UINT64 sys_time;
 
-	SysTime = sched_clock();
-	do_div(SysTime, 1000);
+	sys_time = sched_clock();
+	do_div(sys_time, MM_COUNT_OF_A_S);
 
-	return (UINT32) SysTime;
+	return (UINT32) sys_time;
 }
 
-static inline SINT32 OSAL_InitEvent(OSAL_EVENT *pEvent, SINT32 InitVal)
+static inline SINT32 osal_init_event(osal_event *p_event, SINT32 init_val)
 {
-	pEvent->flag = InitVal;
-	init_waitqueue_head(&(pEvent->queue_head));
+	p_event->flag = init_val;
+	init_waitqueue_head(&(p_event->queue_head));
 	return OSAL_OK;
 }
 
-static inline SINT32 OSAL_GiveEvent(OSAL_EVENT *pEvent)
+static inline SINT32 osal_give_event(osal_event *p_event)
 {
-	pEvent->flag = 1;
-	wake_up_interruptible(&(pEvent->queue_head));
+	p_event->flag = 1;
+	wake_up_interruptible(&(p_event->queue_head));
 
 	return OSAL_OK;
 }
 
-static inline SINT32 OSAL_WaitEvent(OSAL_EVENT *pEvent, SINT32 msWaitTime)
+static inline SINT32 osal_wait_event(osal_event *p_event, SINT32 ms_wait_time)
 {
 	SINT32 ret;
 	UINT32 cnt = 0;
 
 	UINT32 start_time, cur_time;
-	start_time = VFMW_OSAL_GetTimeInMs();
+
+	start_time = VFMW_OSAL_GET_TIME_IN_MS();
 
 	do {
-		ret = wait_event_interruptible_timeout((pEvent->queue_head), (pEvent->flag != 0), (msecs_to_jiffies(msWaitTime)));/*lint !e666*/
+		/*lint !e666*/
+		ret = wait_event_interruptible_timeout((p_event->queue_head),
+			(p_event->flag != 0), (msecs_to_jiffies(ms_wait_time)));
 		if (ret < 0) {
-			cur_time = VFMW_OSAL_GetTimeInMs();
-			if (TIME_PERIOD(start_time, cur_time) > (UINT32)msWaitTime) {
-				dprint(PRN_ALWS, "wait event time out, time : %d, cnt: %d\n", TIME_PERIOD(start_time, cur_time), cnt);
+			cur_time = VFMW_OSAL_GET_TIME_IN_MS();
+			if (time_period(start_time, cur_time) >
+					(UINT32)ms_wait_time) {
+				dprint(PRN_ALWS, "wait event time out, time : %d, cnt: %d\n", time_period(start_time, cur_time), cnt);
 				ret = 0;
 				break;
 			}
 		}
 		cnt++;
-	} while ((pEvent->flag == 0) && (ret < 0));
+	} while ((p_event->flag == 0) && (ret < 0));
 
-	if (cnt > MAX_WAIT_EVENT_CNT) {
+	if (cnt > MAX_WAIT_EVENT_CNT)
 		dprint(PRN_ALWS, "the max cnt of wait_event interrupts by singal is %d\n", cnt);
-	}
 
-	if (ret  == 0) {
+	if (ret  == 0)
 		dprint(PRN_ALWS, "wait pEvent signal timeout\n");
-	}
 
-	pEvent->flag = 0;    //(pEvent->flag>0)? (pEvent->flag-1): 0;
+	p_event->flag = 0;    // (pEvent->flag>0)? (pEvent->flag-1): 0;
 
 	return (ret != 0) ? OSAL_OK : OSAL_ERR;
 }
 
-UINT8 *OSAL_RegisterMap(UADDR PhyAddr, UINT32 Size)
+UINT8 *osal_register_map(UADDR phy_addr, UINT32 size)
 {
-	return (UINT8 *) ioremap_nocache(PhyAddr, Size);
+	return (UINT8 *) ioremap_nocache(phy_addr, size);
 }
 
-VOID OSAL_RegisterUnMap(UINT8 *VirAddr, UINT32 Size)
+VOID osal_register_un_map(UINT8 *vir_addr, UINT32 size)
 {
-	iounmap(VirAddr);
-	return;
+	iounmap(vir_addr);
 }
 
-SINT32 OSAL_FileWrite(char *buf, int len, struct file *filp)
+SINT32 osal_file_write(const char *buf, int len, struct file *filp)
 {
 	int writelen;
 	mm_segment_t oldfs;
@@ -133,298 +127,307 @@ SINT32 OSAL_FileWrite(char *buf, int len, struct file *filp)
 	if (filp->f_op->write == NULL)
 		return -ENOSYS;
 
-	if (((filp->f_flags & O_ACCMODE) & (O_WRONLY | O_RDWR)) == 0)
+	if ((filp->f_flags & O_ACCMODE & (O_WRONLY | O_RDWR)) == 0)
 		return -EACCES;
 
 	oldfs = get_fs();
-	set_fs(KERNEL_DS);/*lint !e501*/
+	set_fs(KERNEL_DS); /* lint !e501 */
 	writelen = filp->f_op->write(filp, buf, len, &filp->f_pos);
 	set_fs(oldfs);
 
 	return writelen;
 }
 
-static inline VOID OSAL_SEMA_INTIT(OSAL_SEMA *pSem)
+static inline VOID osal_sema_intit(osal_sema *p_sem)
 {
-	sema_init(pSem, 1);
+	sema_init(p_sem, 1);
 }
 
-static inline SINT32 OSAL_DOWN_INTERRUPTIBLE(OSAL_SEMA *pSem)
+static inline SINT32 osal_down_interruptible(osal_sema *p_sem)
 {
-	return down_interruptible(pSem);
+	return down_interruptible(p_sem);
 }
 
-static inline VOID OSAL_UP(OSAL_SEMA *pSem)
+static inline VOID osal_up(osal_sema *p_sem)
 {
-	up(pSem);
+	up(p_sem);
 }
 
-static inline VOID OSAL_SpinLockIRQInit(OSAL_IRQ_SPIN_LOCK *pIntrMutex)
+static inline VOID osal_spin_lock_irq_init(osal_irq_spin_lock *p_intr_mutex)
 {
-	spin_lock_init(&pIntrMutex->irq_lock);
-	pIntrMutex->isInit = 1;
+	spin_lock_init(&p_intr_mutex->irq_lock);
+	p_intr_mutex->is_init = 1;
 }
 
-static inline SINT32 OSAL_SpinLockIRQ(OSAL_IRQ_SPIN_LOCK *pIntrMutex)
+static inline SINT32 osal_spin_lock_irq(osal_irq_spin_lock *p_intr_mutex)
 {
-	if (pIntrMutex->isInit == 0) {
-		spin_lock_init(&pIntrMutex->irq_lock);
-		pIntrMutex->isInit = 1;
+	if (p_intr_mutex->is_init == 0) {
+		spin_lock_init(&p_intr_mutex->irq_lock);
+		p_intr_mutex->is_init = 1;
 	}
-	spin_lock_irqsave(&pIntrMutex->irq_lock, pIntrMutex->irq_lockflags);
+	spin_lock_irqsave(&p_intr_mutex->irq_lock, p_intr_mutex->irq_lockflags);
 
 	return OSAL_OK;
 }
 
-static inline SINT32 OSAL_SpinUnLockIRQ(OSAL_IRQ_SPIN_LOCK *pIntrMutex)
+static inline SINT32 osal_spin_unlock_irq(osal_irq_spin_lock *p_intr_mutex)
 {
-	spin_unlock_irqrestore(&pIntrMutex->irq_lock, pIntrMutex->irq_lockflags);
+	spin_unlock_irqrestore(&p_intr_mutex->irq_lock,
+		p_intr_mutex->irq_lockflags);
 
 	return OSAL_OK;
 }
 
-VOID OSAL_Mb(VOID)
+VOID osal_mb(void)
 {
 	mb();
 }
 
-VOID OSAL_uDelay(ULONG usecs)
+VOID osal_u_delay(ULONG usecs)
 {
 	udelay(usecs);
 }
 
-VOID OSAL_mSleep(UINT32 msecs)
+VOID osal_m_sleep(UINT32 msecs)
 {
 	msleep(msecs);
 }
 
-SINT32 OSAL_RequestIrq(UINT32 irq, OSAL_IRQ_HANDLER_t handler, ULONG flags, const char *name, VOID *dev)
+SINT32 osal_request_irq(
+	UINT32 irq, OSAL_IRQ_HANDLER_T handler,
+	ULONG flags, const char *name, VOID *dev)
 {
 	return request_irq(irq, (irq_handler_t) handler, flags, name, dev);
 }
 
-VOID OSAL_FreeIrq(UINT32 irq, VOID *dev)
+VOID osal_fre_irq(UINT32 irq, VOID *dev)
 {
 	free_irq(irq, dev);
 }
 
-VOID *OSAL_AllocVirMem(SINT32 Size)
+VOID *osal_alloc_vir_mem(SINT32 size)
 {
-	return vmalloc(Size);
+	return vmalloc(size);
 }
 
-VOID OSAL_FreeVirMem(VOID *p)
+VOID osal_free_vir_mem(const VOID *p)
 {
 	if (p)
 		vfree(p);
 }
 
-UINT8 *OSAL_Mmap(UADDR phyaddr, UINT32 len)
+UINT8 *osal_mmap(UADDR phyaddr, UINT32 len)
 {
 	return NULL;
 }
 
-UINT8 *OSAL_MmapCache(UADDR phyaddr, UINT32 len)
+UINT8 *osal_mmap_cache(UADDR phyaddr, UINT32 len)
 {
 	return NULL;
 }
 
-VOID OSAL_Munmap(UINT8 *p)
+VOID osal_munmap(UINT8 *p)
 {
-	return;
 }
 
-OSAL_IRQ_SPIN_LOCK *GetSpinLockByEnum(SpinLockType LockType)
+osal_irq_spin_lock *get_spin_lock_by_enum(spin_lock_type lock_type)
 {
-	OSAL_IRQ_SPIN_LOCK *pSpinLock = NULL;
+	osal_irq_spin_lock *p_spin_lock = NULL;
 
-	switch (LockType) {
+	switch (lock_type) {
 	case G_SPINLOCK_SCD:
-		pSpinLock = &g_SpinLock_SCD;
+		p_spin_lock = &g_spin_lock_scd;
 		break;
 
 	case G_SPINLOCK_RECORD:
-		pSpinLock = &g_SpinLock_Record;
+		p_spin_lock = &g_spin_lock_record;
 		break;
 
 	case G_SPINLOCK_VDH:
-		pSpinLock = &g_SpinLock_VDH;
+		p_spin_lock = &g_spin_lock_vdh;
 		break;
 
 	default:
-		dprint(PRN_ERROR, "%s unkown SpinLockType %d\n", __func__, LockType);
+		dprint(PRN_ERROR, "%s unkown spin_lock_type %d\n", __func__, lock_type);
 		break;
 	}
 
-	return pSpinLock;
+	return p_spin_lock;
 }
 
-VOID OSAL_SpinLockInit(SpinLockType LockType)
+VOID osal_spin_lock_init(spin_lock_type lock_type)
 {
-	OSAL_IRQ_SPIN_LOCK *pSpinLock = NULL;
+	osal_irq_spin_lock *p_spin_lock = NULL;
 
-	pSpinLock = GetSpinLockByEnum(LockType);
+	p_spin_lock = get_spin_lock_by_enum(lock_type);
 
-	OSAL_SpinLockIRQInit(pSpinLock);
+	osal_spin_lock_irq_init(p_spin_lock);
 }
 
-SINT32 OSAL_SpinLock(SpinLockType LockType)
+SINT32 osal_spin_lock(spin_lock_type lock_type)
 {
-	OSAL_IRQ_SPIN_LOCK *pSpinLock = NULL;
+	osal_irq_spin_lock *p_spin_lock = NULL;
 
-	pSpinLock = GetSpinLockByEnum(LockType);
+	p_spin_lock = get_spin_lock_by_enum(lock_type);
 
-	return OSAL_SpinLockIRQ(pSpinLock);
+	return osal_spin_lock_irq(p_spin_lock);
 }
 
-SINT32 OSAL_SpinUnLock(SpinLockType LockType)
+SINT32 osal_spin_unlock(spin_lock_type lock_type)
 {
-	OSAL_IRQ_SPIN_LOCK *pSpinLock = NULL;
+	osal_irq_spin_lock *p_spin_lock = NULL;
 
-	pSpinLock = GetSpinLockByEnum(LockType);
+	p_spin_lock = get_spin_lock_by_enum(lock_type);
 
-	return OSAL_SpinUnLockIRQ(pSpinLock);
+	return osal_spin_unlock_irq(p_spin_lock);
 }
 
-OSAL_SEMA *GetSemByEnum(SemType Sem)
+osal_sema *get_sem_by_enum(sem_type sem)
 {
-	OSAL_SEMA *pSem = NULL;
+	osal_sema *p_sem = NULL;
 
-	switch (Sem) {
+	switch (sem) {
 	case G_SCD_SEM:
-		pSem = &g_SCDSem;
+		p_sem = &g_scd_sem;
 		break;
 
 	case G_VDH_SEM:
-		pSem = &g_VDHSem;
+		p_sem = &g_vdh_sem;
 		break;
 
 	case G_BPD_SEM:
-		pSem = &g_BPDSem;
+		p_sem = &g_bpd_sem;
 		break;
 
 	default:
-		dprint(PRN_ERROR, "%s unkown SemType %d\n", __func__, Sem);
+		dprint(PRN_ERROR, "%s unkown sem_type %d\n", __func__, sem);
 		break;
 	}
 
-	return pSem;
+	return p_sem;
 }
 
-VOID OSAL_SemInit(SemType Sem)
+VOID osal_sem_init(sem_type sem)
 {
-	OSAL_SEMA *pSem = NULL;
+	osal_sema *p_sem = NULL;
 
-	pSem = GetSemByEnum(Sem);
+	p_sem = get_sem_by_enum(sem);
 
-	OSAL_SEMA_INTIT(pSem);
+	osal_sema_intit(p_sem);
 }
 
-SINT32 OSAL_SemDown(SemType Sem)
+SINT32 osal_sem_down(sem_type sem)
 {
-	OSAL_SEMA *pSem = NULL;
+	osal_sema *p_sem = NULL;
 
-	pSem = GetSemByEnum(Sem);
+	p_sem = get_sem_by_enum(sem);
 
-	return OSAL_DOWN_INTERRUPTIBLE(pSem);
+	return osal_down_interruptible(p_sem);
 }
 
-VOID OSAL_SemUp(SemType Sem)
+VOID osal_sem_up(sem_type sem)
 {
-	OSAL_SEMA *pSem = NULL;
+	osal_sema *p_sem = NULL;
 
-	pSem = GetSemByEnum(Sem);
+	p_sem = get_sem_by_enum(sem);
 
-	OSAL_UP(pSem);
+	osal_up(p_sem);
 }
 
-SINT32 OSAL_InitWaitQue(MutexType mutextType, SINT32 initVal)
+SINT32 osal_init_wait_que(mutex_type mutext_type, SINT32 init_val)
 {
-	SINT32 retVal = OSAL_ERR;
+	SINT32 ret_val = OSAL_ERR;
 
-	switch (mutextType) {
+	switch (mutext_type) {
 	case G_SCDHWDONEEVENT:
-		retVal = OSAL_InitEvent(&g_ScdHwDoneEvent, initVal);
+		ret_val = osal_init_event(&g_scd_hw_done_event, init_val);
 		break;
 
 	case G_VDMHWDONEEVENT:
-		retVal = OSAL_InitEvent(&g_VdmHwDoneEvent, initVal);
+		ret_val = osal_init_event(&g_vdm_hw_done_event, init_val);
 		break;
 
 	default:
 		break;
 	}
-	return retVal;
+	return ret_val;
 }
 
-SINT32 OSAL_WakeupWaitQue(MutexType mutexType)
+SINT32 osal_wake_up_wait_que(mutex_type mutex_type)
 {
-	SINT32 retVal = OSAL_ERR;
+	SINT32 ret_val = OSAL_ERR;
 
-	switch (mutexType) {
+	switch (mutex_type) {
 	case G_SCDHWDONEEVENT:
-		retVal = OSAL_GiveEvent(&g_ScdHwDoneEvent);
+		ret_val = osal_give_event(&g_scd_hw_done_event);
 		break;
 
 	case G_VDMHWDONEEVENT:
-		retVal = OSAL_GiveEvent(&g_VdmHwDoneEvent);
+		ret_val = osal_give_event(&g_vdm_hw_done_event);
 		break;
 
 	default:
 		break;
 	}
 
-	return retVal;
+	return ret_val;
 }
 
-SINT32 OSAL_WaitWaitQue(MutexType mutexType, SINT32 waitTimeInMs)
+SINT32 osal_wait_wait_que(mutex_type mutex_type, SINT32 wait_time_in_ms)
 {
-	SINT32 retVal = OSAL_ERR;
+	SINT32 ret_val = OSAL_ERR;
 
-	switch (mutexType) {
+	switch (mutex_type) {
 	case G_SCDHWDONEEVENT:
-		retVal = OSAL_WaitEvent(&g_ScdHwDoneEvent, waitTimeInMs);
+		ret_val = osal_wait_event(&g_scd_hw_done_event, wait_time_in_ms);
 		break;
 
 	case G_VDMHWDONEEVENT:
-		retVal = OSAL_WaitEvent(&g_VdmHwDoneEvent, waitTimeInMs);
+		ret_val = osal_wait_event(&g_vdm_hw_done_event, wait_time_in_ms);
 		break;
 
 	default:
 		break;
 	}
 
-	return retVal;
+	return ret_val;
 }
 
-VOID OSAL_InitInterface(VOID)
+VOID osal_init_interface(void)
 {
-	memset(&g_vfmw_osal_fun_ptr, 0, sizeof(g_vfmw_osal_fun_ptr));
+	hi_s32 ret;
 
-	g_vfmw_osal_fun_ptr.pfun_Osal_GetTimeInMs   = OSAL_GetTimeInMs;
-	g_vfmw_osal_fun_ptr.pfun_Osal_GetTimeInUs   = OSAL_GetTimeInUs;
-	g_vfmw_osal_fun_ptr.pfun_Osal_SpinLockInit  = OSAL_SpinLockInit;
-	g_vfmw_osal_fun_ptr.pfun_Osal_SpinLock      = OSAL_SpinLock;
-	g_vfmw_osal_fun_ptr.pfun_Osal_SpinUnLock    = OSAL_SpinUnLock;
-	g_vfmw_osal_fun_ptr.pfun_Osal_SemaInit      = OSAL_SemInit;
-	g_vfmw_osal_fun_ptr.pfun_Osal_SemaDown      = OSAL_SemDown;
-	g_vfmw_osal_fun_ptr.pfun_Osal_SemaUp        = OSAL_SemUp;
-	g_vfmw_osal_fun_ptr.pfun_Osal_Print         = OSAL_Print;
-	g_vfmw_osal_fun_ptr.pfun_Osal_mSleep        = OSAL_mSleep;
-	g_vfmw_osal_fun_ptr.pfun_Osal_Mb            = OSAL_Mb;
-	g_vfmw_osal_fun_ptr.pfun_Osal_uDelay        = OSAL_uDelay;
-	g_vfmw_osal_fun_ptr.pfun_Osal_InitEvent     = OSAL_InitWaitQue;
-	g_vfmw_osal_fun_ptr.pfun_Osal_GiveEvent     = OSAL_WakeupWaitQue;
-	g_vfmw_osal_fun_ptr.pfun_Osal_WaitEvent     = OSAL_WaitWaitQue;
-	g_vfmw_osal_fun_ptr.pfun_Osal_RequestIrq    = OSAL_RequestIrq;
-	g_vfmw_osal_fun_ptr.pfun_Osal_FreeIrq       = OSAL_FreeIrq;
-	g_vfmw_osal_fun_ptr.pfun_Osal_RegisterMap   = OSAL_RegisterMap;
-	g_vfmw_osal_fun_ptr.pfun_Osal_RegisterUnMap = OSAL_RegisterUnMap;
-	g_vfmw_osal_fun_ptr.pfun_Osal_Mmap          = OSAL_Mmap;
-	g_vfmw_osal_fun_ptr.pfun_Osal_MmapCache     = OSAL_MmapCache;
-	g_vfmw_osal_fun_ptr.pfun_Osal_MunMap        = OSAL_Munmap;
-	g_vfmw_osal_fun_ptr.pfun_Osal_AllocVirMem   = OSAL_AllocVirMem;
-	g_vfmw_osal_fun_ptr.pfun_Osal_FreeVirMem    = OSAL_FreeVirMem;
+	ret = memset_s(&g_vfmw_osal_fun_ptr, sizeof(g_vfmw_osal_fun_ptr), 0,
+		sizeof(g_vfmw_osal_fun_ptr));
+	if (ret != EOK) {
+		dprint(PRN_FATAL, " %s %d memset_s err in function\n", __func__, __LINE__);
+		return;
+	}
+
+	g_vfmw_osal_fun_ptr.pfun_osal_get_time_in_ms   = oasl_get_time_in_ms;
+	g_vfmw_osal_fun_ptr.pfun_osal_get_time_in_us   = osal_get_time_in_us;
+	g_vfmw_osal_fun_ptr.pfun_osal_spin_lock_init  = osal_spin_lock_init;
+	g_vfmw_osal_fun_ptr.pfun_osal_spin_lock      = osal_spin_lock;
+	g_vfmw_osal_fun_ptr.pfun_osal_spin_unlock    = osal_spin_unlock;
+	g_vfmw_osal_fun_ptr.pfun_osal_sema_init      = osal_sem_init;
+	g_vfmw_osal_fun_ptr.pfun_osal_sema_down      = osal_sem_down;
+	g_vfmw_osal_fun_ptr.pfun_osal_sema_up        = osal_sem_up;
+	g_vfmw_osal_fun_ptr.pfun_osal_print         = OSAL_PRINT;
+	g_vfmw_osal_fun_ptr.pfun_osal_m_sleep        = osal_m_sleep;
+	g_vfmw_osal_fun_ptr.pfun_osal_mb            = osal_mb;
+	g_vfmw_osal_fun_ptr.pfun_osal_u_delay        = osal_u_delay;
+	g_vfmw_osal_fun_ptr.pfun_osal_init_event     = osal_init_wait_que;
+	g_vfmw_osal_fun_ptr.pfun_osal_give_event     = osal_wake_up_wait_que;
+	g_vfmw_osal_fun_ptr.pfun_osal_wait_event     = osal_wait_wait_que;
+	g_vfmw_osal_fun_ptr.pfun_osal_request_irq    = osal_request_irq;
+	g_vfmw_osal_fun_ptr.pfun_osal_free_irq       = osal_fre_irq;
+	g_vfmw_osal_fun_ptr.pfun_osal_register_map   = osal_register_map;
+	g_vfmw_osal_fun_ptr.pfun_osal_register_unmap = osal_register_un_map;
+	g_vfmw_osal_fun_ptr.pfun_osal_mmap          = osal_mmap;
+	g_vfmw_osal_fun_ptr.pfun_osal_mmap_cache     = osal_mmap_cache;
+	g_vfmw_osal_fun_ptr.pfun_osal_mun_map        = osal_munmap;
+	g_vfmw_osal_fun_ptr.pfun_osal_alloc_vir_mem   = osal_alloc_vir_mem;
+	g_vfmw_osal_fun_ptr.pfun_osal_free_vir_mem    = osal_free_vir_mem;
 }
 
 #endif

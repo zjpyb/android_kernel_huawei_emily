@@ -3,7 +3,7 @@
  *
  * driver of vsys buck tps62180
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -45,11 +45,11 @@
 HWLOG_REGIST();
 
 /* tps62180 vout */
-#define TPS62180_VOUT_3500                 (3500)
-#define TPS62180_VOUT_4300                 (4300)
+#define TPS62180_VOUT_3500                 3500
+#define TPS62180_VOUT_4300                 4300
 /* tps62180 state */
-#define TPS62180_CHIP_DISABLE              (0)
-#define TPS62180_CHIP_ENABLE               (1)
+#define TPS62180_CHIP_DISABLE              0
+#define TPS62180_CHIP_ENABLE               1
 
 struct tps62180_device_info {
 	struct device *dev;
@@ -65,7 +65,7 @@ static int tps62180_get_state(void)
 {
 	struct tps62180_device_info *di = g_tps62180_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -77,7 +77,7 @@ static int tps62180_get_vout(void)
 {
 	struct tps62180_device_info *di = g_tps62180_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -96,7 +96,7 @@ static int tps62180_set_state(int enable)
 	int gpio_val;
 	struct tps62180_device_info *di = g_tps62180_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -126,7 +126,7 @@ static int tps62180_set_vout(int vout)
 	int gpio_val;
 	struct tps62180_device_info *di = g_tps62180_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -153,10 +153,10 @@ static int tps62180_set_vout(int vout)
 
 static int tps62180_gpio_init(struct device_node *np)
 {
-	int ret = 0;
+	int ret;
 	struct tps62180_device_info *di = g_tps62180_di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -165,21 +165,21 @@ static int tps62180_gpio_init(struct device_node *np)
 	hwlog_info("gpio_en=%d\n", di->gpio_en);
 
 	if (!gpio_is_valid(di->gpio_en)) {
-		hwlog_err("gpio(gpio_en) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto gpio_init_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_en, "gpio_en");
 	if (ret) {
-		hwlog_err("gpio(gpio_en) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto gpio_init_fail_0;
 	}
 
 	/* 0:enable 1:disable */
 	ret = gpio_direction_output(di->gpio_en, 0);
 	if (ret) {
-		hwlog_err("gpio(gpio_en) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto gpio_init_fail_1;
 	}
 
@@ -187,23 +187,24 @@ static int tps62180_gpio_init(struct device_node *np)
 	hwlog_info("gpio_vout_ctrl=%d\n", di->gpio_vout_ctrl);
 
 	if (!gpio_is_valid(di->gpio_vout_ctrl)) {
-		hwlog_err("gpio(gpio_vout_ctrl) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto gpio_init_fail_1;
 	}
 
 	ret = gpio_request(di->gpio_vout_ctrl, "gpio_vout_ctrl");
 	if (ret) {
-		hwlog_err("gpio(gpio_vout_ctrl) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto gpio_init_fail_1;
 	}
 
 	/* 0:vout=3500 1:vout=4300 */
 	ret = gpio_direction_output(di->gpio_vout_ctrl, 1);
 	if (ret) {
-		hwlog_err("gpio(gpio_vout_ctrl) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto gpio_init_fail_2;
 	}
+
 	return 0;
 
 gpio_init_fail_2:
@@ -222,7 +223,6 @@ static void tps62180_para_init(struct tps62180_device_info *di)
 
 static struct vsys_buck_device_ops tps62180_ops = {
 	.chip_name = "tps62180",
-
 	.get_state = tps62180_get_state,
 	.set_state = tps62180_set_state,
 	.get_vout = tps62180_get_vout,
@@ -233,13 +233,13 @@ static struct vsys_buck_device_ops tps62180_ops = {
 static ssize_t tps62180_dbg_show_buck_vout(void *dev_data,
 	char *buf, size_t size)
 {
-	struct tps62180_device_info *dev_p;
-	int vout = 0;
+	struct tps62180_device_info *dev_p = NULL;
+	int vout;
 
 	dev_p = (struct tps62180_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
+		return scnprintf(buf, size, "buf or dev_p is null\n");
 	}
 
 	vout = tps62180_get_vout();
@@ -250,18 +250,18 @@ static ssize_t tps62180_dbg_show_buck_vout(void *dev_data,
 static ssize_t tps62180_dbg_store_buck_vout(void *dev_data,
 	const char *buf, size_t size)
 {
-	struct tps62180_device_info *dev_p;
+	struct tps62180_device_info *dev_p = NULL;
 	int vout = 0;
-	int ret = 0;
+	int ret;
 
 	dev_p = (struct tps62180_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
 		return -EINVAL;
 	}
 
 	ret = kstrtoint(buf, 0, &vout);
-	if (ret < 0) {
+	if (ret) {
 		hwlog_err("unable to parse input:%s\n", buf);
 		return -EINVAL;
 	}
@@ -285,13 +285,13 @@ static ssize_t tps62180_dbg_store_buck_vout(void *dev_data,
 static ssize_t tps62180_dbg_show_buck_state(void *dev_data,
 	char *buf, size_t size)
 {
-	struct tps62180_device_info *dev_p;
-	int state = 0;
+	struct tps62180_device_info *dev_p = NULL;
+	int state;
 
 	dev_p = (struct tps62180_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
+		return scnprintf(buf, size, "buf or dev_p is null\n");
 	}
 
 	state = tps62180_get_state();
@@ -302,13 +302,13 @@ static ssize_t tps62180_dbg_show_buck_state(void *dev_data,
 static ssize_t tps62180_dbg_store_buck_state(void *dev_data,
 	const char *buf, size_t size)
 {
-	struct tps62180_device_info *dev_p;
+	struct tps62180_device_info *dev_p = NULL;
 	int state = 0;
-	int ret = 0;
+	int ret;
 
 	dev_p = (struct tps62180_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
 		return -EINVAL;
 	}
 
@@ -337,14 +337,17 @@ static ssize_t tps62180_dbg_store_buck_state(void *dev_data,
 
 static int tps62180_probe(struct platform_device *pdev)
 {
-	int ret = 0;
+	int ret;
 	struct tps62180_device_info *di = NULL;
-	struct device_node *np = (&pdev->dev)->of_node;
+	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_tps62180_di = di;
@@ -359,19 +362,17 @@ static int tps62180_probe(struct platform_device *pdev)
 	tps62180_para_init(di);
 
 	ret = vsys_buck_ops_register(&tps62180_ops);
-	if (ret) {
-		hwlog_err("register tps62180 ops failed\n");
+	if (ret)
 		goto tps62180_fail_1;
-	}
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
 	power_dbg_ops_register("tps62180_vout", platform_get_drvdata(pdev),
-		(power_dgb_show)tps62180_dbg_show_buck_vout,
-		(power_dgb_store)tps62180_dbg_store_buck_vout);
+		(power_dbg_show)tps62180_dbg_show_buck_vout,
+		(power_dbg_store)tps62180_dbg_store_buck_vout);
 	power_dbg_ops_register("tps62180_state", platform_get_drvdata(pdev),
-		(power_dgb_show)tps62180_dbg_show_buck_state,
-		(power_dgb_store)tps62180_dbg_store_buck_state);
-#endif
+		(power_dbg_show)tps62180_dbg_show_buck_state,
+		(power_dbg_store)tps62180_dbg_store_buck_state);
+#endif /* CONFIG_HUAWEI_POWER_DEBUG */
 
 	hwlog_info("probe end\n");
 	return 0;
@@ -383,6 +384,7 @@ tps62180_fail_0:
 	devm_kfree(&pdev->dev, di);
 	g_tps62180_di = NULL;
 	platform_set_drvdata(pdev, NULL);
+
 	return ret;
 }
 

@@ -29,11 +29,15 @@
 #include <linux/jiffies.h>
 #include <linux/workqueue.h>
 #include <linux/of.h>
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
+#endif
 
 #include "tps65132.h"
 #include "../hisi_fb_def.h"
+#if defined(CONFIG_LCDKIT_DRIVER)
 #include "lcdkit_fb_util.h"
+#endif
 
 #define DTS_COMP_TPS65132 "hisilicon,tps65132_phy"
 static int gpio_vsp_enable;
@@ -234,12 +238,14 @@ static void tps65132_get_target_voltage(int *vpos_target, int *vneg_target)
 	int ret = 0;
 
 
+#if defined(CONFIG_LCDKIT_DRIVER)
 	if (get_lcdkit_support()) {
 		HISI_FB_INFO("vpos and vneg target from dts\n");
 		*vpos_target = lcdkit_get_vsp_voltage();
 		*vneg_target = lcdkit_get_vsn_voltage();
 		return;
 	}
+#endif
 
 
 	ret = get_lcd_type();
@@ -391,8 +397,10 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 		pr_info("tps65132 inited succeed\n");
 	}
 
+	#ifdef CONFIG_HUAWEI_HW_DEV_DCT
 		/* detect current device successful, set the flag as present */
 		set_hw_dev_flag(DEV_I2C_DC_DC);
+	#endif
 
 
 failed_2:

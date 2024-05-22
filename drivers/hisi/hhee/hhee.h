@@ -29,6 +29,7 @@ int hhee_logger_init(void);
 int hhee_init_debugfs(void);
 void hhee_cleanup_debugfs(void);
 #endif
+void reset_hkip_irq_counters(void);
 
 ssize_t hhee_copy_logs(char __user *buf, size_t count,
 		       loff_t *offp, int logtpye);

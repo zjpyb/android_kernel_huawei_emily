@@ -55,8 +55,10 @@
 #include <linux/device.h>
 #include <linux/of_platform.h>
 
+#if(FEATURE_SOCP_MEM_RESERVED == FEATURE_ON)
 #include <linux/of_reserved_mem.h>
 #include <linux/of_fdt.h>
+#endif
 
 
 extern unsigned long simple_strtoul(const char *cp, char **endp, unsigned int base);
@@ -190,6 +192,7 @@ static int __init socp_logbuffer_addrparse(char *pucChar)
 early_param("mdmlogbase", socp_logbuffer_addrparse);
 /* cov_verified_stop */
 
+#if (FEATURE_SOCP_MEM_RESERVED == FEATURE_ON)
 /*****************************************************************************
 * º¯ Êý Ãû  : socp_logbuffer_logcfg
 *
@@ -348,6 +351,7 @@ static int socp_reserve_area(struct reserved_mem *rmem)
 /*lint -save -e611*/
 RESERVEDMEM_OF_DECLARE(hisilicon, "hisi_mdmlog", (reservedmem_of_init_fn)socp_reserve_area);
 /*lint -restore +e611*/
+#endif
 
 void *socp_logbuffer_memremap(unsigned long phys_addr, size_t size)
 {
@@ -538,7 +542,11 @@ s32 socp_logbuffer_dmalloc(struct device_node* dev)
         socp_printf("socp_ind_delay_init:of_property_read_u32_array get size 0x%x!\n", aulDstChan[SOCP_DST_CHAN_CFG_SIZE]);
         size = aulDstChan[SOCP_DST_CHAN_CFG_SIZE];
     }
+#ifdef CONFIG_ARM64
     pucBuf =(u8 *) dma_alloc_coherent(&modem_socp_pdev->dev, (size_t)size, &ulAddress, GFP_KERNEL);
+#else
+    pucBuf =(u8 *) dma_alloc_coherent(NULL, size, &ulAddress, GFP_KERNEL);
+#endif
 
     if(BSP_NULL == pucBuf)
     {
@@ -819,12 +827,14 @@ s32 bsp_socp_ind_delay_init(void)
         return BSP_ERROR;
     }
 
+#if (FEATURE_SOCP_MEM_RESERVED == FEATURE_ON)
 	ret = platform_driver_register(&socp_mem_driver); /*lint !e64*/
     if(ret)
     {
         socp_printf("platform driver register failed!\n");
         return BSP_ERROR;
     }
+#endif
 
     ret = bsp_socp_logbuffer_init(dev);
     if(ret)

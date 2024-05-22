@@ -70,7 +70,6 @@ static bool is_soft_vma(struct vm_area_struct *vma) {
 	//see the path is soft_reclaim
 	suffix = get_path_ext(path);
 	if (suffix != NULL && strstr(soft_reclaim, suffix)) {
-		//printk("need to reclaim vma path=%s\n", path);
 		ret = true;
 	}
 out:

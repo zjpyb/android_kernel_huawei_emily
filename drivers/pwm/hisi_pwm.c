@@ -555,7 +555,6 @@ static int hisi_add_pwm_chip(struct hisi_pwm_chip *hpc, struct device *pdev)
 	hpc->chip.ops = &hisi_pwm_ops;
 	hpc->chip.base = -1;
 	hpc->chip.npwm = hpc->data->pwm_num;
-	hpc->chip.can_sleep = false;
 
 	if (hpc->support_polarity) {
 		hpc->chip.of_xlate = of_pwm_xlate_with_flags;
@@ -599,7 +598,7 @@ static int hisi_clk_prepare(struct hisi_pwm_chip *hpc,
 }
 
 static int hisi_pwm_probe(struct platform_device *pdev)
-{
+{/*lint --e{429}*/
 	const struct of_device_id *device_id = NULL;
 	struct hisi_pwm_chip *hpc = NULL;
 	struct resource *r = NULL;

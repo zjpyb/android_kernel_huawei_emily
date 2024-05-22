@@ -790,6 +790,7 @@ VOS_UINT32 AT_TestDhcpPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
+#if (FEATURE_ON == FEATURE_IPV6)
 
 VOS_UINT32 AT_PS_ReportDhcpv6(TAF_UINT8 ucIndex)
 {
@@ -1780,6 +1781,7 @@ VOS_UINT32 AT_QryCgpiafPara(VOS_UINT8 ucIndex)
 }
 
 
+#endif
 
 
 VOS_UINT32 AT_PS_ReportConnSt(VOS_UINT8 ucIndex)
@@ -1787,7 +1789,9 @@ VOS_UINT32 AT_PS_ReportConnSt(VOS_UINT8 ucIndex)
     VOS_UINT8                           ucCallId;
     AT_PS_CALL_ENTITY_STRU             *pstPsCallEntity = VOS_NULL_PTR;
     AT_APP_CONN_STATE_ENUM_U32          enIpv4ConnStatus;
+#if (FEATURE_ON == FEATURE_IPV6)
     AT_APP_CONN_STATE_ENUM_U32          enIpv6ConnStatus;
+#endif
     VOS_UINT16                          usLength;
 
     usLength = 0;
@@ -1803,6 +1807,7 @@ VOS_UINT32 AT_PS_ReportConnSt(VOS_UINT8 ucIndex)
 
     pstPsCallEntity = AT_PS_GetCallEntity(ucIndex, ucCallId);
 
+#if (FEATURE_ON == FEATURE_IPV6)
     switch (AT_GetIpv6Capability())
     {
         case AT_IPV6_CAPABILITY_IPV4_ONLY:
@@ -1860,6 +1865,20 @@ VOS_UINT32 AT_PS_ReportConnSt(VOS_UINT8 ucIndex)
         default:
             break;
     }
+#else
+    enIpv4ConnStatus = AT_AppConvertPdpStateToConnStatus(pstPsCallEntity->enIpv4State);
+
+    usLength  = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr,
+                                       "%s: ",
+                                       g_stParseContext[ucIndex].pstCmdElement->pszCmdName);
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr + usLength,
+                                       "%d,\"IPV4\"",
+                                       enIpv4ConnStatus);
+#endif
 
     gstAtSendData.usBufLen = usLength;
 
@@ -1892,10 +1911,13 @@ VOS_UINT32  At_QryApConnStPara(
 )
 {
     AT_APP_CONN_STATE_ENUM_U32         enIpv4ConnStatus;
+#if (FEATURE_ON == FEATURE_IPV6)
     AT_APP_CONN_STATE_ENUM_U32         enIpv6ConnStatus;
     AT_APP_CONN_STATE_ENUM_U32         enIpv4v6ConnStatus;
+#endif
     VOS_UINT16                         usLength = 0;
 
+#if (FEATURE_ON == FEATURE_IPV6)
     switch (AT_GetIpv6Capability())
     {
         case AT_IPV6_CAPABILITY_IPV4_ONLY:
@@ -1983,6 +2005,20 @@ VOS_UINT32  At_QryApConnStPara(
         default:
             break;
     }
+#else
+    enIpv4ConnStatus = AT_AppConvertPdpStateToConnStatus(AT_AppGetPdpState(TAF_PDP_IPV4));
+
+    usLength  = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr,
+                                       "%s: ",
+                                       g_stParseContext[ucIndex].pstCmdElement->pszCmdName);
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr,
+                                       (VOS_CHAR *)pgucAtSndCodeAddr + usLength,
+                                       "%d,\"IPV4\"",
+                                       enIpv4ConnStatus);
+#endif
 
     gstAtSendData.usBufLen = usLength;
 
@@ -2129,7 +2165,33 @@ VOS_UINT32 AT_TestApThroughputPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetApEndPppPara(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_AT_HSIC)
+    AT_DCE_MSC_STRU                     stMscStru;
+    VOS_UINT8                           ucActIndex;
+    VOS_UINT8                           ucDlci;
+
+    if (VOS_TRUE != AT_IsApPort(ucIndex))
+    {
+        return AT_ERROR;
+    }
+
+    /*模拟拉底DTR信号*/
+    TAF_MEM_SET_S(&stMscStru, sizeof(stMscStru), 0x00, sizeof(stMscStru));
+    stMscStru.OP_Dtr = 1;
+    stMscStru.ucDtr  = 0;
+
+    /* HSIC MODEM索引号 */
+    ucActIndex  = AT_CLIENT_TAB_HSIC_MODEM_INDEX;
+
+    /*MODEM链路号 */
+    ucDlci      = AT_MODEM_USER_DLCI;
+
+    At_ModemMscInd(ucActIndex, ucDlci, &stMscStru);
+
+    return AT_OK;
+#else
     return AT_ERROR;
+#endif
 }
 
 
@@ -2354,6 +2416,7 @@ VOS_UINT32 AT_SetImsPdpCfg(VOS_UINT8 ucIndex)
     /* 返回命令处理挂起状态 */
     return AT_WAIT_ASYNC_RETURN;
 }
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_SetMipPara(VOS_UINT8 ucIndex)
 {
@@ -2405,6 +2468,7 @@ VOS_UINT32 AT_QryMipPara(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#endif
 
 VOS_UINT32 AT_SetVzwApnePara(VOS_UINT8 ucIndex)
 {

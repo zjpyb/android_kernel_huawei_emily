@@ -17,7 +17,12 @@
 #include <linux/hisi/hisi_drmdriver.h>
 #endif
 #include "hisi_fb.h"
-
+#ifdef CONFIG_HISI_FB_V600
+#include <soc_media1_crg_interface.h>
+#include <soc_actrl_interface.h>
+#include <soc_pmctrl_interface.h>
+#include <soc_smmuv3_tbu_interface.h>
+#endif
 /*******************************************************************************
 **
 */
@@ -36,6 +41,8 @@ extern void *g_smmu_rwerraddr_virt;
 */
 #define DSS_COMPOSER_TIMEOUT_THRESHOLD_FPGA	(10000)
 #define DSS_COMPOSER_TIMEOUT_THRESHOLD_ASIC	(300)
+#define DSS_UNDERFLOW_COUNT   (1)
+#define ONLINE_PLAY_BYPASS_MAX_COUNT 20
 
 /*******************************************************************************
 **
@@ -85,6 +92,8 @@ void hisifb_dss_disreset(struct hisi_fb_data_type *hisifd);
 void hisi_vactive0_start_isr_handler(struct hisi_fb_data_type *hisifd);
 int hisi_vactive0_start_config(struct hisi_fb_data_type *hisifd,
 	dss_overlay_t *pov_req);
+void hisi_dump_current_info(struct hisi_fb_data_type *hisifd);
+
 
 int hisi_dss_dirty_region_dbuf_config(struct hisi_fb_data_type *hisifd,
 	dss_overlay_t *pov_req);
@@ -126,15 +135,15 @@ int hisi_dss_scl_write_coefs(struct hisi_fb_data_type *hisifd, bool enable_cmdli
 
 int hisi_overlay_pan_display(struct hisi_fb_data_type *hisifd);
 int hisi_ov_online_play(struct hisi_fb_data_type *hisifd, void __user *argp);
-int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp);
-int hisi_ov_copybit_play(struct hisi_fb_data_type *hisifd, void __user *argp);
+int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, const void __user *argp);
+int hisi_ov_copybit_play(struct hisi_fb_data_type *hisifd, const void __user *argp);
 int hisi_overlay_ioctl_handler(struct hisi_fb_data_type *hisifd,
 	uint32_t cmd, void __user *argp);
 
 void hisi_dss_unflow_handler(struct hisi_fb_data_type *hisifd,
 	dss_overlay_t *pov_req, bool unmask);
 
-void hisi_dss_mctl_ch_mod_dbg_init(char __iomem *mctl_ch_dbg_base, dss_mctl_ch_t *s_mctl_ch);
+void hisi_dss_mctl_ch_mod_dbg_init(const char __iomem *mctl_ch_dbg_base, dss_mctl_ch_t *s_mctl_ch);
 
 void hisi_dss_chn_set_reg_default_value(struct hisi_fb_data_type *hisifd,
 	char __iomem *dma_base);
@@ -206,8 +215,6 @@ void hisi_dss_post_clip_init(char __iomem *post_clip_base,
 
 void hisi_dss_scl_set_reg(struct hisi_fb_data_type *hisifd,
 	char __iomem *scl_base, dss_scl_t *s_scl);
-int hisi_dss_chn_scl_load_filter_coef_set_reg(struct hisi_fb_data_type *hisifd, bool enable_cmdlist,
-	int chn_idx, uint32_t format);
 int hisi_dss_post_scl_load_filter_coef(struct hisi_fb_data_type *hisifd, bool enable_cmdlist,
 	char __iomem *scl_lut_base, int coef_lut_idx);
 int hisi_dss_scl_config(struct hisi_fb_data_type *hisifd, dss_layer_t *layer,
@@ -264,13 +271,6 @@ void hisi_drm_layer_offline_clear(struct hisi_fb_data_type *hisifd, dss_overlay_
 void hisi_dss_debug_func(struct work_struct *work);
 void hisi_ldi_underflow_handle_func(struct work_struct *work);
 
-void* hisi_dss_mmbuf_init(struct hisi_fb_data_type *hisifd);
-void hisi_dss_mmbuf_deinit(struct hisi_fb_data_type *hisifd);
-uint32_t hisi_dss_mmbuf_alloc(void *handle, uint32_t size);
-void hisi_dss_mmbuf_free(void *handle, uint32_t addr, uint32_t size);
-void hisi_dss_mmbuf_info_clear(struct hisi_fb_data_type *hisifd, int idx);
-dss_mmbuf_info_t* hisi_dss_mmbuf_info_get(struct hisi_fb_data_type *hisifd, int idx);
-void hisi_mmbuf_info_get_online(struct hisi_fb_data_type *hisifd);
 void hisi_dss_mctl_ov_set_ctl_dbg_reg(struct hisi_fb_data_type *hisifd, char __iomem *mctl_base, bool enable_cmdlist);
 uint32_t hisi_dss_mif_get_invalid_sel(dss_img_t *img, uint32_t transform, int v_scaling_factor,uint8_t is_tile, bool rdma_stretch_enable);
 
@@ -291,19 +291,21 @@ bool is_YUV_P_422(uint32_t format);
 bool is_RGBX(uint32_t format);
 bool isPixel10Bit2dma (int format);
 
-#if defined (CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V510)
+#if defined (CONFIG_HISI_FB_3660) || defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || \
+	defined (CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V350)
 int hisi_dss_arsr1p_write_lsc_gain(struct hisi_fb_data_type *hisifd, bool enable_cmdlist,
 	char __iomem *addr, const uint32_t **p, int row, int col);
 int hisi_dss_arsr1p_write_coefs(struct hisi_fb_data_type *hisifd, bool enable_cmdlist,
 	char __iomem *addr, const int **p, int row, int col);
-void hisi_dss_post_scf_init(char __iomem * dss_base, const char __iomem *post_scf_base, dss_arsr1p_t *s_post_scf);
+void hisi_dss_post_scf_init(const char __iomem *dss_base, const char __iomem *post_scf_base, dss_arsr1p_t *s_post_scf);
 void hisi_dss_post_scf_set_reg(struct hisi_fb_data_type *hisifd, char __iomem *post_scf_base, dss_arsr1p_t *s_post_scf);
 #endif
-#if defined (CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V320) || defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V330)
+#if defined (CONFIG_HISI_FB_3660) || defined(CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V320) || defined(CONFIG_HISI_FB_V501) || \
+	defined(CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 /*arsr2p interface*/
-void hisi_dss_arsr2p_init(const char __iomem * arsr2p_base, dss_arsr2p_t *s_arsr2p); //arsr2p init
+void hisi_dss_arsr2p_init(const char __iomem *arsr2p_base, dss_arsr2p_t *s_arsr2p); //arsr2p init
 void hisi_dss_arsr2p_set_reg(struct hisi_fb_data_type *hisifd,
-	char __iomem * arsr2p_base, dss_arsr2p_t *s_arsr2p);   //arsr2p set reg
+	char __iomem *arsr2p_base, dss_arsr2p_t *s_arsr2p);   //arsr2p set reg
 void hisi_dss_arsr2p_coef_on(struct hisi_fb_data_type *hisifd, bool enable_cmdlist);   //lut coef
 int hisi_dss_arsr2p_config(struct hisi_fb_data_type *hisifd, dss_layer_t *layer, dss_rect_t *aligned_rect, bool rdma_stretch_enable); //arsr2p module config
 void hisi_remove_mctl_mutex(struct hisi_fb_data_type *hisifd, int mctl_idx, uint32_t cmdlist_idxs);
@@ -311,12 +313,22 @@ void hisi_dss_dpp_acm_gm_set_reg(struct hisi_fb_data_type *hisifd);
 #endif
 #if defined (CONFIG_HISI_FB_V320) || defined (CONFIG_HISI_FB_V330)
 void hisi_dss_post_scf_set_reg(struct hisi_fb_data_type *hisifd, char __iomem *post_scf_base, dss_scl_t *s_post_scf);
-void hisi_dss_post_scf_init(char __iomem * dss_base, const char __iomem *post_scf_base, dss_scl_t *s_post_scf);
+void hisi_dss_post_scf_init(char __iomem *dss_base, const char __iomem *post_scf_base, dss_scl_t *s_post_scf);
 #endif
-#if defined(CONFIG_HISI_FB_V501)
+#if defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V330) || defined(CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V350)
+//CONFIG_SH_AOD_ENABLE
 void clear_xcc_table(struct hisi_fb_data_type *hisifd);
 void restore_xcc_table(struct hisi_fb_data_type *hisifd);
 void hisifb_masklayer_backlight_notify_handler(struct work_struct *work);
 #endif
+#if defined (CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V350)
+void hisi_dss_arsr_post_coef_on(struct hisi_fb_data_type *hisifd);
+#endif
+
+// This api will pause send data to LCD which will freeze the display, be careful to use it
+int hisi_online_play_bypass(struct hisi_fb_data_type *hisifd, const void __user *argp);
+bool hisi_online_play_bypass_set(struct hisi_fb_data_type *hisifd, int bypass);
+bool hisi_online_play_bypass_check(struct hisi_fb_data_type *hisifd);
+
 
 #endif /* HISI_OVERLAY_UTILS_H */

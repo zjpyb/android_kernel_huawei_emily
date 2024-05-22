@@ -26,6 +26,12 @@
 #include "hw_himos_stats_report.h"
 #include "hw_himos_stats_common.h"
 
+struct himos_sport_key_dict
+{
+	unsigned short sport;
+	char key[STALL_KEY_MAX];
+};
+
 struct himos_aweme_detect_info
 {
 	//this is must be the first member
@@ -42,6 +48,10 @@ struct himos_aweme_detect_info
 	unsigned int local_inbytes;
 
 	struct himos_aweme_search_key keys;
+
+	int cur_dict_index;
+	int dict_num;
+	struct himos_sport_key_dict sport_key_dict[AWEME_STALL_WINDOW];
 };
 
 int himos_start_aweme_detect(struct genl_info *info);

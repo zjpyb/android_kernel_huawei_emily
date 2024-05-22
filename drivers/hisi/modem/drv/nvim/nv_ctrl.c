@@ -58,6 +58,7 @@
 #include "nv_ctrl.h"
 
 struct file_ops_table_stru  g_nv_ops = {
+#if    defined(FEATURE_NV_EMMC_ON)
     .fo = nv_emmc_open,
     .fc = nv_emmc_close,
     .frm= nv_emmc_remove,
@@ -67,6 +68,7 @@ struct file_ops_table_stru  g_nv_ops = {
     .ff = nv_emmc_ftell,
     .fa = nv_emmc_access,
     .fu = nv_emmc_update_info,
+#endif
 };
 
 /*
@@ -77,11 +79,13 @@ u32 nv_file_init(void)
 {
     u32 ret;
 
+#if    defined(FEATURE_NV_EMMC_ON)
     ret = nv_emmc_init();
     if(ret)
     {
         return ret;
     }
+#endif
     return NV_OK;
 
 }

@@ -26,7 +26,7 @@
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 //#include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <huawei_platform/log/hw_log.h>
 //#include <huawei_platform/power/huawei_charger.h>
 #ifdef CONFIG_DIRECT_CHARGER

@@ -339,7 +339,7 @@ int chr_notify_event(int event, int pid,
 
 	/*skb will be freed in netlink_unicast*/
 	ret = netlink_unicast(g_chr_nlfd, skb, pid, MSG_DONTWAIT);
-	hwlog_info("%s:data speed is slow! collateral information=0x%x\n", __func__, src_addr);
+	hwlog_info("%s:data speed is slow! collateral information=***\n", __func__);
 	goto end;
 
 end:

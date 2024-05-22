@@ -80,6 +80,7 @@ VOS_UINT32                          g_ulNFExtInitFlag       = 0;
 NF_EXT_STATS_STRU                   g_stNfExtStats = {{0}};
 #endif
 
+#if (FEATURE_ON == FEATURE_NFEXT)
 NF_EXT_FLOW_CTRL_ENTITY             g_stExFlowCtrlEntity;
 NF_EXT_NV_STRU                      g_stNfExtNv;
 NF_EXT_HOOK_MASK_NV_STRU            g_stExHookMask;
@@ -656,6 +657,7 @@ VOS_VOID NFExt_ResetPri(VOS_UINT32 ulHookNode, VOS_INT32 iPri)
 }
 #endif
 
+#endif      /* #if (FEATURE_ON == FEATURE_NFEXT) */
 
 
 STATIC VOS_VOID NFExt_SndDataNotify(VOS_VOID)
@@ -1119,12 +1121,14 @@ VOS_UINT32 NFExt_FidInit ( enum VOS_INIT_PHASE_DEFINE ip )
     switch ( ip )
     {
         case   VOS_IP_LOAD_CONFIG:
+#if (FEATURE_ON == FEATURE_NFEXT)
             /* 先完成模块初始化 */
             if ( 0 != NFExt_Init() )
             {
                 PS_PRINTF("NFExt_FidInit NFExt_Init FAIL!\n");
                 return VOS_ERR;
             }
+#endif
 
             /* 可维可测模块注册PID */
             ulRslt = VOS_RegisterPIDInfo(ACPU_PID_NFEXT,

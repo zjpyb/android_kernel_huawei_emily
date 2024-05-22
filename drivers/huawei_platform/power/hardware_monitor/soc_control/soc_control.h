@@ -19,51 +19,58 @@
 #ifndef _SOC_CONTROL_H_
 #define _SOC_CONTROL_H_
 
-#define SOC_CTL_START_TIME      30000 /* 30s */
-#define SOC_CTL_LOOP_TIME       30000 /* 30s */
+#define SOC_CTRL_START_TIME      30000 /* 30s */
+#define SOC_CTRL_LOOP_TIME       30000 /* 30s */
 
-#define SOC_CTL_CHG_ENABLE      1
-#define SOC_CTL_CHG_DISABLE     0
+#define SOC_CTRL_CHG_ENABLE      1
+#define SOC_CTRL_CHG_DISABLE     0
 
-#define SOC_CTL_IIN_LIMIT       100   /* 100ma */
-#define SOC_CTL_IIN_UNLIMIT     0
+#define SOC_CTRL_IIN_LIMIT       100   /* 100ma */
+#define SOC_CTRL_IIN_UNLIMIT     0
 
-#define SOC_CTL_RW_BUF_SIZE     32
+#define SOC_CTRL_RW_BUF_SIZE     32
 
-enum soc_ctl_op_user {
-	SOC_CTL_OP_USER_BEGIN = 0,
-
-	SOC_CTL_OP_USER_DEFAULT = SOC_CTL_OP_USER_BEGIN, /* for default */
-	SOC_CTL_OP_USER_RC, /* for rc file */
-	SOC_CTL_OP_USER_HIDL, /* for hidl interface */
-	SOC_CTL_OP_USER_CHARGE_MONITOR, /* for charge_monitor native */
-	SOC_CTL_OP_USER_SHELL, /* for shell command */
-	SOC_CTL_OP_USER_CUST, /* for cust */
-
-	SOC_CTL_OP_USER_END,
+enum soc_ctrl_op_user {
+	SOC_CTRL_OP_USER_BEGIN = 0,
+	SOC_CTRL_OP_USER_DEFAULT = SOC_CTRL_OP_USER_BEGIN, /* for default */
+	SOC_CTRL_OP_USER_RC, /* for rc file */
+	SOC_CTRL_OP_USER_HIDL, /* for hidl interface */
+	SOC_CTRL_OP_USER_CHARGE_MONITOR, /* for charge_monitor native */
+	SOC_CTRL_OP_USER_SHELL, /* for shell command */
+	SOC_CTRL_OP_USER_CUST, /* for cust */
+	SOC_CTRL_OP_USER_IAWARE, /* for iaware */
+	SOC_CTRL_OP_USER_BSOH, /* for bsoh */
+	SOC_CTRL_OP_USER_END,
 };
 
-enum soc_ctl_sysfs_type {
-	SOC_CTL_SYSFS_BEGIN = 0,
-
-	SOC_CTL_SYSFS_CONTROL,
-
-	SOC_CTL_SYSFS_END,
+enum soc_ctrl_sysfs_type {
+	SOC_CTRL_SYSFS_BEGIN = 0,
+	SOC_CTRL_SYSFS_CONTROL,
+	SOC_CTRL_SYSFS_STRATEGY,
+	SOC_CTRL_SYSFS_END,
 };
 
-enum soc_ctl_event_type {
-	SOC_CTL_DEFAULT_EVENT,
-	SOC_CTL_START_EVENT, /* start event when usb insert */
-	SOC_CTL_STOP_EVENT,  /* stop event when usb not insert */
+enum soc_ctrl_event_type {
+	SOC_CTRL_DEFAULT_EVENT,
+	SOC_CTRL_START_EVENT, /* start event when usb insert */
+	SOC_CTRL_STOP_EVENT,  /* stop event when usb not insert */
 };
 
-enum soc_ctl_work_mode {
+enum soc_ctrl_work_mode {
 	WORK_IN_DEFAULT_MODE,
 	WORK_IN_ENABLE_CHG_MODE,
 	WORK_IN_DISABLE_CHG_MODE,
+	WORK_IN_BALANCE_MODE,
 };
 
-struct soc_ctl_dev {
+enum soc_ctrl_strategy_type {
+	STRATEGY_TYPE_BEGIN,
+	STRATEGY_TYPE_CLASS_A = STRATEGY_TYPE_BEGIN,
+	STRATEGY_TYPE_CLASS_B,
+	STRATEGY_TYPE_END,
+};
+
+struct soc_ctrl_dev {
 	struct device *dev;
 	struct notifier_block nb;
 	struct delayed_work work;
@@ -73,6 +80,7 @@ struct soc_ctl_dev {
 	int enable;
 	int min_soc;
 	int max_soc;
+	int strategy;
 };
 
 #endif /* _SOC_CONTROL_H_ */

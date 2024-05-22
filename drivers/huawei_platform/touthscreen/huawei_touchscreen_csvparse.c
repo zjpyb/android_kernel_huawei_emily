@@ -35,8 +35,8 @@ static void goto_next_line(char **ptr)
 	*ptr = *ptr + 1;
 }
 
-static void parse_valid_data(char *buf_start, loff_t buf_size,
-				char *ptr, enum data_type type, int32_t* rawdata, int rows)
+static void parse_valid_data(const char *buf_start, loff_t buf_size,
+	char *ptr, enum data_type type, int32_t *rawdata, int rows)
 {
 	int i = 0;
 	int j = 0;

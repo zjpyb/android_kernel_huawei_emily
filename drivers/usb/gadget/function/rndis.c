@@ -76,9 +76,6 @@ MODULE_PARM_DESC (rndis_debug, "enable debugging");
 
 static DEFINE_IDA(rndis_ida);
 
-/* spin lock for response list */
-DEFINE_SPINLOCK(rndis_response_lock);
-
 /* Driver Version */
 static const __le32 rndis_driver_version = cpu_to_le32(1);
 
@@ -93,8 +90,7 @@ static const struct file_operations rndis_proc_fops;
 #endif /* CONFIG_USB_GADGET_DEBUG_FILES */
 
 /* supported OIDs */
-static const u32 oid_supported_list[] =
-{
+static const u32 oid_supported_list[] = {
 	/* the general stuff */
 	RNDIS_OID_GEN_SUPPORTED_LIST,
 	RNDIS_OID_GEN_HARDWARE_STATUS,
@@ -487,8 +483,7 @@ static int gen_ndis_query_resp(struct rndis_params *params, u32 OID, u8 *buf,
 		break;
 
 	default:
-		pr_warning("%s: query unknown OID 0x%08X\n",
-			 __func__, OID);
+		pr_warn("%s: query unknown OID 0x%08X\n", __func__, OID);
 	}
 	if (retval < 0)
 		length = 0;
@@ -559,8 +554,8 @@ static int gen_ndis_set_resp(struct rndis_params *params, u32 OID,
 		break;
 
 	default:
-		pr_warning("%s: set unknown OID 0x%08X, size %d\n",
-			 __func__, OID, buf_len);
+		pr_warn("%s: set unknown OID 0x%08X, size %d\n",
+			__func__, OID, buf_len);
 	}
 
 	return retval;
@@ -592,12 +587,14 @@ static int rndis_init_response(struct rndis_params *params,
 	resp->MinorVersion = cpu_to_le32(RNDIS_MINOR_VERSION);
 	resp->DeviceFlags = cpu_to_le32(RNDIS_DF_CONNECTIONLESS);
 	resp->Medium = cpu_to_le32(RNDIS_MEDIUM_802_3);
+
 	resp->MaxPacketsPerTransfer = cpu_to_le32(params->max_pkt_per_xfer);
 	resp->MaxTransferSize = cpu_to_le32(params->max_pkt_per_xfer *
 		(params->dev->mtu
 		+ sizeof(struct ethhdr)
 		+ sizeof(struct rndis_packet_msg_type)
 		+ 22));
+
 	resp->PacketAlignmentFactor = cpu_to_le32(0);
 	resp->AFListOffset = cpu_to_le32(0);
 	resp->AFListSize = cpu_to_le32(0);
@@ -698,10 +695,10 @@ static int rndis_reset_response(struct rndis_params *params,
 
 	pr_info("%s\n", __func__);
 	/* drain the response queue */
-	spin_lock(&rndis_response_lock);
+	spin_lock(&params->resp_queue_lock);
 	while ((xbuf = rndis_get_next_response(params, &length)))
 		rndis_free_response(params, xbuf);
-	spin_unlock(&rndis_response_lock);
+	spin_unlock(&params->resp_queue_lock);
 
 	r = rndis_add_response(params, sizeof(rndis_reset_cmplt_type));
 	if (!r)
@@ -790,11 +787,11 @@ void rndis_uninit(struct rndis_params *params)
 		return;
 	params->state = RNDIS_UNINITIALIZED;
 
-	spin_lock(&rndis_response_lock);
+	spin_lock(&params->resp_queue_lock);
 	/* drain the response queue */
 	while ((buf = rndis_get_next_response(params, &length)))
 		rndis_free_response(params, buf);
-	spin_unlock(&rndis_response_lock);
+	spin_unlock(&params->resp_queue_lock);
 }
 EXPORT_SYMBOL_GPL(rndis_uninit);
 
@@ -872,9 +869,8 @@ int rndis_msg_parser(struct rndis_params *params, u8 *buf)
 		 * In one case those messages seemed to relate to the host
 		 * suspending itself.
 		 */
-		pr_warning("%s: unknown RNDIS message 0x%08X len %d\n",
+		pr_warn("%s: unknown RNDIS message 0x%08X len %d\n",
 			__func__, MsgType, MsgLength);
-		/* In some error cases, MsgLength may very large */
 		print_hex_dump_bytes(__func__, DUMP_PREFIX_OFFSET,
 				     buf, MsgLength > 64 ? 64 : MsgLength);
 		break;
@@ -940,6 +936,7 @@ struct rndis_params *rndis_register(void (*resp_avail)(void *v), void *v)
 	params->resp_avail = resp_avail;
 	params->v = v;
 	INIT_LIST_HEAD(&params->resp_queue);
+	spin_lock_init(&params->resp_queue_lock);
 	pr_debug("%s: configNr = %d\n", __func__, i);
 
 	return params;
@@ -1018,9 +1015,8 @@ EXPORT_SYMBOL_GPL(rndis_set_param_medium);
 
 void rndis_set_max_pkt_xfer(struct rndis_params *params, u8 max_pkt_per_xfer)
 {
-	pr_debug("%s:\n", __func__);
-
-	params->max_pkt_per_xfer = max_pkt_per_xfer;
+	pr_debug("%s: max_pkt_per_xfer %d\n", __func__, max_pkt_per_xfer);
+	params->max_pkt_per_xfer = max_pkt_per_xfer; /* for rx */
 }
 
 void rndis_add_hdr(struct sk_buff *skb)
@@ -1029,7 +1025,7 @@ void rndis_add_hdr(struct sk_buff *skb)
 
 	if (!skb)
 		return;
-	header = (void *)skb_push(skb, sizeof(*header));
+	header = skb_push(skb, sizeof(*header));
 	memset(header, 0, sizeof *header);
 	header->MessageType = cpu_to_le32(RNDIS_MSG_PACKET);
 	header->MessageLength = cpu_to_le32(skb->len);
@@ -1081,9 +1077,9 @@ static rndis_resp_t *rndis_add_response(struct rndis_params *params, u32 length)
 	r->length = length;
 	r->send = 0;
 
-	spin_lock(&rndis_response_lock);
+	spin_lock(&params->resp_queue_lock);
 	list_add_tail(&r->list, &params->resp_queue);
-	spin_unlock(&rndis_response_lock);
+	spin_unlock(&params->resp_queue_lock);
 	return r;
 }
 
@@ -1097,8 +1093,8 @@ int rndis_rm_hdr(struct gether *port,
 		rndis_ul_max_xfer_size_rcvd = skb->len;
 
 	while (skb->len) {
-		struct rndis_packet_msg_type *hdr;
-		struct sk_buff          *skb2;
+		struct rndis_packet_msg_type *hdr = NULL;
+		struct sk_buff          *skb2 = NULL;
 		u32             msg_len, data_offset, data_len;
 
 		/* some rndis hosts send extra byte to avoid zlp, ignore it */

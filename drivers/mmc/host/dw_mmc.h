@@ -13,6 +13,8 @@
 
 #ifndef _DW_MMC_H_
 #define _DW_MMC_H_
+
+#include <linux/interrupt.h>
 #include <linux/mmc/dw_mmc.h>
 #include "dw_mmc_hisi.h"
 #define DW_MMC_240A		0x240a
@@ -174,7 +176,6 @@
 #define SDMMC_GET_SLOT_NUM(x)		((((x)>>1) & 0x1F) + 1)
 #define SDMMC_GET_HDATA_WIDTH(x)	(((x)>>7) & 0x7)
 #define SDMMC_GET_ADDR_CONFIG(x)	(((x)>>27) & 0x1)
-
 /* Internal DMAC interrupt defines */
 #define SDMMC_IDMAC_INT_AI		BIT(9)
 #define SDMMC_IDMAC_INT_NI		BIT(8)
@@ -188,7 +189,7 @@
 #define SDMMC_IDMAC_FB			BIT(1)
 #define SDMMC_IDMAC_SWRESET		BIT(0)
 /* H/W reset */
-#define SDMMC_RST_HWACTIVE		0x1
+#define SDMMC_RST_HWACTIVE		0x1U
 /* Version ID register define */
 #define SDMMC_GET_VERID(x)		((x) & 0xFFFF)
 /* Card read threshold */
@@ -252,6 +253,7 @@
 	(*(volatile u64 __force *)((dev)->regs + SDMMC_##reg))
 #define mci_writeq(dev, reg, value)			\
 	(*(volatile u64 __force *)((dev)->regs + SDMMC_##reg) = (value))
+
 #define __raw_writeq(__value, __reg) \
 	(*(volatile u64 __force *)(__reg) = (__value))
 #define __raw_readq(__reg) (*(volatile u64 __force *)(__reg))
@@ -262,6 +264,8 @@ extern void dw_mci_remove(struct dw_mci *host);
 extern void dw_mci_set_cd(struct dw_mci *host);
 
 #ifdef CONFIG_PM
+extern int dw_mci_runtime_suspend(struct device *device);
+extern int dw_mci_runtime_resume(struct device *device);
 extern int dw_mci_suspend(struct dw_mci *host);
 extern int dw_mci_resume(struct dw_mci *host);
 #endif
@@ -270,7 +274,6 @@ extern int dw_mci_resume(struct dw_mci *host);
  * struct dw_mci_slot - MMC slot state
  * @mmc: The mmc_host representing this slot.
  * @host: The MMC controller this slot is using.
- * @wp_gpio: If gpio_is_valid() we'll use this to read write protect.
  * @ctype: Card type for this slot.
  * @mrq: mmc_request currently being processed or waiting to be
  *	processed, or NULL when the slot is idle.
@@ -281,8 +284,7 @@ extern int dw_mci_resume(struct dw_mci *host);
  *	Keeping track of this helps us to avoid spamming the console.
  * @flags: Random state bits associated with the slot.
  * @id: Number of this slot.
-  * @sdio_id: Number of this slot in the SDIO interrupt registers.
- * @last_detect_state: Most recently observed card detect state.
+ * @sdio_id: Number of this slot in the SDIO interrupt registers.
  */
 struct dw_mci_slot {
 	struct mmc_host		*mmc;
@@ -296,12 +298,16 @@ struct dw_mci_slot {
 	struct list_head	queue_node;
 
 	unsigned int		clock;
+	unsigned int		__clk_old;
+
 	unsigned long		flags;
 #define DW_MMC_CARD_PRESENT	0
 #define DW_MMC_CARD_NEED_INIT	1
 #define DW_MMC_CARD_NO_LOW_PWR	2
 #define DW_MMC_CARD_NO_USE_HOLD 3
+#define DW_MMC_CARD_NEEDS_POLL	4
 	unsigned int		id;
+	int			sdio_id;
 	int			last_detect_state;
 	int         sdio_wakelog_switch;
 };
@@ -309,9 +315,11 @@ struct dw_mci_slot {
 /**
  * dw_mci driver data - dw-mshc implementation specific driver data.
  * @caps: mmc subsystem specified capabilities of the controller(s).
+ * @num_caps: number of capabilities specified by @caps.
  * @init: early implementation specific initialization.
  * @set_ios: handle bus specific extensions.
  * @parse_dt: parse implementation specific device tree properties.
+ * @execute_tuning: implementation specific tuning procedure.
  *
  * Provide controller implementation specific extensions. The usage of this
  * data structure is fully optional and usage of each member in this structure
@@ -319,6 +327,7 @@ struct dw_mci_slot {
  */
 struct dw_mci_drv_data {
 	unsigned long	*caps;
+	u32		num_caps;
 	int		(*init)(struct dw_mci *host);
 	int		(*setup_clock)(struct dw_mci *host);
 	void		(*prepare_command)(struct dw_mci *host, u32 *cmdr);

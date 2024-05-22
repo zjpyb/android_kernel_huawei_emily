@@ -33,3 +33,4 @@ int get_selinux_enforcing(void);
 int sescan_hookhash(uint8_t *hash);
 
 #endif
+

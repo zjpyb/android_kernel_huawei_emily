@@ -386,6 +386,7 @@ static int sec_ts_flashwrite(struct sec_ts_data *ts, u32 mem_addr, u8 *mem_data,
 	u32 page_idx_end = 0;
 	u32 page_num = 0;
 	u8 page_buf[SEC_TS_FW_BLK_SIZE_MAX] = { 0 };
+	u32 len;
 
 	if (mem_size == 0)
 		return 0;
@@ -415,7 +416,14 @@ static int sec_ts_flashwrite(struct sec_ts_data *ts, u32 mem_addr, u8 *mem_data,
 	memset(page_buf, 0, flash_page_size);
 
 	for (page_idx = page_num - 1;; page_idx--) {
-		memcpy(page_buf, mem_data + (page_idx * flash_page_size), size_copy);
+		if (size_copy > SEC_TS_FW_BLK_SIZE_MAX) {
+			TS_LOG_ERR("%s: copy size is too large: %u\n",
+				__func__, size_copy);
+			len = SEC_TS_FW_BLK_SIZE_MAX;
+		} else {
+			len = size_copy;
+		}
+		memcpy(page_buf, mem_data + (page_idx * flash_page_size), len);
 		if (ts->boot_ver[0] == SEC_TS_BOOT_OLDVER) {
 			ret = sec_ts_flashpagewrite(ts, (page_idx + page_idx_start), page_buf);
 			if (ret < 0) {
@@ -450,7 +458,7 @@ static int sec_ts_memoryblockread(struct sec_ts_data *ts, u32 mem_addr, int mem_
 	u8 cmd[5] = { 0 };
 	u8 *data = NULL;
 
-	if (mem_size >= 64 * 1024) {
+	if (mem_size >= (64 * 1024)) { /* max size 64k */
 		TS_LOG_ERR("%s: mem size over 64K\n", __func__);
 		return -EIO;
 	}
@@ -469,8 +477,8 @@ static int sec_ts_memoryblockread(struct sec_ts_data *ts, u32 mem_addr, int mem_
 
 	udelay(10);
 	cmd[0] = (u8)SEC_TS_CMD_FLASH_READ_SIZE;
-	cmd[1] = (u8)((mem_size >> 8) & 0xff);
-	cmd[2] = (u8)((mem_size >> 0) & 0xff);
+	cmd[1] = (u8)(((u32)mem_size >> 8) & 0xff);
+	cmd[2] = (u8)(((u32)mem_size >> 0) & 0xff);
 
 	ret = ts->sec_ts_i2c_write_burst(ts, cmd, 3);
 	if (ret < 0) {
@@ -890,7 +898,7 @@ int sec_ts_firmware_update_on_probe(struct sec_ts_data *ts, bool force_update)
 		goto err_request_fw;
 	}
 	if(ts->ic_name == S6SY761X) {
-		wake_lock(&ts->wakelock);//add wakelock,avoid i2c suspend
+		__pm_stay_awake(&ts->wakelock);//add wakelock,avoid i2c suspend
 	}
 	for (ii = 0; ii < 3; ii++) {
 		ret = sec_ts_firmware_update(ts, fw_entry->data, fw_entry->size, 0, restore_cal, ii);
@@ -911,7 +919,7 @@ int sec_ts_firmware_update_on_probe(struct sec_ts_data *ts, bool force_update)
 		sec_ts_do_once_calibrate();
 	}
 	if(ts->ic_name == S6SY761X) {
-		wake_unlock(&ts->wakelock);//add wakelock,avoid i2c suspend
+		__pm_relax(&ts->wakelock);//add wakelock,avoid i2c suspend
 	}
 
 err_request_fw:

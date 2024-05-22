@@ -44,6 +44,9 @@ enum typec_attach_type {
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC_SUPPORT
 	TYPEC_ATTACHED_CUSTOM_SRC,		/* Same Rp */
 #endif	/* CONFIG_TYPEC_CAP_CUSTOM_SRC_SUPPORT */
+
+	TYPEC_ATTACHED_VBUS_ONLY,
+	TYPEC_DETTACHED_VBUS_ONLY,
 };
 
 static inline char *typec_attach_type_name(uint8_t type)
@@ -60,6 +63,8 @@ static inline char *typec_attach_type_name(uint8_t type)
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC_SUPPORT
 	case TYPEC_ATTACHED_CUSTOM_SRC: return "CUSTOM_SRC";
 #endif
+	case TYPEC_ATTACHED_VBUS_ONLY: return "ATTACHED_VBUS_ONLY";
+	case TYPEC_DETTACHED_VBUS_ONLY: return "DETTACHED_VBUS_ONLY";
 	default: return "uknown";
 	}
 }
@@ -186,6 +191,8 @@ struct tcp_ny_vbus_state {
 	int mv;
 	int ma;
 	uint8_t type;
+	uint8_t ext_power;
+	uint8_t remote_rp_level;
 };
 
 struct tcp_ny_mode_ctrl {
@@ -435,6 +442,7 @@ enum dpm_cap_dr_check_prefer {
 extern int hisi_tcpm_shutdown(struct tcpc_device *tcpc_dev);
 extern int hisi_tcpm_inquire_remote_cc(struct tcpc_device *tcpc_dev,
 		uint8_t *cc1, uint8_t *cc2, bool from_ic);
+extern void hisi_tcpm_force_cc_mode(struct tcpc_device *tcpc_dev, int mode);
 extern int hisi_tcpm_inquire_vbus_level(struct tcpc_device *tcpc_dev, bool from_ic);
 extern bool hisi_tcpm_inquire_cc_polarity(struct tcpc_device *tcpc_dev);
 extern uint8_t hisi_tcpm_inquire_typec_attach_state(struct tcpc_device *tcpc_dev);
@@ -446,6 +454,7 @@ extern int hisi_tcpm_typec_set_rp_level(struct tcpc_device *tcpc_dev, uint8_t le
 extern int hisi_tcpm_typec_role_swap(struct tcpc_device *tcpc_dev);
 extern int hisi_tcpm_typec_notify_direct_charge(struct tcpc_device *tcpc_dev, bool dc);
 extern int hisi_tcpm_typec_change_role(struct tcpc_device *tcpc_dev, uint8_t typec_role);
+extern uint8_t hisi_tcpc_get_cc_from_analog_ch(struct tcpc_device *tcpc_dev);
 
 #ifdef CONFIG_USB_POWER_DELIVERY_SUPPORT
 extern bool hisi_tcpm_inquire_pd_connected(struct tcpc_device *tcpc_dev);

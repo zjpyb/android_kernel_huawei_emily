@@ -274,13 +274,14 @@ do\
 #define BFMR_BOPD_MODE_FIELD_NAME "bopd.mode"
 #define BFMR_MOUNT_NAME_SIZE (32)
 
+#define BFMR_SHA256_HASH_LEN 32
+
 /*----global variables----------------------------------------------------------------*/
 
 
 /*----export function prototypes--------------------------------------------------------*/
-
-void bfmr_create_crc32_table(void);
-unsigned int bfmr_get_crc32(unsigned char *pbuf, unsigned int data_len);
+int bfmr_sha256(unsigned char *pout, unsigned int out_len,
+	const void *pin, unsigned long in_len);
 
 /**
     @function: int bfm_get_device_full_path(char *dev_name, char *path_buf, unsigned int path_buf_len)
@@ -307,9 +308,10 @@ void bfmr_change_own_mode(char *path, int uid, int gid, int mode);
 void bfmr_change_file_ownership(char *path, uid_t uid, gid_t gid);
 void bfmr_change_file_mode(char *path, umode_t mode);
 int bfmr_get_file_ownership(char *pfile_path, uid_t *puid, gid_t *pgid);
-bool bfmr_is_file_existed(char *pfile_path);
-bool bfmr_is_dir_existed(char *pdir_path);
-int bfmr_save_log(char *logpath, char *filename, void *buf, unsigned int len, unsigned int is_append);
+bool bfmr_is_file_existed(const char *pfile_path);
+bool bfmr_is_dir_existed(const char *pdir_path);
+int bfmr_save_log(const char *logpath, const char *filename, void *buf,
+		unsigned int len, unsigned int is_append);
 long bfmr_get_proc_file_length(const char *pfile_path);
 bool bfmr_is_part_mounted_rw(const char *pmount_point);
 long bfmr_get_file_length(const char *pfile_path);
@@ -323,8 +325,9 @@ char* bfm_get_bootlock_value_from_cmdline(void);
 bool bfmr_has_been_enabled(void);
 bool bfr_has_been_enabled(void);
 void bfmr_enable_ctl(int enable_flag);
-char* bfmr_reverse_find_string(const char *psrc, const char *pstr_to_be_found);
-bool bfm_get_symbol_link_path(char *file_path, char *psrc_path, size_t src_path_size);
+char *bfmr_reverse_find_string(char *psrc, const char *pstr_to_be_found);
+bool bfm_get_symbol_link_path(const char *file_path, char *psrc_path,
+		size_t src_path_size);
 long bfmr_full_read(int fd, char *buf, size_t buf_size);
 long bfmr_full_write(int fd, char *buf, size_t buf_size);
 long bfmr_full_read_with_file_path(const char *pfile_path, char *buf, size_t buf_size);
@@ -341,7 +344,8 @@ int bfm_write_sub_bootfail_magic_num(unsigned int magic_num, void *phys_addr);
 int bfm_write_sub_bootfail_num(unsigned int bootfail_errno, void *phys_addr);
 int bfm_write_sub_bootfail_count(unsigned int bootfail_count, void *phys_addr);
 int bfmr_common_init(void);
-void bfmr_set_mount_state(char * bfmr_mount_point, bool mount_result);
+void bfmr_set_mount_state(const char *bfmr_mount_point, bool mount_result,
+	unsigned int size);
 
 #ifdef __cplusplus
 }

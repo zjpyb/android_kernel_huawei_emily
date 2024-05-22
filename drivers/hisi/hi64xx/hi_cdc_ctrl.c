@@ -17,6 +17,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/mfd/hisi_pmic.h>
 #include <rdr_hisi_audio_adapter.h>
+#include <linux/types.h>
 
 #include <linux/hisi/hi64xx/hi_cdc_ctrl.h>
 
@@ -84,7 +85,7 @@ static void _record_reg_op(struct hi_cdc_ctrl_priv *priv, int rw,
 static void _record_reg_dump(struct hi_cdc_ctrl_priv *priv)
 {
 	int i;
-	struct reg_op_item *item;
+	struct reg_op_item *item = NULL;
 	pr_info("!=== codec register operations dump begin: ===\n");
 	mutex_lock(&priv->io_mutex);
 	for (i = priv->rec_wr_idx; i < ARRAY_SIZE(priv->op_rec); i++) {
@@ -121,22 +122,19 @@ unsigned int hi_cdcctrl_reg_read(struct hi_cdc_ctrl *cdc_ctrl,
 	if (priv->cdc_ctrl.pm_runtime_support) {
 		pm_ret = pm_runtime_get_sync(cdc_ctrl->dev);
 		if (pm_ret < 0) {
-			pr_err("[%s:%d] pm resume error, reg_addr:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(unsigned long)reg_addr, pm_ret);
+			pr_err("[%s:%d] pm resume error, reg_addr:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(uintptr_t)reg_addr, pm_ret);
 			mutex_unlock(&priv->io_mutex);
 			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 			return 0;
 		}
 	}
 
+	/* avoid hardware noise disturbance ssi frame error, read twice and only use value of second reading */
 	if (reg_addr >= priv->regaddr8_begin && reg_addr <= priv->regaddr8_end) {
-		if (priv->cdc_ctrl.reg_read_twice) {
-			(void)priv->reg_ops.read8(reg_addr);
-		}
+		(void)priv->reg_ops.read8(reg_addr);
 		ret = priv->reg_ops.read8(reg_addr);
 	} else {
-		if (priv->cdc_ctrl.reg_read_twice) {
-			(void)priv->reg_ops.read32(reg_addr);
-		}
+		(void)priv->reg_ops.read32(reg_addr);
 		ret = priv->reg_ops.read32(reg_addr);
 	}
 	_record_reg_op(priv, 0, reg_addr, ret);
@@ -163,7 +161,7 @@ int hi_cdcctrl_reg_write(struct hi_cdc_ctrl *cdc_ctrl,
 	if (priv->cdc_ctrl.pm_runtime_support) {
 		pm_ret = pm_runtime_get_sync(cdc_ctrl->dev);
 		if (pm_ret < 0) {
-			pr_err("[%s:%d] pm resume error, reg_addr:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(unsigned long)reg_addr, pm_ret);
+			pr_err("[%s:%d] pm resume error, reg_addr:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(uintptr_t)reg_addr, pm_ret);
 			mutex_unlock(&priv->io_mutex);
 			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 			return 0;
@@ -198,7 +196,7 @@ void hi_cdcctrl_reg_update_bits(struct hi_cdc_ctrl *cdc_ctrl, unsigned int reg,
 	if (priv->cdc_ctrl.pm_runtime_support) {
 		pm_ret = pm_runtime_get_sync(cdc_ctrl->dev);
 		if (pm_ret < 0) {
-			pr_err("[%s:%d] pm resume error, reg:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(unsigned long)reg, pm_ret);
+			pr_err("[%s:%d] pm resume error, reg:0x%pK pm_ret:%d\n", __FUNCTION__, __LINE__, (void *)(uintptr_t)reg, pm_ret);
 			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 			return ;
 		}
@@ -305,7 +303,7 @@ void hi_cdc_bus_type_select(struct hi_cdc_ctrl_priv *priv,
 						struct device *dev, struct device_node *np)
 {
 	int ret = 0;
-	const char *str;
+	const char *str = NULL;
 
 	ret = of_property_read_string(np, "hisilicon,bus-sel", &str);
 	if (ret == 0 && !strncmp(str, "slimbus", 7)) {
@@ -322,10 +320,6 @@ void hi_cdc_bus_type_select(struct hi_cdc_ctrl_priv *priv,
 		priv->reg_ops.write32 = ssi_reg_write32;
 		if (of_property_read_bool(dev->of_node, "pm_runtime_support")) {
 			priv->cdc_ctrl.pm_runtime_support = true;
-		}
-
-		if (of_property_read_bool(dev->of_node, "reg_read_twice")) {
-			priv->cdc_ctrl.reg_read_twice = true;
 		}
 	}
 
@@ -395,7 +389,7 @@ static int hi_cdcctrl_probe(struct platform_device *pdev)
 	int ret;
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
-	struct hi_cdc_ctrl_priv *priv;
+	struct hi_cdc_ctrl_priv *priv = NULL;
 	int gpio;
 	enum of_gpio_flags flags;
 
@@ -493,9 +487,8 @@ static int hi_cdcctrl_probe(struct platform_device *pdev)
 
 	(void)of_property_read_u32(np, "pmu_clkcodec_addr", &priv->pmu_codec_mclk_addr);
 
-	dev_info(dev, "codec-controller probe ok, slimbusclk_drv:%d, slimbusdata_drv:%d, pm runtime support:%d, read twice:%d\n",
-				priv->cdc_ctrl.slimbusclk_cdc_drv, priv->cdc_ctrl.slimbusdata_cdc_drv, priv->cdc_ctrl.pm_runtime_support,\
-				priv->cdc_ctrl.reg_read_twice);
+	dev_info(dev, "codec-controller probe ok, slimbusclk_drv:%d, slimbusdata_drv:%d, pm runtime support:%d\n",
+				priv->cdc_ctrl.slimbusclk_cdc_drv, priv->cdc_ctrl.slimbusdata_cdc_drv, priv->cdc_ctrl.pm_runtime_support);
 
 	return 0;
 
@@ -544,6 +537,7 @@ static int hi_cdcctrl_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
 static int hi_cdcctrl_suspend(struct device *device)
 {
 	/*TODO: should enable/disable during read/write? */
@@ -551,8 +545,6 @@ static int hi_cdcctrl_suspend(struct device *device)
 	struct hi_cdc_ctrl_priv *priv =
 		(struct hi_cdc_ctrl_priv *)platform_get_drvdata(pdev);
 	int pm_ret = 0;
-
-	WARN_ON(NULL == priv);
 
 	if (priv->cdc_ctrl.pm_runtime_support) {
 		pm_ret = pm_runtime_get_sync(priv->cdc_ctrl.dev);
@@ -579,8 +571,6 @@ static int hi_cdcctrl_resume(struct device *device)
 		(struct hi_cdc_ctrl_priv *)platform_get_drvdata(pdev);
 	int ret = 0;
 
-	WARN_ON(NULL == priv);
-
 	ret = clk_prepare_enable(priv->cdc_mclk);
 	if (ret) {
 		dev_err(&pdev->dev, "clk prepare enable failed!\n");
@@ -603,11 +593,13 @@ static int hi_cdcctrl_resume(struct device *device)
 
 	return 0;
 }
+#endif
 
 void hi_cdcctrl_pm_get(void)
 {
 	int pm_ret = 0;
 
+#ifdef CONFIG_PM
 	if (!cdc_ctrl_priv) {
 		pr_err("[%s:%d] cdc ctrl priv is null\n", __FUNCTION__, __LINE__);
 		return;
@@ -620,11 +612,13 @@ void hi_cdcctrl_pm_get(void)
 			rdr_system_error(RDR_AUDIO_RUNTIME_SYNC_FAIL_MODID, 0, 0);
 		}
 	}
+#endif
 }
 EXPORT_SYMBOL(hi_cdcctrl_pm_get);
 
 void hi_cdcctrl_pm_put(void)
 {
+#ifdef CONFIG_PM
 	if (!cdc_ctrl_priv) {
 		pr_err("[%s:%d] cdc ctrl priv is null\n", __FUNCTION__, __LINE__);
 		return;
@@ -634,9 +628,11 @@ void hi_cdcctrl_pm_put(void)
 		pm_runtime_mark_last_busy(cdc_ctrl_priv->cdc_ctrl.dev);
 		pm_runtime_put_autosuspend(cdc_ctrl_priv->cdc_ctrl.dev);
 	}
+#endif
 }
 EXPORT_SYMBOL(hi_cdcctrl_pm_put);
 
+#ifdef CONFIG_PM
 static int hi_cdcctrl_runtime_suspend(struct device *device)
 {
 	struct platform_device *pdev = to_platform_device(device);
@@ -669,6 +665,7 @@ static int hi_cdcctrl_runtime_resume(struct device *device)
 
 	return ret;
 }
+#endif
 
 static struct of_device_id of_hi_cdcctrl_match[] = {
 	{

@@ -77,22 +77,6 @@
 
 struct i2c_adapter *device_adap_addr = NULL;
 
-static struct i2c_work_around_ops *g_i2c_work_ops;
-
-int i2c_work_around_ops_register(struct i2c_work_around_ops *ops)
-{
-	int ret = 0;
-
-	if (ops != NULL) {
-		g_i2c_work_ops = ops;
-	} else {
-		g_i2c_work_ops = NULL;
-		pr_err("%s: i2c_work_around_ops register fail!\n", __func__);
-		return -ENODEV;
-	}
-	return ret;
-}
-
 static u32 hs_i2c_dw_get_clk_rate_khz(struct dw_i2c_dev *dev)
 {
 	u32 rate;
@@ -105,12 +89,12 @@ static u32 hs_i2c_dw_get_clk_rate_khz(struct dw_i2c_dev *dev)
 
 int dw_hisi_pins_ctrl(struct dw_i2c_dev *dev, const char *name)
 {
-	struct dw_hisi_controller *controller;
-	struct pinctrl_state *s;
+	struct dw_hisi_controller *controller = NULL;
+	struct pinctrl_state *s = NULL;
 	int ret;
 
 	controller = dev->priv_data;
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller do not be init.\n", __func__);
 		return -ENODEV;
 	}
@@ -142,10 +126,10 @@ EXPORT_SYMBOL_GPL(dw_hisi_pins_ctrl);
 void hs_i2c_dw_reset_controller(struct dw_i2c_dev *dev)
 {
 	struct dw_hisi_controller *controller = dev->priv_data;
-	struct hs_i2c_priv_data *priv;
+	struct hs_i2c_priv_data *priv = NULL;
 	u32 val = 0, timeout = 10;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller do not be init.\n", __func__);
 		return;
 	}
@@ -178,7 +162,7 @@ void reset_i2c_controller(struct dw_i2c_dev *dev)
 	struct dw_hisi_controller *controller = dev->priv_data;
 	int r;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller do not be init.\n", __func__);
 		return;
 	}
@@ -206,14 +190,14 @@ void reset_i2c_controller(struct dw_i2c_dev *dev)
 #ifdef CONFIG_DMA_ENGINE
 static void i2c_dw_dma_probe_initcall(struct dw_i2c_dev *dev)
 {
-	struct dma_chan *chan;
+	struct dma_chan *chan = NULL;
 	dma_cap_mask_t mask;
 	struct dma_slave_config tx_conf = {};
 	struct dma_slave_config rx_conf = {};
 
 	struct dw_hisi_controller *controller = dev->priv_data;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller do not be init.\n", __func__);
 		return;
 	}
@@ -221,12 +205,12 @@ static void i2c_dw_dma_probe_initcall(struct dw_i2c_dev *dev)
 	/* DMA is the sole user of the platform data right now */
 	tx_conf.dst_addr = controller->mapbase + HISI_DW_IC_DATA_CMD;
 	tx_conf.dst_addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
-	tx_conf.direction = DMA_TO_DEVICE;/*lint !e64*/
+	tx_conf.direction = DMA_MEM_TO_DEV;/*lint !e64*/
 	tx_conf.dst_maxburst = 16;
 
 	rx_conf.src_addr = controller->mapbase + HISI_DW_IC_DATA_CMD;
 	rx_conf.src_addr_width = DMA_SLAVE_BUSWIDTH_1_BYTE;
-	rx_conf.direction = DMA_FROM_DEVICE;/*lint !e64*/
+	rx_conf.direction = DMA_DEV_TO_MEM;/*lint !e64*/
 	rx_conf.src_maxburst = 16;
 
 	/* Try to acquire a generic DMA engine slave TX channel */
@@ -247,7 +231,7 @@ static void i2c_dw_dma_probe_initcall(struct dw_i2c_dev *dev)
 			 controller->dmatx.chan->chan_id);
 
 	chan = dma_request_slave_channel(dev->dev, "rx");
-	if (!chan) {
+	if (chan == NULL) {
 		dev_err(dev->dev, "no RX DMA channel!\n");
 		return;
 	}
@@ -269,7 +253,7 @@ static void i2c_dw_dma_remove(struct dw_i2c_dev *dev)
 {
 	struct dw_hisi_controller *controller = dev->priv_data;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller does not be init.\n", __func__);
 		return;
 	}
@@ -290,7 +274,7 @@ static void i2c_dw_dma_tx_callback(void *data)
 	struct dw_i2c_dev *dev = data;
 	struct dw_hisi_controller *controller = dev->priv_data;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller does not be init.\n", __func__);
 		return;
 	}
@@ -307,25 +291,25 @@ static void i2c_dw_dma_tx_callback(void *data)
 
 static int i2c_dw_dma_tx_refill(struct dw_i2c_dev *dev)
 {
-	struct dw_i2c_dma_data *dmatx;
-	struct dma_chan *chan;
-	struct dma_device *dma_dev;
-	struct dma_async_tx_descriptor *desc;
+	struct dw_i2c_dma_data *dmatx = NULL;
+	struct dma_chan *chan = NULL;
+	struct dma_device *dma_dev = NULL;
+	struct dma_async_tx_descriptor *desc = NULL;
 	struct dw_hisi_controller *controller = dev->priv_data;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller does not be init.\n", __func__);
 		return -ENODEV;
 	}
 
 	dmatx = &controller->dmatx;
-	if (!dmatx) {
+	if (dmatx == NULL) {
 		dev_err(dev->dev, "dmatx is NULL!\n");
 		return -EIO;
 	}
 
 	chan = dmatx->chan;
-	if (!chan) {
+	if (chan == NULL) {
 		dev_err(dev->dev, "chan is NULL!\n");
 		return -EIO;
 	}
@@ -337,9 +321,9 @@ static int i2c_dw_dma_tx_refill(struct dw_i2c_dev *dev)
 		return -EBUSY;
 	}
 
-	desc = dmaengine_prep_slave_sg(chan, &dmatx->sg, 1, DMA_TO_DEVICE,/*lint !e64*/
+	desc = dmaengine_prep_slave_sg(chan, &dmatx->sg, 1, DMA_MEM_TO_DEV,/*lint !e64*/
 					DMA_PREP_INTERRUPT | DMA_CTRL_ACK);/*lint !e655*/
-	if (!desc) {
+	if (desc == NULL) {
 		dma_unmap_sg(dma_dev->dev, &dmatx->sg, 1, DMA_TO_DEVICE);
 		dev_warn(dev->dev, "TX DMA busy\n");
 		return -EBUSY;
@@ -361,16 +345,16 @@ static void i2c_dw_dma_rx_callback(void *data)
 {
 	struct dw_i2c_dev *dev = data;
 	struct dw_hisi_controller *controller = dev->priv_data;
-	struct i2c_msg *msgs;
-	struct dw_i2c_dma_data *dmarx;
+	struct i2c_msg *msgs = NULL;
+	struct dw_i2c_dma_data *dmarx = NULL;
 	int rx_valid;
 	int rd_idx = 0;
 	u32 len;
-	u8 *buf;
+	u8 *buf = NULL;
 
 	dev_dbg(dev->dev, "%s: entry.\n", __func__);
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller does not be init.\n", __func__);
 		return;
 	}
@@ -413,25 +397,25 @@ static void i2c_dw_dma_rx_callback(void *data)
  */
 static int i2c_dw_dma_rx_trigger_dma(struct dw_i2c_dev *dev)
 {
-	struct dw_i2c_dma_data *dmarx;
-	struct dma_chan *rxchan;
+	struct dw_i2c_dma_data *dmarx = NULL;
+	struct dma_chan *rxchan = NULL;
 	struct dma_device *dma_dev = NULL;
-	struct dma_async_tx_descriptor *desc;
+	struct dma_async_tx_descriptor *desc = NULL;
 	struct dw_hisi_controller *controller = dev->priv_data;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller does not be init.\n", __func__);
 		return -ENODEV;
 	}
 
 	dmarx = &controller->dmarx;
-	if(!dmarx) {
+	if(dmarx == NULL) {
 		dev_err(dev->dev, "dmarx is NULL!\n");
                 return -EIO;
 	}
 	rxchan = dmarx->chan;
 
-	if (!rxchan) {
+	if (rxchan == NULL) {
 		dev_err(dev->dev, "rxchan is NULL!\n");
 		return -EIO;
 	}
@@ -446,9 +430,9 @@ static int i2c_dw_dma_rx_trigger_dma(struct dw_i2c_dev *dev)
 		return -EBUSY;
 	}
 
-	desc = dmaengine_prep_slave_sg(rxchan, &dmarx->sg, 1, DMA_FROM_DEVICE,/*lint !e64*/
+	desc = dmaengine_prep_slave_sg(rxchan, &dmarx->sg, 1, DMA_DEV_TO_MEM,/*lint !e64*/
 					DMA_PREP_INTERRUPT | DMA_CTRL_ACK);/*lint !e655*/
-	if (!desc) {
+	if (desc == NULL) {
 		dma_unmap_sg(dma_dev->dev, &dmarx->sg, 1, DMA_FROM_DEVICE);
 		dev_warn(dev->dev, "RX DMA busy\n");
 		return -EBUSY;
@@ -486,7 +470,7 @@ void i2c_dw_dma_clear(struct dw_i2c_dev *dev)
 {
 	struct dw_hisi_controller *controller = dev->priv_data;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller does not be init.\n", __func__);
 		return;
 	}
@@ -569,10 +553,10 @@ int i2c_dw_xfer_msg_dma(struct dw_i2c_dev *dev, int *alllen)
 	int i;
 	int total_len = 0;
 	u32 buf_len;
-	u16 *dma_txbuf;
+	u16 *dma_txbuf = NULL;
 	int ret = -EPERM;
 
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev->dev, "%s: i2c contrller does not be init.\n", __func__);
 		return -ENODEV;
 	}
@@ -755,13 +739,13 @@ int i2c_init_secos(struct i2c_adapter *adap)
 	int ret;
 	struct dw_i2c_dev *dev = NULL;
 
-	if (!adap) {
+	if (adap == NULL) {
 		pr_err("i2c_init_secos: i2c adapter is NULL!\n");
 		return -ENODEV;
 	}
 
 	dev = i2c_get_adapdata(adap);
-	if (!dev) {
+	if (dev == NULL) {
 		pr_err( "i2c_init_secos: can not get i2c dev!\n");
 		return -ENODEV;
 	}
@@ -798,13 +782,13 @@ int i2c_exit_secos(struct i2c_adapter *adap)
 	struct dw_i2c_dev *dev = NULL;
 	int ret;
 
-	if (!adap) {
+	if (adap == NULL) {
 		pr_err("i2c_exit_secos: i2c adapter is NULL!\n");
 		return -ENODEV;
 	}
 
 	dev = i2c_get_adapdata(adap);
-	if (!dev) {
+	if (dev == NULL) {
 		pr_err("i2c_exit_secos: can not get i2c dev!\n");
 		return -ENODEV;
 	}
@@ -851,11 +835,11 @@ void i2c_frequency_division(struct dw_i2c_dev *dev, u32 clk)
 static int hs_dw_i2c_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct dw_i2c_dev *d;
-	struct i2c_adapter *adap;
-	struct resource *iores;
-	struct dw_hisi_controller *controller;
-	struct i2c_bus_recovery_info *gpio_recovery_info;
+	struct dw_i2c_dev *d = NULL;
+	struct i2c_adapter *adap = NULL;
+	struct resource *iores = NULL;
+	struct dw_hisi_controller *controller = NULL;
+	struct i2c_bus_recovery_info *gpio_recovery_info = NULL;
 	u32 data[4] = {0};
 	u64 clk_rate = 0;
 	u32 speed_mode = 0;
@@ -866,19 +850,19 @@ static int hs_dw_i2c_probe(struct platform_device *pdev)
 	u32 secure_mode = 0;
 
 	d = devm_kzalloc(dev, sizeof(struct dw_i2c_dev), GFP_KERNEL);
-	if (!d) {
+	if (d == NULL) {
 		dev_err(dev, "mem alloc failed for dw_i2c_dev data\n");
 		return -ENOMEM;
 	}
 
 	controller = devm_kzalloc(dev, sizeof(struct dw_hisi_controller), GFP_KERNEL);
-	if (!controller) {
+	if (controller == NULL) {
 		dev_err(dev, "mem alloc failed for controller\n");
 		return -ENOMEM;/*lint !e429*/
 	}
 
 	gpio_recovery_info = devm_kzalloc(dev, sizeof(struct i2c_bus_recovery_info), GFP_KERNEL);
-	if (!gpio_recovery_info) {
+	if (gpio_recovery_info == NULL) {
 		dev_err(dev, "mem alloc failed for gpio_recovery_info\n");
 		return -ENOMEM;/*lint !e429*/
 	}
@@ -888,7 +872,7 @@ static int hs_dw_i2c_probe(struct platform_device *pdev)
 
 	/* NOTE: driver uses the static register mapping */
 	iores = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!iores)
+	if (iores == NULL)
 		return -EINVAL;/*lint !e429*/
 
 	r = of_property_read_u32(dev->of_node, "secure-mode", &secure_mode);
@@ -908,19 +892,6 @@ static int hs_dw_i2c_probe(struct platform_device *pdev)
 
 	controller->pinctrl_flag = 0;
 	controller->pinctrl = NULL;
-
-	if (of_find_property(dev->of_node, "i2c3-usf", NULL)) {
-		d->setpin = 0;
-	} else {
-		d->setpin = 1;
-	}
-
-	r = of_property_read_u32(dev->of_node,
-		"i2c_bus_numb", &d->i2c_bus_numb);
-	if (r)
-		dev_err(dev, "doesn't have i2c_bus_numb property!\n");
-
-	dev_info(dev, "i2c_bus_numb =%d\n", d->i2c_bus_numb);
 
 	r = of_property_read_u32_array(dev->of_node, "reset-reg-base", &data[0], 4);
 	if (r) {
@@ -1130,7 +1101,7 @@ static int hs_dw_i2c_remove(struct platform_device *pdev)
 {
 	struct dw_i2c_dev *d = platform_get_drvdata(pdev);
 
-	if (!d) {
+	if (d == NULL) {
 		pr_err("%s: get drvdata failed\n", __func__);
 		return -EINVAL;
 	}
@@ -1164,7 +1135,7 @@ static int hs_dw_i2c_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct dw_i2c_dev *i_dev = platform_get_drvdata(pdev);
 
-	if (!i_dev) {
+	if (i_dev == NULL) {
 		pr_err("%s: get drvdata failed\n", __func__);
 		return -EINVAL;
 	}
@@ -1183,11 +1154,6 @@ static int hs_dw_i2c_suspend(struct device *dev)
 		usleep_range(1000, 2000);
 	}
 
-	dev_info(&pdev->dev, "dev->i2c_bus_numb = %d\n", i_dev->i2c_bus_numb);
-
-	if (g_i2c_work_ops && g_i2c_work_ops->i2c_suspend_work_around)
-		g_i2c_work_ops->i2c_suspend_work_around(&(i_dev->i2c_bus_numb));
-
 	dev_info(&pdev->dev, "%s: suspend -\n", __func__);
 	return 0;
 }
@@ -1198,7 +1164,7 @@ static int hs_dw_i2c_resume(struct device *dev)
 	struct dw_i2c_dev *i_dev = platform_get_drvdata(pdev);
 	int ret = 0;
 
-	if (!i_dev) {
+	if (i_dev == NULL) {
 		pr_err("%s: get drvdata failed\n", __func__);
 		return -EINVAL;
 	}
@@ -1220,11 +1186,6 @@ static int hs_dw_i2c_resume(struct device *dev)
 	clk_disable(i_dev->clk);
 
 	mutex_unlock(&i_dev->lock);/*lint !e455*/
-
-	dev_info(&pdev->dev, "dev->i2c_bus_numb = %d\n", i_dev->i2c_bus_numb);
-
-	if (g_i2c_work_ops && g_i2c_work_ops->i2c_resume_work_around)
-		g_i2c_work_ops->i2c_resume_work_around(&(i_dev->i2c_bus_numb));
 
 	dev_info(&pdev->dev, "%s: resume -\n", __func__);
 	return 0;

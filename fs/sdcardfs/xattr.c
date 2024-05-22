@@ -18,15 +18,17 @@ int sdcardfs_setxattr(struct dentry *dentry, const char *name,
 {
 	int rc;
 	struct path lower_path;
-	struct dentry *lower_dentry;
+	struct dentry *lower_dentry = NULL;
 	const struct cred *saved_cred = NULL;
+
+	if (dentry == NULL || dentry->d_inode == NULL)
+		return -ENOMEM;
 
 	/* save current_cred and override it */
 	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
 				    SDCARDFS_I(dentry->d_inode)->data);
-	if (!saved_cred) {
+	if (!saved_cred)
 	    return -ENOMEM;
-	}
 	sdcardfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
 	dget(lower_dentry);
@@ -44,15 +46,17 @@ ssize_t sdcardfs_getxattr(struct dentry *dentry,
 {
 	ssize_t rc;
 	struct path lower_path;
-	struct dentry *lower_dentry;
+	struct dentry *lower_dentry = NULL;
 	const struct cred *saved_cred = NULL;
+
+	if (dentry == NULL || dentry->d_inode == NULL)
+		return -ENOMEM;
 
 	/* save current_cred and override it */
 	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
 				    SDCARDFS_I(dentry->d_inode)->data);
-	if (!saved_cred) {
+	if (!saved_cred)
 	    return -ENOMEM;
-	}
 	sdcardfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
 	dget(lower_dentry);
@@ -69,15 +73,14 @@ ssize_t sdcardfs_listxattr(struct dentry *dentry, char *list, size_t size)
 {
 	ssize_t rc;
 	struct path lower_path;
-	struct dentry *lower_dentry;
+	struct dentry *lower_dentry = NULL;
 	const struct cred *saved_cred = NULL;
 
 	/* save current_cred and override it */
 	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
 				    SDCARDFS_I(dentry->d_inode)->data);
-	if (!saved_cred) {
+	if (!saved_cred)
 	    return -ENOMEM;
-	}
 	sdcardfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
 	dget(lower_dentry);
@@ -94,15 +97,14 @@ int sdcardfs_removexattr(struct dentry *dentry, const char *name)
 {
 	ssize_t rc;
 	struct path lower_path;
-	struct dentry *lower_dentry;
+	struct dentry *lower_dentry = NULL;
 	const struct cred *saved_cred = NULL;
 
 	/* save current_cred and override it */
 	saved_cred = override_fsids(SDCARDFS_SB(dentry->d_inode->i_sb),
 				    SDCARDFS_I(dentry->d_inode)->data);
-	if (!saved_cred) {
+	if (!saved_cred)
 	    return -ENOMEM;
-	}
 	sdcardfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
 	dget(lower_dentry);

@@ -42,7 +42,7 @@ void safe_free(void **pointer)
 
 static hwaa_result_t get_path(struct dentry *dentry, s8 *path)
 {
-	s8 *path_tmp;
+	s8 *path_tmp = NULL;
 	hwaa_result_t ret = HWAA_SUCCESS;
 	s8 *buf = kzalloc(PATH_MAX, GFP_NOFS);
 
@@ -241,7 +241,7 @@ static hwaa_result_t handle_create_fek(pid_t pid, uid_t uid, s32 gid,
 	u8 *app_data = NULL;
 	s32 app_data_len = 0;
 	u64 perms;
-
+	hwaa_pr_info_once("create fek enter");
 	if (is_create_fek_param_invalid(dentry, (const u8 **)encoded_wfek,
 		encoded_len, (const u8 **)fek, fek_len)) {
 		return HWAA_ERR_INVALID_ARGS;
@@ -285,13 +285,13 @@ static bool is_owner_param_len_invalid(s32 len_app_data_s, s32 len_app_data_t)
 }
 
 static bool is_owner_check_uid_and_profileid(
-	struct appid_without_ext_signer_t app_data_s_data,
-	struct appid_without_ext_signer_t app_data_t_data)
+	struct appid_without_ext_signer_t app_data_xattr,
+	struct appid_without_ext_signer_t app_data_info)
 {
-	if (app_data_s_data.profile_id != app_data_t_data.profile_id) {
+	if (app_data_xattr.profile_id != app_data_info.profile_id) {
 		hwaa_pr_err("profile_id different s(%lld) t(%lld).\n",
-			app_data_s_data.profile_id,
-			app_data_t_data.profile_id);
+			app_data_xattr.profile_id,
+			app_data_info.profile_id);
 		return false;
 	}
 	return true;

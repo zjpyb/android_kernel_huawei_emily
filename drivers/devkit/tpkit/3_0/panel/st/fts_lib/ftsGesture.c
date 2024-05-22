@@ -276,7 +276,7 @@ int isAnyGestureActive(void)
 int readGestureCoords(u8 *event, struct fts_ts_info *info)
 {
 	int i = 0;
-	u64 address = 0;
+	u64 offset;
 	int res = 0;
 
 	u8 val[GESTURE_MAX_COORDS_PAIRS_REPORT * 4] = {0};
@@ -286,7 +286,8 @@ int readGestureCoords(u8 *event, struct fts_ts_info *info)
 
 	if (event[0] == EVT_ID_USER_REPORT && event[1] ==
 	    EVT_TYPE_USER_GESTURE) {
-		address = (event[4] << 8) | event[3]; /* Offset in framebuff */
+		/* Offset in framebuff */
+		offset = (u64)(event[4] << 8) | event[3];
 		gesture_coords_reported = event[5];	/* number of pairs coords reported */
 		if (gesture_coords_reported > GESTURE_MAX_COORDS_PAIRS_REPORT) {
 			TS_LOG_ERR("%s:reported %d points!Decreasing to %d\n",
@@ -296,11 +297,12 @@ int readGestureCoords(u8 *event, struct fts_ts_info *info)
 		}
 
 		TS_LOG_INFO("%s: Offset: %08llX , coords pairs = %d\n",
-			__func__, address, gesture_coords_reported);
+			__func__, offset, gesture_coords_reported);
 
-		res = fts_writeReadU8UX(FTS_CMD_FRAMEBUFFER_R, BITS_16, address,
-					val, (gesture_coords_reported * 2 * 2) , DUMMY_FRAMEBUFFER);
 		/* *2 because each coord is made by 2 bytes, *2 because there are x and y */
+		res = fts_writeReadU8UX(FTS_CMD_FRAMEBUFFER_R, BITS_16, offset,
+			val, (gesture_coords_reported * 2 * 2),
+			DUMMY_FRAMEBUFFER);
 		if (res < OK) {
 			TS_LOG_ERR("%s: Cannot read the coordinates! ERROR %08X\n",__func__,res);
 			gesture_coords_reported = ERROR_OP_NOT_ALLOW;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/stat.h>
 #include <linux/sysctl.h>
 #include "../fs/xfs/xfs_sysctl.h"
@@ -22,9 +23,7 @@
 struct bin_table;
 typedef ssize_t bin_convert_t(struct file *file,
 	void __user *oldval, size_t oldlen, void __user *newval, size_t newlen);
-#ifdef CONFIG_HISI_SCSI_UFS_DUMP
-extern unsigned int ufs_dump;
-#endif
+
 static bin_convert_t bin_dir;
 static bin_convert_t bin_string;
 static bin_convert_t bin_intvec;
@@ -172,11 +171,8 @@ static const struct bin_table bin_vm_table[] = {
 	{ CTL_INT,	VM_PANIC_ON_OOM,		"panic_on_oom" },
 	{ CTL_INT,	VM_VDSO_ENABLED,		"vdso_enabled" },
 	{ CTL_INT,	VM_MIN_SLAB,			"min_slab_ratio" },
-#ifdef CONFIG_HISI_SCSI_UFS_DUMP
-asdfasdf
-	{ CTL_INT,	VM_UFS_DUMP,			"ufs_dump" },
-#endif
 #ifdef CONFIG_HISI_PAGECACHE_DEBUG
+	{ CTL_INT,	VM_UFS_DUMP,			"ufs_dump" },
 	{ CTL_INT,	VM_PAGECACHE_DUMP,		"pagecache_dump" },
 #endif
 	{}
@@ -994,8 +990,9 @@ static ssize_t bin_intvec(struct file *file,
 		size_t length = oldlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buffer, BUFSZ - 1);
+		result = kernel_read(file, buffer, BUFSZ - 1, &pos);
 		if (result < 0)
 			goto out_kfree;
 
@@ -1024,6 +1021,7 @@ static ssize_t bin_intvec(struct file *file,
 		size_t length = newlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
 		str = buffer;
 		end = str + BUFSZ;
@@ -1037,7 +1035,7 @@ static ssize_t bin_intvec(struct file *file,
 			str += scnprintf(str, end - str, "%lu\t", value);
 		}
 
-		result = kernel_write(file, buffer, str - buffer, 0);
+		result = kernel_write(file, buffer, str - buffer, &pos);
 		if (result < 0)
 			goto out_kfree;
 	}
@@ -1065,8 +1063,9 @@ static ssize_t bin_ulongvec(struct file *file,
 		size_t length = oldlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buffer, BUFSZ - 1);
+		result = kernel_read(file, buffer, BUFSZ - 1, &pos);
 		if (result < 0)
 			goto out_kfree;
 
@@ -1095,6 +1094,7 @@ static ssize_t bin_ulongvec(struct file *file,
 		size_t length = newlen / sizeof(*vec);
 		char *str, *end;
 		int i;
+		loff_t pos = 0;
 
 		str = buffer;
 		end = str + BUFSZ;
@@ -1108,7 +1108,7 @@ static ssize_t bin_ulongvec(struct file *file,
 			str += scnprintf(str, end - str, "%lu\t", value);
 		}
 
-		result = kernel_write(file, buffer, str - buffer, 0);
+		result = kernel_write(file, buffer, str - buffer, &pos);
 		if (result < 0)
 			goto out_kfree;
 	}
@@ -1127,16 +1127,17 @@ static ssize_t bin_uuid(struct file *file,
 	/* Only supports reads */
 	if (oldval && oldlen) {
 		char buf[UUID_STRING_LEN + 1];
-		uuid_be uuid;
+		uuid_t uuid;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buf, sizeof(buf) - 1);
+		result = kernel_read(file, buf, sizeof(buf) - 1, &pos);
 		if (result < 0)
 			goto out;
 
 		buf[result] = '\0';
 
 		result = -EIO;
-		if (uuid_be_to_bin(buf, &uuid))
+		if (uuid_parse(buf, &uuid))
 			goto out;
 
 		if (oldlen > 16)
@@ -1162,8 +1163,9 @@ static ssize_t bin_dn_node_address(struct file *file,
 		char buf[15], *nodep;
 		unsigned long area, node;
 		__le16 dnaddr;
+		loff_t pos = 0;
 
-		result = kernel_read(file, 0, buf, sizeof(buf) - 1);
+		result = kernel_read(file, buf, sizeof(buf) - 1, &pos);
 		if (result < 0)
 			goto out;
 
@@ -1196,6 +1198,7 @@ static ssize_t bin_dn_node_address(struct file *file,
 		__le16 dnaddr;
 		char buf[15];
 		int len;
+		loff_t pos = 0;
 
 		result = -EINVAL;
 		if (newlen != sizeof(dnaddr))
@@ -1209,7 +1212,7 @@ static ssize_t bin_dn_node_address(struct file *file,
 				le16_to_cpu(dnaddr) >> 10,
 				le16_to_cpu(dnaddr) & 0x3ff);
 
-		result = kernel_write(file, buf, len, 0);
+		result = kernel_write(file, buf, len, &pos);
 		if (result < 0)
 			goto out;
 	}
@@ -1354,7 +1357,7 @@ static void deprecated_sysctl_warning(const int *name, int nlen)
 	 * CTL_KERN/KERN_VERSION is used by older glibc and cannot
 	 * ever go away.
 	 */
-	if (name[0] == CTL_KERN && name[1] == KERN_VERSION)
+	if (nlen >= 2 && name[0] == CTL_KERN && name[1] == KERN_VERSION)
 		return;
 
 	if (printk_ratelimit()) {
@@ -1362,8 +1365,8 @@ static void deprecated_sysctl_warning(const int *name, int nlen)
 			"warning: process `%s' used the deprecated sysctl "
 			"system call with ", current->comm);
 		for (i = 0; i < nlen; i++)
-			printk("%d.", name[i]);
-		printk("\n");
+			printk(KERN_CONT "%d.", name[i]);
+		printk(KERN_CONT "\n");
 	}
 	return;
 }

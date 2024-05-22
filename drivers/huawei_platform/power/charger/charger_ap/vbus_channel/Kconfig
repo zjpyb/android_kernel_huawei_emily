@@ -30,3 +30,13 @@ config VBUS_CHANNEL_BOOST_GPIO
 	  This configuration item depends on VBUS_CHANNEL_CHARGER.
 	  This driver will implement a boost channel
 	  as a VBUS output function.
+
+config VBUS_CHANNEL_POGOPIN_BOOST
+	bool "vbus channel with pogopin boost"
+	depends on VBUS_CHANNEL
+	default n
+	help
+	  Say Y here to enable vbus channel pogopin boost driver.
+	  This configuration item depends on VBUS_CHANNEL.
+	  This driver will implement a pogopin boost channel
+	  as a VBUS output function.

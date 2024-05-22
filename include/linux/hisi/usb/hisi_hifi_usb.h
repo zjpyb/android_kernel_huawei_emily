@@ -66,6 +66,7 @@ int hifi_usb_revive(void);
 
 /* This function is used to make sure hifiusb alive. If hifiusb hibernated,
  * revive it. */
+void hifi_usb_complete_wakeup(void);
 int hisi_usb_check_hifi_usb_status(enum hifi_usb_status_trigger trigger);
 void hisi_usb_check_huawei_earphone_device(struct usb_device *dev);
 void export_usbhid_key_pressed(struct usb_device *udev, bool key_pressed);
@@ -83,6 +84,7 @@ static inline int get_always_hifi_usb_value(void){return 0;}
 static inline int get_hifi_usb_retry_count(void){return 0;}
 static inline int hifi_usb_hibernate(void){return -1;}
 static inline int hifi_usb_revive(void){return -1;}
+static inline void hifi_usb_complete_wakeup(void) {}
 static inline int hisi_usb_check_hifi_usb_status(enum hifi_usb_status_trigger trigger){return -1;}
 static inline void hisi_usb_check_huawei_earphone_device(struct usb_device *dev){}
 static inline void export_usbhid_key_pressed(struct usb_device *udev, bool key_pressed){}

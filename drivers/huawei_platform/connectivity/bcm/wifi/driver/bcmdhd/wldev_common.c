@@ -154,7 +154,7 @@ s32 wldev_mkiovar_bsscfg(
 	s8 *iovar_buf, s32 buflen, s32 bssidx)
 {
 	const s8 *prefix = "bsscfg:";
-	s8 *p;
+	s8 *p = NULL;
 	u32 prefixlen;
 	u32 namelen;
 	u32 iolen;

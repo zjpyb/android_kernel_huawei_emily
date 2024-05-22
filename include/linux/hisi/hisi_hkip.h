@@ -39,7 +39,7 @@ static inline bool hkip_get_bit(const u8 *bits, size_t pos, size_t max)
 {
 	if (unlikely(pos >= max))
 		return false;
-	return (READ_ONCE(bits[pos / 8]) >> (pos % 8)) & 1;
+	return ((unsigned int)READ_ONCE(bits[pos / 8]) >> (pos % 8)) & 1;
 }
 
 static inline void hkip_set_bit(u8 *bits, size_t pos, size_t max, bool value)
@@ -47,7 +47,7 @@ static inline void hkip_set_bit(u8 *bits, size_t pos, size_t max, bool value)
 	if (hkip_get_bit(bits, pos, max) == value)
 		return;
 
-	if (unlikely(hkip_hvc4(HKIP_HVC_ROWM_SET_BIT, (uintptr_t)bits,
+	if (unlikely(hkip_hvc4(HKIP_HVC_ROWM_SET_BIT, (unsigned long)(uintptr_t)bits,
 				pos, value)))
 		BUG();
 }
@@ -96,6 +96,7 @@ struct cred;
 int hkip_register_ro(const void *base, size_t size);
 int hkip_register_ro_mod(const void *base, size_t size);
 int hkip_unregister_ro_mod(const void *base, size_t size);
+int hkip_register_xo(const uintptr_t base, size_t size);
 
 extern u8 hkip_addr_limit_bits[];
 
@@ -148,6 +149,11 @@ static inline int hkip_check_xid_root(void)
 
 static inline void hkip_init_task(struct task_struct *task) { }
 static inline void hkip_update_xid_root(const struct cred *creds) { }
+
+static inline int hkip_register_xo(const uintptr_t base, size_t size)
+{
+	return 0;
+}
 
 #endif
 

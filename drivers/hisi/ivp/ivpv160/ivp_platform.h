@@ -64,6 +64,7 @@ struct ivp_device {
     unsigned int dynamic_mem_section_size;
     unsigned int ivp_sec_support;
     unsigned int ivp_secmode;
+    int ivp_sec_buff_fd;
     struct platform_device *ivp_pdev;
 };
 

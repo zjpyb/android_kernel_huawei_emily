@@ -847,45 +847,59 @@ static void synaptics_game_mode_enable(unsigned char oper) {
 	}
 }
 
+static int synaptics_check_scene_type(unsigned int stype)
+{
+	unsigned int i;
+	int error = -EINVAL;
+
+	if (!rmi4_data->synaptics_chip_data->scene_type_num) {
+		TS_LOG_INFO("%s, not need check_scene type\n", __func__);
+		return NO_ERR;
+	}
+	for (i = 0; i < rmi4_data->synaptics_chip_data->scene_type_num; i++) {
+		if (stype == rmi4_data->synaptics_chip_data->scene_support_array[i])
+			error = NO_ERR;
+	}
+	return error;
+}
+
 static void synaptics_scene_switch(unsigned char scene, unsigned char oper)
 {
 	int error = 0;
 	unsigned char value = 0;
 
-	if (TS_SWITCH_TYPE_SCENE !=
-			(rmi4_data->synaptics_chip_data->touch_switch_flag & TS_SWITCH_TYPE_SCENE)) {
+	if ((rmi4_data->synaptics_chip_data->touch_switch_flag & TS_SWITCH_TYPE_SCENE) !=
+		TS_SWITCH_TYPE_SCENE) {
 		TS_LOG_ERR("%s, scene switch is not suppored by this chip\n",__func__);
 		return;
 	}
 
 	switch (oper) {
-		case TS_SWITCH_SCENE_ENTER:
-			TS_LOG_INFO("%s: enter scene %d\n", __func__, scene);
-			value = scene;
-			error = synaptics_rmi4_i2c_write(rmi4_data,
-						rmi4_data->synaptics_chip_data->touch_scene_reg,
-						&value,
-						(unsigned short)sizeof(unsigned char));
-			if (error < 0) {
-				TS_LOG_ERR("write scene switch addr:%x=%u error\n",
-					rmi4_data->synaptics_chip_data->touch_scene_reg, scene);
-			}
-			break;
-		case TS_SWITCH_SCENE_EXIT:
-			TS_LOG_INFO("%s: enter default scene\n", __func__);
-			value = 0;
-			error = synaptics_rmi4_i2c_write(rmi4_data,
-						rmi4_data->synaptics_chip_data->touch_scene_reg,
-						&value,
-						(unsigned short)sizeof(unsigned char));
-			if (error < 0) {
-				TS_LOG_ERR("write scene switch addr:%x=%u error\n",
-					rmi4_data->synaptics_chip_data->touch_scene_reg, scene);
-			}
-			break;
-		default:
-			TS_LOG_ERR("%s: oper unknown:%d, invalid\n", __func__, oper);
-			break;
+	case TS_SWITCH_SCENE_ENTER:
+		TS_LOG_INFO("%s: enter scene %d\n", __func__, scene);
+		value = scene;
+		error = synaptics_rmi4_i2c_write(rmi4_data,
+			rmi4_data->synaptics_chip_data->touch_scene_reg,
+			&value,
+			(unsigned short)sizeof(unsigned char));
+		if (error < 0)
+			TS_LOG_ERR("write scene switch addr: %x = %u error\n",
+				rmi4_data->synaptics_chip_data->touch_scene_reg, scene);
+		break;
+	case TS_SWITCH_SCENE_EXIT:
+		TS_LOG_INFO("%s: enter default scene\n", __func__);
+		value = 0;
+		error = synaptics_rmi4_i2c_write(rmi4_data,
+			rmi4_data->synaptics_chip_data->touch_scene_reg,
+			&value,
+			(unsigned short)sizeof(unsigned char));
+		if (error < 0)
+			TS_LOG_ERR("write scene switch addr: %x = %u error\n",
+				rmi4_data->synaptics_chip_data->touch_scene_reg, scene);
+		break;
+	default:
+		TS_LOG_ERR("%s: oper unknown: %d, invalid\n", __func__, oper);
+		break;
 	}
 }
 
@@ -936,7 +950,7 @@ static void synaptics_face_detect_enable(unsigned char oper)
 
 	switch (oper) {
 	case TS_SWITCH_FACE_DCT_ENABLE:
-		TS_LOG_INFO("%s: enable face detect, reg:0x%x.\n",
+		TS_LOG_INFO("%s: enable face detect, reg:0x%x\n",
 			__func__, cd->face_dct_en_reg);
 		atomic_set(&cd->ts_platform_data->face_dct_en,
 			FACE_DCT_ENABLE);
@@ -970,67 +984,69 @@ static void synaptics_face_detect_enable(unsigned char oper)
 	}
 }
 
-static void synaptics_chip_touch_switch(void){
+static int synaptics_get_touch_switch_data(unsigned char *stype,
+	unsigned char *soper, unsigned char *param)
+{
 	unsigned long get_value = 0;
-	char *ptr_begin = NULL, *ptr_end = NULL;
+	char *ptr_begin = NULL;
+	char *ptr_end = NULL;
 	char in_data[MAX_STR_LEN] = {0};
-	int len = 0;
-	unsigned char stype = 0, soper = 0, param = 0;
+	int len;
 	int error = 0;
 
 	TS_LOG_INFO("%s +\n", __func__);
 
-	if (NULL == rmi4_data->synaptics_chip_data){
+	if (rmi4_data->synaptics_chip_data == NULL) {
 		TS_LOG_ERR("error chip data\n");
 		goto out;
 	}
 
 	/* SWITCH_OPER,ENABLE_DISABLE,PARAM */
 	memcpy(in_data, rmi4_data->synaptics_chip_data->touch_switch_info, MAX_STR_LEN -1);
-	TS_LOG_INFO("in_data:%s\n", in_data);
+	TS_LOG_INFO("in_data: %s\n", in_data);
 
 	/* get switch type */
 	ptr_begin = in_data;
 	ptr_end = strstr(ptr_begin, ",");
-	if (!ptr_end){
+	if (!ptr_end) {
 		TS_LOG_ERR("%s get stype fail\n", __func__);
 		goto out;
 	}
 	len = ptr_end - ptr_begin;
-	if (len <= 0 || len > 3){
+	if ((len <= 0) || (len > 3)) {
 		TS_LOG_ERR("%s stype len error\n", __func__);
 		goto out;
 	}
 	*ptr_end = 0;
 	error = strict_strtoul(ptr_begin, 0, &get_value);
 	if (error) {
-		TS_LOG_ERR("strict_strtoul return invaild :%d\n", error);
+		TS_LOG_ERR("strict_strtoul return invaild: %d\n", error);
 		goto out;
-	}else{
-		stype = (unsigned char)get_value;
-		TS_LOG_INFO("%s get stype:%u\n", __func__, stype);
+	} else {
+		*stype = (unsigned char)get_value;
+		TS_LOG_INFO("%s get stype: %u\n", __func__, *stype);
 	}
 
 	/* get switch operate */
 	ptr_begin = ptr_end + 1;
 	ptr_end = strstr(ptr_begin, ",");
-	if (!ptr_end){
+	if (!ptr_end) {
 		TS_LOG_ERR("%s get soper fail\n", __func__);
 		goto out;
 	}
 	len = ptr_end - ptr_begin;
-	if (len <= 0 || len > 3){
+	if ((len <= 0) || (len > 3)) {
 		TS_LOG_ERR("%s soper len error\n", __func__);
 		goto out;
 	}
 	*ptr_end = 0;
 	error = strict_strtoul(ptr_begin, 0, &get_value);
 	if (error) {
-		TS_LOG_ERR("strict_strtoul return invaild :%d\n", error);
+		TS_LOG_ERR("strict_strtoul return invaild: %d\n", error);
 		goto out;
-	}else{
-		soper = (unsigned char)get_value;
-		TS_LOG_INFO("%s get soper:%u\n", __func__, soper);
+	} else {
+		*soper = (unsigned char)get_value;
+		TS_LOG_INFO("%s get soper: %u\n", __func__, *soper);
 	}
 
 	/* get param */
@@ -1039,12 +1055,85 @@ static void synaptics_chip_touch_switch(void){
 	if (error) {
 		TS_LOG_ERR("strict_strtoul return invaild :%d\n", error);
 		goto out;
-	}else{
-		param = (unsigned char)get_value;
-		TS_LOG_INFO("%s get param:%u\n", __func__, param);
+	} else {
+		*param = (unsigned char)get_value;
+		TS_LOG_INFO("%s get param: %u\n", __func__, *param);
+	}
+out:
+	return error;
+}
+
+static void synaptic_chip_touch_itouch(unsigned char stype,
+	unsigned char soper, unsigned char param)
+{
+	switch (stype) {
+	case TS_SWITCH_TYPE_DOZE:
+		synaptics_doze_enable(soper, param);
+		break;
+	case TS_SWITCH_SCENE_3:
+	case TS_SWITCH_SCENE_4:
+		synaptics_scene_switch(stype, soper);
+		break;
+	case TS_SWITCH_SCENE_5:
+		synaptics_game_mode_enable(soper);
+		break;
+	default:
+		TS_LOG_INFO("touch switch type %d not supported\n", stype);
+		break;
+	}
+}
+
+static void synaptic_chip_touch_powergenius(unsigned char stype,
+	unsigned char soper, unsigned char param)
+{
+	int error;
+
+	error = synaptics_check_scene_type(stype);
+	if (error != NO_ERR) {
+		TS_LOG_INFO("touch switch type %d not supported\n", stype);
+		return;
+	}
+	if (stype == TS_SWITCH_TYPE_DOZE)
+		synaptics_doze_enable(soper, param);
+	else if (stype == TS_SWITCH_TYPE_GAME)
+		synaptics_game_mode_enable(soper);
+	else if ((stype >= TS_SWITCH_SCENE_3) && (stype <= TS_SWITCH_SCENE_20))
+		synaptics_scene_switch(stype, soper);
+	else if (stype == TS_SWITCH_FACE_DETECT)
+		synaptics_face_detect_enable(soper);
+	return;
+}
+
+static void synaptics_chip_touch_switch(void)
+{
+	unsigned char stype = 0;
+	unsigned char soper = 0;
+	unsigned char param = 0;
+	int error;
+
+	if (rmi4_data->synaptics_chip_data == NULL) {
+		TS_LOG_ERR("error chip data\n");
+		goto out;
 	}
 
-	switch (stype){
+	error = synaptics_get_touch_switch_data(&stype, &soper, &param);
+	if (error) {
+		TS_LOG_INFO("get touch switch default\n");
+		goto out;
+	} else {
+		TS_LOG_INFO("stype = %u, soper = %u, param=%u\n",
+			stype, soper, param);
+	}
+	if (rmi4_data->synaptics_chip_data->scene_type_mode ==
+		SCENE_MODE_ITOUCH) {
+		synaptic_chip_touch_itouch(stype, soper, param);
+		return;
+	} else if (rmi4_data->synaptics_chip_data->scene_type_mode ==
+		SCENC_MODE_POWERGENIUS) {
+		synaptic_chip_touch_powergenius(stype, soper, param);
+		return;
+	}
+	switch (stype) {
 	case TS_SWITCH_TYPE_DOZE:
 		synaptics_doze_enable(soper, param);
 		break;
@@ -1059,7 +1148,7 @@ static void synaptics_chip_touch_switch(void){
 		synaptics_face_detect_enable(soper);
 		break;
 	default:
-		TS_LOG_INFO("touch switch type %d not supported.", stype);
+		TS_LOG_INFO("touch switch type %d not supported\n", stype);
 		break;
 	}
 
@@ -1936,7 +2025,8 @@ static int synaptics_set_gamma_info(struct ts_oem_info_param *info)
 		return error;
 	}
 /* info->data[ ] 0-47 1-144 */
-	if(info->data[0] != GAMMA_DATA_HEAD_0){
+	if ((info->data[0] != GAMMA_DATA_HEAD_0) &&
+		(info->data[0] != GAMMA_DATA_HEAD_1)) {
 		TS_LOG_ERR("%s: invalid gamma data \n", __func__);
 		error = -EINVAL;
 		return error;
@@ -2008,7 +2098,8 @@ static int synaptics_get_gamma_info(struct ts_oem_info_param *info)
 		goto out;
 	}
 	/* info->data[ ] 0-71 1-144 */
-	if(info->buff[SYNAPTICS_RMI4_BARCODE_OFFSET_4] != GAMMA_DATA_HEAD_0 ){
+	if ((info->buff[SYNAPTICS_RMI4_BARCODE_OFFSET_4] != GAMMA_DATA_HEAD_0) &&
+		(info->buff[SYNAPTICS_RMI4_BARCODE_OFFSET_4] != GAMMA_DATA_HEAD_1)) {
 		TS_LOG_ERR("%s: invalid gamma data %d \n", __func__, info->buff[SYNAPTICS_RMI4_BARCODE_OFFSET_4]);
 		error = -EINVAL;
 		return error;
@@ -4358,7 +4449,7 @@ static void synaptics_report_face_dct_only(unsigned char en)
 					value,
 					(unsigned short)sizeof(value));
 	if (error < 0)
-		TS_LOG_ERR("read from addr(%02x) error\n",
+		TS_LOG_ERR("read from addr 0x%02x error\n",
 			REG_REPORT_FACE_DCT_ONLY);
 	else
 		TS_LOG_INFO("read face detect only addr:%02x=%u\n",
@@ -6367,7 +6458,7 @@ static int synaptics_rmi4_key_gesture_report(struct synaptics_rmi4_data
 
 	if (0 != reprot_gesture_key_value) {
 		/*increase wake_lock time to avoid system suspend.*/
-		wake_lock_timeout(&rmi4_data->synaptics_chip_data->ts_platform_data->ts_wake_lock, 5 * HZ);
+		__pm_wakeup_event(&rmi4_data->synaptics_chip_data->ts_platform_data->ts_wake_lock, jiffies_to_msecs(5 * HZ));
 		mutex_lock(&wrong_touch_lock);
 		if (true ==
 		    rmi4_data->synaptics_chip_data->easy_wakeup_info.

@@ -81,6 +81,7 @@
 #include "v_private.h"
 #include "mdrv.h"
 
+#if (VOS_LINUX == VOS_OS_VER)
 #include <linux/version.h>
 #include <linux/kthread.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
@@ -88,8 +89,10 @@
 #include <linux/sched/debug.h>
 #include <linux/sched/signal.h>
 #endif
+#endif
 
 
+#if (VOS_LINUX == VOS_OS_VER) || defined(LLT_OS_LINUX)
 
 /*****************************************************************************
     协议栈打印打点方式下的.C文件宏定义
@@ -659,6 +662,7 @@ VOS_UINT32 VOS_CreateEvent( VOS_UINT32 ulTaskID )
  *****************************************************************************/
 VOS_UINT32 VOS_CheckEvent( VOS_UINT32 ulTaskID )
 {
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( ulTaskID >= vos_TaskCtrlBlkNumber )
     {
         return VOS_ERR;
@@ -678,6 +682,7 @@ VOS_UINT32 VOS_CheckEvent( VOS_UINT32 ulTaskID )
     {
         return VOS_ERR;
     }
+#endif
 
     return VOS_OK;
 }
@@ -731,16 +736,20 @@ VOS_UINT32 VOS_EventWrite( VOS_UINT32 ulTaskID, VOS_UINT32 ulEvents )
     VOS_SpinUnlockIntUnlock(&g_stVosTaskSpinLock, ulLockLevel);
 
     ulTempQueue = VOS_GetQueueIDFromFid(vos_TaskCtrlBlk[ulTaskID].ulFid);
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( 0xffffffff == ulTempQueue )
     {
         return VOS_ERR;
     }
+#endif
 
     ulTempSem = VOS_GetSemIDFromQueue(ulTempQueue);
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( 0xffffffff == ulTempSem )
     {
         return VOS_ERR;
     }
+#endif
 
     if ( VOS_OK != VOS_SmV( ulTempSem ) )
     {
@@ -787,6 +796,7 @@ VOS_UINT32 VOS_EventRead( VOS_UINT32 ulEvents,
     VOS_UINT32     ulTempEvent;
 
     ulTaskSelf = VOS_GetCurrentTaskID();
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( 0xffffffff == ulTaskSelf )
     {
         return VOS_ERR;
@@ -798,6 +808,7 @@ VOS_UINT32 VOS_EventRead( VOS_UINT32 ulEvents,
 
         return VOS_ERR;
     }
+#endif
 
     if( !(VOS_EVENT_ANY & ulFlags) )
     {
@@ -821,16 +832,20 @@ VOS_UINT32 VOS_EventRead( VOS_UINT32 ulEvents,
     }
 
     ulTempQueue = VOS_GetQueueIDFromFid(vos_TaskCtrlBlk[ulTaskSelf].ulFid);
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( 0xffffffff == ulTempQueue )
     {
         return VOS_ERR;
     }
+#endif
 
     ulTempSem = VOS_GetSemIDFromQueue(ulTempQueue);
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( 0xffffffff == ulTempSem )
     {
         return VOS_ERR;
     }
+#endif
 
     if( VOS_OK != VOS_SmP( ulTempSem, ulTimeOutInMillSec ) )
     {
@@ -868,6 +883,7 @@ VOS_UINT32 VOS_EventRead( VOS_UINT32 ulEvents,
  *****************************************************************************/
 VOS_UINT32 VOS_GetQueueIDFromTID(VOS_UINT32 ulTid)
 {
+#if (VOS_YES == VOS_CHECK_PARA)
     if ( ulTid >= vos_TaskCtrlBlkNumber )
     {
         LogPrint("VOS_GetQueueIDFromTID TID invaild.\r\n");
@@ -881,6 +897,7 @@ VOS_UINT32 VOS_GetQueueIDFromTID(VOS_UINT32 ulTid)
 
         return 0xffffffff;
     }
+#endif
 
     return VOS_GetQueueIDFromFid(vos_TaskCtrlBlk[ulTid].ulFid);
 }
@@ -897,6 +914,7 @@ VOS_UINT32 VOS_GetTCBFromTID(VOS_UINT32 ulTid)
     return (VOS_UINT32)vos_TaskCtrlBlk[ulTid].ulLinuxThreadId;
 }
 
+#endif
 
 
 

@@ -108,7 +108,7 @@ int hw_ois_config(hw_ois_t *hw_ois, void *arg)
 		rc = strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, hw_ois->ois_info->ois_name,
 			sizeof(cdata->cfg.name) - 1);
 		if (rc != 0) {
-			cam_err("%s copy name fail %d\n", __func__, __LINE__);
+			cam_err("%s ois name copy fail\n", __func__);
 		}
 		break;
 	case CFG_OIS_GET_SUPPORT_FLAG:

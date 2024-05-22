@@ -14,6 +14,11 @@ enum hicam_buf_cfg_type {
     HICAM_BUF_SYNC,
     HICAM_BUF_LOCAL_SYNC,
     HICAM_BUF_GET_PHYS,
+    HICAM_BUF_OPEN_SECURITY_TA,
+    HICAM_BUF_CLOSE_SECURITY_TA,
+    HICAM_BUF_SET_SECURITY,
+    HICAM_BUF_RESET_SECURITY,
+    HICAM_BUF_GET_SECMEMTYPE,
 };
 // kernel coding style prefers __xx as types shared with userspace
 struct iommu_format {
@@ -40,14 +45,24 @@ struct local_sync_format {
     __u64 length;
 };
 
+struct sec_mem_format {
+    // sec mem buffer type
+    __u32 type;
+    __u32 prot;
+    __u64 iova;
+    __u64 size;
+};
+
 struct hicam_buf_cfg {
     __s32 fd;
+    __u32 secmemtype;
     enum hicam_buf_cfg_type type;
     union {
         struct iommu_format iommu_format;
         struct phys_format phys_format;
         struct sync_format sync_format;
         struct local_sync_format local_sync_format;
+        struct sec_mem_format sec_mem_format;
     };
 };
 

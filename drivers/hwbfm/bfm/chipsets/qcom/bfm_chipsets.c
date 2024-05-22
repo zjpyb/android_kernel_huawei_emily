@@ -580,7 +580,8 @@ __out:
 
     @note:
 */
-int bfmr_save_log_to_mem_buffer(char *dst_buf, unsigned int dst_buf_len, char *src_buf, unsigned int log_len)
+int bfmr_save_log_to_mem_buffer(char *dst_buf, unsigned int dst_buf_len,
+				const char *src_buf, unsigned int log_len)
 {
     if (unlikely(NULL == dst_buf || NULL == src_buf))
     {

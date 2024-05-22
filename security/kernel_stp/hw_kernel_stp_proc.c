@@ -32,7 +32,7 @@ static ssize_t kernel_stp_proc_write(struct file *file, const char __user *buffe
 {
 	char str[KERNEL_STP_PROC_MAX_LEN + 1] = { 0 };
 	int ret = count;
-	STP_PROC_TYPE data = {
+	stp_proc_type data = {
 		.val = 0
 	};
 
@@ -42,9 +42,8 @@ static ssize_t kernel_stp_proc_write(struct file *file, const char __user *buffe
 		return -EFAULT;
 	}
 
-	if (kstrtoull(str, KERNEL_STP_PROC_HEX_BASE, &data.val)) {
+	if (kstrtoull(str, KERNEL_STP_PROC_HEX_BASE, &data.val))
 		return -EINVAL;
-	}
 	KSTPLogTrace(TAG, "stp proc feature %u, param %u",
 				data.s.feat, data.s.para);
 

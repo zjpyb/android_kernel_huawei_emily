@@ -100,8 +100,8 @@ static BUF_TYPE_EN g_regulator_sel_buf_type = MULTI_BUF;
 #ifdef CONFIG_HISI_PMIC_DEBUG
 void get_current_regulator_dev(struct seq_file *s)
 {
-	struct regulator_dev *rdev;
-	const struct regulator_ops *ops;
+	struct regulator_dev *rdev = NULL;
+	const struct regulator_ops *ops = NULL;
 	int enabled = 0;
 	struct list_head *regulator_list = get_regulator_list();
 	if (NULL == regulator_list)
@@ -132,8 +132,8 @@ void get_current_regulator_dev(struct seq_file *s)
 
 void set_regulator_state(char *ldo_name, int value)
 {
-	struct regulator_dev *rdev;
-	const struct regulator_ops *ops;
+	struct regulator_dev *rdev = NULL;
+	const struct regulator_ops *ops = NULL;
 	struct list_head *regulator_list = get_regulator_list();
 	if ((NULL == regulator_list) || (NULL == ldo_name) || ((0 != value) && (1 != value))) {
 		return;
@@ -165,8 +165,8 @@ void set_regulator_state(char *ldo_name, int value)
 
 int set_regulator_voltage(char *ldo_name, unsigned int vol_value)
 {
-	struct regulator_dev *rdev;
-	const struct regulator_ops *ops;
+	struct regulator_dev *rdev = NULL;
+	const struct regulator_ops *ops = NULL;
 	unsigned int selector;
 	int ret;
 	int len;
@@ -201,10 +201,10 @@ int set_regulator_voltage(char *ldo_name, unsigned int vol_value)
 	return -1;
 }
 
-void get_regulator_state(char *ldo_name)
+void get_regulator_state(char *ldo_name, int length)
 {
-	struct regulator_dev *rdev;
-	const struct regulator_ops *ops;
+	struct regulator_dev *rdev = NULL;
+	const struct regulator_ops *ops = NULL;
 	int state_value;
 	struct list_head *regulator_list = get_regulator_list();
 	if ((NULL == regulator_list) || (NULL == ldo_name)) {
@@ -236,8 +236,8 @@ void get_regulator_state(char *ldo_name)
 #ifdef CONFIG_HISI_SR_DEBUG
 void get_ip_regulator_state(void)
 {
-	struct regulator_dev *rdev;
-	const struct regulator_ops *ops;
+	struct regulator_dev *rdev = NULL;
+	const struct regulator_ops *ops = NULL;
 	int enabled = 0;
 	struct list_head *regulator_list = get_regulator_list();
 	if (NULL == regulator_list) {

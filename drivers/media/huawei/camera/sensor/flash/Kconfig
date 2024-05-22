@@ -72,6 +72,13 @@ config HISI_CAMERA_AW3642
     ---help---
         AW3642 camera flash driver
 
+config HISI_CAMERA_AW3642_FRONT
+    tristate "AW3642 front flash driver"
+    depends on HISI_CAMERA_FLASH
+    default n
+    ---help---
+        AW3642 front camera flash driver
+
 config HISI_CAMERA_LM3646_FRONT
     tristate "LM3646 FRONT control camera flash driver"
     depends on HISI_CAMERA_FLASH

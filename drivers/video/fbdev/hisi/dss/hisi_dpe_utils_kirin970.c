@@ -12,7 +12,9 @@
 */
 
 #include "hisi_dpe_utils.h"
+#if defined (CONFIG_HISI_PERIDVFS)
 #include "peri_volt_poll.h"
+#endif
 /*lint -e838 -e679 -e712*/
 DEFINE_SEMAPHORE(hisi_fb_dss_inner_clk_sem);
 
@@ -47,8 +49,14 @@ static uint32_t s_calc_al_change_lut[32] = {/*lint -save -e* */
 static int get_lcd_frame_rate(struct hisi_panel_info *pinfo)
 {
 	return pinfo->pxl_clk_rate/(pinfo->xres + pinfo->pxl_clk_rate_div *
-		(pinfo->ldi.h_back_porch + pinfo->ldi.h_front_porch + pinfo->ldi.h_pulse_width))/(pinfo->yres +
+		(pinfo->ldi.h_back_porch + pinfo->ldi.h_front_porch + pinfo->ldi.h_pulse_width))/(pinfo->yres + //lint !e647
 		pinfo->ldi.v_back_porch + pinfo->ldi.v_front_porch + pinfo->ldi.v_pulse_width);
+}
+
+bool is_vote_needed_for_low_temp(bool is_lowtemp, int volt_to_set)
+{
+	HISI_FB_DEBUG("is_lowtemp=%d, volt=%d\n", is_lowtemp, volt_to_set);
+	return true;
 }
 
 struct dss_vote_cmd * get_dss_vote_cmd(struct hisi_fb_data_type *hisifd)
@@ -174,24 +182,24 @@ static int dss_core_clk_disable(struct hisi_fb_data_type *hisifd)
 	return 0;
 }
 
-static int get_mdc_clk_rate(dss_vote_cmd_t *vote_cmd, uint64_t *clk_rate)
+static int get_mdc_clk_rate(dss_vote_cmd_t vote_cmd, uint64_t *clk_rate)
 {
-	switch (vote_cmd->dss_voltage_level) {
-		case PERI_VOLTAGE_LEVEL0: // 0.65v
-			*clk_rate = DEFAULT_MDC_CORE_CLK_RATE_L1;
-			break;
-		case PERI_VOLTAGE_LEVEL1: // 0.75v
-			*clk_rate = DEFAULT_MDC_CORE_CLK_RATE_L2;
-			break;
-		case PERI_VOLTAGE_LEVEL2: // 0.8v
-			*clk_rate = DEFAULT_MDC_CORE_CLK_RATE_L3;
-			break;
-
-		default:
-			HISI_FB_ERR("no support set dss_voltage_level(%d)!\n",
-				vote_cmd->dss_voltage_level);
-			return -1;
+	switch (vote_cmd.dss_voltage_level) {
+	case PERI_VOLTAGE_LEVEL0: // 0.65v
+		*clk_rate = DEFAULT_MDC_CORE_CLK_RATE_L1;
+		break;
+	case PERI_VOLTAGE_LEVEL1: // 0.75v
+		*clk_rate = DEFAULT_MDC_CORE_CLK_RATE_L2;
+		break;
+	case PERI_VOLTAGE_LEVEL2: // 0.8v
+		*clk_rate = DEFAULT_MDC_CORE_CLK_RATE_L3;
+		break;
+	default:
+		HISI_FB_ERR("no support set dss_voltage_level(%d)! \n", vote_cmd.dss_voltage_level);
+		return -1;
 	}
+
+	HISI_FB_DEBUG("get mdc clk rate: %llu \n", *clk_rate);
 	return 0;
 }
 
@@ -204,7 +212,8 @@ static int set_mdc_core_clk(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t vot
 		return 0;
 	}
 
-	if (get_mdc_clk_rate(&vote_cmd, &clk_rate)) {
+	if (get_mdc_clk_rate(vote_cmd, &clk_rate)) {
+		HISI_FB_ERR("get mdc clk rate failed! \n");
 		return -1;
 	}
 
@@ -268,7 +277,7 @@ int set_dss_vote_cmd(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t vote_cmd)
 	int ret = 0;
 	struct hisi_fb_data_type *targetfd = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("NULL Pointer!\n");
 		return -1;
 	}
@@ -309,30 +318,29 @@ int set_dss_vote_cmd(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t vote_cmd)
 	return ret;
 }
 
-/*lint -e712 -e838*/
 int dpe_set_clk_rate(struct platform_device *pdev)
 {
-	struct hisi_fb_data_type *hisifd;
-	struct hisi_panel_info *pinfo;
-	struct dss_vote_cmd *pdss_vote_cmd;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	struct dss_vote_cmd *pdss_vote_cmd = NULL;
 	uint64_t dss_pri_clk_rate;
 	uint64_t dss_mmbuf_rate;
 	int ret = 0;
 
-	if (NULL == pdev) {
+	if (pdev == NULL) {
 		HISI_FB_ERR("NULL Pointer!\n");
 		return -EINVAL;
 	}
 
 	hisifd = platform_get_drvdata(pdev);
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("NULL Pointer!\n");
 		return -EINVAL;
 	}
 
 	pinfo = &(hisifd->panel_info);
 	pdss_vote_cmd = get_dss_vote_cmd(hisifd);
-	if (NULL == pdss_vote_cmd) {
+	if (pdss_vote_cmd == NULL) {
 		HISI_FB_ERR("NULL Pointer!\n");
 		return -EINVAL;
 	}
@@ -417,38 +425,33 @@ int dpe_set_clk_rate(struct platform_device *pdev)
 #define PERI_VOLTAGE_LEVEL0_065V		(0) // 0.65v
 #define PERI_VOLTAGE_LEVEL1_075V		(2) // 0.75v
 #define PERI_VOLTAGE_LEVEL2_080V		(3) // 0.80v
-int dpe_get_voltage_value(dss_vote_cmd_t *vote_cmd)
+int dpe_get_voltage_value(uint32_t dss_voltage_level)
 {
-	if (!vote_cmd) {
-		HISI_FB_ERR("vote_cmd is null\n");
+	switch (dss_voltage_level) {
+	case PERI_VOLTAGE_LEVEL0:
+		return PERI_VOLTAGE_LEVEL0_065V; // 0.65v
+	case PERI_VOLTAGE_LEVEL1:
+		return PERI_VOLTAGE_LEVEL1_075V; // 0.75v
+	case PERI_VOLTAGE_LEVEL2:
+		return PERI_VOLTAGE_LEVEL2_080V; // 0.80v
+	default:
+		HISI_FB_ERR("not support dss_voltage_level is %d \n", dss_voltage_level);
 		return -1;
-	}
-
-	switch (vote_cmd->dss_voltage_level) {
-		case PERI_VOLTAGE_LEVEL0:
-			return PERI_VOLTAGE_LEVEL0_065V; // 0.65v
-		case PERI_VOLTAGE_LEVEL1:
-			return PERI_VOLTAGE_LEVEL1_075V; // 0.75v
-		case PERI_VOLTAGE_LEVEL2:
-			return PERI_VOLTAGE_LEVEL2_080V; // 0.80v
-		default:
-			HISI_FB_ERR("not support dss_voltage_level is %d\n", vote_cmd->dss_voltage_level);
-			return -1;
 	}
 }
 
 int dpe_get_voltage_level(int votage_value)
 {
 	switch (votage_value) {
-		case PERI_VOLTAGE_LEVEL0_065V: // 0.65v
-			return PERI_VOLTAGE_LEVEL0;
-		case PERI_VOLTAGE_LEVEL1_075V: // 0.75v
-			return PERI_VOLTAGE_LEVEL1;
-		case PERI_VOLTAGE_LEVEL2_080V: // 0.80v
-			return PERI_VOLTAGE_LEVEL2;
-		default:
-			HISI_FB_ERR("not support votage_value is %d\n", votage_value);
-			return PERI_VOLTAGE_LEVEL0;
+	case PERI_VOLTAGE_LEVEL0_065V: // 0.65v
+		return PERI_VOLTAGE_LEVEL0;
+	case PERI_VOLTAGE_LEVEL1_075V: // 0.75v
+		return PERI_VOLTAGE_LEVEL1;
+	case PERI_VOLTAGE_LEVEL2_080V: // 0.80v
+		return PERI_VOLTAGE_LEVEL2;
+	default:
+		HISI_FB_ERR("not support votage_value is %d \n", votage_value);
+		return PERI_VOLTAGE_LEVEL0;
 	}
 }
 
@@ -457,7 +460,7 @@ int dpe_set_pixel_clk_rate_on_pll0(struct hisi_fb_data_type *hisifd)
 	int ret = 0;
 	uint64_t clk_rate;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL Pointer!\n");
 		return -EINVAL;
 	}
@@ -493,9 +496,11 @@ int dpe_set_common_clk_rate_on_pll0(struct hisi_fb_data_type *hisifd)
 {
 	int ret;
 	uint64_t clk_rate;
+#if defined (CONFIG_HISI_PERIDVFS)
 	struct peri_volt_poll *pvp = NULL;
+#endif
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL Pointer!\n");
 		return -EINVAL;
 	}
@@ -520,8 +525,9 @@ int dpe_set_common_clk_rate_on_pll0(struct hisi_fb_data_type *hisifd)
 	}
 	HISI_FB_INFO("dss_pri_clk:[%llu]->[%llu].\n", clk_rate, (uint64_t)clk_get_rate(hisifd->dss_pri_clk));
 
+#if defined (CONFIG_HISI_PERIDVFS)
 	pvp = peri_volt_poll_get(DEV_DSS_VOLTAGE_ID, NULL);
-	if (!pvp) {
+	if (pvp == NULL) {
 		HISI_FB_ERR("get pvp failed!\n");
 		return -EINVAL;
 	}
@@ -535,14 +541,15 @@ int dpe_set_common_clk_rate_on_pll0(struct hisi_fb_data_type *hisifd)
 	hisifd_list[AUXILIARY_PANEL_IDX]->dss_vote_cmd.dss_voltage_level = PERI_VOLTAGE_LEVEL0;
 
 	HISI_FB_INFO("set dss_voltage_level=0!\n");
+#endif
 
 	return ret;
 }
-/*lint +e712 +e838*/
 
+#ifdef CONFIG_DSS_LP_USED
 static void dss_lp_set_reg(char __iomem *dss_base)
 {
-	if (NULL == dss_base) {
+	if (dss_base == NULL) {
 		HISI_FB_ERR("dss_base is null.\n");
 		return;
 	}
@@ -601,10 +608,11 @@ static void dss_lp_set_reg(char __iomem *dss_base)
 	outp32(dss_base + DSS_OVL3_OFFSET + OV2_CLK_SEL, 0x00000000);
 	outp32(dss_base + GLB_DSS_MEM_CTRL, 0x02605550);
 }
+#endif
 
 static void dss_normal_set_reg(char __iomem *dss_base)
 {
-	if (NULL == dss_base) {
+	if (dss_base == NULL) {
 		HISI_FB_ERR("dss_base is null.\n");
 		return;
 	}
@@ -695,7 +703,11 @@ void dss_inner_clk_common_enable(struct hisi_fb_data_type *hisifd, bool fastboot
 		if (g_fpga_flag == 1) {
 			dss_normal_set_reg(dss_base);
 		} else {
+		#ifdef CONFIG_DSS_LP_USED
 			dss_lp_set_reg(dss_base);
+		#else
+			dss_normal_set_reg(dss_base);
+		#endif
 		}
 	}
 
@@ -753,6 +765,7 @@ void dss_inner_clk_pdp_enable(struct hisi_fb_data_type *hisifd, bool fastboot_en
 		outp32(dss_base + DSS_DBUF0_OFFSET + DBUF_MEM_CTRL, 0x00000008);
 		outp32(dss_base + DSS_DPP_DITHER_OFFSET + DITHER_MEM_CTRL_ES, 0x00000008);
 	} else {
+	#ifdef CONFIG_DSS_LP_USED
 		/*pix0 clk*/
 		outp32(dss_base + DSS_LDI0_OFFSET + LDI_MODULE_CLK_SEL, 0xffffff06);
 		outp32(dss_base + DSS_HI_ACE_OFFSET + DPE_RAMCLK_FUNC, 0x00000000);
@@ -761,6 +774,13 @@ void dss_inner_clk_pdp_enable(struct hisi_fb_data_type *hisifd, bool fastboot_en
 		outp32(dss_base + DSS_DSC_OFFSET + DSC_CLK_SEL, 0x00000000);
 		outp32(dss_base + DSS_LDI0_OFFSET + LDI_CLK_SEL, 0x00000000);
 		outp32(dss_base + DSS_DBUF0_OFFSET + DBUF_CLK_SEL, 0x00000000);
+	#else
+		outp32(dss_base + DSS_IFBC_OFFSET + IFBC_MEM_CTRL, 0x00000088);
+		outp32(dss_base + DSS_DSC_OFFSET + DSC_MEM_CTRL, 0x00000888);
+		outp32(dss_base + DSS_LDI0_OFFSET + LDI_MEM_CTRL, 0x00000008);
+		outp32(dss_base + DSS_DBUF0_OFFSET + DBUF_MEM_CTRL, 0x00000008);
+		outp32(dss_base + DSS_DPP_DITHER_OFFSET + DITHER_MEM_CTRL, 0x00000008);
+	#endif
 	}
 }
 
@@ -781,10 +801,15 @@ void dss_inner_clk_sdp_enable(struct hisi_fb_data_type *hisifd)
 		outp32(dss_base + DSS_LDI1_OFFSET + LDI_MEM_CTRL, 0x00000008);
 		outp32(dss_base + DSS_DBUF1_OFFSET + DBUF_MEM_CTRL, 0x00000008);
 	} else {
+	#ifdef CONFIG_DSS_LP_USED
 		/*pix1 clk*/
 		outp32(dss_base + DSS_LDI1_OFFSET + LDI_MODULE_CLK_SEL, 0x00000000);
 		outp32(dss_base + DSS_LDI1_OFFSET + LDI_CLK_SEL, 0x00000000);
 		outp32(dss_base + DSS_DBUF1_OFFSET + DBUF_CLK_SEL, 0x00000000);
+	#else
+		outp32(dss_base + DSS_LDI1_OFFSET + LDI_MEM_CTRL, 0x00000008);
+		outp32(dss_base + DSS_DBUF1_OFFSET + DBUF_MEM_CTRL, 0x00000008);
+	#endif
 	}
 }
 
@@ -966,7 +991,7 @@ static void init_dsc(struct hisi_fb_data_type *hisifd)
 	uint32_t slices_per_line = 0;
 	uint32_t pic_line_grp_num = 0;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1387,7 +1412,7 @@ void init_post_scf(struct hisi_fb_data_type *hisifd)
 
 	struct hisi_panel_info *pinfo = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1487,7 +1512,7 @@ void init_dbuf(struct hisi_fb_data_type *hisifd)
 	int depth = 0;
 	int dfs_ram = 0;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1533,8 +1558,8 @@ void init_dbuf(struct hisi_fb_data_type *hisifd)
 
 	thd_cg_out = (dfs_time * pinfo->pxl_clk_rate * pinfo->xres) /
 		(((pinfo->ldi.h_pulse_width + pinfo->ldi.h_back_porch + pinfo->ldi.h_front_porch) * pinfo->pxl_clk_rate_div
-		+ pinfo->xres) * 6 * 1000000UL);
-	sram_valid_num = thd_cg_out / depth;
+		+ pinfo->xres) * 6 * 1000000UL);//lint !e712 !e647
+	sram_valid_num = thd_cg_out / depth;//lint !e573
 	thd_cg_in = (sram_valid_num + 1) * depth - 1;
 
 	sram_max_mem_depth = (sram_valid_num + 1) * depth;
@@ -1575,7 +1600,7 @@ void init_dbuf(struct hisi_fb_data_type *hisifd)
 		thd_flux_req_aftdfs_out,
 		thd_dfs_ok);
 
-	if ((g_dss_version_tag == FB_ACCEL_KIRIN970) && (g_fpga_flag==0)) {
+	if ((g_dss_version_tag == FB_ACCEL_KIRIN970) && (g_fpga_flag == 0)) {
 		if (hisifd->index == PRIMARY_PANEL_IDX) {
 			if (pinfo->xres * pinfo->yres >= RES_4K_PHONE) {
 				sram_valid_num = 2;
@@ -1674,7 +1699,7 @@ static void init_ldi_pxl_div(struct hisi_fb_data_type *hisifd)
 	uint32_t pxl0_divxcfg = 0;
 	uint32_t pxl0_dsi_gt_en = 0;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1686,7 +1711,7 @@ static void init_ldi_pxl_div(struct hisi_fb_data_type *hisifd)
 	ldi_base = hisifd->dss_base + DSS_LDI0_OFFSET;
 
 	ifbc_type = pinfo->ifbc_type;
-	if ((ifbc_type  < IFBC_TYPE_NONE) || (ifbc_type >= IFBC_TYPE_MAX)) {
+	if (ifbc_type >= IFBC_TYPE_MAX) {
 		HISI_FB_ERR("ifbc_type is invalid");
 		return;
 	}
@@ -1707,7 +1732,7 @@ static void init_ldi_pxl_div(struct hisi_fb_data_type *hisifd)
 
 static void itf_ctrl_config(struct hisi_fb_data_type *hisifd, char __iomem *ldi_base)
 {
-	if ((NULL == hisifd) || (NULL == ldi_base)) {
+	if ((hisifd == NULL) || (ldi_base == NULL)) {
 		return;
 	}
 
@@ -1732,7 +1757,7 @@ void init_ldi(struct hisi_fb_data_type *hisifd, bool fastboot_enable)
 	dss_rect_t rect = {0,0,0,0};
 	uint32_t te_source = 0;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1849,12 +1874,12 @@ void init_ldi(struct hisi_fb_data_type *hisifd, bool fastboot_enable)
 		set_reg(ldi_base + LDI_DSI_TE_HS_WD, 0x24024, 32, 0);
 
 		// dsi_te0_vs_wd = lcd_te_width / T_pxl_clk, experience lcd_te_width = 2us
-		if (pinfo->pxl_clk_rate_div== 0) {
+		if (pinfo->pxl_clk_rate_div == 0) {
 			HISI_FB_ERR("pxl_clk_rate_div is NULL, not support !\n");
 			pinfo->pxl_clk_rate_div = 1;
 		}
 		set_reg(ldi_base + LDI_DSI_TE_VS_WD,
-			(0x3FC << 12) | (2 * pinfo->pxl_clk_rate / pinfo->pxl_clk_rate_div / 1000000), 32, 0);
+			(0x3FC << 12) | (2 * pinfo->pxl_clk_rate / pinfo->pxl_clk_rate_div / 1000000), 32, 0); //lint !e712
 		//set_reg(ldi_base + LDI_DSI_TE_VS_WD, 0x3FC0FF, 32, 0);
 		//set_reg(ldi_base + LDI_DSI_TE_VS_WD, 0x3FC01F, 32, 0);
 	} else {
@@ -1883,7 +1908,7 @@ void deinit_ldi(struct hisi_fb_data_type *hisifd)
 {
 	char __iomem *ldi_base = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1904,7 +1929,7 @@ void enable_ldi(struct hisi_fb_data_type *hisifd)
 {
 	char __iomem *ldi_base = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1926,7 +1951,7 @@ void disable_ldi(struct hisi_fb_data_type *hisifd)
 {
 	char __iomem *ldi_base = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1955,7 +1980,7 @@ void ldi_frame_update(struct hisi_fb_data_type *hisifd, bool update)
 {
 	char __iomem *ldi_base = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -1977,13 +2002,11 @@ void ldi_frame_update(struct hisi_fb_data_type *hisifd, bool update)
 void single_frame_update(struct hisi_fb_data_type *hisifd)
 {
 	char __iomem *ldi_base = NULL;
-	struct hisi_panel_info *pinfo = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
-	pinfo = &(hisifd->panel_info);
 
 	if (hisifd->index == PRIMARY_PANEL_IDX) {
 		ldi_base = hisifd->dss_base + DSS_LDI0_OFFSET;
@@ -2013,7 +2036,7 @@ void dpe_interrupt_clear(struct hisi_fb_data_type *hisifd)
 	char __iomem *dss_base = 0;
 	uint32_t clear = 0;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -2060,7 +2083,7 @@ void dpe_interrupt_unmask(struct hisi_fb_data_type *hisifd)
 	uint32_t unmask = 0;
 	struct hisi_panel_info *pinfo = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -2083,7 +2106,7 @@ void dpe_interrupt_unmask(struct hisi_fb_data_type *hisifd)
 
 		unmask = ~0;
 		//unmask &= ~(BIT_CE_END_IND | BIT_BACKLIGHT_INTP);
-		if ((pinfo->acm_ce_support == 1) && HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_ACE))
+		if ((pinfo->acm_ce_support == 1) && (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_ACE) != 0))
 			unmask &= ~(BIT_CE_END_IND);
 
 		if (pinfo->hiace_support == 1 && g_dss_version_tag == FB_ACCEL_KIRIN970)
@@ -2127,7 +2150,7 @@ void dpe_interrupt_mask(struct hisi_fb_data_type *hisifd)
 	char __iomem *dss_base = 0;
 	uint32_t mask = 0;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -2172,7 +2195,7 @@ void ldi_data_gate(struct hisi_fb_data_type *hisifd, bool enble)
 {
 	char __iomem *ldi_base = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -2707,7 +2730,7 @@ void init_acm(struct hisi_fb_data_type *hisifd)
 	/*acm reg dimming init*/
 	hisi_effect_color_dimming_acm_reg_init(hisifd);
 }
-//lint -e838 -e550 -e438
+//lint -e550 -e438
 static void degamma_set_lut(struct hisi_fb_data_type *hisifd)
 {
 	struct hisi_panel_info *pinfo = NULL;
@@ -2854,7 +2877,7 @@ void init_igm_gmp_xcc_gm(struct hisi_fb_data_type *hisifd)
 	//XCC
 	if (pinfo->xcc_support == 1) {
 		// XCC matrix
-		if (pinfo->xcc_table_len ==xcc_cnt_cofe && pinfo->xcc_table) {
+		if (pinfo->xcc_table_len == xcc_cnt_cofe && pinfo->xcc_table) {
 			outp32(xcc_base + XCC_COEF_00, pinfo->xcc_table[0]);
 			outp32(xcc_base + XCC_COEF_01, pinfo->xcc_table[1]
 				* g_led_rg_csc_value[0] / 32768 * color_temp_rectify_R / 32768);
@@ -2992,13 +3015,13 @@ void init_dither(struct hisi_fb_data_type *hisifd)
 	set_reg(dither_base + DITHER_FRC_11_PART1, 0xFFFFFFFF, 32, 0);
 	set_reg(dither_base + DITHER_FRC_11_PART0, 0xFFFF0000, 32, 0);
 }
-//lint +e838 +e550 +e438
+//lint +e550 +e438
 
 void dpe_store_ct_cscValue(struct hisi_fb_data_type *hisifd, unsigned int csc_value[])
 {
 	struct hisi_panel_info *pinfo = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return;
 	}
@@ -3033,7 +3056,7 @@ int dpe_set_ct_cscValue(struct hisi_fb_data_type *hisifd)
 	char __iomem *xcc_base = NULL;
 	uint32_t color_temp_rectify_R = 32768, color_temp_rectify_G = 32768, color_temp_rectify_B = 32768;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return -EINVAL;
 	}
@@ -3089,7 +3112,7 @@ ssize_t dpe_show_ct_cscValue(struct hisi_fb_data_type *hisifd, char *buf)
 {
 	struct hisi_panel_info *pinfo = NULL;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return -EINVAL;
 	}
@@ -3116,7 +3139,7 @@ int dpe_set_comform_ct_cscValue(struct hisi_fb_data_type *hisifd)
 	char __iomem *xcc_base = NULL;
 	uint32_t color_temp_rectify_R = 32768, color_temp_rectify_G = 32768, color_temp_rectify_B = 32768;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return -EINVAL;
 	}
@@ -3170,7 +3193,7 @@ int dpe_set_comform_ct_cscValue(struct hisi_fb_data_type *hisifd)
 ssize_t dpe_show_comform_ct_cscValue(struct hisi_fb_data_type *hisifd, char *buf)
 {
 	struct hisi_panel_info *pinfo = NULL;
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return -EINVAL;
 	}
@@ -3225,7 +3248,7 @@ int dpe_set_led_rg_ct_cscValue(struct hisi_fb_data_type *hisifd)
 	char __iomem *xcc_base = NULL;
 	uint32_t color_temp_rectify_R = 32768, color_temp_rectify_G = 32768, color_temp_rectify_B = 32768;
 
-	if (NULL == hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is NULL");
 		return -EINVAL;
 	}
@@ -3251,7 +3274,7 @@ int dpe_set_led_rg_ct_cscValue(struct hisi_fb_data_type *hisifd)
 	}
 
 	//XCC
-	if (1 == g_is_led_rg_csc_set && 1 == pinfo->xcc_support) {
+	if (g_is_led_rg_csc_set == 1 && pinfo->xcc_support == 1) {
 		HISI_FB_DEBUG("real set color temperature: g_is_led_rg_csc_set = %d, R = 0x%x, G = 0x%x, B = 0x%x .\n",
 				g_is_led_rg_csc_set, g_led_rg_csc_value[0], g_led_rg_csc_value[4], g_led_rg_csc_value[8]);
 		// XCC matrix
@@ -3322,7 +3345,7 @@ ssize_t dpe_show_acm_state(char *buf)
 {
 	ssize_t ret = 0;
 
-	if (NULL == buf) {
+	if (buf == NULL) {
 		HISI_FB_ERR("NULL Pointer!\n");
 		return 0;
 	}
@@ -3346,7 +3369,7 @@ ssize_t dpe_show_gmp_state(char *buf)
 {
 	ssize_t ret = 0;
 
-	if (NULL == buf) {
+	if (buf == NULL) {
 		HISI_FB_ERR("NULL Pointer!\n");
 		return 0;
 	}

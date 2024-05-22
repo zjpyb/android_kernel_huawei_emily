@@ -284,6 +284,9 @@ static struct tcp_congestion_ops mptcp_olia = {
 	.init		= mptcp_olia_init,
 	.ssthresh	= tcp_reno_ssthresh,
 	.cong_avoid	= mptcp_olia_cong_avoid,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	.undo_cwnd	= tcp_reno_undo_cwnd,
+#endif
 	.set_state	= mptcp_olia_set_state,
 	.owner		= THIS_MODULE,
 	.name		= "olia",

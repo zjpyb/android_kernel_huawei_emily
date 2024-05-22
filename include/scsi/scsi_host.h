@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _SCSI_SCSI_HOST_H
 #define _SCSI_SCSI_HOST_H
 
@@ -83,7 +84,7 @@ struct scsi_host_template {
 
 
 #ifdef CONFIG_COMPAT
-	/*
+	/* 
 	 * Compat handler. Handle 32bit ABI.
 	 * When unknown ioctl is passed return -ENOIOCTLCMD.
 	 *
@@ -100,6 +101,8 @@ struct scsi_host_template {
 	 */
 	int (* get_fsr_command)(struct scsi_cmnd *cmd, u8 *buf, u32 size);
 #endif
+	int (*get_tz_info)(struct scsi_device *dev, u8 *buf, u32 size);
+	int (*tz_ctrl)(struct scsi_device *dev, int desc_id, uint8_t index);
 	/*
 	 * The queuecommand function is used to queue up a scsi
 	 * command block to the LLDD.  When the driver finished
@@ -193,7 +196,7 @@ struct scsi_host_template {
 	 * this function, it *must* perform the task of setting the queue
 	 * depth on the device.  All other tasks are optional and depend
 	 * on what the driver supports and various implementation details.
-	 *
+	 * 
 	 * Things currently recommended to be handled at this time include:
 	 *
 	 * 1.  Setting the device queue depth.  Proper setting of this is
@@ -222,7 +225,7 @@ struct scsi_host_template {
 	 * has ceased the mid layer calls this point so that the low level
 	 * driver may completely detach itself from the scsi device and vice
 	 * versa.  The low level driver is responsible for freeing any memory
-	 * it allocated in the slave_alloc or slave_configure calls.
+	 * it allocated in the slave_alloc or slave_configure calls. 
 	 *
 	 * Status: OPTIONAL
 	 */
@@ -286,6 +289,14 @@ struct scsi_host_template {
 	int (* change_queue_depth)(struct scsi_device *, int);
 
 	/*
+	 * This functions lets the driver expose the queue mapping
+	 * to the block layer.
+	 *
+	 * Status: OPTIONAL
+	 */
+	int (* map_queues)(struct Scsi_Host *shost);
+
+	/*
 	 * This function determines the BIOS parameters for a given
 	 * harddisk.  These tend to be numbers that are made up by
 	 * the host adapter.  Parameters:
@@ -339,8 +350,10 @@ struct scsi_host_template {
 #define SCSI_ADAPTER_RESET	1
 #define SCSI_FIRMWARE_RESET	2
 
+#ifdef CONFIG_HISI_BLK
 	int (*direct_flush)(struct scsi_device *);
 	void (*dump_status)(struct Scsi_Host *shost, enum blk_dump_scenario dump_type);
+#endif
 	/*
 	 * Name of proc directory
 	 */
@@ -452,10 +465,8 @@ struct scsi_host_template {
 	/* True if the controller does not support WRITE SAME */
 	unsigned no_write_same:1;
 
-	/*
-	 * True if asynchronous aborts are not supported
-	 */
-	unsigned no_async_abort:1;
+	/* True if the low-level driver supports blk-mq only */
+	unsigned force_blk_mq:1;
 
 	/*
 	 * Countdown for host blocking with no commands outstanding.
@@ -465,7 +476,7 @@ struct scsi_host_template {
 	/*
 	 * Default value for the blocking.  If the queue is empty,
 	 * host_blocked counts down in the request_fn until it restarts
-	 * host operations as zero is reached.
+	 * host operations as zero is reached.  
 	 *
 	 * FIXME: This should probably be a value in the template
 	 */
@@ -541,24 +552,24 @@ enum scsi_host_state {
 };
 
 enum scsi_host_queue_quirk{
-	SHOST_QUIRK_BUSY_IDLE_ENABLE = 0,
-	SHOST_QUIRK_FLUSH_REDUCING,
-	SHOST_QUIRK_UNMAP_IN_SOFTIRQ,
-	SHOST_QUIRK_DRIVER_TAG_ALLOC,
-	SHOST_QUIRK_SCSI_QUIESCE_IN_LLD,
-	SHOST_QUIRK_HISI_UFS_MQ,
-	SHOST_QUIRK_BKOPS,
-	SHOST_QUIRK_IO_LATENCY_WARNING,
-	SHOST_QUIRK_BUSY_IDLE_INTR_ENABLE,
+    SHOST_QUIRK_BUSY_IDLE_ENABLE = 0,
+    SHOST_QUIRK_FLUSH_REDUCING,
+    SHOST_QUIRK_UNMAP_IN_SOFTIRQ,
+    SHOST_QUIRK_DRIVER_TAG_ALLOC,
+    SHOST_QUIRK_SCSI_QUIESCE_IN_LLD,
+    SHOST_QUIRK_HISI_UFS_MQ,
+    SHOST_QUIRK_BKOPS,
+    SHOST_QUIRK_IO_LATENCY_WARNING,
+    SHOST_QUIRK_BUSY_IDLE_INTR_ENABLE,
 };
 
-#define SHOST_QUIRK(x)	(1 << x)
+#define SHOST_QUIRK(x)  (1 << x)
 
 enum hisi_dev_quirk{
-	SHOST_QUIRK_BKOPS_ENABLE = 0,
-	SHOST_QUIRK_IDLE_ENABLE,
+    SHOST_QUIRK_BKOPS_ENABLE = 0,
+    SHOST_QUIRK_IDLE_ENABLE,
 };
-#define SHOST_HISI_DEV_QUIRK(x)	(1 << x)
+#define SHOST_HISI_DEV_QUIRK(x) (1 << x)
 
 struct Scsi_Host {
 	/*
@@ -571,10 +582,7 @@ struct Scsi_Host {
 	 */
 	struct list_head	__devices;
 	struct list_head	__targets;
-
-	struct scsi_host_cmd_pool *cmd_pool;
-	spinlock_t		free_list_lock;
-	struct list_head	free_list; /* backup store of cmd structs */
+	
 	struct list_head	starved_list;
 
 	spinlock_t		default_lock;
@@ -605,7 +613,7 @@ struct Scsi_Host {
 	unsigned int host_failed;	   /* commands that failed.
 					      protected by host_lock */
 	unsigned int host_eh_scheduled;    /* EH scheduled without command */
-
+    
 	unsigned int host_no;  /* Used for IOCTL_GET_IDLUN, /proc/scsi et al. */
 
 	/* next two fields are used to bound the time spent in error handling */
@@ -661,18 +669,18 @@ struct Scsi_Host {
 	 * is nr_hw_queues * can_queue.
 	 */
 	unsigned nr_hw_queues;
-	int mq_queue_depth;
-	int mq_reserved_queue_depth;
-	int mq_high_prio_queue_depth;
-	unsigned long queue_quirk_flag;
-	unsigned long hisi_dev_quirk_flag;
+    int mq_queue_depth;
+    int mq_reserved_queue_depth;
+    int mq_high_prio_queue_depth;
+    unsigned long queue_quirk_flag;
+    unsigned long hisi_dev_quirk_flag;
 
-	/*
+	/* 
 	 * Used to assign serial numbers to the cmds.
 	 * Protected by the host lock.
 	 */
 	unsigned long cmd_serial_number;
-
+	
 	unsigned active_mode:2;
 	unsigned unchecked_isa_dma:1;
 	unsigned use_clustering:1;
@@ -682,7 +690,7 @@ struct Scsi_Host {
 	 * time being.
 	 */
 	unsigned host_self_blocked:1;
-
+    
 	/*
 	 * Host uses correct SCSI ordering not PC ordering. The bit is
 	 * set for the minority of drivers whose authors actually read
@@ -701,6 +709,7 @@ struct Scsi_Host {
 
 	/* The controller does not support WRITE SAME */
 	unsigned no_write_same:1;
+
     /*
      * Set "SELECT REPORT" field to allow detection of well known logical
      * units along with standard LUs.
@@ -712,6 +721,7 @@ struct Scsi_Host {
      * mandatory by LLD standard.
      */
     unsigned set_dbd_for_caching:1;
+
 	unsigned use_blk_mq:1;
 	unsigned use_cmd_list:1;
 
@@ -741,19 +751,13 @@ struct Scsi_Host {
 	unsigned int prot_capabilities;
 	unsigned char prot_guard_type;
 
-	/*
-	 * q used for scsi_tgt msgs, async events or any other requests that
-	 * need to be processed in userspace
-	 */
-	struct request_queue *uspace_req_q;
-
 	/* legacy crap */
 	unsigned long base;
 	unsigned long io_port;
 	unsigned char n_io_port;
 	unsigned char dma_channel;
 	unsigned int  irq;
-
+	
 
 	enum scsi_host_state shost_state;
 
@@ -781,8 +785,9 @@ struct Scsi_Host {
 	 */
 	struct device *dma_dev;
 
+#ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
 	int crypto_enabled;
-
+#endif
 	/*
 	 * We should ensure that this is aligned, both for better performance
 	 * and also because some compilers (m68k) don't automatically force
@@ -870,8 +875,6 @@ extern void scsi_block_requests(struct Scsi_Host *);
 
 struct class_container;
 
-extern struct request_queue *__scsi_alloc_queue(struct Scsi_Host *shost,
-						void (*) (struct request_queue *));
 /*
  * These two functions are used to allocate and free a pseudo device
  * which will connect to the host adapter itself rather than any

@@ -1979,7 +1979,7 @@ static int mmi_add_static_data(void)
 	if (i >= F54_BUF_LEN) {
 		return -EINVAL;
 	}
-	snprintf((buf_f54test_result + i), F54_BUF_LEN - i,
+	snprintf((buf_f54test_result + i), F54_BUF_LEN - i - 1,
 		 "[%4d,%4d,%4d]",
 		 f54->delta_statics_data.RawimageAverage,
 		 f54->delta_statics_data.RawimageMaxNum,
@@ -3866,7 +3866,7 @@ static void synaptics_f54_free(void)
 
 	if (f55) {
 		kfree(f55);
-		f54 = NULL;
+		f55 = NULL;
 	}
 }
 
@@ -3949,26 +3949,6 @@ static void synaptics_change_report_rate(void)
 	return;
 }
 
-static int synap_strncat(char *dest, const char *src, size_t dest_sizemax, size_t src_sizemax)
-{
-	int rc = NO_ERR;
-	size_t dest_len = 0;
-	size_t dest_remain_size = 0;
-
-	if(dest == NULL || src == NULL) {
-		return -EINVAL;
-	}
-	
-	dest_len = strnlen(dest, dest_sizemax);
-	dest_remain_size = dest_sizemax - dest_len;
-
-	if(src_sizemax > dest_remain_size - 1){
-		return -EINVAL;
-	}
-	strncat(&dest[dest_len], src, src_sizemax);
-	return rc;
-}
-
 static int synaptics_free_test_container(void)
 {
 	int rc = NO_ERR;
@@ -4048,25 +4028,60 @@ static int synaptics_alloc_newnode(struct ts_rawdata_newnodeinfo ** pts_node,int
 }
 static void synap_put_cap_test_deviceinfo(struct ts_rawdata_info_new *info)
 {
+	size_t dest_len;
+	size_t dest_remain_size;
 	size_t pjt_sizemax = sizeof(f54->rmi4_data->rmi4_mod_info.project_id_string);
 	size_t ver_sizemax = sizeof(f54->rmi4_data->synaptics_chip_data->version_name);
 	size_t product_sizemax = sizeof(f54->rmi4_data->rmi4_mod_info.product_id_string);
 	size_t devinfo_size = sizeof(info->deviceinfo);
-	synap_strncat(info->deviceinfo, "synaptics-", devinfo_size, sizeof("synaptics-"));
-	synap_strncat(info->deviceinfo,f54->rmi4_data->rmi4_mod_info.product_id_string,
-		devinfo_size,product_sizemax);
-	synap_strncat(info->deviceinfo, "-", devinfo_size,sizeof("-"));
-	synap_strncat(info->deviceinfo,f54->rmi4_data->rmi4_mod_info.project_id_string,
-		devinfo_size,pjt_sizemax);
-	synap_strncat(info->deviceinfo, "-", devinfo_size,sizeof("-"));
-	synap_strncat(info->deviceinfo,f54->rmi4_data->synaptics_chip_data->version_name,
-		devinfo_size,ver_sizemax);
-	synap_strncat(info->deviceinfo, ";", devinfo_size,sizeof(";"));
-	return;
+
+	dest_len = strnlen(info->deviceinfo, devinfo_size);
+	dest_remain_size = devinfo_size - dest_len - 1;
+	if (dest_remain_size > 0)
+		strncat(&info->deviceinfo[dest_len], "synaptics-",
+			sizeof("synaptics-"));
+
+	dest_len = strnlen(info->deviceinfo, devinfo_size);
+	dest_remain_size = devinfo_size - dest_len - 1;
+	if (dest_remain_size > 0)
+		strncat(&info->deviceinfo[dest_len],
+			f54->rmi4_data->rmi4_mod_info.product_id_string,
+			product_sizemax);
+
+	dest_len = strnlen(info->deviceinfo, devinfo_size);
+	dest_remain_size = devinfo_size - dest_len - 1;
+	if (dest_remain_size > 0)
+		strncat(&info->deviceinfo[dest_len], "-", sizeof("-"));
+
+	dest_len = strnlen(info->deviceinfo, devinfo_size);
+	dest_remain_size = devinfo_size - dest_len - 1;
+	if (dest_remain_size > 0)
+		strncat(&info->deviceinfo[dest_len],
+			f54->rmi4_data->rmi4_mod_info.project_id_string,
+			pjt_sizemax);
+
+	dest_len = strnlen(info->deviceinfo, devinfo_size);
+	dest_remain_size = devinfo_size - dest_len - 1;
+	if (dest_remain_size > 0)
+		strncat(&info->deviceinfo[dest_len], "-", sizeof("-"));
+
+	dest_len = strnlen(info->deviceinfo, devinfo_size);
+	dest_remain_size = devinfo_size - dest_len - 1;
+	if (dest_remain_size > 0)
+		strncat(&info->deviceinfo[dest_len],
+			f54->rmi4_data->synaptics_chip_data->version_name,
+			ver_sizemax);
+
+	dest_len = strnlen(info->deviceinfo, devinfo_size);
+	dest_remain_size = devinfo_size - dest_len - 1;
+	if (dest_remain_size > 0)
+		strncat(&info->deviceinfo[dest_len], ";", sizeof(";"));
 }
 int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 {
 	int rc = NO_ERR;
+	size_t dest_len;
+	size_t dest_remain_size;
 	int test_num = 1;
 	int test_tmp_num = 3;
 	int rawbufsize = f54->rmi4_data->num_of_tx * f54->rmi4_data->num_of_rx;
@@ -4091,11 +4106,23 @@ int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 	synap_put_cap_test_deviceinfo(info);
 	/*i2c info */
 	if(strncmp(buf_f54test_result, "0P", strlen("0P"))) {
-		synap_strncat(info->i2cinfo, "0F", sizeof(info->i2cinfo),sizeof("0F"));
-		synap_strncat(info->i2cerrinfo, "software reason ", sizeof(info->i2cerrinfo),sizeof("software reason "));
+		dest_len = strnlen(info->i2cinfo, sizeof(info->i2cinfo));
+		dest_remain_size = sizeof(info->i2cinfo) - dest_len - 1;
+		if (dest_remain_size > 0)
+			strncat(&info->i2cinfo[dest_len], "0F", sizeof("0F"));
+
+		dest_len = strnlen(info->i2cerrinfo, sizeof(info->i2cerrinfo));
+		dest_remain_size = sizeof(info->i2cerrinfo) - dest_len - 1;
+		if (dest_remain_size > 0)
+			strncat(&info->i2cerrinfo[dest_len],
+				"software reason ",
+				sizeof("software reason "));
 		return rc;
 	} else {
-		synap_strncat(info->i2cinfo, "0P", sizeof(info->i2cinfo),sizeof("0P"));
+		dest_len = strnlen(info->i2cinfo, sizeof(info->i2cinfo));
+		dest_remain_size = sizeof(info->i2cinfo) - dest_len - 1;
+		if (dest_remain_size > 0)
+			strncat(&info->i2cinfo[dest_len], "0P", sizeof("0P"));
 	}
 	test_num = test_num + test_tmp_num;
 	/*rawdata*/
@@ -4414,7 +4441,8 @@ int synap_get_cap_data(struct ts_rawdata_info *info)
 		+ strlen(f54->rmi4_data->synaptics_chip_data->version_name) + BAR_LEN)
 		>= F54_BUF_LEN){
 		TS_LOG_ERR("F54_BUF_LEN limited\n");
-		return -EINVAL;
+		rc = -EINVAL;
+		goto exit;
 	}
 	snprintf((buf_f54test_result + len_tmp), sizeof(buf_f54test_result) - BAR_LEN - len_tmp, "-%s-%s",
 			f54->rmi4_data->rmi4_mod_info.project_id_string,
@@ -4433,6 +4461,8 @@ exit:
 		synaptics_free_test_container();
 	}
 	synaptics_f54_free();
+	tx_delta_buf = NULL;
+	rx_delta_buf = NULL;
 	return rc;
 }
 
@@ -4589,6 +4619,8 @@ int synap_debug_data_test(struct ts_diff_data_info *info)
 	memset(buf_f54test_result, 0, sizeof(buf_f54test_result));
 	memset(f54->rawdatabuf, 0, rawdata_size * sizeof(int));
 	memset(f54->mmi_buf, 0, mmi_buf_size);
+	tx_delta_buf = NULL;
+	rx_delta_buf = NULL;
 
 	switch (info->debug_type) {
 	case READ_DIFF_DATA:

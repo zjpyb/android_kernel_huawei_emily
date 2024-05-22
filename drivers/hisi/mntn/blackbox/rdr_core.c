@@ -19,7 +19,8 @@
 #include <linux/delay.h>
 #include <linux/hardirq.h>
 #include <linux/syscalls.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/reboot.h>
 #include <linux/export.h>
 #include <linux/version.h>
@@ -27,7 +28,7 @@
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
 #include <linux/hisi/hisi_bootup_keypoint.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/hisi/hisi_log.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #include <linux/sched/debug.h>
@@ -40,12 +41,14 @@
 #include "rdr_print.h"
 #include "rdr_debug.h"
 #include "../bl31/hisi_bl31_exception.h"
+#ifdef CONFIG_HISI_KERNELDUMP
 #include "../../memory_dump/kernel_dump.h"
+#endif
 
 static struct semaphore rdr_sem;
 static LIST_HEAD(g_rdr_syserr_list);
 static DEFINE_SPINLOCK(g_rdr_syserr_list_lock);
-static struct wake_lock blackbox_wl;
+static struct wakeup_source blackbox_wl;
 
 void rdr_register_system_error(u32 modid, u32 arg1, u32 arg2)
 {
@@ -129,7 +132,9 @@ void rdr_syserr_process_for_ap(u32 modid, u64 arg1, u64 arg2)
 	struct rdr_syserr_param_s p;
 	BB_PRINT_START();
 
+#ifdef CONFIG_HISI_KERNELDUMP
 	(void)ko_dump();
+#endif
 
 	pr_emerg("%s", linux_banner);
 
@@ -147,23 +152,24 @@ void rdr_syserr_process_for_ap(u32 modid, u64 arg1, u64 arg2)
 	rdr_save_args(modid, arg1, arg2);
 	p_exce_info = rdr_get_exception_info(modid);
 	if (p_exce_info == NULL) {
-		/* rdr_save_history_log_for_undef_exception(&p); */
 		preempt_enable(); /*lint !e730*/
 		BB_PRINT_ERR("get exception info faild.  return.\n");
 		return;
 	}
 
-	(void)rdr_exception_trace_record(p_exce_info->e_reset_core_mask, 
+	(void)rdr_exception_trace_record(p_exce_info->e_reset_core_mask,
 		p_exce_info->e_from_core, p_exce_info->e_exce_type, p_exce_info->e_exce_subtype);
 
 	/* hisi_syserr_loop_test must be called between rdr_exception_trace_record&record_exce_type */
 	hisi_syserr_loop_test();
 
 	record_exce_type(p_exce_info);
-	memset(date, 0, DATATIME_MAXLEN);
-	snprintf(date, DATATIME_MAXLEN, "%s-%08lld",
+	if (EOK != memset_s(date,DATATIME_MAXLEN ,0, DATATIME_MAXLEN))
+	{
+		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+	}
+	snprintf(date, DATATIME_MAXLEN,"%s-%08lld",
 		 rdr_get_timestamp(), rdr_get_tick());
-	/* rdr_save_history_log(p_exce_info, date); */
 
 	rdr_fill_edata(p_exce_info, date);
 
@@ -262,16 +268,21 @@ void rdr_module_dump(struct rdr_exception_info_s *p_exce_info, char *path, u32 m
 }
 
 static void rdr_save_log
-(struct rdr_exception_info_s *p_exce_info,char *path,u32 mod_id)
+(struct rdr_exception_info_s *p_exce_info,char *path,u32 mod_id, u32 pathLen)
 {
 	int ret = 0;
-	bool need_save_log,is_save_done = true;
+	bool need_save_log = false;
+	bool is_save_done = true;
 	char date[DATATIME_MAXLEN] = {'\0'};
+
+	if (pathLen < PATH_MAXLEN) {
+		BB_PRINT_ERR("%s: pathLen is too small.\n", __func__);
+	}
 
 	need_save_log = rdr_check_log_rights();
 	if (0 != p_exce_info->e_notify_core_mask) {
 		if (need_save_log) {
-			if (0 != rdr_create_exception_path(p_exce_info, path, date)) {
+			if (0 != rdr_create_exception_path(p_exce_info, path, date , DATATIME_MAXLEN)) {
 				BB_PRINT_ERR("create exception path error.\n");
 				return;
 			}
@@ -285,10 +296,10 @@ static void rdr_save_log
 			is_save_done = false;
 		}
 	} else {		/*if no dump need(like modem-reboot), don't create exc-dir, but date is a must. */
-		if (EOK != memset_s(date, DATATIME_MAXLEN, 0, DATATIME_MAXLEN)) {
+		if (EOK != memset_s(date, DATATIME_MAXLEN, 0, DATATIME_MAXLEN))
+		{
 			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
 		}
-
 		ret = snprintf_s(date, DATATIME_MAXLEN, DATATIME_MAXLEN - 1, "%s-%08lld",
 			 rdr_get_timestamp(), rdr_get_tick());
 		if(unlikely(ret < 0)){
@@ -299,9 +310,10 @@ static void rdr_save_log
 	rdr_fill_edata(p_exce_info, date);
 
 	if (p_exce_info->e_exce_type != LPM3_S_EXCEPTION) {
-		rdr_save_history_log(p_exce_info, date, is_save_done, get_boot_keypoint());
+		rdr_save_history_log(p_exce_info, date, DATATIME_MAXLEN, is_save_done, get_boot_keypoint());
 	}
 	if (need_save_log) {
+		rdr_save_pstore_log(p_exce_info, path);
 		rdr_module_dump(p_exce_info, path, mod_id);
 		/* notify to save the clear text */
 		up(&rdr_cleartext_sem);
@@ -319,7 +331,7 @@ void rdr_syserr_process(struct rdr_syserr_param_s *p)
 
 	BB_PRINT_START();
 
-	wake_lock(&blackbox_wl);	/*make sure that the task can not be interrupted by suspend. */
+	__pm_stay_awake(&blackbox_wl);	/*make sure that the task can not be interrupted by suspend. */
 	rdr_field_baseinfo_reinit();
 	rdr_save_args(p->modid, p->arg1, p->arg2);
 	p_exce_info = rdr_get_exception_info(mod_id);
@@ -335,7 +347,7 @@ void rdr_syserr_process(struct rdr_syserr_param_s *p)
 
 	if (p_exce_info == NULL) {
 		rdr_save_history_log_for_undef_exception(p);
-		wake_unlock(&blackbox_wl);
+		__pm_relax(&blackbox_wl);
 		BB_PRINT_ERR("get exception info faild.  return.\n");
 		return;
 	}
@@ -349,10 +361,10 @@ void rdr_syserr_process(struct rdr_syserr_param_s *p)
 	rdr_set_saving_state(1);
 
 	rdr_print_one_exc(p_exce_info);
-	rdr_save_log(p_exce_info, path, mod_id);
+	rdr_save_log(p_exce_info, path, mod_id, PATH_MAXLEN);
 
 	rdr_set_saving_state(0);
-	rdr_callback(p_exce_info, mod_id, path);
+	rdr_callback(p_exce_info, mod_id, path, PATH_MAXLEN);
 	BB_PRINT_PN("saving data done.\n");
 	rdr_count_size();
 	BB_PRINT_PN("rdr_count_size: done.\n");
@@ -377,7 +389,7 @@ void rdr_syserr_process(struct rdr_syserr_param_s *p)
 	rdr_notify_module_reset(mod_id, p_exce_info);
 	BB_PRINT_PN("rdr_notify_module_reset: done.\n");
 
-	wake_unlock(&blackbox_wl);
+	__pm_relax(&blackbox_wl);
 	BB_PRINT_END();
 	return;
 }
@@ -497,7 +509,6 @@ bool rdr_init_done()
 	if (init_done)
 		return init_done;
 
-	/*INIT_WORK(&regiser_work, rdr_register_work); */
 	if (0 != rdr_common_early_init()) {
 		BB_PRINT_ERR("rdr_common_early_init faild.\n");
 		return init_done;
@@ -551,11 +562,11 @@ static s32 __init rdr_init(void)
 		return -1;
 	}
 
-	wake_lock_init(&blackbox_wl, WAKE_LOCK_SUSPEND, "blackbox");
+	wakeup_source_init(&blackbox_wl, "blackbox");
 	rdr_main = kthread_run(rdr_main_thread_body, NULL, "bbox_main");
 	if (!rdr_main) {
 		BB_PRINT_ERR("create thread rdr_main_thread faild.\n");
-		wake_lock_destroy(&blackbox_wl);
+		wakeup_source_trash(&blackbox_wl);
 		return -1;
 	}
 
@@ -563,7 +574,7 @@ static s32 __init rdr_init(void)
 	if (sched_setscheduler(rdr_main, SCHED_FIFO, &param)) {
 		BB_PRINT_ERR("sched_setscheduler rdr_bootcheck_thread faild.\n");
 		kthread_stop(rdr_main);
-		wake_lock_destroy(&blackbox_wl);
+		wakeup_source_trash(&blackbox_wl);
 		return -1;
 	}
 	rdr_bootcheck =
@@ -571,13 +582,13 @@ static s32 __init rdr_init(void)
 	if (!rdr_bootcheck) {
 		BB_PRINT_ERR("create thread rdr_bootcheck_thread faild.\n");
 		kthread_stop(rdr_main);
-		wake_lock_destroy(&blackbox_wl);
+		wakeup_source_trash(&blackbox_wl);
 		return -1;
 	}
 	if (!kthread_run(rdr_dump_init, NULL, "bbox_dump_init")) {
 		BB_PRINT_ERR("create thread rdr_dump_init faild.\n");
 		kthread_stop(rdr_main);
-		wake_lock_destroy(&blackbox_wl);
+		wakeup_source_trash(&blackbox_wl);
 		return -1;
 	}
 

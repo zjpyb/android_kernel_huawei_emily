@@ -27,6 +27,7 @@
 #include "sd.h"
 #include "sd_ops.h"
 #include "core.h"
+#include "card.h"
 
 #define DEBUG_PWD 0
 
@@ -126,6 +127,16 @@ static int extract(const char *data, u8 *command, u8 *buffer, int *plen)
 
 static void check_status(struct mmc_card *card)
 {
+#if 0
+        int status;
+        int err;
+        err = mmc_send_status(card, &status);
+        if (err) {
+                printk("[SDLOCK] %s mmc_send_status failed \n",__func__);
+        } else {
+                printk("[SDLOCK] %s mmc_send_status statuc (%x) \n",__func__,status);
+        }
+#endif
 }
 
 int mmc_lock_sd_init_card(struct mmc_card *card,bool binit)
@@ -271,6 +282,9 @@ static int sd_reinit_full(struct mmc_card* card , struct device* dev)
                 printk("%s: reinit error (%d) \n", __func__,ret);
                 mmc_release_host(card->host);
                 ret = sd_reset_device(dev);
+                if(ret) {
+                        printk("%s: sd_reset_device error (%d) \n", __func__, ret);
+                }
                 return -EINVAL;
         }
 
@@ -298,6 +312,9 @@ static int sd_reinit(struct mmc_card* card , struct device* dev)
                 printk("%s: reinit error (%d) \n", __func__,ret);
                 mmc_release_host(card->host);
                 ret = sd_reset_device(dev);
+                if(ret) {
+                        printk("%s: sd_reset_device error (%d) \n", __func__,ret);
+                }
                 return -EINVAL;
         }
 
@@ -341,6 +358,24 @@ static int sd_erase_reinit(struct mmc_card* card , struct device* dev)
                 printk("[SDLOCK]%s sd_reset_device (%d)\n",__func__,ret);
                 err = ret;
         }
+#if 0
+        //some sd card need suspend - resume , format ok
+        ret = mmc_power_save_host(card->host);
+        if(ret) {
+                printk("[SDLOCK]%s mmc_power_save_host (%d)\n",__func__,ret);
+                err = ret;
+        }
+        mdelay(500);
+        ret = mmc_power_restore_host(card->host);
+        if(ret) {
+                printk("[SDLOCK]%s mmc_power_restore_host (%d)\n",__func__,ret);
+                err = ret;
+        }
+
+        if(err) {
+                ret = err;
+        }
+#endif
 
 
         return ret;
@@ -501,7 +536,7 @@ static int sd_lock_do_remove(struct mmc_card *card,struct device *dev,u8* key_bu
                 /* when sd card password remove and sd locked, sd device must reinit */
                 ret = sd_erase_reinit(card,dev);
                 if (ret) {
-                        printk("[SDLOCK] %s: remove password, sd init card error %d\n",__func__, ret);
+                        printk("[SDLOCK] %s: sd init card error %d\n",__func__, ret);
                 }
         } else {
                 mmc_release_host(card->host);
@@ -527,6 +562,12 @@ static int sd_lock_do_lock(struct mmc_card *card,struct device *dev,u8* key_buff
         }
 
         mmc_release_host(card->host);
+#if 0
+        ret = sd_reset_device(dev);
+        if(ret) {
+                printk("%s sd_reset_device err=%d \n",__func__,ret);
+        }
+#endif
         return ret;
 
 }

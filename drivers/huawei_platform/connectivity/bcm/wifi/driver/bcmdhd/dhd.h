@@ -46,7 +46,7 @@
 #include <asm/uaccess.h>
 #include <asm/unaligned.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_HAS_WAKELOCK)
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined (CONFIG_HAS_WAKELOCK) */
 /* The kernel threading is sdio-specific */
 struct task_struct;
@@ -1181,6 +1181,7 @@ void dhd_schedule_memdump(dhd_pub_t *dhdp, uint8 *buf, uint32 size);
 #define DHD_MULTICAST6_FILTER_NUM	3
 #define DHD_MDNS_FILTER_NUM		4
 #define DHD_ARP_FILTER_NUM		5
+#define MAXPKT_ARG 8
 extern int 	dhd_os_enable_packet_filter(dhd_pub_t *dhdp, int val);
 extern void dhd_enable_packet_filter(int value, dhd_pub_t *dhd);
 extern int net_os_enable_packet_filter(struct net_device *dev, int val);
@@ -1712,5 +1713,6 @@ void dhd_wk_lock_stats_dump(dhd_pub_t *dhdp);
 #ifdef DHD_PKTID_AUDIT_ENABLED
 extern void dhd_pktid_audit_fail_cb(dhd_pub_t *dhdp);
 #endif /* DHD_PKTID_AUDIT_ENABLED */
+extern netdev_tx_t dhd_start_xmit(struct sk_buff *skb, struct net_device *net);
 
 #endif /* _dhd_h_ */

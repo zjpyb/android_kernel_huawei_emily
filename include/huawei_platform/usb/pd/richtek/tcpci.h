@@ -18,7 +18,8 @@
 #include <linux/device.h>
 #include <linux/hrtimer.h>
 #include <linux/workqueue.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/err.h>
 #include <linux/cpu.h>
 #include <linux/delay.h>
@@ -147,6 +148,14 @@ static inline int tcpci_init(struct tcpc_device *tcpc, bool sw_reset)
 
 	tcpci_vbus_level_init(tcpc, power_status);
 	return 0;
+}
+
+static inline bool tcpci_is_reg_default(struct tcpc_device *tcpc)
+{
+	if (tcpc->ops && tcpc->ops->is_reg_default)
+		return tcpc->ops->is_reg_default(tcpc);
+
+	return false;
 }
 
 static inline int tcpci_get_cc(struct tcpc_device *tcpc)

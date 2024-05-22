@@ -1,55 +1,41 @@
-/*
- * Hisilicon hisi ION Driver
- *
- * Copyright (c) 2015 Hisilicon Limited.
- *
- * Author: Chen Feng <puck.chen@hisilicon.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
+ * FileName: of_hisi_ion.c
+ * Description: This program is free software; you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation;
+ * either version 2 of the License,
+ * or (at your option) any later version.
+ * Author:Chen Feng
+ * Create:2014-05-15
  */
 
 #define pr_fmt(fmt) "Ion: " fmt
 
-#include <linux/export.h>
+#include <asm/cacheflush.h>
+#include <asm/cputype.h>
+#include <linux/dma-buf.h>
 #include <linux/err.h>
 #include <linux/hisi/hisi_ion.h>
-#include <linux/platform_device.h>
-#include <linux/hisi-iommu.h>
-#include <linux/slab.h>
-#include <linux/of.h>
-#include <linux/mm.h>
-#include <linux/mm_types.h>
-#include <linux/sched.h>
-#include <linux/rwsem.h>
-#include <linux/uaccess.h>
-#include <linux/dma-mapping.h>
-#include <linux/dma-contiguous.h>
-#include <asm/cacheflush.h>
-#include <asm/cpu.h>
-#include <linux/compat.h>
-#include <linux/sizes.h>
-#include <ion_priv.h>
-#include <linux/of_reserved_mem.h>
-#include <linux/of_fdt.h>
-#include <asm/cputype.h>
-#include <asm/topology.h>
-#include <linux/version.h>
-
-#include <asm/cacheflush.h>
-
-#ifdef CONFIG_HISI_SMARTPOOL_OPT
-#include "hisi/hisi_ion_smart_pool.h"
-#endif
-#ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
-#include "hisi/hisi_ion_scene_pool.h"
-#endif
-
 #include <linux/hisi/hisi_idle_sleep.h>
+#include <linux/init.h>
+#include <linux/mm.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/of_fdt.h>
+#include <linux/of_reserved_mem.h>
+#include <linux/platform_device.h>
+#include <linux/sched/mm.h>
+#include <linux/sizes.h>
+#include <linux/uaccess.h>
 
+#include "ion.h"
+#include "hisi_ion_priv.h"
+#include "sec_alloc.h"
+
+#define MAX_D_TABLE_NUM  5
 #define MAX_HISI_ION_DYNAMIC_AREA_NAME_LEN  64
-#define HISI_ION_FLUSH_ALL_CPUS_CACHES_THRESHOLD  (0x1000000) /*16MB*/
+#define HISI_ION_FLUSH_ALL_CPUS_CACHES_THRESHOLD  0x1000000 /*16MB*/
+#define MAX_WATER_MARK (SZ_1M * 220 / PAGE_SIZE) /* 220MB */
 
 struct hisi_ion_dynamic_area {
 	phys_addr_t    base;
@@ -66,66 +52,58 @@ static const struct hisi_ion_type_table ion_type_table[] = {
 	{"ion_system", ION_HEAP_TYPE_SYSTEM},
 	{"ion_system_contig", ION_HEAP_TYPE_SYSTEM_CONTIG},
 	{"ion_carveout", ION_HEAP_TYPE_CARVEOUT},
-	{"ion_chunk", ION_HEAP_TYPE_CHUNK},
-	{"ion_dma", ION_HEAP_TYPE_DMA},
-	{"ion_custom", ION_HEAP_TYPE_CUSTOM},
+#ifdef CONFIG_ION_HISI_CPA
+	{"ion_cpa", ION_HEAP_TYPE_CPA},
+#endif
 #ifdef CONFIG_ION_HISI_SECCM
 	{"ion_sec", ION_HEAP_TYPE_SECCM},
 #endif
 #ifdef CONFIG_ION_HISI_SECSG
-	{"ion_sec", ION_HEAP_TYPE_SECSG},
+	{"ion_sec", ION_HEAP_TYPE_SEC_CONTIG},
+	{"ion_sec_sg", ION_HEAP_TYPE_SECSG},
 #endif
+#ifdef CONFIG_ION_HISI_DMA_POOL
 	{"ion_dma_pool", ION_HEAP_TYPE_DMA_POOL},
-#ifdef CONFIG_ION_HISI_FAMA_MISC
-	{"ion_fama_misc", ION_HEAP_TYPE_FAMA_MISC},
 #endif
 };
 
-static struct ion_device *idev;
 static int num_heaps;
-static struct ion_heap **heaps;
-static struct ion_platform_heap **heaps_data;
 struct platform_device *hisi_ion_pdev;
+static struct hisi_ion_dynamic_area  d_table[MAX_D_TABLE_NUM];
+static int ion_dynamic_area_count;
 
-#define MAX_HISI_ION_DYNAMIC_AREA_NUM  5
-static struct hisi_ion_dynamic_area  ion_dynamic_area_table[MAX_HISI_ION_DYNAMIC_AREA_NUM];
-static int ion_dynamic_area_count = 0;
-
-static int add_dynamic_area(phys_addr_t base, unsigned long  len, const char* name)
+static int add_dynamic_area(phys_addr_t base,
+				unsigned long  len,
+				const char *name)
 {
 	int ret = 0;
 	int i = ion_dynamic_area_count;
 
-	if (i < MAX_HISI_ION_DYNAMIC_AREA_NUM) {
-		ion_dynamic_area_table[i].base = base;
-		ion_dynamic_area_table[i].size  = len;
-		strncpy(ion_dynamic_area_table[i].name, name, /* unsafe_function_ignore: strncpy  */
+	if (i < MAX_D_TABLE_NUM) {
+		d_table[i].base = base;
+		d_table[i].size  = len;
+		strncpy(d_table[i].name, name,/* unsafe_function_ignore: strncpy */
 				MAX_HISI_ION_DYNAMIC_AREA_NAME_LEN-1);
-		ion_dynamic_area_table[i].name[MAX_HISI_ION_DYNAMIC_AREA_NAME_LEN-1] = '\0';
-		pr_err("insert heap-name %s \n", ion_dynamic_area_table[i].name);
-
-		ion_dynamic_area_count ++;
-
+		d_table[i].name[MAX_HISI_ION_DYNAMIC_AREA_NAME_LEN-1] = '\0';
+		pr_err("insert heap-name %s\n", d_table[i].name);
+		ion_dynamic_area_count++;
 		return ret;
-
 	}
 
 	return -EFAULT;
 }
 
-static struct hisi_ion_dynamic_area* find_dynamic_area_by_name(const char* name)
+static struct hisi_ion_dynamic_area *find_dynamic_area_by_name(const char *name)
 {
 	int i = 0;
 
-	if (!name) {
+	if (!name)
 		return NULL;
-	}
 
-	for (; i < MAX_HISI_ION_DYNAMIC_AREA_NUM; i++) {
-		pr_err("name = %s, table name %s \n", name, ion_dynamic_area_table[i].name);
-		if (!strcmp(name, ion_dynamic_area_table[i].name)) { /*lint !e421 */
-			return &ion_dynamic_area_table[i];
-		}
+	for (; i < MAX_D_TABLE_NUM; i++) {
+		pr_err("name = %s, table name =%s\n", name, d_table[i].name);
+		if (!strcmp(name, d_table[i].name))
+			return &d_table[i];
 	}
 
 	return NULL;
@@ -133,9 +111,9 @@ static struct hisi_ion_dynamic_area* find_dynamic_area_by_name(const char* name)
 
 static int  hisi_ion_reserve_area(struct reserved_mem *rmem)
 {
-	char *status   = NULL;
+	char *status = NULL;
 	int  namesize = 0;
-	const char* heapname;
+	const char *heapname = NULL;
 
 	status = (char *)of_get_flat_dt_prop(rmem->fdt_node, "status", NULL);
 	if (status && (strncmp(status, "ok", strlen("ok")) != 0))
@@ -147,47 +125,152 @@ static int  hisi_ion_reserve_area(struct reserved_mem *rmem)
 		return -EFAULT;
 	}
 
-	pr_info("base 0x%llx, size is 0x%llx, node name %s, heap-name %s namesize %d,"
-			"[%d][%d][%d][%d]\n",
+	pr_info("base 0x%llx, size is 0x%llx, node name %s, heap-name %s namesize %d,[%d][%d][%d][%d]\n",
 			rmem->base, rmem->size, rmem->name, heapname, namesize,
-			heapname[0],heapname[1],heapname[2],heapname[3] );
+			 heapname[0], heapname[1], heapname[2], heapname[3]);
 
 	if (add_dynamic_area(rmem->base, rmem->size, heapname)) {
-		pr_err("fail to add to dynamic area \n");
+		pr_err("fail to add to dynamic area\n");
 		return -EFAULT;
 	}
 
 	return 0;
 }
-RESERVEDMEM_OF_DECLARE(hisi_ion, "hisi_ion", hisi_ion_reserve_area); /*lint !e611 */
-struct ion_device *get_ion_device(void) {
-	return idev;
-}
+RESERVEDMEM_OF_DECLARE(hisi_ion, "hisi_ion", hisi_ion_reserve_area);
 
-struct platform_device *get_hisi_ion_platform_device(void) {
-	return hisi_ion_pdev;
-}
-
-#ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
-struct ion_heap *ion_get_system_heap(void)
+static int ion_secmem_heap_phys(struct ion_heap *heap,
+				struct ion_buffer *buffer,
+				phys_addr_t *addr, size_t *len)
 {
-	int i;
-	struct ion_heap *ptr_heap;
+	if (heap->type == ION_HEAP_TYPE_SECCM)
+		return ion_seccm_heap_phys(heap, buffer, addr, len);
+	else if (heap->type == ION_HEAP_TYPE_SEC_CONTIG)
+		return ion_seccg_heap_phys(heap, buffer, addr, len);
+	else if (heap->type == ION_HEAP_TYPE_SECSG)
+		return ion_secsg_heap_phys(heap, buffer, addr, len);
+	else if (heap->type == ION_HEAP_TYPE_CPA)
+		return ion_cpa_heap_phys(heap, buffer, addr, len);
+	else
+		pr_err("not sec buffer\n");
 
-	for (i = 0; i < num_heaps; i++) {
-		ptr_heap = heaps[i];
+	return -EINVAL;
+}
 
-		if (!ptr_heap)
-			continue;
-		if (ptr_heap->type == ION_HEAP_TYPE_SYSTEM)
-			break;
+int ion_secmem_get_phys(struct dma_buf *dmabuf,
+		phys_addr_t *addr, size_t *len)
+{
+	struct ion_buffer *buffer = NULL;
+	int ret;
+
+	if (!dmabuf || !is_ion_dma_buf(dmabuf)) {
+		pr_err("%s: dmabuf is not coherent with a ION buffer !\n",
+			__func__);
+		return -EINVAL;
 	}
-	if (i >= num_heaps)
-		ptr_heap = NULL;
 
-	return ptr_heap;
+	if (!addr || !len) {
+		pr_err("%s: invalid addr or len pointer\n", __func__);
+		return -EINVAL;
+	}
+
+	buffer = dmabuf->priv;
+	if (!buffer) {
+		pr_err("%s: ION buffer pointer is NULL!\n", __func__);
+		return -EINVAL;
+	}
+
+	ret = ion_secmem_heap_phys(buffer->heap, buffer, addr, len);
+
+	return ret;
+}
+
+#ifdef CONFIG_ION_HISI_SECSG
+static bool check_heap_type_secure(struct ion_heap *heap)
+{
+	switch(heap->type) {
+	case ION_HEAP_TYPE_SECCM:
+	case ION_HEAP_TYPE_SEC_CONTIG:
+	case ION_HEAP_TYPE_SECSG:
+	case ION_HEAP_TYPE_CPA:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/**
+ * secmem_get_buffer() - Map secure ION buffer's sharefd to buffid or sg_table
+ * @fd: secure ION buffer's sharefd
+ * @table: return table to caller when buffer is used by secure service.
+ * @id: return buffid to caller when buffer is used by DRM service.
+ * @type: return SEC_DRM_TEE when buffer is used by DRM, return SEC_SVC_MAX when
+ *        buffer is used by secure service.
+ *
+ * When map success return 0, otherwise return errno.
+ *
+ * Attention: This function is only called by tzdriver, please do not use it
+ * in other driver.
+ */
+int secmem_get_buffer(int fd, struct sg_table **table, u64 *id,
+		      enum SEC_SVC *type)
+{
+	struct dma_buf *dmabuf = NULL;
+	struct ion_buffer *buffer = NULL;
+	struct ion_heap *heap = NULL;
+
+	if (!table || !id || !type)
+		return -EINVAL;
+
+	dmabuf = dma_buf_get(fd);
+	if (!dmabuf) {
+		pr_err("%s: invalid fd!\n", __func__);
+		return -EINVAL;
+	}
+
+	if (!is_ion_dma_buf(dmabuf)) {
+		pr_err("%s: dmabuf is no a ION buffer !\n", __func__);
+		goto err;
+	}
+
+	buffer = dmabuf->priv;
+	if (!buffer) {
+		pr_err("%s: dmabuf has no ION buffer!\n", __func__);
+		goto err;
+	}
+
+	heap = buffer->heap;
+	if (!heap) {
+		pr_err("%s: invalid ION buffer's heap!\n", __func__);
+		goto err;
+	}
+
+	if(!check_heap_type_secure(heap)) {
+		pr_err("%s: ION heap is not secure heap!\n", __func__);
+		goto err;
+	}
+
+	if (buffer->id) {
+		*id = buffer->id;
+		*type = SEC_DRM_TEE;
+	} else {
+		*table = buffer->sg_table;
+		*type = SEC_SVC_MAX;
+	}
+
+	dma_buf_put(dmabuf);
+
+	return 0;
+ err:
+	dma_buf_put(dmabuf);
+	return -EINVAL;
 }
 #endif
+
+/* return platform device */
+struct platform_device *get_hisi_ion_platform_device(void)
+{
+	return hisi_ion_pdev;
+}
 
 static inline void artemis_flush_cache(unsigned int level)
 {
@@ -207,12 +290,11 @@ static void hisi_ion_flush_cache_all(void *dummy)
 {
 	unsigned int midr = read_cpuid_id();
 
-	if (MIDR_PARTNUM(midr) == ARM_CPU_PART_CORTEX_ARTEMIS)
+	if (MIDR_PARTNUM(midr) == ARM_CPU_PART_CORTEX_A73)
 		artemis_flush_cache_all();
 	else
 		flush_cache_all();
 }
-
 void ion_flush_all_cpus_caches(void)
 {
 	int cpu;
@@ -224,35 +306,28 @@ void ion_flush_all_cpus_caches(void)
 	preempt_disable();
 
 	idle_cpus = hisi_get_idle_cpumask();
-	for_each_online_cpu(cpu) {
+	for_each_online_cpu(cpu) { /*lint !e574 */
 		if ((idle_cpus & BIT(cpu)) == 0)
 			cpumask_set_cpu(cpu, &mask);
 	}
 
-	if ((idle_cpus & 0x0f) == 0x0f) {
+	if ((idle_cpus & 0x0f) == 0x0f)
 		cpumask_set_cpu(0, &mask);
-	}
 
-	if ((idle_cpus & 0xf0) == 0xf0) {
+	if ((idle_cpus & 0xf0) == 0xf0)
 		cpumask_set_cpu(4, &mask);
-	}
 
 	on_each_cpu_mask(&mask, hisi_ion_flush_cache_all, NULL, 1);
 
 	preempt_enable();
-
-	return;
 }
 
-struct ion_client *hisi_ion_client_create(const char *name)
-{
-	return ion_client_create(idev, name);
-}
-EXPORT_SYMBOL(hisi_ion_client_create);
 
-static int check_vaddr_bounds(struct mm_struct *mm, unsigned long start, unsigned long length)
+static int check_vaddr_bounds(struct mm_struct *mm,
+	unsigned long start, unsigned long length)
 {
 	struct vm_area_struct *vma = NULL;
+
 	if (start >= start + length) {
 		pr_err("%s,addr is overflow!\n", __func__);
 		return -EINVAL;
@@ -275,24 +350,41 @@ static int check_vaddr_bounds(struct mm_struct *mm, unsigned long start, unsigne
 	}
 
 	if (start + length > vma->vm_end) {
-		pr_err("%s,start + length > vma->vm_end(0x%lx)!\n", __func__, vma->vm_end);
+		pr_err("%s,start + length > vma->vm_end(0x%lx)!\n",
+			__func__, vma->vm_end);
 		return -EINVAL;
 	}
 	return 0;
 }
 
-static int ion_do_cache_op(struct ion_client *client, struct ion_handle *handle,
-					unsigned long uaddr, unsigned long length,unsigned int cmd)
+int ion_do_cache_op(int fd, unsigned long uaddr,
+	unsigned long length, unsigned int cmd)
 {
-	int ret = -EINVAL;
+	int ret = 0;
 	unsigned long flags = 0;
+	struct dma_buf *buf = NULL;
+	struct ion_buffer *buffer = NULL;
 
-	ret = ion_handle_get_flags(client, handle, &flags);
-	if (ret) {
-		pr_err("%s ion_handle_get_flags fail!\n", __func__);
-		return -EINVAL;
+	/* Get dma_buf by fd */
+	buf = dma_buf_get(fd);
+	if (IS_ERR(buf)) {
+		pr_err("%s get dma_buf by fd, error.\n", __func__);
+		return -EFAULT;
 	}
+
+	/* Get dma_buf by fd */
+	if (!is_ion_dma_buf(buf)) {
+		dma_buf_put(buf);
+		pr_err("%s is not ion buffer.\n", __func__);
+		return -EFAULT;
+	}
+
+	/* Get flags from dma_buf.priv, which is ion_buffer */
+	buffer = (struct ion_buffer *)buf->priv;
+	flags = buffer->flags;
+
 	if (!ION_IS_CACHED(flags)) {
+		dma_buf_put(buf);
 		pr_err("%s ION is noncached!\n", __func__);
 		return 0;
 	}
@@ -311,215 +403,177 @@ static int ion_do_cache_op(struct ion_client *client, struct ion_handle *handle,
 		break;
 
 	default:
-		return -EINVAL;
+		pr_info("%s: Invalidate CMD(0x%x)\n", __func__, cmd);
+		ret = -EINVAL;
 	}
+	dma_buf_put(buf);
 	return ret;
 }
 
-static long hisi_ion_custom_ioctl(struct ion_client *client,
-				unsigned int cmd,
-				unsigned long arg)
+int hisi_ion_cache_operate(int fd, unsigned long uaddr,
+	unsigned long offset, unsigned long length, unsigned int cmd)
 {
 	int ret = 0;
+	struct mm_struct *mm = NULL;
+	unsigned long start = 0;
 
-	switch (cmd) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-	case ION_HISI_CUSTOM_PHYS:
-	{
-		struct ion_phys_data data;
-		struct ion_handle *handle;
-		ion_phys_addr_t phys_addr = 0;
-		size_t size = 0;
-
-		if (copy_from_user(&data, (void __user *)arg,
-				sizeof(data))) {
-			return -EFAULT;
-		}
-
-		handle = ion_import_dma_buf(client, data.fd_buffer);
-		if (IS_ERR(handle))
-			return PTR_ERR(handle);
-
-		ret = ion_phys(client, handle, &phys_addr, &size);
-		if (ret) {
-			ion_free(client, handle);
-			return ret;
-		}
-
-		data.size = size & 0xffffffff;
-		data.phys_l = phys_addr & 0xffffffff;
-		data.phys_h = (phys_addr >> 32) & 0xffffffff;
-
-		if (copy_to_user((void __user *)arg, &data, sizeof(data))) {
-			ion_free(client, handle);
-			return -EFAULT;
-		}
-		ion_free(client, handle);
-
-		return ret;
+	if (length >= HISI_ION_FLUSH_ALL_CPUS_CACHES_THRESHOLD) {
+		ion_flush_all_cpus_caches();
+		return 0;
 	}
-#endif
 
-#ifdef CONFIG_HISI_SMARTPOOL_OPT
-	case ION_HISI_CUSTOM_SET_SMART_POOL_INFO:
-	{
-		struct ion_smart_pool_info_data smart_pool_info;
-
-		if (copy_from_user(&smart_pool_info, (void __user *)arg,
-				sizeof(smart_pool_info))) {
-			return -EFAULT;
-		}
-
-		if ((smart_pool_info.water_mark > 0)
-				&& (smart_pool_info.water_mark < MAX_POOL_SIZE)) {
-			ion_smart_set_water_mark(smart_pool_info.water_mark);
-		}
-
-		return ret;
+	start = uaddr + offset;
+	if (uaddr > start) {
+		pr_err("%s:  overflow start:0x%lx!\n", __func__, start);
+		return -EINVAL;
 	}
-#endif
 
-#ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
-	case ION_HISI_CUSTOM_SPECIAL_SCENE_ENTER:
-	{
-		struct ion_special_scene_pool_info_data scene_pool_info;
-		void *pool;
-
-		if (copy_from_user(&scene_pool_info, (void __user *)arg,
-				   sizeof(scene_pool_info))) {
-			return -EFAULT;
-		}
-		/*Translate KB to number of pages.*/
-		scene_pool_info.water_mark >>= 2;
-		if (scene_pool_info.water_mark > MAX_SPECIAL_SCENE_POOL_SIZE)
-			scene_pool_info.water_mark =
-				MAX_SPECIAL_SCENE_POOL_SIZE;
-		pool = ion_get_scene_pool(ion_get_system_heap());
-		ion_scene_pool_wakeup_process(pool, F_WAKEUP_AUTOFREE,
-					      &scene_pool_info);
-		return ret;
+	mm = get_task_mm(current);
+	if (!mm) {
+		pr_err("%s: Invalid thread: %d\n", __func__, fd);
+		return  -ENOMEM;
 	}
-	case ION_HISI_CUSTOM_SPECIAL_SCENE_EXIT:
-	{
-		struct ion_special_scene_pool_info_data scene_pool_info
-				= {0, SPECIAL_SCENE_ALL_WORKERS_MASK, 0};
-		void *pool = ion_get_scene_pool(ion_get_system_heap());
-
-		ion_scene_pool_wakeup_process(pool, F_FORCE_STOP,
-					      &scene_pool_info);
-		return ret;
-	}
-#endif
-
-	case ION_HISI_CLEAN_CACHES:
-	case ION_HISI_CLEAN_INV_CACHES:
-	case ION_HISI_INV_CACHES:
-	{
-		struct ion_flush_data data;
-		unsigned long start, length;
-		struct ion_handle *handle = NULL;
-		struct mm_struct *mm;
-
-		if (copy_from_user(&data, (void __user *)arg,
-				sizeof(data))) {
-			pr_err("%s: copy_from_user fail\n",__func__);
-			return -EFAULT;
-		}
-
-		start = (unsigned long)data.vaddr + data.offset;
-		if ((unsigned long)data.vaddr > start) {
-			pr_err("%s:  overflow start:0x%lx!\n", __func__, start);
-			return -EINVAL;
-		}
-		length = data.length;
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
-		handle = ion_import_dma_buf(client, data.fd);
-#else
-		handle = ion_import_dma_buf_fd(client, data.fd);
-#endif
-		if (IS_ERR(handle)) {
-			pr_err("%s: Could not import handle: %pK, fd:%d\n",
-				__func__, handle, data.fd);
-			return -EINVAL;
-		}
-
-		if (length >= HISI_ION_FLUSH_ALL_CPUS_CACHES_THRESHOLD) {
-			ion_flush_all_cpus_caches();
-			ion_free(client, handle);
-			return 0;
-		}
-
-		mm = get_task_mm(current);
-		if (!mm) {
-			pr_err("%s: Invalid thread: %d\n", __func__, data.fd);
-			ion_free(client, handle);
-			return -EINVAL;
-		}
-
-		down_read(&mm->mmap_sem);
-		if (check_vaddr_bounds(mm, start, length)) {
-			pr_err("%s: invalid virt 0x%lx 0x%lx\n", __func__, start, length);
-			up_read(&mm->mmap_sem);
-			mmput(mm);
-			ion_free(client, handle);
-			return -EINVAL;
-		}
-
-		ret = ion_do_cache_op(client, handle, start, length, cmd);
+	down_read(&mm->mmap_sem);
+	if (check_vaddr_bounds(mm, start, length)) {
+		pr_err("%s: invalid virt 0x%lx 0x%lx\n",
+			__func__, start, length);
 		up_read(&mm->mmap_sem);
 		mmput(mm);
-		ion_free(client, handle);
-		return ret;
+		return -EINVAL;
 	}
-	default:
-		pr_info("%s: Invalidate CMD(0x%x)\n", __func__, cmd);
-		return -ENOTTY;
-	}
+
+	ret = ion_do_cache_op(fd, start, length, cmd);
+	up_read(&mm->mmap_sem);
+	mmput(mm);
+	return ret;
 }
 
 static int get_type_by_name(const char *name, enum ion_heap_type *type)
 {
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(ion_type_table); i++) { /*lint !e527 */
-		if (strcmp(name, ion_type_table[i].name)) /*lint !e421 */
+	for (i = 0; i < ARRAY_SIZE(ion_type_table); i++) {
+		if (strcmp(name, ion_type_table[i].name))
 			continue;
-
 		*type = ion_type_table[i].type;
 		return 0;
 	}
-
 	return -EINVAL;
 }
 
-static int hisi_set_platform_data(struct platform_device *pdev)
+static char *get_data_from_phandle_node(struct device_node *phandle_node,
+			const char *status, struct device_node *np)
 {
+	int len, ret;
+	struct property *prop = NULL;
+
+	ret = of_property_read_string(phandle_node,
+			"status", &status);
+	if (!ret) {
+		if (strncmp("ok", status, strlen("ok")))
+			return NULL;
+	}
+
+	prop = of_find_property(phandle_node, "heap-name",
+							&len);
+	if (!prop) {
+		pr_err("no heap-name in phandle of node %s\n",
+		np->name);
+		return NULL;
+	}
+
+	if (!prop->value || !prop->length) {
+		pr_err("%s %s %d, node %s, invalid phandle, value=%pK,length=%d\n",
+				 __FILE__, __func__, __LINE__,
+				 np->name, prop->value,
+				 prop->length);
+		return NULL;
+	}
+
+	return prop->value;
+}
+
+static int get_property_need(const char *heap_name, struct device_node *np,
+					struct platform_device *pdev, struct ion_platform_heap *p_data)
+{
+	int ret;
 	unsigned int base = 0;
 	unsigned int size = 0;
 	unsigned int id = 0;
-	const char *heap_name;
-	const char *type_name;
-	const char *status;
-	enum ion_heap_type type = 0; /*lint !e64 */
+	const char *type_name = NULL;
+	enum ion_heap_type type = 0;
+
+	ret = of_property_read_u32(np, "heap-id", &id);
+	if (ret < 0) {
+		pr_err("check the id %s\n", np->name);
+		return -1;
+	}
+
+	ret = of_property_read_u32(np, "heap-base", &base);
+	if (ret < 0) {
+		pr_err("check the base of node %s\n", np->name);
+		return -1;
+	}
+
+	ret = of_property_read_u32(np, "heap-size", &size);
+	if (ret < 0) {
+		pr_err("check the size of node %s\n", np->name);
+		return -1;
+	}
+
+	ret = of_property_read_string(np, "heap-type", &type_name);
+	if (ret < 0) {
+		pr_err("check the type of node %s\n", np->name);
+		return -1;
+	}
+	ret = get_type_by_name(type_name, &type);
+	if (ret < 0) {
+		pr_err("type name error %s!\n", type_name);
+		return -1;
+	}
+
+	p_data->name = heap_name;
+	p_data->base = base;
+	p_data->size = size;
+	p_data->id = id;
+	p_data->type = type;
+	p_data->priv = (void *)&pdev->dev;
+	return 0;
+}
+
+static void set_platform_heaps_value(struct ion_platform_heap *p_data,
+										int index)
+{
+	if (!p_data->base && !p_data->size) {
+		struct hisi_ion_dynamic_area *area = NULL;
+
+		pr_err("[%d] heap [%s] base =0, try to find dynamic area\n",
+			index, p_data->name);
+		area = find_dynamic_area_by_name(p_data->name);
+		if (area) {
+			p_data->base = area->base;
+			p_data->size = area->size;
+			pr_err("have found heap name %s base = %lx, size %zu\n",
+				 p_data->name,
+				 (unsigned long)p_data->base,
+				 p_data->size);
+		}
+	}
+}
+
+static int hisi_set_platform_data(struct platform_device *pdev,
+	const struct  device_node *dt_node,
+	struct ion_platform_heap **platform_heaps)
+{
+	const char *heap_name = NULL;
+	const char *status = NULL;
 	int ret = 0;
-	struct device_node *np;
-	struct device_node *phandle_node;
-	struct property *prop;
-	struct ion_platform_heap *p_data;
-	const struct device_node *dt_node = pdev->dev.of_node;
+	struct device_node *np = NULL;
+	struct device_node *phandle_node = NULL;
+	struct ion_platform_heap *p_data = NULL;
 	int index = 0;
 
-	for_each_child_of_node(dt_node, np)
-		num_heaps++;
-
-	heaps_data = devm_kzalloc(&pdev->dev,
-				  sizeof(struct ion_platform_heap *) *
-				  num_heaps,
-				  GFP_KERNEL);
-	if (!heaps_data)
-		return -ENOMEM;
-
+	pr_err("[node--           node_name--           heap_name--id--type-      base       --       size       .\n");
 	for_each_child_of_node(dt_node, np) {
 		ret = of_property_read_string(np, "status", &status);
 		if (!ret) {
@@ -529,173 +583,201 @@ static int hisi_set_platform_data(struct platform_device *pdev)
 
 		phandle_node = of_parse_phandle(np, "heap-name", 0);
 		if (phandle_node) {
-			int len;
-
-			ret = of_property_read_string(phandle_node, "status", &status);
-			if (!ret) {
-				if (strncmp("ok", status, strlen("ok")))
-					continue;
-			}
-
-			prop = of_find_property(phandle_node, "heap-name", &len);
-			if (!prop) {
-				pr_err("no heap-name in phandle of node %s\n", np->name);
+			heap_name = get_data_from_phandle_node(phandle_node, status, np);
+			if(!heap_name)
 				continue;
-			}
-
-			if (!prop->value || !prop->length) {
-				pr_err("%s %s %d, node %s, invalid phandle, value=%pK,length=%d\n",
-						__FILE__,__FUNCTION__,__LINE__,
-						np->name, prop->value, prop->length );
-				continue;
-			} else {
-				heap_name = prop->value;
-			}
 		} else {
-			ret = of_property_read_string(np, "heap-name", &heap_name);
+			ret = of_property_read_string(np, "heap-name",
+					&heap_name);
 			if (ret < 0) {
-				pr_err("invalid heap-name in node %s, please check the name \n", np->name);
+				pr_err("invalid heap-name in node [%s].\n",
+					np->name);
 				continue;
 			}
-
 		}
-
-		pr_err("node name [%s], heap-name [%s]\n", np->name, heap_name);
-
-		ret = of_property_read_u32(np, "heap-id", &id);
-		if (ret < 0) {
-			pr_err("check the id %s\n", np->name);
-			continue;
-		}
-
-		ret = of_property_read_u32(np, "heap-base", &base);
-		if (ret < 0) {
-			pr_err("check the base of node %s\n", np->name);
-			continue;
-		}
-
-		ret = of_property_read_u32(np, "heap-size", &size);
-		if (ret < 0) {
-			pr_err("check the size of node %s\n", np->name);
-			continue;
-		}
-
-		ret = of_property_read_string(np, "heap-type", &type_name);
-		if (ret < 0) {
-			pr_err("check the type of node %s\n", np->name);
-			continue;
-		}
-
-		ret = get_type_by_name(type_name, &type);
-		if (ret < 0) {
-			pr_err("type name error %s!\n", type_name);
-			continue;
-		}
-		pr_err("heap index %d : name %s base 0x%x size 0x%x id %d type %d\n",
-			index, heap_name, base, size, id, type);
-
 		p_data = devm_kzalloc(&pdev->dev,
-				      sizeof(struct ion_platform_heap),
-				      GFP_KERNEL);
+					sizeof(struct ion_platform_heap),
+					GFP_KERNEL);
 		if (!p_data)
 			return -ENOMEM;
 
-		p_data->name = heap_name;
-		p_data->base = base;
-		p_data->size = size;
-		p_data->id = id;
-		p_data->type = type;
-		p_data->priv = (void *)&pdev->dev;
-
-		if (!p_data->base && !p_data->size) {
-			struct hisi_ion_dynamic_area* area = NULL;
-			pr_err("heap %s base =0, try to find dynamic area \n", p_data->name);
-			area = find_dynamic_area_by_name(p_data->name);
-			if (area) {
-				p_data->base = area->base;
-				p_data->size = area->size;
-				pr_err("have found heap name %s base = 0x%lx, size %zu\n",
-						p_data->name,
-						p_data->base, p_data->size);
-			}
+		ret = get_property_need(heap_name, np, pdev, p_data);
+		if (ret) {
+			devm_kfree(&pdev->dev, p_data);
+			continue;
 		}
 
-		heaps_data[index] = p_data;
+		set_platform_heaps_value(p_data, index);
+		platform_heaps[index] = p_data;
+		pr_err("%2d:%20s--%20s--%2d--%2d--[%16lx]--[%16lx]\n",
+			index, np->name, heap_name, p_data->id, p_data->type,
+			(unsigned long)platform_heaps[index]->base,
+			platform_heaps[index]->size);
 		index++;
 	}
 	num_heaps = index;
 	return 0;
 }
 
-static int hisi_ion_probe(struct platform_device *pdev)
+static struct ion_heap *ion_heap_create(struct ion_platform_heap *heap_data)
 {
-	int i;
-	int err;
-	static struct ion_platform_heap *p_heap;
+	struct ion_heap *heap = NULL;
 
-	hisi_ion_pdev = pdev;
-
-	idev = ion_device_create(hisi_ion_custom_ioctl);
-	err = hisi_set_platform_data(pdev);
-	if (err) {
-		pr_err("ion set platform data error!\n");
-		goto err_free_idev;
-	}
-	heaps = devm_kzalloc(&pdev->dev,
-			     sizeof(struct ion_heap *) * num_heaps,
-			     GFP_KERNEL);
-	if (!heaps) {
-		err = -ENOMEM;
-		goto err_free_idev;
+	if (heap_data == NULL) {
+		pr_err("\t\t%s: Invalid heap \n", __func__);
+		return ERR_PTR(-EINVAL);
 	}
 
-	/* FIXME will move to iommu driver*/
-	if (!hisi_ion_enable_iommu(pdev)) {
-		dev_info(&pdev->dev, "enable iommu fail \n");
-		err = -EINVAL;
-		goto err_free_idev;
+	switch (heap_data->type) {
+	case ION_HEAP_TYPE_SYSTEM:
+		heap = ion_system_heap_create(heap_data);
+		break;
+
+	case ION_HEAP_TYPE_CARVEOUT:
+		heap = ion_carveout_heap_create(heap_data);
+		break;
+
+	case ION_HEAP_TYPE_SECCM:
+		heap = ion_seccm_heap_create(heap_data);
+		break;
+
+	case ION_HEAP_TYPE_SEC_CONTIG:
+		heap = ion_seccg_heap_create(heap_data);
+		break;
+
+	case ION_HEAP_TYPE_SECSG:
+		heap = ion_secsg_heap_create(heap_data);
+		break;
+#ifdef CONFIG_ION_HISI_CPA
+	case ION_HEAP_TYPE_CPA:
+		heap = ion_cpa_heap_create(heap_data);
+		break;
+#endif
+	case ION_HEAP_TYPE_DMA_POOL:
+		heap = ion_dma_pool_heap_create(heap_data);
+		break;
+	default:
+		pr_err("\t\t%s: Invalid heap type %d\n", __func__,
+		       heap_data->type);
+		return ERR_PTR(-EINVAL);
 	}
 
-	/*
-	 * create the heaps as specified in the dts file
-	 */
-	for (i = 0; i < num_heaps; i++) {
-		p_heap = heaps_data[i];
-
-		pr_info("id %d  name %s base %lu size %lu\n",
-				i, p_heap->name, p_heap->base, p_heap->size);
-
-		heaps[i] = ion_heap_create(p_heap);
-		if (IS_ERR_OR_NULL(heaps[i])) {
-			pr_err("error add %s of type %d with %lx@%lx\n",
-			       p_heap->name, p_heap->type,
-			       p_heap->base, (unsigned long)p_heap->size);
-			continue;
-		}
-
-		ion_device_add_heap(idev, heaps[i]);
-
-		pr_info("adding heap %s of type %d with %lx@%lx\n",
-			p_heap->name, p_heap->type,
-			p_heap->base, (unsigned long)p_heap->size);
+	if (IS_ERR_OR_NULL(heap)) {
+		pr_err("%s: error creating heap %s type %d base %lx size %lx\n",
+				__func__,
+				heap_data->name,
+				heap_data->type,
+				(unsigned long)heap_data->base,
+				(unsigned long)heap_data->size);
+		return ERR_PTR(-EINVAL);
 	}
-	return 0;
 
-err_free_idev:
-	ion_device_destroy(idev);
-
-	return err;
+	heap->name = heap_data->name; /* [false alarm]:The heap point have returned err in 532~539 if it's null */
+	heap->id = heap_data->id;
+	return heap;
 }
 
-static int hisi_ion_remove(struct platform_device *pdev)
+static ssize_t sys_pool_watermark_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t size)
 {
-	int i;
+	unsigned long val;
+	int ret;
 
-	for (i = 0; i < num_heaps; i++) {
-		ion_heap_destroy(heaps[i]);
-		heaps[i] = NULL;
+	ret = kstrtoul(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (!val || val > MAX_WATER_MARK)
+		return -EINVAL;
+
+	set_sys_pool_watermark(val);
+
+	return size;
+}
+static DEVICE_ATTR_WO(sys_pool_watermark);
+
+static struct attribute *sys_pool_attrs[] = {
+	&dev_attr_sys_pool_watermark.attr,
+	NULL,
+};
+
+static const struct attribute_group sys_pool_attr_group = {
+	.name = NULL,
+	.attrs = sys_pool_attrs,
+};
+
+static int hisi_ion_probe(struct platform_device *pdev)
+{
+	int index;
+	int err;
+	static struct ion_platform_heap **pheaps;
+	struct device_node *np = NULL;
+	const struct device_node *dt_node = pdev->dev.of_node;
+	struct ion_heap *new_ion_heap = NULL;
+
+	dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64)); /*lint !e598 !e648*/
+	hisi_ion_pdev = pdev;
+	pr_info("%s set dma_mask to 64bit , dma_mask =%lx\n", __func__,
+			 (unsigned long)*hisi_ion_pdev->dev.dma_mask);
+
+	/* Get heap node from pdev; */
+	for_each_child_of_node(dt_node, np)
+		num_heaps++;
+
+	/* allocate ion_platform_heap buffers; */
+	pheaps = devm_kzalloc(&pdev->dev,
+				 sizeof(struct ion_platform_heap *) *
+				 num_heaps,
+				 GFP_KERNEL);
+	if (!pheaps)
+		return -ENOMEM;
+
+	/* Get and set heap info to ion_pheaps; */
+	err = hisi_set_platform_data(pdev, dt_node, pheaps);
+	if (err) {
+		devm_kfree(&pdev->dev, pheaps);
+		pr_err("ion set platform data error!\n");
+		return err;
 	}
-	ion_device_destroy(idev);
+	pr_err("get platform heap info done!\n");
+	/* Scan hisi heaps to ION; */
+	for (index = 0; index < num_heaps; index++) {
+		new_ion_heap = ion_heap_create(pheaps[index]);
+		if (IS_ERR_OR_NULL(new_ion_heap)) {
+			pr_err("[%2d]err create[%20s]--[id:%d]--[type:%d]--[base:%lx @ size:%lx]\n",
+					index,
+					pheaps[index]->name,
+					pheaps[index]->id,
+					pheaps[index]->type,
+					(unsigned long)pheaps[index]->base,
+					(unsigned long)pheaps[index]->size);
+			continue;
+		}
+		pr_info("[%2d] Create [%20s]--[id:%d]--[type:%d]--[base:%lx @ size:%lx]\n",
+		 index,
+		 pheaps[index]->name,
+		 pheaps[index]->id,
+		 pheaps[index]->type,
+		 (unsigned long)pheaps[index]->base,
+		 (unsigned long)pheaps[index]->size);
+
+		ion_device_add_heap(new_ion_heap);
+
+		pr_info("[%2d] Add    [%20s]--[id:%d]--[type:%d]--[base:%lx @ size:%lx]\n",
+		 index,
+		 new_ion_heap->name,
+		 new_ion_heap->id,
+		 new_ion_heap->type,
+		 (unsigned long)pheaps[index]->base,
+		 (unsigned long)pheaps[index]->size);
+	}
+
+	sec_alloc_init(pdev);
+
+	err = sysfs_create_group(&pdev->dev.kobj, &sys_pool_attr_group);
+	if (err)
+		pr_err("create sys_pool attr fail!\n");
 
 	return 0;
 }
@@ -707,14 +789,12 @@ static const struct of_device_id hisi_ion_match_table[] = {
 
 static struct platform_driver hisi_ion_driver = {
 	.probe = hisi_ion_probe,
-	.remove = hisi_ion_remove,
 	.driver = {
 		.name = "ion-hisi",
 		.of_match_table = hisi_ion_match_table,
 	},
 };
 
-/*lint -e701 -e713*/
 static int __init hisi_ion_init(void)
 {
 	int ret;
@@ -723,6 +803,6 @@ static int __init hisi_ion_init(void)
 
 	return ret;
 }
-/*lint +e701 +e713*/
 
 subsys_initcall(hisi_ion_init);
+

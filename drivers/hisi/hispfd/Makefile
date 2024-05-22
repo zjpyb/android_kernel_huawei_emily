@@ -1,6 +1,5 @@
 # Hisilicon HISPFD Makefile
 #
-ccflags-y += -Idrivers/hisi/tzdriver/libhwsecurec
 
 obj-$(CONFIG_HISPFD) += hispfd.o
 

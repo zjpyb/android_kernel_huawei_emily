@@ -1,9 +1,10 @@
-/*
- * mm/unmovable_isolate.c
- *
- * MIGRATE_UNMOVABLE_ISOLATE function
- *
- * Copyright (C) 2017 Huawei Technologies Co., Ltd.
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
+ * FileName: unmovable_isolate.c
+ * Description: This program is free software; you can redistribute it
+ * and/or modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation;
+ * either version 2 of the License,
+ * or (at your option) any later version.
  */
 
 #include <linux/mmzone.h>
@@ -62,9 +63,10 @@ static int valid_ddr_size_for_ui(long long size)
  */
 int __init parse_unmovable_isolate_size(long long * size_cmdline, char *ui_cmdline)
 {
-	char *first_colon;
+	char *first_colon = NULL;
 	long long ui_size = -1;
-	char *cur = ui_cmdline, *tmp;
+	char *cur = ui_cmdline;
+	char *tmp = NULL;
 	int i;
 
 	/*
@@ -148,7 +150,7 @@ early_param("enhanced_reserve", early_enhanced_reserve);
 static long long ddr_size_cmdline = 0;
 static int __init early_ddr_size(char *p)
 {
-	char *tmp;
+	char *tmp = NULL;
 	pr_debug("%s(%s)\n", __func__, p);
 	ddr_size_cmdline = simple_strtoll(p, &tmp, 0);
 	return 0;
@@ -349,9 +351,9 @@ void setup_zone_migrate_unmovable_isolate(struct zone *zone,
      int unmovable_isolate_type, int disable)
 {
 	unsigned long start_pfn, pfn, end_pfn, block_end_pfn;
-	struct page *page;
+	struct page *page = NULL;;
 	int block_migratetype;
-	long long * zone_ui_block;
+	long long * zone_ui_block = NULL;;
 	long long unmovable_isolate_count, old_size;
 	enum zone_stat_item ui_stat_item;
 	int pages_moved = 0;

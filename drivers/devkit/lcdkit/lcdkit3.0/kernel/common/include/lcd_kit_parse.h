@@ -1,15 +1,20 @@
-/* Copyright (c) 2017-2018, Huawei terminal Tech. Co., Ltd. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 and
-* only version 2 as published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the
-* GNU General Public License for more details.
-*
-*/
+/*
+ * lcd_kit_parse.h
+ *
+ * lcdkit parse function for lcdkit head file
+ *
+ * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #ifndef __LCD_KIT_PARSE_H_
 #define __LCD_KIT_PARSE_H_
@@ -24,10 +29,10 @@
 #define LCD_KIT_CMD_REQ_LP_MODE              0x0010
 #define LCD_KIT_CMD_REQ_HS_MODE              0x0020
 
-int lcd_kit_parse_dcs_cmds(struct device_node* np, char* cmd_key,
-						   char* link_key, struct lcd_kit_dsi_panel_cmds* pcmds);
-int lcd_kit_parse_array_data(struct device_node* np,
-							 char* name, struct lcd_kit_array_data* out);
-int lcd_kit_parse_arrays_data(struct device_node* np,
-									 char* name, struct lcd_kit_arrays_data* out, int num);
+int lcd_kit_parse_dcs_cmds(struct device_node *np, char *cmd_key,
+	const char *link_key, struct lcd_kit_dsi_panel_cmds *pcmds);
+int lcd_kit_parse_array_data(struct device_node *np,
+	const char *name, struct lcd_kit_array_data *out);
+int lcd_kit_parse_arrays_data(struct device_node *np,
+	const char *name, struct lcd_kit_arrays_data *out, int num);
 #endif

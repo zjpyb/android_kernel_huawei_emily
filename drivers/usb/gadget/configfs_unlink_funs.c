@@ -30,11 +30,11 @@ static void gadget_config_unlink_functions(struct dentry *p_dentry)
 	struct configfs_dirent *p_sd = p_dentry->d_fsdata;
 
 	if (!list_empty(&p_sd->s_children)) {
-		struct configfs_dirent *sd, *tmp;
+		struct configfs_dirent *sd = NULL, *tmp = NULL;
 
 		list_for_each_entry_safe(sd, tmp,
 				&p_sd->s_children, s_sibling) {
-			if (sd->s_type & CONFIGFS_ITEM_LINK) {
+			if ((unsigned int)sd->s_type & CONFIGFS_ITEM_LINK) {
 				struct configfs_symlink *sl = sd->s_element;
 				struct config_item *item = sl->sl_target;
 
@@ -48,7 +48,7 @@ static void gadget_config_unlink_functions(struct dentry *p_dentry)
 static inline void gadget_unlink_functions(struct gadget_info *gi)
 {
 	if (!list_empty(&gi->configs_group.cg_children)) {
-		struct config_item *item;
+		struct config_item *item = NULL;
 
 		list_for_each_entry(item,
 				&gi->configs_group.cg_children, ci_entry) {

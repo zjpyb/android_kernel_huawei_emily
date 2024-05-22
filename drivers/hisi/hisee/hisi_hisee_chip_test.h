@@ -25,19 +25,19 @@ typedef enum _HISEE_AT_TYPE {
 	HISEE_AT_MAX,
 } hisee_at_type;
 
-int hisee_parallel_manufacture_func(void *buf, int para);
+int hisee_parallel_manufacture_func(const void *buf, int para);
 #ifdef CONFIG_HISI_HISEE_NVMFORMAT_TEST
-int hisee_nvmformat_func(void *buf, int para);
+int hisee_nvmformat_func(const void *buf, int para);
 #endif
 
 #ifdef CONFIG_HISI_HISEE_CHIPTEST_SLT
-int hisee_parallel_total_slt_func(void *buf, int para);
-int hisee_read_slt_func(void *buf, int para);
-int hisee_total_slt_func(void *buf, int para);
+int hisee_parallel_total_slt_func(const void *buf, int para);
+int hisee_read_slt_func(const void *buf, int para);
+int hisee_total_slt_func(const void *buf, int para);
 #endif
 #ifdef CONFIG_HISI_HISEE_CHIPTEST_RT
-int hisee_chiptest_rt_run_func(void * buf, int para);
-int hisee_chiptest_rt_stop_func(void * buf, int para);
+int hisee_chiptest_rt_run_func(const void * buf, int para);
+int hisee_chiptest_rt_stop_func(const void * buf, int para);
 #endif
 
 /* hisee high temp switch mode */
@@ -51,16 +51,16 @@ typedef enum _HISEE_TEMP_CFG_STATE {
 } hisee_tmp_cfg_state;
 #endif
 
-int hisee_factory_check_func(void *buf, int para);
+int hisee_factory_check_func(const void *buf, int para);
 
 #ifdef CONFIG_HISEE_SUPPORT_OVERSEA
-int hisee_smx_misc_upgrade(void *buf);
+int hisee_smx_misc_upgrade(const void *buf);
 #endif
 
 ssize_t hisee_at_result_show(struct device *dev, struct device_attribute *attr, char *buf);
 
 #ifdef CONFIG_HISI_SMX_PROCESS
-int hisee_get_smx_func(void *buf, int para);
+int hisee_get_smx_func(const void *buf, int para);
 #endif
 
 /* flag to indicate running status of flash otp1 */

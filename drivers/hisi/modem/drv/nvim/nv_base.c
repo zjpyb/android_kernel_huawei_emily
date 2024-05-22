@@ -166,7 +166,13 @@ u32 nv_readEx(u32 modem_id,u32 itemid,u32 offset,u8* pdata,u32 datalen)
 
     if(modem_id > item_info.modem_num)
     {
+#if (FEATURE_OFF == FEATURE_MULTI_MODEM)
+        ret = BSP_ERR_NV_INVALID_MDMID_ERR;
+        nv_debug(NV_FUN_READ_EX,5,ret,itemid,modem_id);
+        goto nv_readEx_err;
+#else
         modem_id = 1;
+#endif
     }
 
     rreq.itemid  = itemid;
@@ -234,7 +240,13 @@ u32 nv_writeEx(u32 modem_id, u32 itemid, u32 offset, u8* pdata, u32 datalen)
 
     if(modem_id > item_info.modem_num)
     {
+#if (FEATURE_OFF == FEATURE_MULTI_MODEM)
+        ret = BSP_ERR_NV_INVALID_MDMID_ERR;
+        nv_debug(NV_FUN_WRITE_EX,5,itemid,datalen,item_info.nv_len);
+        goto nv_writeEx_err;
+#else
         modem_id = 1;
+#endif
     }
 
     /* check crc before write */
@@ -1230,6 +1242,7 @@ static void modem_nv_shutdown(struct platform_device *dev)
 /*lint -restore*/
 
 /*lint -save -e785*//*785表示对结构体初始化的不完全modem_nv_pm_ops和modem_nv_drv modem_nv_device*/
+#ifdef CONFIG_PM
 /*lint -save -e715*//*715表示入参dev未使用*/
 static s32 modem_nv_suspend(struct device *dev)
 {
@@ -1263,6 +1276,9 @@ static const struct dev_pm_ops modem_nv_pm_ops ={
 };
 
 #define MODEM_NV_PM_OPS (&modem_nv_pm_ops)
+#else
+#define MODEM_NV_PM_OPS  NULL
+#endif
 
 static struct platform_driver modem_nv_drv = {
     .shutdown   = modem_nv_shutdown,
@@ -1329,6 +1345,10 @@ void  modem_nv_exit(void)
 }
 
 device_initcall(nv_init_dev);
+#if (FEATURE_OFF == FEATURE_DELAY_MODEM_INIT)
+module_init(modem_nv_init);
+module_exit(modem_nv_exit);
+#endif
 
 EXPORT_SYMBOL(bsp_nvm_backup);
 EXPORT_SYMBOL(bsp_nvm_dcread);

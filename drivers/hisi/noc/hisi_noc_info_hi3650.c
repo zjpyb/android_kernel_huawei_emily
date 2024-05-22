@@ -1,16 +1,13 @@
 /*
-* NoC. (NoC Mntn Module.)
-*
-* Copyright (c) 2016 Huawei Technologies CO., Ltd.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*/
+ * NoC. (NoC Mntn Module.)
+ *
+ * Copyright (c) 2016 Huawei Technologies CO., Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
-/*****************************************************************************
-  1 头文件包含
- *****************************************************************************/
 #include <linux/io.h>
 #include <linux/string.h>
 
@@ -148,7 +145,7 @@ static char *opc_array[] = {
 	"RDX: LOCK READ",
 	"WR:  INCR WRITE",
 	"WRW: WRAP WRITE",
-	"WRC：EXCLUSIVE WRITE",
+	"WRC: EXCLUSIVE WRITE",
 	"Reversed",
 	"PRE: FIXED BURST",
 	"Abnormal"
@@ -176,7 +173,7 @@ static char *err_code_array[] = {
 	"None"
 };
 
-static const ROUTE_ID_ADDR_STRU cfgsys_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr cfgsys_routeid_addr_tbl[] = {
 	/*Init_flow_bit   Targ_flow_bit    Targ subrange  Init localAddress*/
 	/*-----------------------------------------------------------------*/
 	{0x02, 0x00, 0x0, 0xe9830000},
@@ -1047,7 +1044,7 @@ static const ROUTE_ID_ADDR_STRU cfgsys_routeid_addr_tbl[] = {
 	};
 
 	/* vivo_bus */
-static const ROUTE_ID_ADDR_STRU vivo_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr vivo_routeid_addr_tbl[] = {
 	/* Init_flow  Targ_flow  Targ_subrange Init_localAddress */
 	/* ----------------------------------------------------- */
 	{0x00, 0x04, 0x0, 0x0},
@@ -1154,9 +1151,10 @@ static const ROUTE_ID_ADDR_STRU vivo_routeid_addr_tbl[] = {
 };
 
 /* vcodec_bus */
-static const ROUTE_ID_ADDR_STRU vcodec_routeid_addr_tbl[] = {
+static const struct datapath_routid_addr vcodec_routeid_addr_tbl[] = {
 	/* Init_flow  Targ_flow  Targ_subrange : Init_mapping , Init_localAddress ,
-	Targ_mapping , Targ_localAddress */
+	 * Targ_mapping , Targ_localAddress
+	 */
 	/* ----------------------------------------------------------------------*/
 	{0x0, 0x2, 0x0, 0xe8800000},
 	{0x0, 0x3, 0x0, 0xe8900000},
@@ -1314,7 +1312,7 @@ const struct noc_bus_info noc_buses_info_hi3650[] = {
  */
 void hisi_noc_get_array_size_hi3650(unsigned int *bus_info_size, unsigned int *dump_list_size)
 {
-	if ((NULL == bus_info_size)||(NULL == dump_list_size))
+	if ((bus_info_size == NULL) || (dump_list_size == NULL))
 		return;
 
 	*bus_info_size = ARRAY_SIZE_NOC(noc_buses_info_hi3650);
@@ -1330,16 +1328,16 @@ void hisi_noc_get_array_size_hi3650(unsigned int *bus_info_size, unsigned int *d
 unsigned int hisi_noc_clock_enable_hi3650(struct hisi_noc_device *noc_dev,
 				     struct noc_node *node)
 {
-    void __iomem *clock_reg = NULL;
+	void __iomem *clock_reg = NULL;
 	unsigned int reg_value;
 	unsigned int i;
 	unsigned int ret = 1;
 
-	if ((NULL == noc_dev)||(NULL == node))
+	if ((noc_dev == NULL) || (node == NULL))
 		return 0;
 
-    for (i = 0; i < HISI_NOC_CLOCK_MAX; i++) {
-		if (0xFFFFFFFF == node->crg_clk[i].offset)
+	for (i = 0; i < HISI_NOC_CLOCK_MAX; i++) {
+		if (node->crg_clk[i].offset == HISI_NOC_CLOCK_REG_DEFAULT)
 			continue;
 
 		clock_reg =
@@ -1359,5 +1357,5 @@ unsigned int hisi_noc_clock_enable_hi3650(struct hisi_noc_device *noc_dev,
 	if (noc_dev->noc_property->noc_debug)
 		pr_err("%s: clock_reg = 0x%pK\n", __func__, clock_reg);
 
-    return ret;
+	return ret;
 }

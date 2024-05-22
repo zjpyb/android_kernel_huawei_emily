@@ -11,7 +11,8 @@
 
 #include <linux/i2c.h>                              // i2c_client, spinlock_t
 #include <linux/hrtimer.h>                          // hrtimer
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/kthread.h>
 #include "FSCTypes.h"                               // FUSB30x custom types
 #include "../core/platform.h"
@@ -24,15 +25,15 @@ struct fusb30x_chip                                 // Contains data required by
 {
     struct mutex lock;                              // Synchronization lock
     struct mutex thread_lock;                       // Prevent thread re-etrance
-    struct wake_lock fusb302_wakelock;               // Wake lock
+    struct wakeup_source fusb302_wakelock;               // Wake lock
 
     struct notifier_block fsc_nb;					// Notifier block
     /* Vendor Info */
-    FSC_U8 vconn_swap_to_on_supported;
-    FSC_U8 vconn_swap_to_off_supported;
-    FSC_U8 dp_enabled;
+	FSC_U32 vconn_swap_to_on_supported;
+	FSC_U32 vconn_swap_to_off_supported;
+	FSC_U32 dp_enabled;
     FSC_U8 product_type_ama;
-    FSC_U8 modal_operation_supported;
+	FSC_U32 modal_operation_supported;
     FSC_U8 discover_mode_supported;
     FSC_U8 enter_mode_supported;
     FSC_U8 discover_svid_supported;

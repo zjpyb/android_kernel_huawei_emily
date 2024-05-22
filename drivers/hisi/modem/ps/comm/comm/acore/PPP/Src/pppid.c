@@ -41,6 +41,7 @@
 #define    THIS_FILE_ID        PS_FILE_ID_PPPID_C
 /*lint +e767  */
 
+#if(FEATURE_ON == FEATURE_PPP)
 /*ËùÓÐPPP ID*/
 PPP_ID* pgPppId     = VOS_NULL_PTR;
 
@@ -173,4 +174,5 @@ VOS_UINT32 PppIsIdValid ( PPP_ID usPppId)
     return VOS_OK;
 }
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

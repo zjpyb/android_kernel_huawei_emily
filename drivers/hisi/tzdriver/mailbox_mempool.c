@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2019. All rights reserved.
+ * Description: Mailbox memory managing for sharing memory with TEE.
+ * Author: qiqingchao  q00XXXXXX
+ * Create: 2016-06-21
+ */
+#include "mailbox_mempool.h"
 #include <linux/list.h>
 #include <linux/sizes.h>
 #include <linux/mm.h>
@@ -8,16 +15,15 @@
 #include <linux/mutex.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <securec.h>
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <linux/vmalloc.h>
 #endif
 
 #include "teek_client_constants.h"
-#include "mailbox_mempool.h"
 #include "tc_ns_log.h"
 #include "smc.h"
-#include "libhwsecurec/securec.h"
 
 #define MAILBOX_PAGE_MAX (MAILBOX_POOL_SIZE >> PAGE_SHIFT)
 #define MAILBOX_ORDER_MAX get_order(MAILBOX_POOL_SIZE)
@@ -37,7 +43,7 @@ struct mb_free_area_t {
 struct mb_zone_t {
 	struct page *all_pages;
 	struct mb_page_t pages[MAILBOX_PAGE_MAX];
-	struct mb_free_area_t free_areas[MAILBOX_ORDER_MAX+1];
+	struct mb_free_area_t free_areas[MAILBOX_ORDER_MAX + 1];
 };
 
 static struct mb_zone_t m_zone;
@@ -51,28 +57,24 @@ static void mailbox_show_status(void)
 	unsigned int used = 0;
 
 	pr_info("########################################\n");
-
 	mutex_lock(&mb_lock);
 	for (i = 0; i < MAILBOX_PAGE_MAX; i++) {
 		if (m_zone.pages[i].count) {
-			pr_info("page[%02d], order=%02d, count=%d, page=%pK\n",
-				i,
-				m_zone.pages[i].order,
-				m_zone.pages[i].count,
-				m_zone.pages[i].page);
-			used += (1<<m_zone.pages[i].order);
+			pr_info("page[%02d], order=%02d, count=%d\n",
+			i, m_zone.pages[i].order, m_zone.pages[i].count);
+			used += (1 << (uint32_t)m_zone.pages[i].order);
 		}
 	}
 	pr_info("total usage:%u/%u\n", used, MAILBOX_PAGE_MAX);
 	pr_info("----------------------------------------\n");
 
-	for (i = 0; i < MAILBOX_ORDER_MAX; i++) { /*lint !e574*/
-		head = &m_zone.free_areas[i].page_list; /*lint !e574*/
+	for (i = 0; i < (unsigned int)MAILBOX_ORDER_MAX; i++) {
+		head = &m_zone.free_areas[i].page_list;
 		if (list_empty(head))
 			pr_info("order[%02d] is empty\n", i);
 		else {
 			list_for_each_entry(pos, head, node)
-				pr_info("order[%02d], address=%pK\n", i, pos->page);
+				pr_info("order[%02d]\n", i);
 		}
 	}
 	mutex_unlock(&mb_lock);
@@ -83,59 +85,62 @@ static void mailbox_show_status(void)
 #define MB_SHOW_LINE 64
 static void mailbox_show_details(void)
 {
-	unsigned int i, used = 0;
-	unsigned int left = 0, order = 0;
+	unsigned int i= 0;
+	unsigned int used = 0;
+	unsigned int left = 0;
+	unsigned int order = 0;
 
 	pr_info("----- show mailbox details -----");
 	mutex_lock(&mb_lock);
 	for (i = 0; i < MAILBOX_PAGE_MAX; i++) {
 
-		if (0 == i%MB_SHOW_LINE) {
+		if (i == 0 % MB_SHOW_LINE) {
 			printk("\n");
-			printk("%04d-%04d:", i, i+MB_SHOW_LINE);
+			printk("%04d-%04d:", i, i + MB_SHOW_LINE);
 		}
 
 		if (m_zone.pages[i].count) {
-			left = 1 << m_zone.pages[i].order;
+			left = 1 << (uint32_t)m_zone.pages[i].order;
 			order = m_zone.pages[i].order;
-			used += (1<<m_zone.pages[i].order);
+			used += (1 << (uint32_t)m_zone.pages[i].order);
 		}
 
 		if (left) {
-			left --;
+			left--;
 			printk("%01d", order);
 		} else
 			printk("X");
 
-		if (i > 1 && 0 == (i+1)%(MB_SHOW_LINE/8))
+		if (i > 1 && (i + 1) % (MB_SHOW_LINE / 8) == 0)
 			printk(" ");
 	}
 	pr_info("total usage:%u/%u\n", used, MAILBOX_PAGE_MAX);
 	mutex_unlock(&mb_lock);
 }
 
-void *mailbox_alloc(size_t size, int flag)
+void *mailbox_alloc(size_t size, unsigned int flag)
 {
 	unsigned int i;
 	struct mb_page_t *pos = (struct mb_page_t *)NULL;
 	struct list_head *head = NULL;
 	unsigned int order = get_order(ALIGN(size, SZ_4K));
+	void *addr = NULL;
 
-	if (0 == size) {
+	if (size == 0) {
 		tlogw("alloc 0 size mailbox\n");
 		return NULL;
 	}
 
-	if (order > MAILBOX_ORDER_MAX) { /*lint !e574*/
+	if (order > (unsigned int)MAILBOX_ORDER_MAX) {
 		tloge("invalid order %d\n", order);
 		return NULL;
 	}
 
 	mutex_lock(&mb_lock);
-	for (i = order; i <= MAILBOX_ORDER_MAX; i++) { /*lint !e574*/
+	for (i = order; i <= (unsigned int)MAILBOX_ORDER_MAX; i++) {
 		unsigned int j;
 
-		head = &m_zone.free_areas[i].page_list; /*lint !e574*/
+		head = &m_zone.free_areas[i].page_list;
 		if (list_empty(head))
 			continue;
 
@@ -148,24 +153,26 @@ void *mailbox_alloc(size_t size, int flag)
 		for (j = order; j < i; j++) {
 			struct mb_page_t *new_page = NULL;
 
-			new_page = pos + (1<<j); /*lint !e679*/
+			new_page = pos + (1 << j); /*lint !e679 */
 			new_page->count = 0;
 			new_page->order = j;
 			list_add_tail(&new_page->node, &m_zone.free_areas[j].page_list);
 		}
 		list_del(&pos->node);
-		mutex_unlock(&mb_lock);
-
-		if (flag & MB_FLAG_ZERO) {
-			if (memset_s(page_address(pos->page), ALIGN(size, SZ_4K),
-					0, ALIGN(size, SZ_4K)))
-				tloge("clean mailbox failed\n");
-		}
-		return page_address(pos->page);
+		addr = page_address(pos->page);
+		break;
 	}
 	mutex_unlock(&mb_lock);
 
-	return NULL;
+	if (addr != NULL && (flag & MB_FLAG_ZERO)) {
+		if (memset_s(addr, ALIGN(size, SZ_4K), 0,
+			ALIGN(size, SZ_4K)) != EOK) {
+			tloge("clean mailbox failed\n");
+			mailbox_free(addr);
+			return NULL;
+		}
+	}
+	return addr;
 }
 
 void mailbox_free(const void *ptr)
@@ -174,15 +181,17 @@ void mailbox_free(const void *ptr)
 	struct page *page = NULL;
 	struct mb_page_t *self = NULL;
 	struct mb_page_t *buddy = NULL;
-	unsigned int self_idx, buddy_idx;
+	unsigned int self_idx;
+	unsigned int buddy_idx;
 
-	if (NULL == ptr) {
+	if (ptr == NULL) {
 		tloge("invalid ptr\n");
 		return;
 	}
 
-	page = virt_to_page(ptr); /*lint !e648*/
-	if (page < m_zone.all_pages || page >= (m_zone.all_pages + MAILBOX_PAGE_MAX)) {
+	page = virt_to_page((uint64_t)(uintptr_t)ptr);
+	if (page < m_zone.all_pages ||
+		page >= (m_zone.all_pages + MAILBOX_PAGE_MAX)) {
 		tloge("invalid ptr to free in mailbox\n");
 		return;
 	}
@@ -196,27 +205,24 @@ void mailbox_free(const void *ptr)
 		return;
 	}
 
-	for (i = (unsigned int)self->order; i <= MAILBOX_ORDER_MAX; i++) { /*lint !e574*/
+	for (i = (unsigned int)self->order; i <=
+		(unsigned int)MAILBOX_ORDER_MAX; i++) {
 		self_idx = page - m_zone.all_pages;
-		buddy_idx = self_idx^(1<<i);
-
+		buddy_idx = self_idx ^ (uint32_t)(1 << i);
 		self = &m_zone.pages[self_idx];
 		buddy = &m_zone.pages[buddy_idx];
-
 		self->count = 0;
-
-		/* is buddy free ? */
-		if (buddy->order == i && buddy->count == 0) {
+		/* is buddy free  */
+		if ((unsigned int)buddy->order == i && buddy->count == 0) {
 			/* release buddy */
 			list_del(&buddy->node);
-
 			/* combine self and buddy */
 			if (self_idx > buddy_idx) {
 				page = buddy->page;
-				buddy->order = i+1;
+				buddy->order = (int)i + 1;
 				self->order = -1;
 			} else {
-				self->order = i+1;
+				self->order = (int)i + 1;
 				buddy->order = -1;
 			}
 		} else {
@@ -233,9 +239,8 @@ struct mb_cmd_pack *mailbox_alloc_cmd_pack(void)
 {
 	void *pack = mailbox_alloc(SZ_4K, MB_FLAG_ZERO);
 
-	if (NULL == pack)
+	if (pack == NULL)
 		tloge("alloc mb cmd pack failed\n");
-
 	return (struct mb_cmd_pack *)pack;
 }
 
@@ -243,13 +248,13 @@ void *mailbox_copy_alloc(const void *src, size_t size)
 {
 	void *mb_ptr = NULL;
 
-	if ((NULL == src) || (0 == size)) {
+	if ((src == NULL) || (size == 0)) {
 		tloge("invali src to alloc mailbox copy\n");
 		return NULL;
 	}
 
 	mb_ptr = mailbox_alloc(size, 0);
-	if (NULL == mb_ptr) {
+	if (mb_ptr == NULL) {
 		tloge("alloc size(%zu) mailbox failed\n", size);
 		return NULL;
 	}
@@ -275,28 +280,29 @@ static unsigned int mb_dbg_entry_count = 1;
 static unsigned int mb_dbg_last_res; /* only cache 1 opt result */
 static struct dentry *mb_dbg_dentry = NULL;
 
+/*lint -e429 */
 static unsigned int mb_dbg_add_entry(void *ptr)
 {
-	struct mb_dbg_entry *new_entry =  NULL;
+	struct mb_dbg_entry *new_entry = NULL;
 
-	new_entry = kmalloc(sizeof(struct mb_dbg_entry),  GFP_KERNEL);
-	if (NULL == new_entry) {
+	new_entry = kmalloc(sizeof(*new_entry), GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR((unsigned long)(uintptr_t)new_entry)) {
 		tloge("alloc entry failed\n");
 		return 0;
 	}
 	INIT_LIST_HEAD(&new_entry->node);
 	new_entry->ptr = ptr;
+	mutex_lock(&mb_dbg_lock);
 	new_entry->idx = mb_dbg_entry_count;
 	/* to make sure mb_dbg_entry_count==0 is invalid */
-	if (0 == (mb_dbg_entry_count++))
+	if ((mb_dbg_entry_count++) == 0)
 		mb_dbg_entry_count++;
-
-	mutex_lock(&mb_dbg_lock);
 	list_add_tail(&new_entry->node, &mb_dbg_list);
 	mutex_unlock(&mb_dbg_lock);
 
-	return new_entry->idx; /*lint !e429*/
+	return new_entry->idx;
 }
+/*lint +e429 */
 
 static void mb_dbg_remove_entry(unsigned int idx)
 {
@@ -332,26 +338,26 @@ static void mb_dbg_reset(void)
 	mutex_unlock(&mb_dbg_lock);
 }
 
+#define MB_WRITE_SIZE 64
+
 static ssize_t mb_dbg_opt_write(struct file *filp,
-				 const char __user *ubuf, size_t cnt,
-				 loff_t *ppos)
+	const char __user *ubuf, size_t cnt, loff_t *ppos)
 {
-	char buf[64] = {0};
+	char buf[MB_WRITE_SIZE] = {0};
 	char *cmd = NULL;
 	char *value = NULL;
+	bool check_value;
 
-	if ((NULL == ubuf) || (NULL == filp) || (NULL == ppos))
+	check_value = filp == NULL || ppos == NULL;
+	if (check_value || ubuf == NULL)
 		return -EINVAL;
-
-	if ((cnt >= sizeof(buf)) || (cnt == 0))
+	if (cnt >= sizeof(buf) || cnt == 0)
 		return -EINVAL;
-
 	if (copy_from_user(buf, ubuf, cnt))
 		return -EFAULT;
 
 	buf[cnt] = 0;
 	value = buf;
-
 	if (!strncmp(value, "reset", strlen("reset"))) {
 		tlogi("mb dbg reset\n");
 		mb_dbg_reset();
@@ -359,50 +365,51 @@ static ssize_t mb_dbg_opt_write(struct file *filp,
 	}
 
 	cmd = strsep(&value, ":");
-	if ((NULL == cmd) || (NULL == value)) {
+	if (cmd == NULL || value == NULL) {
 		tloge("no valid cmd or value for mb dbg\n");
 		return -EFAULT;
 	}
 
 	if (!strncmp(cmd, "alloc", strlen("alloc"))) {
 		unsigned int alloc_size = 0;
-
-		if (0 == kstrtou32(value, 10, &alloc_size)) {
+		if (kstrtou32(value, 10, &alloc_size) == 0) {
 			unsigned int idx;
 			void *ptr = mailbox_alloc(alloc_size, 0);
-
-			if (NULL != ptr) {
-				if (0 == (idx = mb_dbg_add_entry(ptr)))
+			if (ptr != NULL) {
+				idx = mb_dbg_add_entry(ptr);
+				if (idx == 0)
 					mailbox_free(ptr);
-
 				mb_dbg_last_res = idx;
 
-			} else
+			} else {
 				tloge("alloc order=%u in mailbox failed\n", alloc_size);
-		} else
+			}
+		} else {
 			tloge("invalid value format for mb dbg\n");
+		}
 	} else if (!strncmp(cmd, "free", strlen("free"))) {
-		unsigned free_idx = 0;
-
-		if (0 == kstrtou32(value, 10, &free_idx))
+		unsigned int free_idx = 0;
+		if (kstrtou32(value, 10, &free_idx) == 0) {
 			mb_dbg_remove_entry(free_idx);
-		else
+		} else {
 			tloge("invalid value format for mb dbg\n");
-	} else
+		}
+	} else {
 		tloge("invalid format for mb dbg\n");
+	}
 
 	return cnt;
 }
 
 static ssize_t mb_dbg_opt_read(struct file *filp, char __user *ubuf,
-				size_t cnt, loff_t *ppos)
+	size_t cnt, loff_t *ppos)
 {
 	char buf[16] = {0};
 	ssize_t ret;
 
 	(void)(filp);
 
-	ret = snprintf_s(buf, 16, 15, "%u\n", mb_dbg_last_res);
+	ret = snprintf_s(buf, sizeof(buf), 15, "%u\n", mb_dbg_last_res);
 	if (ret < 0) {
 		tloge("snprintf idx failed\n");
 		return -EINVAL;
@@ -418,7 +425,7 @@ static const struct file_operations mb_dbg_opt_fops = {
 };
 
 static ssize_t mb_dbg_state_read(struct file *filp, char __user *ubuf,
-				size_t cnt, loff_t *ppos)
+	size_t cnt, loff_t *ppos)
 {
 	(void)(filp);
 	(void)(ubuf);
@@ -435,82 +442,66 @@ static const struct file_operations mb_dbg_state_fops = {
 
 static int mailbox_register(const void *mb_pool, unsigned int size)
 {
-	char *uuid;
-	TC_NS_Operation *operation;
-	TC_NS_SMC_CMD *smc_cmd;
+
+	tc_ns_operation *operation = NULL;
+	tc_ns_smc_cmd *smc_cmd = NULL;
 	int ret = 0;
 
-	smc_cmd = kzalloc(sizeof(TC_NS_SMC_CMD), GFP_KERNEL);
-	if (smc_cmd == NULL)
-	{
+	smc_cmd = kzalloc(sizeof(*smc_cmd), GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR((unsigned long)(uintptr_t)smc_cmd)) {
+		tloge("alloc smc_cmd failed\n");
 		return -EIO;
 	}
-
-	uuid = kzalloc(sizeof(char)*17, GFP_KERNEL);
-	if (uuid == NULL)
-	{
+	operation = kzalloc(sizeof(*operation), GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR((unsigned long)(uintptr_t)operation)) {
+		tloge("alloc operation failed\n");
 		ret = -EIO;
 		goto free_smc_cmd;
 	}
 
-	operation = kzalloc(sizeof(TC_NS_Operation), GFP_KERNEL);
-	if (operation == NULL)
-	{
-		ret = -EIO;
-		goto free_uuid;
-	}
+	operation->paramtypes = TEE_PARAM_TYPE_VALUE_INPUT |
+		(TEE_PARAM_TYPE_VALUE_INPUT << 4);
+	operation->params[TEE_PARAM_ONE].value.a = virt_to_phys(mb_pool);
+	operation->params[TEE_PARAM_ONE].value.b =
+		virt_to_phys(mb_pool) >> ADDR_TRANS_NUM;
+	operation->params[TEE_PARAM_TWO].value.a = size;
 
-	operation->paramTypes = TEE_PARAM_TYPE_VALUE_INPUT | (TEE_PARAM_TYPE_VALUE_INPUT << 4);
-	operation->params[0].value.a = virt_to_phys(mb_pool);
-	operation->params[0].value.b = virt_to_phys(mb_pool) >> 32;
-	operation->params[1].value.a = size;
-
-	uuid[0] = 1;
-	smc_cmd->uuid_phys = virt_to_phys(uuid);
-	smc_cmd->uuid_h_phys = virt_to_phys(uuid) >> 32;
+	smc_cmd->global_cmd = true;
 	smc_cmd->cmd_id = GLOBAL_CMD_ID_REGISTER_MAILBOX;
 	smc_cmd->operation_phys = virt_to_phys(operation);
-	smc_cmd->operation_h_phys = virt_to_phys(operation) >> 32;
+	smc_cmd->operation_h_phys = virt_to_phys(operation) >> ADDR_TRANS_NUM;
 
-	ret = TC_NS_SMC(smc_cmd, 0);
-	if (TEEC_SUCCESS != ret) {
+	ret = tc_ns_smc(smc_cmd);
+	if (ret != TEEC_SUCCESS) {
 		tloge("resigter mailbox failed\n");
 		ret = -EIO;
-		goto free_operation;
-    }
+	}
 
-free_operation:
 	kfree(operation);
 	operation = NULL;
-free_uuid:
-	kfree(uuid);
-	uuid = NULL;
 free_smc_cmd:
 	kfree(smc_cmd);
 	smc_cmd = NULL;
 	return ret;
-
 }
 
 int mailbox_mempool_init(void)
 {
-	unsigned int i;
+	int i;
 	struct mb_page_t *mb_page = NULL;
 	struct mb_free_area_t *area = NULL;
 	struct page *all_pages = NULL;
 
 	all_pages = alloc_pages(GFP_KERNEL, MAILBOX_ORDER_MAX);
-	if (NULL == all_pages) {
+	if (all_pages == NULL) {
 		tloge("fail to alloc mailbox mempool\n");
 		return -ENOMEM;
 	}
-
 	if (mailbox_register(page_address(all_pages), MAILBOX_POOL_SIZE)) {
 		tloge("register mailbox failed\n");
-		free_pages((unsigned long)all_pages, MAILBOX_ORDER_MAX);
+		free_pages((unsigned long)(uintptr_t)all_pages, MAILBOX_ORDER_MAX);
 		return -EIO;
 	}
-
 	for (i = 0; i < MAILBOX_PAGE_MAX; i++) {
 		m_zone.pages[i].order = -1;
 		m_zone.pages[i].count = 0;
@@ -518,30 +509,24 @@ int mailbox_mempool_init(void)
 	}
 	m_zone.pages[0].order = MAILBOX_ORDER_MAX;
 
-	for (i = 0; i <= MAILBOX_ORDER_MAX; i++) { /*lint !e574*/
+	for (i = 0; i <= MAILBOX_ORDER_MAX; i++) {
 		area = &m_zone.free_areas[i];
 		INIT_LIST_HEAD(&area->page_list);
 		area->order = i;
 	}
 
 	mb_page = &m_zone.pages[0];
-	list_add_tail(&mb_page->node, &area->page_list); /* [false alarm]:area arrays need init */
-
+	list_add_tail(&mb_page->node, &area->page_list);  /* [false alarm]:area arrays need init */
 	m_zone.all_pages = all_pages;
-
 	mutex_init(&mb_lock);
-
 	mb_dbg_dentry = debugfs_create_dir("tz_mailbox", NULL);
-	debugfs_create_file("opt", 0660, mb_dbg_dentry,
-			    NULL, &mb_dbg_opt_fops);
-	debugfs_create_file("state", 0440, mb_dbg_dentry,
-			    NULL, &mb_dbg_state_fops);
-
+	debugfs_create_file("opt", 0660, mb_dbg_dentry, NULL, &mb_dbg_opt_fops);
+	debugfs_create_file("state", 0440, mb_dbg_dentry, NULL, &mb_dbg_state_fops);
 	return 0;
 }
 
 void mailbox_mempool_destroy(void)
 {
-	free_pages((unsigned long)m_zone.all_pages, MAILBOX_ORDER_MAX);
+	free_pages((unsigned long)(uintptr_t)m_zone.all_pages, MAILBOX_ORDER_MAX);
 	m_zone.all_pages = NULL;
 }

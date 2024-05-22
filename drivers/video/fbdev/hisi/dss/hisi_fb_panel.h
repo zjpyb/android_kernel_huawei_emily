@@ -493,6 +493,18 @@ struct mipi_panel_info {
 	uint8_t non_continue_en;
 	uint8_t txoff_rxulps_en;
 
+	uint32_t hsa;
+	uint32_t hbp;
+	uint32_t dpi_hsize;
+	uint32_t width;
+	uint32_t hline_time;
+
+	uint32_t vsa;
+	uint32_t vbp;
+	uint32_t vactive_line;
+	uint32_t vfp;
+	uint8_t dsi_timing_support;
+
 	uint32_t dsi_bit_clk_val1;
 	uint32_t dsi_bit_clk_val2;
 	uint32_t dsi_bit_clk_val3;
@@ -507,7 +519,7 @@ struct mipi_panel_info {
 	uint32_t clk_pre_adjust;
 	uint32_t clk_pre_delay_adjust;
 	uint32_t clk_t_hs_exit_adjust;
-	uint32_t clk_t_hs_trial_adjust;
+	int clk_t_hs_trial_adjust;
 	uint32_t clk_t_hs_prepare_adjust;
 	int clk_t_lpx_adjust;
 	uint32_t clk_t_hs_zero_adjust;
@@ -515,10 +527,11 @@ struct mipi_panel_info {
 	int data_t_lpx_adjust;
 	uint32_t data_t_hs_prepare_adjust;
 	uint32_t data_t_hs_zero_adjust;
-	uint32_t data_t_hs_trial_adjust;
+	int data_t_hs_trial_adjust;
 	uint32_t rg_vrefsel_vcm_adjust;
 	uint32_t rg_vrefsel_lptx_adjust;
 	uint32_t rg_lptx_sri_adjust;
+	int data_lane_lp2hs_time_adjust;
 
 	/* only for 3660 use */
 	uint32_t rg_vrefsel_vcm_clk_adjust;
@@ -743,6 +756,8 @@ struct hisi_panel_info {
 	uint8_t dbv_curve_mapped_support;
 	uint8_t is_dbv_need_mapped;
 	uint8_t dbv_map_index;
+	uint32_t dbv_map_points_num;
+	short* dbv_map_curve_pointer;
 
 	uint32_t ifbc_type;
 	uint32_t ifbc_cmp_dat_rev0;
@@ -772,6 +787,7 @@ struct hisi_panel_info {
 	uint8_t esd_recover_step;
 	uint8_t esd_expect_value_type;
 	uint32_t esd_recovery_max_count;
+	uint32_t esd_check_max_count;
 	uint8_t dirty_region_updt_support;
 	uint8_t snd_cmd_before_frame_support;
 	uint8_t dsi_bit_clk_upt_support;
@@ -787,6 +803,7 @@ struct hisi_panel_info {
 	uint8_t prefix_sharpness1D_support; /* rch sharpness 1D */
 	uint8_t prefix_sharpness2D_support; /* rch sharpness 2D */
 	sharp2d_t *sharp2d_table;
+	uint8_t scaling_ratio_threshold;
 
 	uint8_t gmp_support;
 	uint8_t colormode_support;
@@ -816,10 +833,9 @@ struct hisi_panel_info {
 	uint8_t xcc_pre_support;
 	uint32_t *xcc_pre_table;
 	uint32_t xcc_pre_table_len;
-	//uint32_t dual_lcd_top_left_x;
-	//uint32_t dual_lcd_top_left_y;
-	//uint32_t dual_lcd_bot_right_x;
-	//uint32_t dual_lcd_bot_right_y;
+	uint8_t post_xcc_support;
+	uint32_t *post_xcc_table;
+	uint32_t post_xcc_table_len;
 
 	/* set xcc reg in isr func */
 	int xcc_set_in_isr_support;
@@ -1073,8 +1089,9 @@ struct hisi_panel_info {
 
 	uint32_t mask_delay_time_before_fp;
 	uint32_t mask_delay_time_after_fp;
-	uint32_t vsync_delay_th;
-	uint32_t vsync_delay_time_fp;
+	uint64_t left_time_to_te_us;
+	uint64_t right_time_to_te_us;
+	uint64_t te_interval_us;
 	uint32_t bl_delay_frame;
 	int need_skip_delta;
 	// elle need delay 3frames between bl and hbm code
@@ -1105,9 +1122,19 @@ struct hisi_panel_info {
 
 	//for mipi dsi tx interface, support delayed cmd queue which will send after next frame start(vsync)
 	uint8_t delayed_cmd_queue_support;
+
+	//idle timeout trigger frame refresh if emi protect enable
+	uint8_t emi_protect_enable;
 };
 
 struct hisi_fb_data_type;
+
+typedef struct demura_set_info {
+	uint8_t *data0;
+	uint8_t len0;
+	uint8_t *data1;
+	uint8_t len1;
+} demura_set_info_t;
 
 struct hisi_fb_panel_data {
 	struct hisi_panel_info *panel_info;
@@ -1120,6 +1147,7 @@ struct hisi_fb_panel_data {
 	int (*remove) (struct platform_device *pdev);
 	int (*set_backlight) (struct platform_device *pdev, uint32_t bl_level);
 	int (*lcd_set_backlight_by_type_func) (struct platform_device *pdev, int backlight_type);
+	int (*lcd_set_hbm_for_screenon) (struct platform_device *pdev, int bl_type);
 	int (*lcd_set_hbm_for_mmi_func) (struct platform_device* pdev, int level);
 	int (*set_blc_brightness) (struct platform_device *pdev, uint32_t bl_level);
 	int (*sbl_ctrl) (struct platform_device *pdev, int enable);
@@ -1197,6 +1225,8 @@ struct hisi_fb_panel_data {
 	ssize_t (*lcd_amoled_vr_mode_show)(struct platform_device *pdev, char *buf);
 	ssize_t (*amoled_alpm_setting_store)(struct platform_device *pdev, const char *buf, size_t count);
 	ssize_t (*lcd_xcc_store)(struct platform_device *pdev, const char *buf, size_t count);
+	int (*lcd_get_demura)(struct platform_device *pdev, uint8_t dsi, uint8_t *out, uint8_t type, uint8_t len);
+	int (*lcd_set_demura)(struct platform_device *pdev, uint8_t type, const demura_set_info_t *info);
 	struct platform_device *next;
 };
 
@@ -1210,6 +1240,32 @@ struct lcd_reg_read_t {
 	u8 recovery;	/* if need recovery */
 };
 #endif
+
+
+// for display time info
+enum {
+	EN_TIME_STATE_IDLE = 0,
+	EN_TIME_STATE_WORK,
+};
+
+enum {
+	EN_AGING_PANEL_MAIN = 0,
+	EN_AGING_PANEL_SUB,
+	EN_AGING_PANEL_SIDE,
+	EN_AGING_PANEL_NUM
+};
+
+struct panel_aging_time_info {
+	s64 start_time[EN_AGING_PANEL_NUM];
+	s64 duration_time[EN_AGING_PANEL_NUM];
+	uint32_t time_state[EN_AGING_PANEL_NUM];
+	spinlock_t time_lock;
+	bool hiace_enable;
+
+	uint32_t fold_count;
+	spinlock_t count_lock;
+	uint8_t record_region;
+};
 
 
 /*******************************************************************************
@@ -1334,8 +1390,24 @@ void panel_status_report_by_dsm(struct lcd_reg_read_t *lcd_status_reg, int cnt, 
 #endif
 #ifdef CONFIG_LCD_KIT_DRIVER
 int hisi_blpwm_set_bl(struct hisi_fb_data_type *hisifd, uint32_t bl_level);
+void lcd_switch_region(struct hisi_fb_data_type *hisifd,
+	uint8_t curr_mode, uint8_t pre_mode);
+int lcd_get_dbv_stat(struct hisi_fb_data_type *hisifd,
+	uint32_t *dbv_stat, uint32_t dbv_len,
+	uint32_t *pwon_stat, uint32_t pwon_len);
 #endif
 
-int panel_next_tcon_mode(struct platform_device *pdev, struct hisi_panel_info *pinfo);
-int panel_set_display_region(struct hisi_fb_data_type *hisifd, void __user *argp);
+int panel_next_tcon_mode(struct platform_device *pdev, struct hisi_fb_data_type *hisifd, struct hisi_panel_info *pinfo);
+int panel_set_display_region(struct hisi_fb_data_type *hisifd, const void __user *argp);
+
+// for display time
+void hisifb_panel_display_time_init(struct hisi_fb_data_type *hisifd);
+void hisifb_panel_set_hiace_timestamp(struct hisi_fb_data_type *hisifd, bool enable, int mode);
+void hisifb_panel_set_display_region_timestamp(struct hisi_fb_data_type *hisifd);
+void hisifb_panel_get_hiace_display_time(struct hisi_fb_data_type *hisifd, uint32_t *time);
+
+// for fold count
+void hisifb_panel_add_fold_count(struct hisi_fb_data_type *hisifd, uint8_t region);
+uint32_t hisifb_panel_get_fold_count(struct hisi_fb_data_type *hisifd);
+
 #endif /* HISI_FB_PANEL_H */

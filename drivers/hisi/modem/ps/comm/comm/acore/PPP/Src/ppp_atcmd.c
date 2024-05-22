@@ -40,6 +40,7 @@
 /*lint +e767  */
 
 #include "product_config.h"
+#if(FEATURE_ON == FEATURE_PPP)
 
 /******************************************************************************
    1 头文件包含
@@ -57,7 +58,11 @@
 #include "PPP/Inc/link.h"
 #include "PPP/Inc/ppp_atcmd.h"
 #include "PPP/Inc/ppp_input.h"
+#if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+#include "PPP/Inc/hdlc_hardware_service.h"
+#else
 #include "PPP/Inc/hdlc_software.h"
+#endif
 #include "acore_nv_stru_gucnas.h"
 #include "nv_stru_gucnas.h"
 
@@ -106,6 +111,7 @@ VOS_UINT32 PPP_InitHdlcConfig(PPP_ID usPppId)
 
     pstHdlcConfig = PPP_CONFIG(usPppId);
 
+#if (FEATURE_OFF == FEATURE_HARDWARE_HDLC_FUNC)
 
     pstHdlcConfig->pFunProcData            = PPP_HDLC_SOFT_ProcData;
     pstHdlcConfig->pFunProcProtocolPacket  = PPP_HDLC_SOFT_ProcProtocolPacket;
@@ -115,6 +121,19 @@ VOS_UINT32 PPP_InitHdlcConfig(PPP_ID usPppId)
     PPP_MNTN_LOG(PS_PID_APP_PPP, 0, PS_PRINT_WARNING,
                  "\r\nPPP, PPP_InitHdlcConfig, INFO, Soft HDLC.\r\n");
 
+#else
+
+    pstHdlcConfig->pFunProcData            = PPP_HDLC_HARD_ProcData;
+    pstHdlcConfig->pFunProcProtocolPacket  = PPP_HDLC_HARD_ProcProtocolPacket;
+    pstHdlcConfig->pFunDisable             = PPP_Service_HdlcHardDisable;
+    pstHdlcConfig->pFunProcAsFrmData       = PPP_HDLC_HARD_ProcAsFrmPacket;
+
+    PPP_Service_HdlcHardSetUp(usPppId);
+
+    PPP_MNTN_LOG(PS_PID_APP_PPP, 0, PS_PRINT_WARNING,
+                 "\r\nPPP, PPP_InitHdlcConfig, INFO, Hard HDLC.\r\n");
+
+#endif
 
     return VOS_OK;
 }
@@ -773,5 +792,111 @@ VOS_UINT32 Ppp_RegDlDataCallback(PPP_ID usPppId)
     return VOS_OK;
 }
 
+#else    /* for feature */
+
+/*****************************************************************************
+  1 头文件包含
+*****************************************************************************/
+#include "AtPppInterface.h"
+
+/*****************************************************************************
+  3 函数实现
+*****************************************************************************/
+
+/*****************************************************************************
+ Prototype      : Ppp_CreatePppReq
+ Description    : 为AT模块"创建PPP链路"提供对应的API函数。
+
+ Input          : ---
+ Output         : ---创建成功后返回的PPP ID
+ Return Value   : ---VOS_UINT32
+ Calls          : ---
+ Called By      : ---
+
+ History        : ---
+  1.Date        : 2005-11-18
+    Author      : ---
+    Modification: Created function
+*****************************************************************************/
+VOS_UINT32 Ppp_CreatePppReq ( VOS_UINT16 *pusPppId)
+{
+    return VOS_OK;
+}
+
+
+/*****************************************************************************
+ Prototype      : Ppp_CreateRawDataPppReq
+ Description    : 创建PDP类型为PPP的PPP实体，但不做链路管理，只作数据的封装和解封装
+
+ Input          : ---
+ Output         : ---创建成功后返回的PPP ID
+ Return Value   : ---VOS_UINT32
+ Calls          : ---
+ Called By      : ---
+
+ History        : ---
+  1.Date        : 2005-11-18
+    Author      : ---
+    Modification: Created function
+*****************************************************************************/
+VOS_UINT32 Ppp_CreateRawDataPppReq ( VOS_UINT16 *pusPppId)
+{
+    return VOS_OK;
+}
+
+
+/*****************************************************************************
+ Prototype      : Ppp_RcvConfigInfoInd
+ Description    : 为AT模块"PPP模块接收网侧指示的配置信息"提供对应的API函数。
+                  当AT向GGSN认证成功后，调用此函数向PPP发指示。
+
+ Input          : usPppId---要发指示的PPP链路所在的PPP ID
+                  pPppIndConfigInfo---从GGSN发来的该PPP链路的IP地址等信息
+ Output         : ---
+ Return Value   : ---VOS_UINT32
+ Calls          : ---
+ Called By      : ---
+
+ History        : ---
+  1.Date        : 2005-11-18
+    Author      : ---
+    Modification: Created function
+*****************************************************************************/
+VOS_UINT32 Ppp_RcvConfigInfoInd
+(
+    PPP_ID usPppId,
+    AT_PPP_IND_CONFIG_INFO_STRU         *pstAtPppIndConfigInfo
+)
+{
+    return VOS_OK;
+}
+
+
+
+VOS_UINT32 PPP_RcvAtCtrlOperEvent(VOS_UINT16 usPppId, VOS_UINT32 ulCtrlOperType)
+{
+    return VOS_OK;
+}
+
+/*****************************************************************************
+ Prototype      : Ppp_RegDlDataCallback
+ Description    : 为AT模块提供注册下行发送数据的API
+
+ Input          : usPppId---要发指示的PPP链路所在的PPP ID
+ Output         : ---
+ Return Value   : ---VOS_UINT32
+ Calls          : ---
+ Called By      : ---
+
+ History        : ---
+  1.Date        : 2013-06-04
+    Author      : ---
+    Modification: Created function
+*****************************************************************************/
+VOS_UINT32 Ppp_RegDlDataCallback(PPP_ID usPppId)
+{
+    return VOS_OK;
+}
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 
 

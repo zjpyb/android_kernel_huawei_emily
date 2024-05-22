@@ -17,6 +17,7 @@
 #include <linux/iommu.h>
 #include <linux/gpio.h>
 #include <asm/page.h>
+#include <linux/version.h>
 
 #define IOMMU_MASK (~(IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE | IOMMU_NOEXEC | IOMMU_MMIO | IOMMU_DEVICE | IOMMU_EXEC))
 #define ISP_FW_MEM_SHARED_SIZE   (0x1000)
@@ -256,6 +257,63 @@ enum isp_msg_err_e {
     RPMSG_ERR_MAX,
 };
 
+enum hisp_phy_id_e {
+	HISP_CDPHY_A = 0,
+	HISP_CDPHY_B,
+	HISP_CDPHY_C,
+	HISP_CDPHY_D,
+	HISP_CDPHY_MAX,
+};
+
+enum hisp_phy_mode_e {
+	HISP_PHY_MODE_DPHY = 0,
+	HISP_PHY_MODE_CPHY,
+	HISP_PHY_MODE_MAX,
+};
+
+enum hisp_phy_freq_mode_e {
+	HISP_PHY_AUTO_FREQ = 0,
+	HISP_PHY_MANUAL_FREQ,
+	HISP_PHY_FREQ_MODE_MAX,
+};
+
+enum hisp_phy_work_mode_e {
+	HISP_PHY_SINGLE_MODE = 0,
+	HISP_PHY_DUAL_MODE_SENSORA,//dphy use DL1&3,cphy use DL2
+	HISP_PHY_DUAL_MODE_SENSORB,//dphy use DL0&2,cphy use DL0&1
+	HISP_PHY_WORK_MODE_MAX,
+};
+
+enum hisp_sec_mem_type {
+	HISP_SEC_PAGE       = 0,
+	HISP_SEC_TEXT       = 1,
+	HISP_SEC_DATA       = 2,
+	HISP_ISP_SEC_POOL   = 3,
+	HISP_SEC_POOL       = 4,
+	HISP_DYNAMIC_SEC    = 5,
+	HISP_SEC_IPP        = 6,
+	HISP_MEM_SET_SEC    = 7,
+	HISP_SEC_MAX_TYPE
+};
+
+enum hisp_sec_staic_mem_type {
+	HISP_SEC_VR0       = 0,
+	HISP_SEC_VR1       = 1,
+	HISP_SEC_VQ        = 2,
+	HISP_SEC_SHARE     = 3,
+	HISP_SEC_RDR       = 4,
+	HISP_SEC_STATIC_MAX_TYPE
+};
+
+struct hisp_phy_info_t {
+	unsigned int is_master_sensor;
+	enum hisp_phy_id_e phy_id;
+	enum hisp_phy_mode_e phy_mode;
+	enum hisp_phy_freq_mode_e phy_freq_mode;
+	unsigned int phy_freq;
+	enum hisp_phy_work_mode_e phy_work_mode;
+};
+
 int rpmsg_sensor_ioctl(unsigned int cmd, int index, char* name);
 
 /**
@@ -297,14 +355,22 @@ struct hisi_isp_vring_s {
     size_t size;
 };
 #endif
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 #define CONFIG_HISI_REMOTEPROC_FASTCMA_MDC_DEBUG
-#ifdef CONFIG_HISI_REMOTEPROC_FASTCMA_MDC_DEBUG
-struct hisi_isp_fstcma_mdc_s {
-    dma_addr_t mdc_dma_addr;
-    void *mdc_virt_addr;
-};
 #endif
+struct hisp_mdc_device {
+    int isp_mdc_flag;
+    int isp_mdc_count;
+    dma_addr_t mdc_dma_addr;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+	int share_fd;
+	struct dma_buf *devbuf;
+	void *mdc_virt_addr;
+#else
+	unsigned long iova;
+	size_t size;
+#endif
+};
 /*
  * hisi nesc cpucfg dump
  */
@@ -415,6 +481,7 @@ ssize_t atfisp_test_store(struct device *pdev, struct device_attribute *attr, co
 ssize_t security_show(struct device *dev, struct device_attribute *attr, char *buf);
 ssize_t security_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 ssize_t ispbinupdate_show(struct device *pdev, struct device_attribute *attr, char *buf);
+extern struct device *get_isp_device(void);
 #endif
 int hisp_sec_jpeg_powerup(void);
 int hisp_sec_jpeg_powerdn(void);
@@ -451,7 +518,11 @@ void ispmonitor_update(void);
 int sync_isplogcat(void);
 int start_isplogcat(void);
 void stop_isplogcat(void);
+void clear_isplog_info(void);
 extern void ap_send_fiq2ispcpu(void);
+unsigned int secisp_ta_map(int sharefd, unsigned int type, unsigned int size, unsigned int prot);
+int secisp_ta_unmap(int sharefd, unsigned int type, unsigned int size, unsigned int da);
+
 #else
 static inline int rdr_isp_init(void){return 0;};
 static inline void rdr_isp_exit(void){return;};
@@ -465,7 +536,11 @@ static inline void ispmonitor_update(void){return;}
 static inline int sync_isplogcat(void){return -1;}
 static inline int start_isplogcat(void){return -1;}
 static inline void stop_isplogcat(void){return;}
+static inline void clear_isplog_info(void){return;}
 static inline void ap_send_fiq2ispcpu(void){return;}
+static inline unsigned int secisp_ta_map(int sharefd, unsigned int type, unsigned int size, unsigned int prot){return 0;};
+static inline int secisp_ta_unmap(int sharefd, unsigned int type, unsigned int size, unsigned int da){return -1;};
+
 #endif
 void virtqueue_sg_init(struct scatterlist *sg, void *va, dma_addr_t dma, int size);
 int rpmsg_vdev_map_resource(struct virtio_device *vdev, dma_addr_t dma, int total_space);
@@ -473,13 +548,13 @@ extern int rproc_add_virtio_devices(struct rproc *rproc);
 int rproc_trigger_auto_boot(struct rproc *rproc);
 extern int rproc_bootware_attach(struct rproc *rproc, const char *bootware);
 extern struct rproc_shared_para *rproc_get_share_para(void);
-extern int rproc_handle_version(struct rproc *rproc, struct fw_rsc_version *rsc, int offset, int avail);
-extern int rproc_handle_cda(struct rproc *rproc, struct fw_rsc_cda *rsc, int offset, int avail);
+extern int rproc_handle_version(struct rproc *rproc, struct fw_rsc_hdr *hdr, int offset, int avail);
+extern int rproc_handle_cda(struct rproc *rproc, struct fw_rsc_hdr *hdr, int offset, int avail);
 extern void rproc_memory_cache_flush(struct rproc *rproc);
-extern int rproc_handle_dynamic_memory(struct rproc *rproc, struct fw_rsc_dynamic_memory *rsc, int offset, int avail);
-extern int rproc_handle_reserved_memory(struct rproc *rproc, struct fw_rsc_reserved_memory *rsc, int offset, int avail);
-extern int rproc_handle_rdr_memory(struct rproc *rproc, struct fw_rsc_carveout *rsc, int offset, int avail);
-extern int rproc_handle_shared_memory(struct rproc *rproc, struct fw_rsc_carveout *rsc, int offset, int avail);
+extern int rproc_handle_dynamic_memory(struct rproc *rproc, struct fw_rsc_hdr *hdr, int offset, int avail);
+extern int rproc_handle_reserved_memory(struct rproc *rproc, struct fw_rsc_hdr *hdr, int offset, int avail);
+extern int rproc_handle_rdr_memory(struct rproc *rproc, struct fw_rsc_hdr *hdr, int offset, int avail);
+extern int rproc_handle_shared_memory(struct rproc *rproc, struct fw_rsc_hdr *hdr, int offset, int avail);
 extern void *get_rsctable(int *tablesz);
 
 struct dentry *rproc_create_cda_file(const char *name, struct rproc *rproc,
@@ -515,6 +590,8 @@ extern void hisp_virtio_boot_complete(struct rproc *rproc, int flag);
 extern int hisp_rproc_boot(struct rproc *rproc);
 extern unsigned long hisp_sg2virtio(struct virtqueue *vq, struct scatterlist *sg);
 extern int rproc_fw_boot(struct rproc *rproc, const struct firmware *fw);
+extern int rproc_probe_subdevices(struct rproc *rproc);
+extern void rproc_remove_subdevices(struct rproc *rproc);
 
 extern int hisi_isp_rproc_device_mclk_config(unsigned int id, unsigned int clk, int on);
 extern int hisi_rproc_device_init(void);
@@ -540,11 +617,16 @@ extern int get_isp_mdc_flag(void);
 extern int get_ispcpu_cfg_info(void);
 int hisp_mntn_dumpregs(void);
 u32 get_share_exc_flag(void);
-extern struct hisi_isp_fstcma_mdc_s *get_fstcma_mdc(unsigned int size);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 void *get_mdc_addr_va(void);
-void hisp_mdc_dev_init(void);
 int mdc_addr_pa_init(void);
-void free_mdc_ion(unsigned int size);
+void mdc_addr_release(unsigned int size);
+#else
+int hispmdc_map_fw(unsigned long iova, phys_addr_t paddr, size_t size, int prot);
+int hispmdc_unmap_fw(unsigned long iova, size_t size);
+void hisp_mdc_dev_deinit(void);
+#endif
+void hisp_mdc_dev_init(void);
 extern int set_ispcpu_reset(void);
 extern u64 get_mdc_addr_pa(void);
 extern void set_shared_mdc_pa_addr(u64 mdc_pa_addr);
@@ -570,5 +652,8 @@ extern void dump_hisi_isp_boot(struct rproc *rproc,unsigned int size);
 unsigned int wait_share_excflag_timeout(unsigned int flag, unsigned int time);
 int hisp_ion_phys(struct ion_client *client, struct ion_handle *handle, dma_addr_t *addr);
 extern void free_secmem_rsctable(void);
+extern int hisp_phy_csi_connect(struct hisp_phy_info_t * phy_info, unsigned int csi_index);
+extern int hisp_phy_csi_disconnect(void);
+extern int sec_process_use_ca_ta(void);
 #endif /* _PLAT_REMOTEPROC_HISI_ISP_H */
 

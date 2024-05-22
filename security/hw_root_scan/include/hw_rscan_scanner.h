@@ -54,6 +54,7 @@ enum tee_rs_mask {
 	EIMABIT,                        /* 17   on */
 	SETIDBIT,                       /* 18   on */
 	CHECKFAILBIT,                   /* 19   on */
+	RODATABIT,                      /* 20   on */
 };
 
 static inline uint32_t get_tee_status(void)
@@ -100,9 +101,10 @@ int rscan_dynamic_init(void);
  *     Otherwise return an interger that each of its bit corresponds
  *     to its bitmasks
  */
-int rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
-		int *error_code);
+uint rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
+		uint *error_code);
 
 int stp_rscan_trigger(void);
 
 #endif
+

@@ -12,6 +12,7 @@ enum {
 /******************************************
 * LCD defect check code
 */
+/*lint -e569*/
 static char defect_check_rst0[] = {
 	0xFF,
 	0x10,
@@ -1769,3 +1770,5 @@ static int bist_check_cmds_size[] = {
 	ARRAY_SIZE(sharp_display_bist_check_cmds8),
 };
 #endif
+/*lint +e569*/
+

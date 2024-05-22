@@ -100,9 +100,8 @@ static bool is_bg_limit_enabled(void) {
 
 static bool is_fg(int uid) {
     int i;
-    bool ret;
+    bool ret = false;
     spin_lock(&(netinfo.fg_lock));
-    ret = false;
     for (i = 0; i < netinfo.fg_num; i++) {
         if (uid == netinfo.fg_uids[i]) {
             ret = true;
@@ -115,9 +114,8 @@ static bool is_fg(int uid) {
 
 static bool is_bg(int uid) {
     int i;
-    bool ret;
+    bool ret = false;
     spin_lock(&(netinfo.bg_lock));
-    ret = false;
     for (i = 0; i < netinfo.bg_num; i++) {
         if (uid == netinfo.bg_uids[i]) {
             ret = true;

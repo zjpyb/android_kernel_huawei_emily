@@ -3,14 +3,40 @@
 #include <linux/bitops.h>
 
 #include "dwc3-hisi.h"
-extern struct hisi_dwc3_device *hisi_dwc3_dev;
+#include "hisi_usb_bc12.h"
+#include "hisi_usb_helper.h"
+
+int hisi_bc_is_bcmode_on(void)
+{
+	void __iomem *base;
+	volatile u32 reg;
+
+	if (!hisi_dwc3_dev || !hisi_dwc3_dev->usb_phy)
+		return false;
+
+	base = hisi_dwc3_dev->usb_phy->otg_bc_reg_base;
+	reg = readl(base + BC_CTRL1);
+	return (reg & BC_CTRL1_BC_MODE) != 0;
+}
+
+void __iomem *hisi_bc_get_bc_ctrl(struct hisi_dwc3_device *hisi_dwc)
+{
+	if (!hisi_dwc3_dev->usb_phy->get_bc_ctrl_reg)
+		return NULL;
+
+	return hisi_dwc3_dev->usb_phy->get_bc_ctrl_reg();
+}
 
 void hisi_bc_dplus_pulldown(struct hisi_dwc3_device *hisi_dwc)
 {
-	void __iomem *base = hisi_dwc->otg_bc_reg_base;
+	void __iomem *base;
 	volatile u32 reg;
 
 	usb_dbg("+\n");
+	if (!hisi_dwc || !hisi_dwc->usb_phy)
+		return;
+
+	base = hisi_dwc->usb_phy->otg_bc_reg_base;
 
 	/* enable BC */
 	writel(BC_CTRL1_BC_MODE, base + BC_CTRL1);
@@ -23,11 +49,14 @@ void hisi_bc_dplus_pulldown(struct hisi_dwc3_device *hisi_dwc)
 
 void hisi_bc_dplus_pullup(struct hisi_dwc3_device *hisi_dwc)
 {
-	void __iomem *base = hisi_dwc->otg_bc_reg_base;
+	void __iomem *base;
 	volatile u32 reg;
 
 	usb_dbg("+\n");
+	if (!hisi_dwc || !hisi_dwc->usb_phy)
+		return;
 
+	base = hisi_dwc->usb_phy->otg_bc_reg_base;
 	reg = readl(base + BC_CTRL0);
 	reg &= (~((1u << 7) | (1u << 8)));
 	writel(reg, base + BC_CTRL0);
@@ -50,12 +79,19 @@ void hisi_bc_disable_vdp_src(struct hisi_dwc3_device *hisi_dwc3)
 
 	usb_dbg("+\n");
 
+	if (!hisi_dwc3 || !hisi_dwc3->usb_phy)
+		return;
+
 	if (hisi_dwc3->vdp_src_enable == 0)
 		return;
 	hisi_dwc3->vdp_src_enable = 0;
 
-	base = hisi_dwc3->otg_bc_reg_base;
-	bc_ctrl2 = hisi_dwc3->bc_ctrl_reg;
+	base = hisi_dwc3->usb_phy->otg_bc_reg_base;
+	bc_ctrl2 = hisi_bc_get_bc_ctrl(hisi_dwc3);
+	if (!bc_ctrl2) {
+		usb_err("bc_ctrl2 is null\n");
+		return;
+	}
 	usb_dbg("diaable VDP_SRC\n");
 
 	reg = readl(bc_ctrl2);
@@ -77,11 +113,18 @@ void hisi_bc_enable_vdp_src(struct hisi_dwc3_device *hisi_dwc3)
 
 	usb_dbg("+\n");
 
+	if (!hisi_dwc3 || !hisi_dwc3->usb_phy)
+		return;
+
 	if (hisi_dwc3->vdp_src_enable != 0)
 		return;
 	hisi_dwc3->vdp_src_enable = 1;
 
-	bc_ctrl2 = hisi_dwc3->bc_ctrl_reg;
+	bc_ctrl2 = hisi_bc_get_bc_ctrl(hisi_dwc3);
+	if (!bc_ctrl2) {
+		usb_err("bc_ctrl2 is null\n");
+		return;
+	}
 	usb_dbg("enable VDP_SRC\n");
 	reg = readl(bc_ctrl2);
 	reg &= ~BC_CTRL2_BC_PHY_CHRGSEL;
@@ -90,7 +133,7 @@ void hisi_bc_enable_vdp_src(struct hisi_dwc3_device *hisi_dwc3)
 	usb_dbg("-\n");
 }
 
-static int is_dcd_timeout(void __iomem *base)
+static int is_dcd_timeout(const void __iomem *base)
 {
 	unsigned long jiffies_expire;
 	uint32_t reg;
@@ -124,12 +167,15 @@ static int is_dcd_timeout(void __iomem *base)
 enum hisi_charger_type detect_charger_type(struct hisi_dwc3_device *hisi_dwc3)
 {
 	enum hisi_charger_type type = CHARGER_TYPE_NONE;
-	void __iomem *base = hisi_dwc3->otg_bc_reg_base;
+	void __iomem *base;
 	void __iomem *bc_ctrl2;
 	uint32_t reg;
 	unsigned long flags;
 
 	usb_dbg("+\n");
+
+	if (!hisi_dwc3 || !hisi_dwc3->usb_phy)
+		return CHARGER_TYPE_NONE;
 
 	if (hisi_dwc3->fpga_flag) {
 		usb_dbg("this is fpga platform, charger is SDP\n");
@@ -141,7 +187,12 @@ enum hisi_charger_type detect_charger_type(struct hisi_dwc3_device *hisi_dwc3)
 		return hisi_dwc3->fake_charger_type;
 	}
 
-	bc_ctrl2 = hisi_dwc3->bc_ctrl_reg;
+	base = hisi_dwc3->usb_phy->otg_bc_reg_base;
+	bc_ctrl2 = hisi_bc_get_bc_ctrl(hisi_dwc3);
+	if (!bc_ctrl2) {
+		usb_err("bc_ctrl2 is null\n");
+		return CHARGER_TYPE_NONE;
+	}
 	writel(BC_CTRL1_BC_MODE, base + BC_CTRL1);
 
 	/* phy suspend */
@@ -160,9 +211,8 @@ enum hisi_charger_type detect_charger_type(struct hisi_dwc3_device *hisi_dwc3)
 	reg |= BC_CTRL0_BC_DMPULLDOWN;
 	writel(reg, base + BC_CTRL0);
 
-	if (is_dcd_timeout(base)){
+	if (is_dcd_timeout(base))
 		type = CHARGER_TYPE_UNKNOWN;
-	}
 
 	reg = readl(base + BC_CTRL0);
 	reg &= ~BC_CTRL0_BC_DMPULLDOWN;
@@ -234,9 +284,14 @@ enum hisi_charger_type detect_charger_type(struct hisi_dwc3_device *hisi_dwc3)
 	 * to VDP_UP through RDP_UP */
 	if (type == CHARGER_TYPE_DCP) {
 		usb_dbg("charger is DCP, enable VDP_SRC\n");
-		spin_lock_irqsave(&hisi_dwc3->bc_again_lock, flags);/*lint !e550*/
-		hisi_bc_enable_vdp_src(hisi_dwc3);
-		spin_unlock_irqrestore(&hisi_dwc3->bc_again_lock, flags);/*lint !e550*/
+		/* customize if keep D+ and D- short after bc1.2 */
+		if (!hisi_dwc3->vdp_src_disable) {
+			spin_lock_irqsave(&hisi_dwc3->bc_again_lock,
+				flags); /* lint !e550 */
+			hisi_bc_enable_vdp_src(hisi_dwc3);
+			spin_unlock_irqrestore(&hisi_dwc3->bc_again_lock,
+				flags); /* lint !e550 */
+		}
 	} else {
 		/* bc_suspend = 1, nomal mode */
 		reg = readl(base + BC_CTRL0);
@@ -260,4 +315,3 @@ enum hisi_charger_type detect_charger_type(struct hisi_dwc3_device *hisi_dwc3)
 	usb_dbg("-\n");
 	return type;
 }
-

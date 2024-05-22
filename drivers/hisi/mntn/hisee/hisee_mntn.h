@@ -5,7 +5,7 @@
 
 /* used for translation from original value to exception module id */
 typedef struct {
-	u32		irq_value;
+	u32		int_id_value;
 	u32		module_value;
 } hisee_exc_trans_s;
 
@@ -45,6 +45,9 @@ typedef enum {
 	MODID_HISEE_EXC_SECENG_SM2,
 	MODID_HISEE_EXC_SECENG_KM,
 	MODID_HISEE_EXC_SECENG_SCRAMBLING,
+#ifdef CONFIG_HISEE_SUPPORT_DCS
+	MODID_HISEE_EXC_DCS,
+#endif
 	MODID_HISEE_EXC_BOTTOM,
 
 	/*only for exception records that are not happened to hisee itself, starts*/
@@ -167,7 +170,7 @@ typedef enum {
 extern char *rdr_get_timestamp(void);
 extern void rdr_count_size(void);
 extern u64 rdr_get_logsize(void);
-extern int rdr_dir_size(char *path, bool recursion);
+extern int rdr_dir_size(char *path, u32 pathLen, bool recursion);
 extern int get_efuse_hisee_value(unsigned char *pu8Buffer, unsigned int u32Length, unsigned int timeout);
 extern void hisee_mntn_print_cos_info(void);
 extern void hisee_mntn_update_local_ver_info(void);

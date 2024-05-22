@@ -70,8 +70,20 @@ static u8 gt9886_sen_map[] = {32, 34, 35, 30, 31, 33, 27, 28, 29, 10, 25, 26, 23
 
 static u8 gt6862_drv_map[] = {36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 0, 1, 2, 3, 4, 5, 6};
 static u8 gt6862_sen_map[] = {34, 35, 33, 31, 32, 30, 28, 27, 29, 24, 25, 26, 21, 22, 23, 18, 19, 20, 15, 17, 16, 14, 13, 12, 11, 9, 10, 8, 7};
-static u8 gt6861_drv_map[] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 56, 46, 47, 48, 49, 45, 50, 52, 51, 55, 53, 54, 64, 59, 57, 60, 62, 58, 65, 63, 61, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
-static u8 gt6861_sen_map[] = {72, 37, 38, 40, 36, 74, 39, 75, 0, 73, 2, 1, 3, 4, 5, 6, 7, 8, 10, 11, 9, 12, 13, 24, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35};
+static u8 gt6861_drv_map[] = { 45, 47, 49, 46, 48, 50, 53, 52, 51, 55, 56, 54,
+				59, 58, 57, 62, 61, 60, 65, 64, 63, 73, 44, 66,
+				72, 43, 42, 71, 41, 38, 37, 36, 40, 39, 67, 68,
+				69, 70, 0, 75, 74, 2, 1, 3, 4, 5, 6 };
+static u8 gt6861_sen_map[] = { 34, 35, 33, 31, 32, 30, 28, 27, 29, 24, 25, 26,
+				21, 22, 23, 18, 19, 20, 15, 17, 16, 14, 13, 12,
+				11, 9, 10, 8, 7 };
+static u8 gt7382_drv_map[] = { 19, 20, 21, 22, 23, 24, 25, 26, 27,
+	28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 0, 1, 2, 3, 4, 5, 6,
+	7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 };
+static u8 gt7382_sen_map[] = { 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+	40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56,
+	57, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+	19, 20, 21, 22, 23, 24, 25, 26, 27, 28 };
 
 u16 noisedata_addr = 0;
 u16 self_noisedata_addr = 0;
@@ -183,6 +195,10 @@ static int doze_awake(struct gtx8_ts_test *ts_test)
 	u8 r_data = 0;
 	u8 w_data = 0;
 
+	if (ts_test->ts->ic_type == IC_TYPE_7382) {
+		TS_LOG_DEBUG("%s, gt7382 not support doze\n", __func__);
+		return NO_ERR;
+	}
 	w_data = GTX8_DOZE_DISABLE_DATA;
 	if (ts_test->ts->ops.write_trans(GTP_REG_DOZE_CTRL, &w_data, 1)) {
 		TS_LOG_ERR("doze mode comunition disable FAILED\n");
@@ -220,11 +236,26 @@ static int gtx8_init_testlimits(struct gtx8_ts_test *ts_test)
 	u32 data_buf[MAX_DRV_NUM] = {0};
 	struct gtx8_ts_data *ts = ts_test->ts;
 	struct ts_test_params *test_params = NULL;
+	u32 max_drv_num = ts->max_drv_num;
+	u32 max_sen_num = ts->max_sen_num;
+	int rotate_type;
 
-	snprintf(file_name, GTX8_FW_NAME_LEN, "%s_%s_%s_%s_limits.csv",
-		ts->dev_data->ts_platform_data->product_name, GTX8_OF_NAME,
-		ts->project_id, ts->dev_data->module_name);
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		rotate_type = GT_RAWDATA_CSV_RXTX_ROTATE;
+	else
+		rotate_type = GT_RAWDATA_CSV_VERTICAL_SCREEN;
 
+	if (!ts->support_filename_contain_lcd_module)
+		snprintf(file_name, GTX8_FW_NAME_LEN, "%s_%s_%s_%s_limits.csv",
+			ts->dev_data->ts_platform_data->product_name,
+			GTX8_OF_NAME, ts->project_id,
+			ts->dev_data->module_name);
+	else
+		snprintf(file_name, GTX8_FW_NAME_LEN,
+			"%s_%s_%s_%s_%s_limits.csv",
+			ts->dev_data->ts_platform_data->product_name,
+			GTX8_OF_NAME, ts->project_id, ts->dev_data->module_name,
+			ts->lcd_module_name);
 	/* TODO change default limit file csv to vendor */
 	/* snprintf(file_path, sizeof(file_path), "/product/etc/firmware/ts/%s", file_name); */
 	snprintf(file_path, sizeof(file_path), "/odm/etc/firmware/ts/%s", file_name);
@@ -238,7 +269,7 @@ static int gtx8_init_testlimits(struct gtx8_ts_test *ts_test)
 		return ret;
 	}
 	/* store data to test_parms */
-	for (i = 0; i < MAX_DRV_NUM * MAX_SEN_NUM; i++) {
+	for (i = 0; i < max_drv_num * max_sen_num; i++) {
 		test_params->max_limits[i] = data_buf[0];
 		test_params->min_limits[i] = data_buf[1];
 		test_params->deviation_limits[i] = data_buf[2];
@@ -251,35 +282,47 @@ static int gtx8_init_testlimits(struct gtx8_ts_test *ts_test)
 	}
 	test_params->noise_threshold = data_buf[0];
 
-	/* <self max_threshold, min_threshold> */
-	ret = ts_kit_parse_csvfile(file_path, CSV_TP_SELF_UNIFIED_LIMIT, data_buf, 1, 2);
-	if (ret) {
-		TS_LOG_INFO("%s: Failed get %s\n", __func__, CSV_TP_SELF_UNIFIED_LIMIT);
-		return ret;
-	}
-	/* store data to test_parms */
-	for (i = 0; i < MAX_DRV_NUM + MAX_SEN_NUM; i++) {
-		test_params->self_max_limits[i] = data_buf[0];
-		test_params->self_min_limits[i] = data_buf[1];
-	}
-	ret = ts_kit_parse_csvfile(file_path, CSV_TP_SELFNOISE_LIMIT, data_buf, 1, 1);
-	if (ret) {
-		TS_LOG_INFO("%s: Failed get %s\n", __func__, CSV_TP_SELFNOISE_LIMIT);
-		return ret;
-	}
-	test_params->self_noise_threshold = data_buf[0];
-	ret = ts_kit_parse_csvfile(file_path, CSV_TP_SPECIAL_SELFRAW_MAX, test_params->self_max_limits,
-				1, test_params->drv_num + test_params->sen_num);
-	if (ret) {
-		TS_LOG_INFO("%s: Failed get %s\n", __func__, CSV_TP_SPECIAL_SELFRAW_MAX);
-		ret = 0;
-	}
+	if (ts->ic_type != IC_TYPE_6861) {
+		/* <self max_threshold, min_threshold> */
+		ret = ts_kit_parse_csvfile(file_path, CSV_TP_SELF_UNIFIED_LIMIT,
+				data_buf, 1, 2);
+		if (ret) {
+			TS_LOG_INFO("%s: Failed get %s\n", __func__,
+				CSV_TP_SELF_UNIFIED_LIMIT);
+			return ret;
+		}
+		/* store data to test_parms */
+		for (i = 0; i < max_drv_num + max_sen_num; i++) {
+			test_params->self_max_limits[i] = data_buf[0];
+			test_params->self_min_limits[i] = data_buf[1];
+		}
+		ret = ts_kit_parse_csvfile(file_path, CSV_TP_SELFNOISE_LIMIT,
+				data_buf, 1, 1);
+		if (ret) {
+			TS_LOG_INFO("%s: Failed get %s\n", __func__,
+					CSV_TP_SELFNOISE_LIMIT);
+			return ret;
+		}
+		test_params->self_noise_threshold = data_buf[0];
+		ret = ts_kit_parse_csvfile(file_path,
+			CSV_TP_SPECIAL_SELFRAW_MAX,
+			test_params->self_max_limits, 1,
+			test_params->drv_num + test_params->sen_num);
+		if (ret) {
+			TS_LOG_INFO("%s: Failed get %s\n", __func__,
+				CSV_TP_SPECIAL_SELFRAW_MAX);
+			ret = 0;
+		}
 
-	ret = ts_kit_parse_csvfile(file_path, CSV_TP_SPECIAL_SELFRAW_MIN, test_params->self_min_limits,
-				1, test_params->drv_num + test_params->sen_num);
-	if (ret) {
-		TS_LOG_INFO("%s: Failed get %s\n", __func__, CSV_TP_SPECIAL_SELFRAW_MIN);
-		ret = 0;
+		ret = ts_kit_parse_csvfile(file_path,
+			CSV_TP_SPECIAL_SELFRAW_MIN,
+			test_params->self_min_limits, 1,
+			test_params->drv_num + test_params->sen_num);
+		if (ret) {
+			TS_LOG_INFO("%s: Failed get %s\n", __func__,
+				CSV_TP_SPECIAL_SELFRAW_MIN);
+			ret = 0;
+		}
 	}
 
 	/* shortciurt_threshold <short_threshold,drv_to_drv,
@@ -307,7 +350,7 @@ static int gtx8_init_testlimits(struct gtx8_ts_test *ts_test)
 		ret = 0;	/* if does not specialed the node value, we will use unified limits setting */
 	}
 	ts_kit_rotate_rawdata_abcd2cbad(test_params->drv_num, test_params->sen_num, test_params->max_limits,\
-				GT_RAWDATA_CSV_VERTICAL_SCREEN);
+		rotate_type);
 
 	ret = ts_kit_parse_csvfile(file_path, CSV_TP_SPECIAL_RAW_MIN, test_params->min_limits,
 			test_params->sen_num, test_params->drv_num);
@@ -316,7 +359,7 @@ static int gtx8_init_testlimits(struct gtx8_ts_test *ts_test)
 		ret = 0;
 	}
 	ts_kit_rotate_rawdata_abcd2cbad(test_params->drv_num, test_params->sen_num, test_params->min_limits,\
-				GT_RAWDATA_CSV_VERTICAL_SCREEN);
+		rotate_type);
 
 	ret = ts_kit_parse_csvfile(file_path, CSV_TP_SPECIAL_RAW_DELTA, test_params->deviation_limits,
 			test_params->sen_num, test_params->drv_num);
@@ -325,7 +368,7 @@ static int gtx8_init_testlimits(struct gtx8_ts_test *ts_test)
 		ret = 0;
 	}
 	ts_kit_rotate_rawdata_abcd2cbad(test_params->drv_num, test_params->sen_num, test_params->deviation_limits,\
-				GT_RAWDATA_CSV_VERTICAL_SCREEN);
+		rotate_type);
 
 	return ret;
 }
@@ -352,8 +395,8 @@ static int gtx8_init_params(struct gtx8_ts_test *ts_test)
 		test_params->rawdata_addr = GTP_RAWDATA_ADDR_6861;
 		test_params->noisedata_addr = GTP_NOISEDATA_ADDR_6861;
 		test_params->basedata_addr = GTP_BASEDATA_ADDR_6861;
-		test_params->max_drv_num = MAX_DRV_NUM_6861;
-		test_params->max_sen_num = MAX_SEN_NUM_6861;
+		test_params->max_drv_num = MAX_DRV_NUM;
+		test_params->max_sen_num = MAX_SEN_NUM;
 		test_params->drv_map = gt6861_drv_map;
 		test_params->sen_map = gt6861_sen_map;
 		break;
@@ -366,10 +409,23 @@ static int gtx8_init_params(struct gtx8_ts_test *ts_test)
 		test_params->drv_map = gt6862_drv_map;
 		test_params->sen_map = gt6862_sen_map;
 		break;
+	case IC_TYPE_7382:
+		test_params->rawdata_addr = GTP_RAWDATA_ADDR_7382;
+		test_params->noisedata_addr = GTP_NOISEDATA_ADDR_7382;
+		test_params->self_rawdata_addr = GTP_SELF_RAWDATA_ADDR_7382;
+		test_params->self_noisedata_addr = GTP_SELF_NOISEDATA_ADDR_7382;
+		test_params->basedata_addr = GTP_BASEDATA_ADDR_7382;
+		test_params->max_drv_num = MAX_DRV_NUM_7382;
+		test_params->max_sen_num = MAX_SEN_NUM_7382;
+		test_params->drv_map = gt7382_drv_map;
+		test_params->sen_map = gt7382_sen_map;
+		break;
 	default:
 		TS_LOG_ERR("unsupport ic type:%d\n", ts->ic_type);
 		ret = -1;
 	}
+	ts->max_drv_num = test_params->max_drv_num;
+	ts->max_sen_num = test_params->max_sen_num;
 	return ret;
 }
 
@@ -382,19 +438,28 @@ static int gtx8_cache_origconfig(struct gtx8_ts_test *ts_test)
 {
 	int ret = -ENODEV;
 	u8 checksum = 0;
+	u32 cfg_len = 0;
+
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		cfg_len = CFG_LEN_GT7382;
 	if (ts_test->ts->ops.read_cfg) {
-		ret = ts_test->ts->ops.read_cfg(&ts_test->orig_config.data[0], 0);
+		ret = ts_test->ts->ops.read_cfg(&ts_test->orig_config.data[0],
+			cfg_len);
 		if (ret < 0) {
 			TS_LOG_ERR("Failed to read original config data\n");
 			return ret;
 		}
-
-		ts_test->orig_config.data[1] = GTX8_CONFIG_REFRESH_DATA;
-		checksum = checksum_u8(&ts_test->orig_config.data[0], 3);
-		ts_test->orig_config.data[3] = (u8)(0 - checksum);
-
+		if (ts_test->ts->ic_type != IC_TYPE_7382) {
+			ts_test->orig_config.data[1] = GTX8_CONFIG_REFRESH_DATA;
+			checksum =
+				checksum_u8(&ts_test->orig_config.data[0], 3);
+			ts_test->orig_config.data[3] = (u8)(0 - checksum);
+		}
 		mutex_init(&ts_test->orig_config.lock);
-		ts_test->orig_config.length = ret;
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			ts_test->orig_config.length = CFG_LEN_GT7382;
+		else
+			ts_test->orig_config.length = ret;
 		ts_test->orig_config.delay = SEND_CFG_FLASH;
 		strncpy(ts_test->orig_config.name, "original_config", MAX_STR_LEN);
 		ts_test->orig_config.initialized = true;
@@ -426,9 +491,14 @@ static int gtx8_tptest_prepare(struct gtx8_ts_test *ts_test)
 	}
 
 	/* get sensor and driver num currently in use */
-	ret = gtx8_get_channel_num(&ts_test->test_params.sen_num,
-				   &ts_test->test_params.drv_num,
-				   ts_test->orig_config.data);
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		ret = gtx8_get_channel_num_gt7382(&ts_test->test_params.sen_num,
+			&ts_test->test_params.drv_num,
+			ts_test->orig_config.data);
+	else
+		ret = gtx8_get_channel_num(&ts_test->test_params.sen_num,
+			&ts_test->test_params.drv_num,
+			ts_test->orig_config.data);
 	if (ret) {
 		TS_LOG_ERR("Failed get channel num:%d\n", ret);
 		ts_test->test_params.sen_num = MAX_DRV_NUM;
@@ -450,6 +520,9 @@ static int gtx8_tptest_prepare(struct gtx8_ts_test *ts_test)
 		}
 		TS_LOG_INFO("send noise test config success :%d\n", ret);
 	}
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		/* after send cfg, need wait for firmware process it */
+		msleep(GT738X_SEND_CFG_DELAY);
 	return ret;
 }
 
@@ -487,28 +560,46 @@ static int gtx8_cache_rawdata(struct gtx8_ts_test *ts_test)
 	u8 buf[1] = {0x00};
 	u32 rawdata_size = 0;
 	u16 rawdata_addr = 0;
+	u32 max_drv_num = ts_test->test_params.max_drv_num;
+	u32 max_sen_num = ts_test->test_params.max_sen_num;
+	u16 coor_reg;
+	int retry_num;
 
 	TS_LOG_DEBUG("Cache rawdata\n");
 	ts_test->rawdata.size = 0;
 	rawdata_size = ts_test->test_params.sen_num * ts_test->test_params.drv_num;
-	if (rawdata_size > MAX_DRV_NUM * MAX_SEN_NUM || rawdata_size <= 0) {
+	if ((rawdata_size > max_drv_num * max_sen_num) || rawdata_size <= 0) {
 		TS_LOG_ERR("Invalid rawdata size(%u)\n", rawdata_size);
 		return ret;
 	}
 
+	if (ts_test->ts->ic_type == IC_TYPE_7382) {
+		coor_reg = GTP_REG_COOR_GT7382;
+		retry_num = GTX8_RETRY_NUM_20;
+	} else {
+		coor_reg = GTP_REG_COOR;
+		retry_num = GTX8_RETRY_NUM_3;
+	}
 	rawdata_addr = ts_test->test_params.rawdata_addr;
 	TS_LOG_INFO("Rawdata address=0x%x\n", rawdata_addr);
 
-	for (j = 0; j < GTX8_RETRY_NUM_3 - 1; j++) {
-		ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00, GTX8_NEED_SLEEP);
+	for (j = 0; j < retry_num - 1; j++) {
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00,
+				GTX8_NOT_NEED_SLEEP);
+		else
+			ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00,
+				GTX8_NEED_SLEEP);
 		if (ret) {
 			TS_LOG_ERR("%s:Failed send rawdata cmd:ret%d\n", __func__, ret);
 			goto cache_exit;
 		} else {
 			TS_LOG_INFO("%s: Success change to rawdata mode\n", __func__);
 		}
-		for (retry = 0; retry < GTX8_RETRY_NUM_3; retry++) {
-			ret = ts_test->ts->ops.i2c_read(GTP_REG_COOR, &buf[0], 1);
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			msleep(25); /* ic need 25ms dealy */
+		for (retry = 0; retry < retry_num; retry++) {
+			ret = ts_test->ts->ops.i2c_read(coor_reg, &buf[0], 1);
 			if ((ret == 0) && (buf[0] & 0x80) == 0x80) {
 				TS_LOG_INFO("Success read rawdata\n");
 				break;
@@ -517,7 +608,7 @@ static int gtx8_cache_rawdata(struct gtx8_ts_test *ts_test)
 			msleep(15);
 		}
 
-		if (retry < GTX8_RETRY_NUM_3) {
+		if (retry < retry_num) {
 			/* read rawdata */
 			ret = ts_test->ts->ops.i2c_read(
 					rawdata_addr,
@@ -527,8 +618,15 @@ static int gtx8_cache_rawdata(struct gtx8_ts_test *ts_test)
 				TS_LOG_ERR("Failed to read rawdata:%d\n", ret);
 				goto cache_exit;
 			}
-			for (i = 0; i < rawdata_size; i++)
-				ts_test->rawdata.data[i] = be16_to_cpu(ts_test->rawdata.data[i]);
+			if (ts_test->ts->ic_type == IC_TYPE_7382) {
+				for (i = 0; i < rawdata_size; i++)
+					ts_test->rawdata.data[i] =
+						le16_to_cpu(ts_test->rawdata.data[i]);
+			} else {
+				for (i = 0; i < rawdata_size; i++)
+					ts_test->rawdata.data[i] =
+						be16_to_cpu(ts_test->rawdata.data[i]);
+			}
 			ts_test->rawdata.size = rawdata_size;
 			TS_LOG_INFO("Rawdata ready\n");
 			break;
@@ -542,7 +640,7 @@ cache_exit:
 	ts_test->ts->ops.send_cmd(GTX8_CMD_NORMAL, 0x00, GTX8_NOT_NEED_SLEEP);
 	/* clear data ready flag */
 	buf[0] = 0x00;
-	ts_test->ts->ops.i2c_write(GTP_REG_COOR, &buf[0], 1);
+	ts_test->ts->ops.i2c_write(coor_reg, &buf[0], 1);
 	return ret;
 }
 
@@ -562,28 +660,43 @@ static int gtx8_cache_self_rawdata(struct gtx8_ts_test *ts_test)
 	u8 buf[1] = {0x00};
 	u16 self_rawdata_size =0;
 	u16 self_rawdata_addr = 0;
+	u32 max_drv_num = ts_test->test_params.max_drv_num;
+	u32 max_sen_num = ts_test->test_params.max_sen_num;
+	u16 coor_reg;
+
 	TS_LOG_DEBUG("Cache selfrawdata\n");
 	ts_test->self_rawdata.size = 0;
 	self_rawdata_size = ts_test->test_params.sen_num +ts_test->test_params.drv_num;
 
-	if (self_rawdata_size > MAX_DRV_NUM + MAX_SEN_NUM || self_rawdata_size <= 0) {
+	if ((self_rawdata_size > max_drv_num + max_sen_num) ||
+		self_rawdata_size <= 0) {
 		TS_LOG_ERR("Invalid selfrawdata size(%u)\n", self_rawdata_size);
 		return ret;
 	}
-
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		coor_reg = GTP_REG_COOR_GT7382;
+	else
+		coor_reg = GTP_REG_COOR;
 	self_rawdata_addr = ts_test->test_params.self_rawdata_addr;
 	TS_LOG_INFO("Selfraw address=0x%x\n", self_rawdata_addr);
 
 	for (j = 0; j < GTX8_RETRY_NUM_3 - 1; j++) {
-		ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00, GTX8_NEED_SLEEP);
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00,
+				GTX8_NOT_NEED_SLEEP);
+		else
+			ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00,
+				GTX8_NEED_SLEEP);
 		if (ret) {
 			TS_LOG_ERR("%s:Failed send rawdata cmd:ret%d\n", __func__, ret);
 			goto cache_exit;
 		} else {
 			TS_LOG_INFO("%s: Success change to rawdata mode\n", __func__);
 		}
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			msleep(25); /* ic need 25ms delay */
 		for (retry = 0; retry < GTX8_RETRY_NUM_3; retry++) {
-			ret = ts_test->ts->ops.i2c_read(GTP_REG_COOR, &buf[0], 1);
+			ret = ts_test->ts->ops.i2c_read(coor_reg, &buf[0], 1);
 			if ((ret == 0) && (buf[0] & 0x80) == 0x80) {
 				TS_LOG_INFO("Success read rawdata\n");
 				break;
@@ -601,8 +714,15 @@ static int gtx8_cache_self_rawdata(struct gtx8_ts_test *ts_test)
 				TS_LOG_ERR("Failed to read self_rawdata:%d\n", ret);
 				goto cache_exit;
 			}
-			for (i = 0; i < self_rawdata_size; i++)
-				ts_test->self_rawdata.data[i] = be16_to_cpu(ts_test->self_rawdata.data[i]);
+			if (ts_test->ts->ic_type == IC_TYPE_7382) {
+				for (i = 0; i < self_rawdata_size; i++)
+					ts_test->self_rawdata.data[i] =
+						le16_to_cpu(ts_test->self_rawdata.data[i]);
+			} else {
+				for (i = 0; i < self_rawdata_size; i++)
+					ts_test->self_rawdata.data[i] =
+						be16_to_cpu(ts_test->self_rawdata.data[i]);
+			}
 			ts_test->self_rawdata.size = self_rawdata_size;
 			TS_LOG_INFO("self_Rawdata ready\n");
 			break;
@@ -616,7 +736,7 @@ cache_exit:
 	ts_test->ts->ops.send_cmd(GTX8_CMD_NORMAL, 0x00, GTX8_NOT_NEED_SLEEP);
 	/* clear data ready flag */
 	buf[0] = 0x00;
-	ts_test->ts->ops.i2c_write(GTP_REG_COOR, &buf[0], 1);
+	ts_test->ts->ops.i2c_write(coor_reg, &buf[0], 1);
 	return ret;
 }
 
@@ -626,6 +746,8 @@ cache_exit:
 static int gtx8_noisetest_prepare(struct gtx8_ts_test *ts_test)
 {
 	int ret = -EINVAL;
+	u32 max_drv_num = ts_test->test_params.max_drv_num;
+	u32 max_sen_num = ts_test->test_params.max_sen_num;
 
 	ts_test->noisedata.size = 0;
 	noise_data_size = ts_test->test_params.sen_num * ts_test->test_params.drv_num;
@@ -633,13 +755,15 @@ static int gtx8_noisetest_prepare(struct gtx8_ts_test *ts_test)
 	ts_test->self_noisedata.size = 0;
 	self_noise_data_size = ts_test->test_params.sen_num + ts_test->test_params.drv_num;
 
-	if (noise_data_size <= 0 || noise_data_size > MAX_DRV_NUM * MAX_SEN_NUM) {
+	if (noise_data_size <= 0 ||
+		(noise_data_size > max_drv_num * max_sen_num)) {
 		TS_LOG_ERR("%s: Bad noise_data_size[%d]\n", __func__, noise_data_size);
 		noise_test_flag = TEST_FAIL;
 		ts_test->test_result[GTP_NOISE_TEST] = SYS_SOFTWARE_REASON;
 	}
 
-	if (self_noise_data_size <= 0 || self_noise_data_size > MAX_DRV_NUM + MAX_SEN_NUM) {
+	if (self_noise_data_size <= 0 ||
+		(self_noise_data_size > max_drv_num + max_sen_num)) {
 		TS_LOG_ERR("%s: Bad self_noise_data_size[%d]\n", __func__, self_noise_data_size);
 		self_noise_test_flag = TEST_FAIL;
 		ts_test->test_result[GTP_SELFNOISE_TEST] = SYS_SOFTWARE_REASON;
@@ -651,14 +775,23 @@ static int gtx8_noisetest_prepare(struct gtx8_ts_test *ts_test)
 	}
 
 	/* change to rawdata mode */
-	ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00 , GTX8_NEED_SLEEP);
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00,
+			GTX8_NOT_NEED_SLEEP);
+	else
+		ret = ts_test->ts->ops.send_cmd(GTX8_CMD_RAWDATA, 0x00,
+			GTX8_NEED_SLEEP);
 	if (ret) {
-		TS_LOG_ERR("%s: Failed send rawdata command:ret%d\n", __func__, ret);
+		TS_LOG_ERR("%s: Failed send rawdata command:ret%d\n",
+				__func__, ret);
 		ts_test->test_result[GTP_NOISE_TEST] = SYS_SOFTWARE_REASON;
-		ts_test->test_result[GTP_SELFNOISE_TEST] = SYS_SOFTWARE_REASON;
+		if (ts_test->ts->pen_supported == GT8X_PEN_SUPPORT)
+			ts_test->test_result[GTP_SELFNOISE_TEST] =
+				SYS_SOFTWARE_REASON;
 		return ret;
 	}
-
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		msleep(25); /* ic need 25ms delay */
 	TS_LOG_INFO("%s: Enter rawdata mode\n", __func__);
 
 	return ret;
@@ -672,12 +805,21 @@ static int gtx8_cache_noisedata(struct gtx8_ts_test *ts_test)
 	int ret = CACHE_NOISE_DATA_OK;
 	int i = 0;
 	u8 buf[1] = {0};
+	u16 coor_reg;
+	int retry_num;
 
 	noisedata_addr = ts_test->test_params.noisedata_addr;
 	self_noisedata_addr = ts_test->test_params.self_noisedata_addr;
+	if (ts_test->ts->ic_type == IC_TYPE_7382) {
+		coor_reg = GTP_REG_COOR_GT7382;
+		retry_num = GTX8_RETRY_NUM_10;
+	} else {
+		coor_reg = GTP_REG_COOR;
+		retry_num = GTX8_RETRY_NUM_3;
+	}
 
-	for (i = 0; i < GTX8_RETRY_NUM_3; i++) {
-		ret = ts_test->ts->ops.i2c_read(GTP_REG_COOR, &buf[0], 1);
+	for (i = 0; i < retry_num; i++) {
+		ret = ts_test->ts->ops.i2c_read(coor_reg, &buf[0], 1);
 		if ((ret == 0) && (buf[0] & 0x80)) {
 			break;
 		}else if (ret) {
@@ -687,7 +829,7 @@ static int gtx8_cache_noisedata(struct gtx8_ts_test *ts_test)
 		msleep(15); /* waiting for noise data ready */
 	}
 
-	if (i >= GTX8_RETRY_NUM_3) {
+	if (i >= retry_num) {
 		if (noise_test_flag == TEST_SUCCESS)
 			noise_fail_cnt++;
 		if (self_noise_test_flag == TEST_SUCCESS)
@@ -716,26 +858,28 @@ static int gtx8_cache_noisedata(struct gtx8_ts_test *ts_test)
 
 	}
 
-	if (self_noise_test_flag == TEST_SUCCESS) {
-		/* read self noise data */
-		ret = ts_test->ts->ops.i2c_read(self_noisedata_addr,
+	if (ts_test->ts->pen_supported == GT8X_PEN_SUPPORT) {
+		if (self_noise_test_flag == TEST_SUCCESS) {
+			/* read self noise data */
+			ret = ts_test->ts->ops.i2c_read(self_noisedata_addr,
 					(u8 *)&ts_test->self_noisedata.data[0],
 					self_noise_data_size * sizeof(u16));
-		if (ret) {
-			TS_LOG_ERR("%s: Failed read self noise data\n", __func__);
-			self_noise_test_flag = TEST_FAIL;
-			ts_test->self_noisedata.size = 0;
-			ts_test->test_result[GTP_SELFNOISE_TEST] = SYS_SOFTWARE_REASON;
+			if (ret) {
+				TS_LOG_ERR("%s: Failed read self noise data\n",
+					__func__);
+				self_noise_test_flag = TEST_FAIL;
+				ts_test->self_noisedata.size = 0;
+				ts_test->test_result[GTP_SELFNOISE_TEST] =
+						SYS_SOFTWARE_REASON;
+			}
 		}
-
-
 	}
 	if ((noise_test_flag == TEST_FAIL) && (self_noise_test_flag == TEST_FAIL)) {
 		TS_LOG_ERR("%s noise test fail", __func__);
 		return CACHE_NOISE_DATA_FAIL;
 	} else {
 		buf[0] = 0x00;
-		ret = ts_test->ts->ops.i2c_write(GTP_REG_COOR, &buf[0], 1);
+		ret = ts_test->ts->ops.i2c_write(coor_reg, &buf[0], 1);
 		if(ret ) {
 			TS_LOG_ERR("%s: i2c_write command fail\n", __func__);
 			goto err_out;
@@ -758,7 +902,10 @@ static void gtx8_analyse_noisedata(struct gtx8_ts_test *ts_test)
 	u16 noise_value = 0;
 
 	for (i = 0; i < noise_data_size; i++) {
-		noise_value = be16_to_cpu(ts_test->noisedata.data[i]);
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			noise_value = le16_to_cpu(ts_test->noisedata.data[i]);
+		else
+			noise_value = be16_to_cpu(ts_test->noisedata.data[i]);
 		ts_test->noisedata.data[i] = abs(noise_value);
 		if (ts_test->noisedata.data[i] > ts_test->test_params.noise_threshold) {
 			find_bad_node++;
@@ -792,7 +939,12 @@ static void gtx8_analyse_self_noisedata(struct gtx8_ts_test *ts_test)
 	u16 self_noise_value = 0;
 
 	for (i = 0; i < self_noise_data_size; i++) {
-		self_noise_value = be16_to_cpu(ts_test->self_noisedata.data[i]);
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			self_noise_value =
+				le16_to_cpu(ts_test->self_noisedata.data[i]);
+		else
+			self_noise_value =
+				be16_to_cpu(ts_test->self_noisedata.data[i]);
 		ts_test->self_noisedata.data[i] = abs(self_noise_value);
 
 		if (ts_test->self_noisedata.data[i] > ts_test->test_params.self_noise_threshold) {
@@ -823,6 +975,7 @@ static void gtx8_noisedata_save_result(struct gtx8_ts_test *ts_test)
 {
 	int ret = 0;
 	u8 buf[1] = {0};
+	u16 coor_reg;
 
 	if (noise_test_flag != TEST_FAIL) {
 		if (noise_fail_cnt <= MAX_ACCEPT_FAILE_CNT) {
@@ -834,23 +987,36 @@ static void gtx8_noisedata_save_result(struct gtx8_ts_test *ts_test)
 		TS_LOG_INFO("%s:Noise test fail_cnt =%d\n", __func__, noise_fail_cnt);
 	}
 
-	if (self_noise_test_flag != TEST_FAIL) {
-		if (self_noise_fail_cnt <= MAX_ACCEPT_FAILE_CNT) {
-			ts_test->test_result[GTP_SELFNOISE_TEST] = GTP_TEST_PASS;
-		} else {
-			TS_LOG_ERR("%s :Sefl_noise test failed\n", __func__);
-			ts_test->test_result[GTP_SELFNOISE_TEST] = GTP_PANEL_REASON;
-		}
+	if (ts_test->ts->pen_supported == GT8X_PEN_SUPPORT) {
+		if (self_noise_test_flag != TEST_FAIL) {
+			if (self_noise_fail_cnt <= MAX_ACCEPT_FAILE_CNT) {
+				ts_test->test_result[GTP_SELFNOISE_TEST] =
+						GTP_TEST_PASS;
+			} else {
+				TS_LOG_ERR("%s :Sefl_noise test failed\n",
+						__func__);
+				ts_test->test_result[GTP_SELFNOISE_TEST] =
+						GTP_PANEL_REASON;
+			}
 
-		TS_LOG_INFO("%s: Self noise test self_fail_cnt =%d\n", __func__, self_noise_fail_cnt);
+			TS_LOG_INFO("%s: Self noise test self_fail_cnt =%d\n",
+					__func__, self_noise_fail_cnt);
+		}
+	} else {
+		ts_test->test_result[GTP_SELFNOISE_TEST] =
+						GTP_TEST_PASS;
 	}
 
 	ret = ts_test->ts->ops.send_cmd(GTX8_CMD_NORMAL, 0x00, GTX8_NEED_SLEEP);
 	if (ret)
 		TS_LOG_ERR("Failed send normal mode cmd:ret%d\n", ret);
 	/* clear data ready flag */
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		coor_reg = GTP_REG_COOR_GT7382;
+	else
+		coor_reg = GTP_REG_COOR;
 	buf[0] = 0x00;
-	ts_test->ts->ops.i2c_write(GTP_REG_COOR, &buf[0], 1);
+	ts_test->ts->ops.i2c_write(coor_reg, &buf[0], 1);
 
 	return;
 }
@@ -861,6 +1027,7 @@ static void gtx8_test_noisedata(struct gtx8_ts_test *ts_test)
 	int ret = 0;
 	int test_cnt = 0;
 	u8 buf[1] = {0};
+	u16 coor_reg;
 	noisedata_addr = 0;
 	self_noisedata_addr = 0;
 	noise_data_size = 0;
@@ -889,8 +1056,12 @@ static void gtx8_test_noisedata(struct gtx8_ts_test *ts_test)
 		if (noise_test_flag == TEST_SUCCESS)
 			gtx8_analyse_noisedata(ts_test);
 
-		if (self_noise_test_flag == TEST_SUCCESS)
+		if ((ts_test->ts->pen_supported == GT8X_PEN_SUPPORT) &&
+			(self_noise_test_flag == TEST_SUCCESS))
 			gtx8_analyse_self_noisedata(ts_test);
+		else
+			ts_test->test_result[GTP_SELFNOISE_TEST] =
+					GTP_TEST_PASS;
 
 		if ((noise_test_flag == TEST_OVER_LIMIT_TIMES) && (self_noise_test_flag == TEST_OVER_LIMIT_TIMES))
 			break;
@@ -901,14 +1072,22 @@ static void gtx8_test_noisedata(struct gtx8_ts_test *ts_test)
 	return;
 
 soft_err_out:
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		coor_reg = GTP_REG_COOR_GT7382;
+	else
+		coor_reg = GTP_REG_COOR;
 	ts_test->ts->ops.send_cmd(GTX8_CMD_NORMAL, 0x00, GTX8_NEED_SLEEP);
 	/* clear data ready flag */
 	buf[0] = 0x00;
-	ts_test->ts->ops.i2c_write(GTP_REG_COOR, &buf[0], 1);
+	ts_test->ts->ops.i2c_write(coor_reg, &buf[0], 1);
 	ts_test->noisedata.size = 0;
 	ts_test->test_result[GTP_NOISE_TEST] = SYS_SOFTWARE_REASON;
-	ts_test->self_noisedata.size = 0;
-	ts_test->test_result[GTP_SELFNOISE_TEST] = SYS_SOFTWARE_REASON;
+	if (ts_test->ts->pen_supported == GT8X_PEN_SUPPORT) {
+		ts_test->self_noisedata.size = 0;
+		ts_test->test_result[GTP_SELFNOISE_TEST] = SYS_SOFTWARE_REASON;
+	} else {
+		ts_test->test_result[GTP_SELFNOISE_TEST] = GTP_TEST_PASS;
+	}
 	return;
 }
 
@@ -1055,6 +1234,9 @@ static int gtx8_captest_prepare(struct gtx8_ts_test *ts_test)
 	} else {
 		TS_LOG_ERR("Ops.send_cfg is NULL\n");
 	}
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		/* after send cfg ,need wait for firmware process it */
+		msleep(GT738X_SEND_CFG_DELAY);
 	return ret;
 }
 
@@ -1099,21 +1281,29 @@ static void gtx8_capacitance_test(struct gtx8_ts_test *ts_test)
 	}
 
 	/* read selfrawdata and calculate result,  statistics fail times */
-	ret = gtx8_cache_self_rawdata(ts_test);
-	if (ret < 0) {
-		/* Failed read selfrawdata */
-		TS_LOG_ERR("Read selfrawdata failed\n");
-		ts_test->test_result[GTP_SELFCAP_TEST] = SYS_SOFTWARE_REASON;
-		return;
-	} else {
-		ret = gtx8_self_rawcapacitance_test(&ts_test->self_rawdata, &ts_test->test_params);
-		if (!ret) {
-			ts_test->test_result[GTP_SELFCAP_TEST] = GTP_TEST_PASS;
-			TS_LOG_INFO("selfrawdata test pass\n");
+	if (ts_test->ts->pen_supported == GT8X_PEN_SUPPORT) {
+		ret = gtx8_cache_self_rawdata(ts_test);
+		if (ret < 0) {
+			/* Failed read selfrawdata */
+			TS_LOG_ERR("Read selfrawdata failed\n");
+			ts_test->test_result[GTP_SELFCAP_TEST] =
+					SYS_SOFTWARE_REASON;
+			return;
 		} else {
-			ts_test->test_result[GTP_SELFCAP_TEST] = GTP_PANEL_REASON;
-			TS_LOG_ERR("selfrawCap test failed\n");
+			ret = gtx8_self_rawcapacitance_test(&ts_test->self_rawdata,
+					&ts_test->test_params);
+			if (!ret) {
+				ts_test->test_result[GTP_SELFCAP_TEST] =
+						GTP_TEST_PASS;
+				TS_LOG_INFO("selfrawdata test pass\n");
+			} else {
+				ts_test->test_result[GTP_SELFCAP_TEST] =
+						GTP_PANEL_REASON;
+				TS_LOG_ERR("selfrawCap test failed\n");
+			}
 		}
+	} else {
+		ts_test->test_result[GTP_SELFCAP_TEST] = GTP_TEST_PASS;
 	}
 
 	return;
@@ -1146,6 +1336,10 @@ int gtx8_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd)
 		goto exit_finish;
 	}
 
+	if (gts_test->ts->support_wake_lock_suspend ==
+		GT8X_WAKE_LOCK_SUSPEND_SUPPORT)
+		/* add wakelock,avoid i2c suspend */
+		__pm_stay_awake(&gts_test->ts->wake_lock);
 	ret = gtx8_tptest_prepare(gts_test);
 	if (ret) {
 		TS_LOG_ERR("%s: Failed parse test peremeters, exit test\n", __func__);
@@ -1164,6 +1358,10 @@ int gtx8_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd)
 	gtx8_tptest_finish(gts_test);
 
 exit_finish:
+	if (gts_test->ts->support_wake_lock_suspend ==
+			GT8X_WAKE_LOCK_SUSPEND_SUPPORT)
+		/* add wakelock,avoid i2c suspend */
+		__pm_relax(&gts_test->ts->wake_lock);
 	if (gts_test) {
 		kfree(gts_test);
 		gts_test = NULL;
@@ -1173,23 +1371,17 @@ exit_finish:
 	return ret;
 }
 
-void gtx8_strncat(char *dest, char *src, size_t dest_size)
-{
-	int  dest_len = 0;
-	int avaliable_len = 0;
-	dest_len = strlen(dest);
-	avaliable_len = dest_size  - dest_len -1;
-	if(avaliable_len > 0)
-		strncat(&dest[dest_len], src, avaliable_len);
-	return ;
-}
 void gtx8_strncatint(char *dest, int src, char *format, size_t dest_size)
 {
 	char src_str[MAX_STR_LEN] = {0};
+	int dest_len;
+	int available_len;
 
-	snprintf(src_str, MAX_STR_LEN -1, format, src);
-	gtx8_strncat(dest, src_str, dest_size);
-	return ;
+	snprintf(src_str, MAX_STR_LEN - 1, format, src);
+	dest_len = strlen(dest);
+	available_len = dest_size - dest_len - 1;
+	if (available_len > 0)
+		strncat(&dest[dest_len], src_str, available_len);
 }
 
 /*
@@ -1248,22 +1440,42 @@ static void gtx8_data_statistics(u16 *data, size_t data_size, char *result, size
  *
  * i2c prepare Abnormal failed
  */
-static void gtx8_put_test_failed_prepare_newformat(struct ts_rawdata_info_new *info){
-	gtx8_strncat(info->i2cinfo, "0F", sizeof(info->i2cinfo));
-	gtx8_strncat(info->i2cerrinfo, "software reason", sizeof(info->i2cerrinfo));
-	return;
+static void gtx8_put_test_failed_prepare_newformat(
+	struct ts_rawdata_info_new *info)
+{
+	int dest_len;
+	int available_len;
+
+	dest_len = strlen(info->i2cinfo);
+	available_len = sizeof(info->i2cinfo) - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->i2cinfo[dest_len], "0F", available_len);
+
+	dest_len = strlen(info->i2cerrinfo);
+	available_len = sizeof(info->i2cerrinfo) - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->i2cerrinfo[dest_len], "software reason",
+			available_len);
 }
 static void gtx8_put_test_result_newformat(
 		struct ts_rawdata_info_new *info,
 		struct gtx8_ts_test *ts_test)
 {
 	int i = 0;
+	int dest_len;
+	int available_len;
 	int tmp_testresult = 0;
 	int have_bus_error = 0;
 	int have_panel_error = 0;
 	char statistics_data[STATISTICS_DATA_LEN] = {0};
 	struct ts_rawdata_newnodeinfo * pts_node = NULL;
 	char testresut[]={' ','P','F','F'};
+	int rotate_type;
+
+	if (ts_test->ts->ic_type == IC_TYPE_7382)
+		rotate_type = GT_RAWDATA_CSV_RXTX_ROTATE;
+	else
+		rotate_type = GT_RAWDATA_CSV_VERTICAL_SCREEN;
 
 	TS_LOG_INFO("%s :\n",__func__);
 	info->rx = ts_test->test_params.sen_num;
@@ -1277,11 +1489,17 @@ static void gtx8_put_test_result_newformat(
 			have_panel_error = 1;
 	}
 
-	if (have_bus_error)
-		gtx8_strncat(info->i2cinfo, "0F", sizeof(info->i2cinfo));
-	else
-		gtx8_strncat(info->i2cinfo, "0P", sizeof(info->i2cinfo));
-
+	if (have_bus_error) {
+		dest_len = strlen(info->i2cinfo);
+		available_len = sizeof(info->i2cinfo) - dest_len - 1;
+		if (available_len > 0)
+			strncat(&info->i2cinfo[dest_len], "0F", available_len);
+	} else {
+		dest_len = strlen(info->i2cinfo);
+		available_len = sizeof(info->i2cinfo) - dest_len - 1;
+		if (available_len > 0)
+			strncat(&info->i2cinfo[dest_len], "0P", available_len);
+	}
 	/* CAP data info 1P */
 	pts_node = (struct ts_rawdata_newnodeinfo *)kzalloc(sizeof(struct ts_rawdata_newnodeinfo), GFP_KERNEL);
 	if (!pts_node) {
@@ -1298,7 +1516,8 @@ static void gtx8_put_test_result_newformat(
 		}
 		for (i = 0; i < ts_test->rawdata.size; i++)
 			pts_node->values[i] = ts_test->rawdata.data[i];
-		ts_kit_rotate_rawdata_abcd2cbad(info->rx, info->tx, pts_node->values, GT_RAWDATA_CSV_VERTICAL_SCREEN);
+		ts_kit_rotate_rawdata_abcd2cbad(info->rx, info->tx,
+			pts_node->values, rotate_type);
 		/* calculate rawdata min avg max vale*/
 		gtx8_data_statistics(&ts_test->rawdata.data[0],ts_test->rawdata.size,statistics_data,STATISTICS_DATA_LEN-1);
 		strncpy(pts_node->statistics_data,statistics_data,sizeof(pts_node->statistics_data)-1);
@@ -1345,7 +1564,8 @@ static void gtx8_put_test_result_newformat(
 		}
 		for (i = 0; i < ts_test->noisedata.size; i++)
 			pts_node->values[i] = ts_test->noisedata.data[i];
-		ts_kit_rotate_rawdata_abcd2cbad(info->rx, info->tx, pts_node->values, GT_RAWDATA_CSV_VERTICAL_SCREEN);
+		ts_kit_rotate_rawdata_abcd2cbad(info->rx, info->tx,
+			pts_node->values, rotate_type);
 		/* calculate rawdata min avg max vale*/
 		gtx8_data_statistics(&ts_test->noisedata.data[0],ts_test->noisedata.size,statistics_data,STATISTICS_DATA_LEN-1);
 		strncpy(pts_node->statistics_data,statistics_data,sizeof(pts_node->statistics_data)-1);
@@ -1421,25 +1641,68 @@ static void gtx8_put_test_result_newformat(
 	list_add_tail(&pts_node->node, &info->rawdata_head);
 
 	/* dev info */
-	gtx8_strncat(info->deviceinfo, "-GT", TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncat(info->deviceinfo, ts_test->ts->hw_info.pid, TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncat(info->deviceinfo, "-", TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncat(info->deviceinfo, ts_test->ts->project_id, TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncat(info->deviceinfo, "-", TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncat(info->deviceinfo, ts_test->ts->dev_data->version_name, TS_RAWDATA_DEVINFO_MAX);
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], "-GT", available_len);
 
-	gtx8_strncat(info->deviceinfo, "-", TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncat(info->deviceinfo, "bin_normal-", TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncatint(info->deviceinfo, ts_test->ts->normal_cfg.data[0], "%d", TS_RAWDATA_DEVINFO_MAX);
-	gtx8_strncat(info->deviceinfo, ";", TS_RAWDATA_DEVINFO_MAX);
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], ts_test->ts->hw_info.pid,
+			available_len);
+
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], "-", available_len);
+
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], ts_test->ts->project_id,
+			available_len);
+
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], "-", available_len);
+
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len],
+			ts_test->ts->dev_data->version_name,
+			available_len);
+
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], "-", available_len);
+
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], "bin_normal-",
+			available_len);
+
+	gtx8_strncatint(info->deviceinfo, ts_test->ts->normal_cfg.data[0],
+		"%d", TS_RAWDATA_DEVINFO_MAX);
+
+	dest_len = strlen(info->deviceinfo);
+	available_len = TS_RAWDATA_DEVINFO_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&info->deviceinfo[dest_len], ";", available_len);
+
 	str_Ftof_Inquire(info->deviceinfo);
-	return;
 }
 static void gtx8_put_test_result(
 		struct ts_rawdata_info *info,
 		struct gtx8_ts_test *ts_test)
 {
 	int i = 0;
+	int dest_len;
+	int available_len;
 	int have_bus_error = 0;
 	int have_panel_error = 0;
 	char statistics_data[STATISTICS_DATA_LEN] = {0};
@@ -1495,11 +1758,19 @@ static void gtx8_put_test_result(
 	}
 	TS_LOG_INFO("Have bus error:%d", have_bus_error);
 
-	if (have_bus_error)
-		gtx8_strncat(ts_test->test_info, "0F-", TS_RAWDATA_RESULT_MAX);
-	else
-		gtx8_strncat(ts_test->test_info, "0P-", TS_RAWDATA_RESULT_MAX);
-
+	if (have_bus_error) {
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len],
+				"0F-", available_len);
+	} else {
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len],
+				"0P-", available_len);
+	}
 	for (i = 1; i < MAX_TEST_ITEMS; i++) {
 		/* if have tested, show result */
 		if (ts_test->test_result[i]) {
@@ -1518,10 +1789,19 @@ static void gtx8_put_test_result(
 				ts_test->rawdata.size,
 				statistics_data,
 				STATISTICS_DATA_LEN);
-		gtx8_strncat(ts_test->test_info, statistics_data, TS_RAWDATA_RESULT_MAX);
+
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], statistics_data,
+				available_len);
 	} else {
 		TS_LOG_INFO("NO valiable rawdata\n");
-		gtx8_strncat(ts_test->test_info, "[0,0,0]", TS_RAWDATA_RESULT_MAX);
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], "[0,0,0]",
+				available_len);
 	}
 
 	if (ts_test->noisedata.size) {
@@ -1531,10 +1811,18 @@ static void gtx8_put_test_result(
 				ts_test->noisedata.size,
 				statistics_data,
 				STATISTICS_DATA_LEN);
-		gtx8_strncat(ts_test->test_info, statistics_data, TS_RAWDATA_RESULT_MAX);
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], statistics_data,
+				available_len);
 	} else {
 		TS_LOG_INFO("NO valiable noisedata\n");
-		gtx8_strncat(ts_test->test_info, "[0,0,0]", TS_RAWDATA_RESULT_MAX);
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], "[0,0,0]",
+				available_len);
 	}
 
 	if (ts_test->self_rawdata.size) {
@@ -1544,10 +1832,18 @@ static void gtx8_put_test_result(
 				ts_test->self_rawdata.size,
 				statistics_data,
 				STATISTICS_DATA_LEN);
-		gtx8_strncat(ts_test->test_info, statistics_data, TS_RAWDATA_RESULT_MAX);
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], statistics_data,
+				available_len);
 	} else {
 		TS_LOG_INFO("NO valiable self_rawdata\n");
-		gtx8_strncat(ts_test->test_info, "[0,0,0]", TS_RAWDATA_RESULT_MAX);
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], "[0,0,0]",
+				available_len);
 	}
 
 	if (ts_test->self_noisedata.size) {
@@ -1557,25 +1853,185 @@ static void gtx8_put_test_result(
 				ts_test->self_noisedata.size,
 				statistics_data,
 				STATISTICS_DATA_LEN);
-		gtx8_strncat(ts_test->test_info, statistics_data, TS_RAWDATA_RESULT_MAX);
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], statistics_data,
+				available_len);
 	} else {
 		TS_LOG_INFO("NO valiable self_noisedata\n");
-		gtx8_strncat(ts_test->test_info, "[0,0,0]", TS_RAWDATA_RESULT_MAX);
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], "[0,0,0]",
+				available_len);
 	}
 
-	if (have_bus_error)
-		gtx8_strncat(ts_test->test_info, "-software_reason", TS_RAWDATA_RESULT_MAX);
-	else if (have_panel_error)
-		gtx8_strncat(ts_test->test_info, "-panel_reason", TS_RAWDATA_RESULT_MAX);
+	if (have_bus_error) {
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len],
+			"-software_reason", available_len);
+	} else if (have_panel_error) {
+		dest_len = strlen(ts_test->test_info);
+		available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+		if (available_len > 0)
+			strncat(&ts_test->test_info[dest_len], "-panel_reason",
+				available_len);
+	}
+	dest_len = strlen(ts_test->test_info);
+	available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&ts_test->test_info[dest_len], "-GT",
+			available_len);
 
-	gtx8_strncat(ts_test->test_info, "-GT", TS_RAWDATA_RESULT_MAX);
-	gtx8_strncat(ts_test->test_info, ts_test->ts->hw_info.pid, TS_RAWDATA_RESULT_MAX);
-	gtx8_strncat(ts_test->test_info, "-", TS_RAWDATA_RESULT_MAX);
-	gtx8_strncat(ts_test->test_info, ";", TS_RAWDATA_RESULT_MAX);
+	dest_len = strlen(ts_test->test_info);
+	available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&ts_test->test_info[dest_len], ts_test->ts->hw_info.pid,
+			available_len);
+
+	dest_len = strlen(ts_test->test_info);
+	available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&ts_test->test_info[dest_len], "-",
+			available_len);
+
+	dest_len = strlen(ts_test->test_info);
+	available_len = TS_RAWDATA_RESULT_MAX - dest_len - 1;
+	if (available_len > 0)
+		strncat(&ts_test->test_info[dest_len], ";",
+			available_len);
+
 	TS_LOG_INFO("ts_test->test_info:%s\n", ts_test->test_info);
 	strncpy(info->result, ts_test->test_info, TS_RAWDATA_RESULT_MAX - 1);
+}
 
-	return;
+static int gtx8_send_short_param(struct gtx8_ts_test *ts_test)
+{
+	int ret;
+	u16 i = 0;
+	u16 j;
+	u16 chk_sum = 0;
+	u8 *short_param = NULL;
+	u16 chksum_len = 2; /* 2 bytes check sum */
+	u16 param_addr = PARAM_START_ADDR;
+	u16 len = PARAM_END_ADDR - PARAM_START_ADDR;
+
+	short_param = kzalloc(len + chksum_len, GFP_KERNEL);
+	if (!short_param) {
+		TS_LOG_ERR("Failed to alloc memory\n");
+		ret =  -ENOMEM;
+		goto exit;
+	}
+	memset(short_param, 0, len + chksum_len);
+
+	/* sen/drv line */
+	for (j = 0; j < MAX_SEN_NUM_7382; j++)
+		short_param[i++] = gt7382_sen_map[j];
+
+	for (j = 0; j < MAX_DRV_NUM_7382; j++)
+		short_param[i++] = gt7382_drv_map[j];
+
+	/*
+	 * 4 bytes reseverd -> 2 bytes reseved add 2 bytes for driver,
+	 * so driver max number is 46
+	 */
+	short_param[i++] = 0x00;
+	short_param[i++] = 0x00;
+
+	/* Short Check Max num <=100 */
+	short_param[i++] = 100;
+	/*
+	 * ShortCheck
+	 * Mode Sensor Line
+	 * Rx line select:4 mode from to 3
+	 * PIN number:S0~121;
+	 * 0:S0~75; 1:S46~121; 2:S22~97;
+	 * 3:S0~37&S84~121;
+	 */
+	short_param[i++] = MODE_SEN_LINE;
+
+	/* Tx&Tx short resistor threshold */
+	short_param[i++] =
+		((ts_test->test_params.r_drv_drv_threshold) & 0xFF);
+	short_param[i++] =
+		((ts_test->test_params.r_drv_drv_threshold >> 8) & 0xFF);
+	/* Tx&Rx short resistor threshold */
+	short_param[i++] =
+		((ts_test->test_params.r_drv_sen_threshold) & 0xFF);
+	short_param[i++] =
+		((ts_test->test_params.r_drv_sen_threshold >> 8) & 0xFF);
+	/* Rx&Rx short resistor threshold */
+	short_param[i++] =
+		((ts_test->test_params.r_sen_sen_threshold) & 0xFF);
+	short_param[i++] =
+		((ts_test->test_params.r_sen_sen_threshold >> 8) & 0xFF);
+	/* adc read delay */
+	short_param[i++] = (ADC_DUMP_NUM & 0xFF);
+	short_param[i++] = ((ADC_DUMP_NUM >> 8) & 0xFF);
+	/* Tx&GND short resistor threshold */
+	short_param[i++] =
+		((ts_test->test_params.r_drv_gnd_threshold) & 0xFF);
+	short_param[i++] =
+		((ts_test->test_params.r_drv_gnd_threshold >> 8) & 0xFF);
+	/*  Tx&VDD short resistor threshold */
+	short_param[i++] = ((ts_test->test_params.r_drv_gnd_threshold) & 0xFF);
+	short_param[i++] =
+		((ts_test->test_params.r_drv_gnd_threshold >> 8) & 0xFF);
+	/* Rx&GND short resistor threshold */
+	short_param[i++] = ((ts_test->test_params.r_sen_gnd_threshold) & 0xFF);
+	short_param[i++] =
+		((ts_test->test_params.r_sen_gnd_threshold >> 8) & 0xFF);
+	/* Rx&VDD short resistor threshold */
+	short_param[i++] = ((ts_test->test_params.r_sen_gnd_threshold) & 0xFF);
+	short_param[i++] =
+		((ts_test->test_params.r_sen_gnd_threshold >> 8) & 0xFF);
+	/* ADC offset front(0.5us), >=200; unused */
+	short_param[i++] = 0x00;
+	short_param[i++] = 0x00;
+	/* ADC offset middle(0.5us), >=1000; unused */
+	short_param[i++] = 0x00;
+	short_param[i++] = 0x00;
+	/* ADC Samping Time(Hz), may be better <=1700Hz, simple time is 588us
+	 * can not less than ADC offset middle , unused
+	 */
+	short_param[i++] = 0x00;
+	short_param[i++] = 0x00;
+	/* Tx&Tx Rx&Rx Tx&Rx short adc threshold */
+	short_param[i++] = (ts_test->test_params.short_threshold & 0xFF);
+	short_param[i++] = ((ts_test->test_params.short_threshold >> 8) & 0xFF);
+	/* diffcode threshold */
+	short_param[i++] = (GNDAVDD_SHORT_VALUE_GT7382 & 0xFF);
+	short_param[i++] = ((GNDAVDD_SHORT_VALUE_GT7382 >> 8) & 0xFF);
+	/* Tx&Tx factor:40~500 */
+	short_param[i++] = ((TX_TX_FACTOR) & 0xFF);
+	short_param[i++] = ((TX_TX_FACTOR >> 8) & 0xFF);
+	/* Tx&Rx factor:40~500 */
+	short_param[i++] = ((TX_RX_FACTOR) & 0xFF);
+	short_param[i++] = ((TX_RX_FACTOR >> 8) & 0xFF);
+	/* Rx&Rx factor:40~500 */
+	short_param[i++] = ((RX_RX_FACTOR) & 0xFF);
+	short_param[i++] = ((RX_RX_FACTOR >> 8) & 0xFF);
+	/* reserved */
+	short_param[i++] = 0x00;
+	short_param[i++] = 0x00;
+
+	for (j = 0; j < len; j += 2)
+		chk_sum += ((u16)(short_param[j + 1] << 8) + short_param[j]);
+	chk_sum = 0 - chk_sum;
+	short_param[len] = ((chk_sum) & 0xFF);
+	short_param[len + 1] = ((chk_sum >> 8) & 0xFF);
+
+	/* SHORT THRESHOLD_REG 0X8118 */
+	ret = ts_test->ts->ops.i2c_write(param_addr, short_param, len + 2);
+	if (ret < 0)
+		TS_LOG_ERR("Failed write short param\n");
+exit:
+	kfree(short_param);
+	short_param = NULL;
+	return ret;
 }
 
 /* short test */
@@ -1583,24 +2039,50 @@ static int gtx8_short_test_prepare(struct gtx8_ts_test *ts_test)
 {
 	int ret = 0, i = 0, retry = GTX8_RETRY_NUM_3;
 	u8 data[MAX_DRV_NUM + MAX_SEN_NUM] = {0};
+	u16 short_status_reg;
+	int short_status;
+	u8 short_test_cmd;
 
 	TS_LOG_INFO("Short test prepare+\n");
+	if (ts_test->ts->ic_type == IC_TYPE_7382) {
+		msleep(50); /* wait for tp into get rawdata mode */
+		short_test_cmd = 0x40;
+		short_status_reg = SHORT_STATUS_REG_GT7382;
+		short_status = 0x1; /* gt7382 short status flag */
+		data[0] = 0;
+		/* turn off watch dog timer */
+		ret = ts_test->ts->ops.i2c_write(WATCH_DOG_TIMER_REG_GT7382,
+			data, 1);
+		if (ret < 0) {
+			TS_LOG_ERR("Failed turn off watch dog timer\n");
+			return ret;
+		}
+	} else {
+		short_status_reg = SHORT_STATUS_REG;
+		short_status = 0xaa; /* gt8x short status flag */
+		short_test_cmd = 0xb;
+	}
 	while (--retry) {
 		/* switch to shrot test system */
-		ret = ts_test->ts->ops.send_cmd(0x0b, 0x0, GTX8_NEED_SLEEP);  /*bagan test command*/
+		ret = ts_test->ts->ops.send_cmd(short_test_cmd,
+			0x0, GTX8_NEED_SLEEP); /* bagan test command */
 		if (ret) {
 			TS_LOG_ERR("Can not switch to short test system\n");
 			return ret;
 		}
 
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			msleep(250); /* delay for short test */
+
 		/* check firmware running */
 		for (i = 0; i < 20; i++) {
 			TS_LOG_INFO("Check firmware running..");
-			ret = ts_test->ts->ops.i2c_read(SHORT_STATUS_REG, &data[0], 1);   /* SHORT_STATUS_REG is 0x5095 */
+			ret = ts_test->ts->ops.i2c_read(short_status_reg,
+				&data[0], 1); /* SHORT_STATUS_REG */
 			if (ret) {
 				TS_LOG_ERR("Check firmware running failed\n");
 				return ret;
-			} else if (data[0] == 0xaa) {
+			} else if (data[0] == short_status) {
 				TS_LOG_INFO("Short firmware is running\n");
 				break;
 			}
@@ -1620,15 +2102,25 @@ static int gtx8_short_test_prepare(struct gtx8_ts_test *ts_test)
 		return ret;
 	}
 
-	data[0] = 0;
-	/* turn off watch dog timer */
-	ret = ts_test->ts->ops.i2c_write(WATCH_DOG_TIMER_REG, data, 1);
-	if (ret < 0) {
-		TS_LOG_ERR("Failed turn off watch dog timer\n");
-		return ret;
+	if (ts_test->ts->ic_type != IC_TYPE_7382) {
+		data[0] = 0;
+		/* turn off watch dog timer */
+		ret = ts_test->ts->ops.i2c_write(WATCH_DOG_TIMER_REG, data, 1);
+		if (ret < 0) {
+			TS_LOG_ERR("Failed turn off watch dog timer\n");
+			return ret;
+		}
 	}
-
 	TS_LOG_INFO("Firmware in short test mode\n");
+	if (ts_test->ts->ic_type == IC_TYPE_7382) {
+		/* send short param */
+		ret = gtx8_send_short_param(ts_test);
+		if (ret) {
+			TS_LOG_ERR("%s, send short_param failed\n", __func__);
+			return ret;
+		}
+		goto write_cmd;
+	}
 
 	data[0] = (ts_test->test_params.short_threshold >> 8) & 0xff;
 	data[1] = ts_test->test_params.short_threshold & 0xff;
@@ -1665,6 +2157,15 @@ static int gtx8_short_test_prepare(struct gtx8_ts_test *ts_test)
 		return ret;
 	}
 
+write_cmd:
+	if (ts_test->ts->ic_type == IC_TYPE_7382) {
+		/* send start short test */
+		ret = ts_test->ts->ops.send_cmd(0x41, 0x0, GTX8_NEED_SLEEP);
+		if (ret) {
+			TS_LOG_ERR("Failed write running dsp reg\n");
+			return ret;
+		}
+	}
 	TS_LOG_INFO("Short test prepare-\n");
 	return 0;
 }
@@ -1673,11 +2174,20 @@ static u32 map_die2pin(struct ts_test_params *test_params, u32 chn_num)
 {
 	int i = 0;
 	u32 res = 255;
+	u32 max_sen_num;
+	u32 max_drv_num;
 
+	if (gtx8_ts->ic_type == IC_TYPE_6861) {
+		max_sen_num = MAX_SEN_NUM_6861;
+		max_drv_num = MAX_DRV_NUM_6861;
+	} else {
+		max_sen_num = test_params->max_sen_num;
+		max_drv_num = test_params->max_drv_num;
+	}
 	if (chn_num & DRV_CHANNEL_FLAG)
-		chn_num = (chn_num & ~DRV_CHANNEL_FLAG) + test_params->max_sen_num;
+		chn_num = (chn_num & ~DRV_CHANNEL_FLAG) + max_sen_num;
 
-	for (i = 0; i < test_params->max_sen_num; i++) {
+	for (i = 0; i < max_sen_num; i++) {
 		if (test_params->sen_map[i] == chn_num) {
 			res = i;
 			break;
@@ -1689,13 +2199,13 @@ static u32 map_die2pin(struct ts_test_params *test_params, u32 chn_num)
 		return res;
 
 	/* if cannot find in SenMap try find in DrvMap */
-	for (i = 0; i < test_params->max_drv_num; i++) {
+	for (i = 0; i < max_drv_num; i++) {
 		if (test_params->drv_map[i] == chn_num) {
 			res = i;
 			break;
 		}
 	}
-	if (i >= test_params->max_drv_num)
+	if (i >= max_drv_num)
 		TS_LOG_ERR("Faild found corrresponding channel num:%d\n", chn_num);
 
 	return res;
@@ -1708,6 +2218,7 @@ static int gtx8_check_resistance_to_gnd(struct ts_test_params *test_params,
 	u16 r_th = 0, avdd_value = 0;
 	u32 chn_id_tmp = 0;
 	u32 pin_num = 0;
+	u32 max_drv_num = test_params->max_drv_num;
 
 	avdd_value = test_params->avdd_value;
 	if (adc_signal == 0 || adc_signal == 0x8000)
@@ -1722,7 +2233,7 @@ static int gtx8_check_resistance_to_gnd(struct ts_test_params *test_params,
 	r = r > MAX_U16_VALUE ? MAX_U16_VALUE : r;
 	r = r < 0 ? 0 : r;
 
-	if (pos < MAX_DRV_NUM)
+	if (pos < max_drv_num)
 		r_th = test_params->r_drv_gnd_threshold;
 	else
 		r_th = test_params->r_sen_gnd_threshold;
@@ -1800,6 +2311,8 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 	u16 self_capdata[MAX_DRV_NUM + MAX_SEN_NUM] = {0}, short_die_num = 0;
 	struct short_record temp_short_info;
 	struct ts_test_params *test_params = &ts_test->test_params;
+	u32 max_drv_num = test_params->max_drv_num;
+	u32 max_sen_num = test_params->max_sen_num;
 
 	ret = ts_test->ts->ops.i2c_read(TEST_RESULT_REG, &short_flag, 1);  /* TEST_RESULT_REG  0x8401 */
 	if (ret < 0) {
@@ -1810,7 +2323,7 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 		return NO_ERR;
 	}
 
-	data_buf = kzalloc((MAX_DRV_NUM + MAX_SEN_NUM) * 2, GFP_KERNEL);
+	data_buf = kzalloc((max_drv_num + max_sen_num) * 2, GFP_KERNEL);
 	if (!data_buf) {
 		TS_LOG_ERR("Failed to alloc memory\n");
 		 goto shortcircut_analysis_error;
@@ -1820,7 +2333,7 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 	if (short_flag & 0x08) {
 		/* read diff code, diff code will be used to calculate
 		  * resistance between channel and GND */
-		size = (MAX_DRV_NUM + MAX_SEN_NUM) * 2;
+		size = (max_drv_num + max_sen_num) * 2;
 		ret = ts_test->ts->ops.i2c_read(DIFF_CODE_REG, data_buf, size); /* DIFF_CODE_REG   0xA97A */
 		if (ret < 0) {
 			TS_LOG_ERR("Failed read to-gnd rawdata\n");
@@ -1838,13 +2351,13 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 	}
 
 	/* read self-capdata+ */
-	size = (MAX_DRV_NUM + MAX_SEN_NUM) * 2;
+	size = (max_drv_num + max_sen_num) * 2;
 	ret = ts_test->ts->ops.i2c_read(DRV_SELF_CODE_REG, data_buf, size);  /* DRV_SELF_CODE_REG   0xa8e0 */
 	if (ret) {
 		TS_LOG_ERR("Failed read selfcap rawdata\n");
 		goto shortcircut_analysis_error;
 	}
-	for (i = 0; i < MAX_DRV_NUM + MAX_SEN_NUM; i++)
+	for (i = 0; i < max_drv_num + max_sen_num; i++)
 		self_capdata[i] = be16_to_cpup((__be16 *)&data_buf[i * 2]) & 0x7fff;
 	/* read self-capdata- */
 
@@ -1863,7 +2376,8 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 	/* drv&drv shortcircut check */
 	data_addr = 0x8460;
 	for (i = 0; i < short_status[0]; i++) {
-		size = SHORT_CAL_SIZE(MAX_DRV_NUM);	/* 4 + MAX_DRV_NUM * 2 + 2; */
+		/* 4 + MAX_DRV_NUM * 2 + 2; */
+		size = SHORT_CAL_SIZE(max_drv_num);
 		ret = ts_test->ts->ops.i2c_read(data_addr, data_buf, size);
 		if (ret) {
 			TS_LOG_ERR("Failed read drv-to-drv short rawdata\n");
@@ -1872,8 +2386,8 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 
 		r_threshold = test_params->r_drv_drv_threshold;
 		short_die_num = be16_to_cpup((__be16 *)&data_buf[0]);
-		if (short_die_num > MAX_DRV_NUM + MAX_SEN_NUM ||
-			short_die_num < MAX_SEN_NUM) {
+		if (short_die_num > (max_drv_num + max_sen_num) ||
+			short_die_num < max_sen_num) {
 			TS_LOG_INFO("invalid short pad num:%d\n", short_die_num);
 			continue;
 		}
@@ -1884,7 +2398,7 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 			break;
 		}
 		short_die_num -= test_params->max_sen_num;
-		for (j = short_die_num + 1; j < MAX_DRV_NUM; j++) {
+		for (j = short_die_num + 1; j < max_drv_num; j++) {
 			adc_signal = be16_to_cpup((__be16 *)&data_buf[4 + j * 2]);
 
 			if (adc_signal > test_params->short_threshold) {
@@ -1921,7 +2435,8 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 	/* sen&sen shortcircut check */
 	data_addr = 0x91d0;
 	for (i = 0; i < short_status[1]; i++) {
-		size =   SHORT_CAL_SIZE(MAX_SEN_NUM);     /* 4 + MAX_SEN_NUM * 2 + 2; */
+		/* 4 + MAX_SEN_NUM * 2 + 2; */
+		size = SHORT_CAL_SIZE(max_sen_num);
 		ret = ts_test->ts->ops.i2c_read(data_addr, data_buf, size);
 		if (ret) {
 			TS_LOG_ERR("Failed read sen-to-sen short rawdata\n");
@@ -1930,10 +2445,10 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 
 		r_threshold = ts_test->test_params.r_sen_sen_threshold;
 		short_die_num = be16_to_cpup((__be16 *)&data_buf[0]);
-		if (short_die_num > MAX_SEN_NUM)
+		if (short_die_num > max_sen_num)
 			continue;
 
-		for (j = short_die_num + 1; j < MAX_SEN_NUM; j++) {
+		for (j = short_die_num + 1; j < max_sen_num; j++) {
 			adc_signal = be16_to_cpup((__be16 *)&data_buf[4 + j * 2]);
 			if (adc_signal > ts_test->test_params.short_threshold) {
 				temp_short_info.master = short_die_num;
@@ -1970,7 +2485,8 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 	/* sen&drv shortcircut check */
 	data_addr = 0x9cc8;
 	for (i = 0; i < short_status[2]; i++) {
-		size =  SHORT_CAL_SIZE(MAX_DRV_NUM);                        /* size = 4 + MAX_SEN_NUM * 2 + 2; */
+		/* size = 4 + MAX_SEN_NUM * 2 + 2; */
+		size =  SHORT_CAL_SIZE(max_drv_num);
 		ret = ts_test->ts->ops.i2c_read(data_addr, data_buf, size);
 		if (ret) {
 			TS_LOG_ERR("Failed read sen-to-drv short rawdata\n");
@@ -1979,10 +2495,10 @@ static int gtx8_shortcircut_analysis(struct gtx8_ts_test *ts_test)
 
 		r_threshold = ts_test->test_params.r_drv_sen_threshold;
 		short_die_num = be16_to_cpup((__be16 *)&data_buf[0]);
-		if (short_die_num > MAX_SEN_NUM)
+		if (short_die_num > max_sen_num)
 			continue;
 
-		for (j = 0; j < MAX_DRV_NUM; j++) {
+		for (j = 0; j < max_drv_num; j++) {
 			adc_signal = be16_to_cpup((__be16 *)&data_buf[4 + j * 2]);
 			if (adc_signal > ts_test->test_params.short_threshold) {
 				temp_short_info.master = short_die_num;
@@ -2030,11 +2546,107 @@ shortcircut_analysis_error:
 	return -EINVAL;
 }
 
+static int gtx8_shortcircut_analysis_gt7382(struct gtx8_ts_test *ts_test)
+{
+	int ret;
+	int err = 0;
+	u32 r_th = 0;
+	int short_r = 0;
+	int i;
+	u8 short_flag = 0;
+	u8 short_num = 0;
+	u8 data_buf[4] = {0};
+	u16 short_pin_addr;
+
+	 /* TEST_RESTLT_REG  0x8AC0 */
+	ret = ts_test->ts->ops.i2c_read(TEST_RESULT_REG_GT7382, &short_flag, 1);
+	if (ret < 0) {
+		TS_LOG_ERR("Read TEST_TESULT_REG failed\n");
+		goto shortcircut_analysis_error;
+	} else if ((short_flag & 0x0F) == 0x00) {
+		TS_LOG_INFO("No shortcircut\n");
+		return NO_ERR;
+	}
+	ret = ts_test->ts->ops.i2c_read(SHORT_NUM_REG, &short_num, 1);
+	if (ret < 0) {
+		TS_LOG_ERR("Read SHORT_NUM_REG failed\n");
+		goto shortcircut_analysis_error;
+	}
+	TS_LOG_INFO("short num:%d\n", short_num);
+
+	short_pin_addr = SHORT_CHN_REG;
+	for (i = 0; i < short_num; i++) {
+		ret = ts_test->ts->ops.i2c_read(short_pin_addr, data_buf,
+			sizeof(data_buf));
+		if (ret) {
+			TS_LOG_ERR("%s\n",
+				"[analyse_short_res]:get short chn fail");
+			goto shortcircut_analysis_error;
+		}
+
+		/*
+		 * data_buf[0]:short type, 0xF1:VDD_CHN, 0xF0:GND_CHN
+		 * data_buf[1]:CHN type, DRV or SEN
+		 * data_buf[2] & data_buf[3]: short resistance value
+		 */
+		short_r = ((data_buf[2] << 8) | data_buf[3]);
+		/* shortcircut to gnd&vdd */
+		if ((data_buf[0] == GND_CHN) || (data_buf[0] == VDD_CHN)) {
+			if (data_buf[1] & DRV_CHANNEL_FLAG)
+				r_th = ts_test->test_params.r_drv_gnd_threshold;
+			else
+				r_th = ts_test->test_params.r_sen_gnd_threshold;
+
+			TS_LOG_ERR("%s%d shortcircut to %s,R=%dK,R_Threshold=%dK\n",
+					(data_buf[1] & DRV_CHANNEL_FLAG) ? "DRV" : "SEN",
+					(data_buf[1] & ~DRV_CHANNEL_FLAG),
+					(data_buf[0] == VDD_CHN) ? "VDD" : "GND",
+					short_r, r_th);
+		} else if ((data_buf[1] == GND_CHN) ||
+			(data_buf[1] == VDD_CHN)) {
+			if (data_buf[0] & DRV_CHANNEL_FLAG)
+				r_th = ts_test->test_params.r_drv_gnd_threshold;
+			else
+				r_th = ts_test->test_params.r_sen_gnd_threshold;
+
+			TS_LOG_ERR("%s%d shortcircut to %s,R=%dK,R_Threshold=%dK\n",
+					(data_buf[0] & DRV_CHANNEL_FLAG) ? "DRV" : "SEN",
+					(data_buf[0] & ~DRV_CHANNEL_FLAG),
+					(data_buf[1] == VDD_CHN) ? "VDD" : "GND",
+					short_r, r_th);
+		} else {
+			if ((data_buf[0] & DRV_CHANNEL_FLAG) &&
+				(data_buf[1] & DRV_CHANNEL_FLAG))
+				r_th = ts_test->test_params.r_drv_drv_threshold;
+			else if ((data_buf[0] & DRV_CHANNEL_FLAG) ||
+				(data_buf[1] & DRV_CHANNEL_FLAG))
+				r_th = ts_test->test_params.r_drv_sen_threshold;
+			else
+				r_th = ts_test->test_params.r_sen_sen_threshold;
+			TS_LOG_ERR("short circut:R=%dK,R_Threshold=%dK\n",
+					short_r, r_th);
+			TS_LOG_ERR("%s%d--%s%d shortcircut\n",
+					(data_buf[0] & DRV_CHANNEL_FLAG) ? "DRV" : "SEN",
+					(data_buf[0] & ~DRV_CHANNEL_FLAG),
+					(data_buf[1] & DRV_CHANNEL_FLAG) ? "DRV" : "SEN",
+					(data_buf[1] & ~DRV_CHANNEL_FLAG));
+		}
+		err |= -EINVAL;
+		short_pin_addr += sizeof(data_buf);
+	}
+
+	return err | ret ? -EFAULT : NO_ERR;
+shortcircut_analysis_error:
+	return -EINVAL;
+}
+
 static void gtx8_shortcircut_test(struct gtx8_ts_test *ts_test)
 {
 	int i = 0;
 	int ret = 0;
 	u8 data[2] = {0};
+	u16 short_testend_reg;
+	u8 test_pass_flag;
 
 	ts_test->test_result[GTP_SHORT_TEST] = GTP_TEST_PASS;
 	ret = gtx8_short_test_prepare(ts_test);
@@ -2044,19 +2656,35 @@ static void gtx8_shortcircut_test(struct gtx8_ts_test *ts_test)
 		return;
 	}
 
-	//msleep(3000);
+	/* Delay 2s to improve short test stability for gt6861 */
+	if (gtx8_ts->ic_type == IC_TYPE_6861)
+		msleep(2000);
+
+	if (ts_test->ts->ic_type == IC_TYPE_7382) {
+		/* delay after send test cmd */
+		msleep(6000);
+		short_testend_reg = SHORT_TESTEND_REG_GT7382;
+		test_pass_flag = 0x43;  /* gt7382 test pass flag */
+	} else {
+		short_testend_reg = SHORT_TESTEND_REG;
+		test_pass_flag = 0x88; /* gt8x test pass flag */
+	}
 	for (i = 0; i < 150; i++) {
 		msleep(50);
 		TS_LOG_INFO("waitting for short test end...:retry=%d\n", i);
-		ret = ts_test->ts->ops.i2c_read(SHORT_TESTEND_REG, data, 1);   /* SHORT_TESTEND_REG   0x8400 */
+		ret = ts_test->ts->ops.i2c_read(short_testend_reg,
+			data, 1); /* SHORT_TESTEND_REG 0x8400 */
 		if (ret)
 			TS_LOG_ERR("Failed get short test result: retry%d\n", i);
-		else if (data[0] == 0x88)  /* test ok*/
+		else if (data[0] == test_pass_flag)  /* test ok*/
 			break;
 	}
 
 	if (i < 150) {
-		ret = gtx8_shortcircut_analysis(ts_test);
+		if (ts_test->ts->ic_type == IC_TYPE_7382)
+			ret = gtx8_shortcircut_analysis_gt7382(ts_test);
+		else
+			ret = gtx8_shortcircut_analysis(ts_test);
 		if (ret) {
 			ts_test->test_result[GTP_SHORT_TEST] = GTP_PANEL_REASON;
 			TS_LOG_ERR("Short test failed\n");
@@ -2064,6 +2692,10 @@ static void gtx8_shortcircut_test(struct gtx8_ts_test *ts_test)
 			TS_LOG_ERR("Short test success\n");
 		}
 	} else {
+		if ((ts_test->ts->ic_type == IC_TYPE_7382) &&
+			(data[0] == 0x02)) {
+			TS_LOG_ERR("Short param data error\n");
+		}
 		TS_LOG_ERR("Wait short test finish timeout:reg_val=0x%x\n", data[0]);
 		ts_test->test_result[GTP_SHORT_TEST] = SYS_SOFTWARE_REASON;
 	}

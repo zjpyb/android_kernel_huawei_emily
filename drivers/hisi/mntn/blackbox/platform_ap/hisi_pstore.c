@@ -13,7 +13,7 @@
 #include <linux/module.h>
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 #include <linux/hisi/hisi_pstore.h>
 #include <linux/hisi/hisi_log.h>
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
@@ -36,14 +36,19 @@ static ssize_t persist_store_file_read(struct file *file,
 					  char __user *userbuf, size_t bytes,
 					  loff_t *off)
 {
-	struct persist_store_info *info = (struct persist_store_info *)file->private_data;
+	struct persist_store_info *info = NULL;
 	ssize_t copy;
 	size_t size;
+
+	if ((!file) || (!off))
+		return -EFAULT;
 
 	if (!userbuf) {
 		pr_err("%s(), userbuf is NULL.\n", __func__);
 		return 0;
 	}
+
+	info = (struct persist_store_info *)file->private_data;
 
 	if (!info) {
 		pr_err("%s(), the proc file don't be created in advance.\n", __func__);
@@ -78,6 +83,9 @@ copy_err:
 
 static int persist_store_file_open(struct inode *inode, struct file *file)
 {
+	if ((!inode) || (!file))
+		return -EFAULT;
+
 	file->private_data = PDE_DATA(inode);
 
 	if (list_empty(&__list_persist_store)) {
@@ -109,7 +117,7 @@ Modification : Created function
 /*lint -e429*/
 void hisi_save_pstore_log(const char *name, const void *data, size_t size)
 {
-	struct persist_store_info *info;
+	struct persist_store_info *info = NULL;
 
 	/*as a public interface, we should check the parameter */
 	if (IS_ERR_OR_NULL(name) || IS_ERR_OR_NULL(data)) {
@@ -127,7 +135,7 @@ void hisi_save_pstore_log(const char *name, const void *data, size_t size)
 		return;
 	}
 
-	if (EOK != strncpy_s(info->name, PERSIST_STORE_NAMELEN-1, name, PERSIST_STORE_NAMELEN)) {
+	if (EOK != strncpy_s(info->name, PERSIST_STORE_NAMELEN, name, PERSIST_STORE_NAMELEN - 1)) {
 		pr_err("%s(), strncpy_s fail !\n", __func__);
 	}
 	info->name[PERSIST_STORE_NAMELEN-1] = '\0';
@@ -156,8 +164,9 @@ Modification : Created function
  *****************************************************************************/
 void hisi_create_pstore_entry(void)
 {
-	struct persist_store_info *info,*n;
-	struct proc_dir_entry *pde;
+	struct persist_store_info *info = NULL;
+	struct persist_store_info *n = NULL;
+	struct proc_dir_entry *pde = NULL;
 
 	list_for_each_entry_safe(info, n, &__list_persist_store, node) {
 		pde = balong_create_pstore_proc_entry(info->name, S_IRUSR | S_IRGRP,
@@ -179,7 +188,8 @@ Modification : Created function
  *****************************************************************************/
 void hisi_remove_pstore_entry(void)
 {
-	struct persist_store_info *info,*n;
+	struct persist_store_info *info = NULL;
+	struct persist_store_info *n = NULL;
 
 	list_for_each_entry_safe(info, n, &__list_persist_store, node) {
 		balong_remove_pstore_proc_entry(info->name);
@@ -194,8 +204,9 @@ Modification : Created function
  *****************************************************************************/
 void hisi_free_persist_store(void)
 {
-	struct persist_store_info *info,*n;
-	unsigned int nums=0;
+	struct persist_store_info *info = NULL;
+	struct persist_store_info *n = NULL;
+	unsigned int nums = 0;
 
 	list_for_each_entry_safe(info, n, &__list_persist_store, node) {
 		list_del(&info->node);

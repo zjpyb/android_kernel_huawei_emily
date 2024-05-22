@@ -322,7 +322,8 @@ void pci_bus_add_device(struct pci_dev *dev)
 	pci_create_sysfs_dev_files(dev);
 	pci_proc_attach_device(dev);
 #endif
-	pci_bridge_d3_device_changed(dev);
+	pci_bridge_d3_update(dev);
+
 	dev->match_driver = true;
 	retval = device_attach(&dev->dev);
 	if (retval < 0 && retval != -EPROBE_DEFER) {

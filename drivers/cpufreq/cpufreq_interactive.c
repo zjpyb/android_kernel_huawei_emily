@@ -26,11 +26,16 @@
 #include <linux/rwsem.h>
 #include <linux/sched.h>
 #include <linux/sched/rt.h>
+#include <linux/sched/cpufreq.h>
 #include <linux/tick.h>
 #include <linux/time.h>
 #include <linux/timer.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#include <uapi/linux/sched/types.h>
+#ifdef CONFIG_HISI_CPUFREQ
+#include "../../kernel/sched/sched.h"
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpufreq_interactive.h>
@@ -145,7 +150,6 @@ struct interactive_cpu {
 #ifdef CONFIG_HISI_CPUFREQ
 	unsigned int min_freq;
 	unsigned int prev_cpu_load;
-	int governor_enabled;
 #endif
 	unsigned int floor_freq;
 	u64 pol_floor_val_time; /* policy floor_validate_time */
@@ -1325,7 +1329,7 @@ static bool cpufreq_interactive_get_policy_freq(struct cpufreq_policy *policy,
 						unsigned int *freq, u64 *wall)
 {
 	unsigned int max_freq = 0;
-	unsigned int j;
+	unsigned int i;
 	u64 now;
 	unsigned int delta_time;
 	u64 cputime_speedadj;
@@ -1340,8 +1344,8 @@ static bool cpufreq_interactive_get_policy_freq(struct cpufreq_policy *policy,
 
 	icpu = &per_cpu(interactive_cpu, policy->cpu); /*lint !e64*/
 	down_read(&icpu->enable_sem);
-	if (icpu->governor_enabled) {
-		if(policy->min < icpu->min_freq)
+	if (icpu->ipolicy) {
+		if (policy->min < icpu->min_freq)
 			need_update_freq = true;
 	}
 	up_read(&icpu->enable_sem);
@@ -1350,17 +1354,17 @@ static bool cpufreq_interactive_get_policy_freq(struct cpufreq_policy *policy,
 		goto exit;
 
 	/*lint -e570 -e574*/
-	for_each_cpu(j, policy->cpus) {
-		icpu = &per_cpu(interactive_cpu, j);/*lint !e64*/
+	for_each_cpu(i, policy->cpus) {
+		icpu = &per_cpu(interactive_cpu, i);/*lint !e64*/
 
 		down_read(&icpu->enable_sem);
-		if (icpu->governor_enabled == 0) {
+		if (!icpu->ipolicy) {
 			up_read(&icpu->enable_sem);
 			continue;
 		}
 
 		spin_lock_irqsave(&icpu->load_lock, flags);
-		now = update_load(icpu,j);
+		now = update_load(icpu, i);
 		*wall = now;
 		delta_time = (unsigned int)(now - icpu->cputime_speedadj_timestamp);
 		cputime_speedadj = icpu->cputime_speedadj;
@@ -1397,8 +1401,8 @@ static bool cpufreq_interactive_get_policy_freq(struct cpufreq_policy *policy,
 		}
 		spin_unlock_irqrestore(&icpu->target_freq_lock, flags);
 
-		trace_cpufreq_interactive_fast_ramp(j, cpu_load, icpu->target_freq,
-					 icpu->ipolicy->policy->cur, new_freq);
+		trace_cpufreq_interactive_fast_ramp(i, cpu_load, icpu->target_freq,
+					icpu->ipolicy->policy->cur, new_freq);
 
 		if (new_freq > max_freq)
 			max_freq = new_freq;
@@ -1565,9 +1569,6 @@ int cpufreq_interactive_start(struct cpufreq_policy *policy)
 		icpu->loc_hispeed_val_time = icpu->pol_floor_val_time;
 
 		down_write(&icpu->enable_sem);
-#ifdef CONFIG_HISI_CPUFREQ
-		icpu->governor_enabled = 1;
-#endif
 		icpu->ipolicy = ipolicy;
 		up_write(&icpu->enable_sem);
 
@@ -1592,9 +1593,6 @@ void cpufreq_interactive_stop(struct cpufreq_policy *policy)
 		icpu_cancel_work(icpu);
 
 		down_write(&icpu->enable_sem);
-#ifdef CONFIG_HISI_CPUFREQ
-		icpu->governor_enabled = 0;
-#endif
 		icpu->ipolicy = NULL;
 		up_write(&icpu->enable_sem);
 	}
@@ -1646,8 +1644,8 @@ void cpufreq_interactive_limits(struct cpufreq_policy *policy)
 static struct interactive_governor interactive_gov = {
 	.gov = {
 		.name			= "interactive",
-		.max_transition_latency	= TRANSITION_LATENCY_LIMIT,
 		.owner			= THIS_MODULE,
+		.dynamic_switching	= true,
 		.init			= cpufreq_interactive_init,
 		.exit			= cpufreq_interactive_exit,
 		.start			= cpufreq_interactive_start,
@@ -1665,6 +1663,9 @@ static void cpufreq_interactive_nop_timer(unsigned long data)
 	 * This is important for platforms where CPU with higher frequencies
 	 * consume higher power even at IDLE.
 	 */
+#ifdef CONFIG_HISI_CPUFREQ
+	cpufreq_update_util(cpu_rq(smp_processor_id()), 0);
+#endif
 }
 
 static int __init cpufreq_interactive_gov_init(void)

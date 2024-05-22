@@ -3,7 +3,7 @@
  *
  * ltc7820 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,15 +21,15 @@
 
 #include <linux/spinlock.h>
 
-#define LTC7820_CHIP_ENABLE               (1)
-#define LTC7820_CHIP_DISABLE              (0)
-#define LTC7820_FREQ_ENABLE               (1)
-#define LTC7820_FREQ_DISABLE              (0)
+#define LTC7820_CHIP_ENABLE                1
+#define LTC7820_CHIP_DISABLE               0
+#define LTC7820_FREQ_ENABLE                1
+#define LTC7820_FREQ_DISABLE               0
 
-#define LTC7820_INIT_FINISH               (1)
-#define LTC7820_NOT_INIT                  (0)
-#define LTC7820_ENABLE_INT_NOTIFY         (1)
-#define LTC7820_DISABLE_INT_NOTIFY        (0)
+#define LTC7820_INIT_FINISH                1
+#define LTC7820_NOT_INIT                   0
+#define LTC7820_ENABLE_INT_NOTIFY          1
+#define LTC7820_DISABLE_INT_NOTIFY         0
 
 struct ltc7820_device_info {
 	struct platform_device *pdev;

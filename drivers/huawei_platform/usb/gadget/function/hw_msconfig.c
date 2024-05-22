@@ -3,7 +3,7 @@
  *
  *   mass storage autorun and lun config driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,8 +16,8 @@
  *
  */
 
-#define MS_STG_SET_LEN         (32)
-#define FSG_MAX_LUNS_HUAWEI    (2)
+#define MS_STG_SET_LEN         32
+#define FSG_MAX_LUNS_HUAWEI    2
 
 /* enable or disable autorun function "enable" & "disable" */
 static char autorun[MS_STG_SET_LEN] = "enable";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * drivers/power/process.c - Functions for starting/stopping processes on 
  *                           suspend transitions.
@@ -12,14 +13,16 @@
 #include <linux/oom.h>
 #include <linux/suspend.h>
 #include <linux/module.h>
+#include <linux/sched/debug.h>
+#include <linux/sched/task.h>
 #include <linux/syscalls.h>
 #include <linux/freezer.h>
 #include <linux/delay.h>
 #include <linux/workqueue.h>
 #include <linux/kmod.h>
 #include <trace/events/power.h>
-#include <linux/wakeup_reason.h>
 #include <linux/cpuset.h>
+#include <linux/wakeup_reason.h>
 
 /*
  * Timeout for stopping processes
@@ -61,7 +64,7 @@ static int try_to_freeze_tasks(bool user_only)
 
 		if (!user_only) {
 			wq_busy = freeze_workqueues_busy();
-			todo += wq_busy;/*lint !e514*/
+			todo += wq_busy; /*lint !e514*/
 		}
 
 		if (!todo || time_after(jiffies, end_time))
@@ -100,7 +103,7 @@ static int try_to_freeze_tasks(bool user_only)
 		pr_err("Freezing of tasks failed after %d.%03d seconds"
 		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000,
-		       todo - wq_busy, wq_busy);/*lint !e514*/
+		       todo - wq_busy, wq_busy); /*lint !e514*/
 
 		if (wq_busy)
 			show_workqueue_state();
@@ -141,7 +144,7 @@ int freeze_processes(void)
 	if (!pm_freezing)
 		atomic_inc(&system_freezing_cnt);
 
-	pm_wakeup_clear();
+	pm_wakeup_clear(true);
 	pr_info("Freezing user space processes ... ");
 	pm_freezing = true;
 	error = try_to_freeze_tasks(true);

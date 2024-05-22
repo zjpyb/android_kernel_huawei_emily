@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/mount.h>
 #include <linux/file.h>
 #include <linux/fs.h>
@@ -7,6 +8,7 @@
 #include <linux/seq_file.h>
 #include <linux/user_namespace.h>
 #include <linux/nsfs.h>
+#include <linux/uaccess.h>
 
 static struct vfsmount *nsfs_mnt;
 
@@ -46,13 +48,13 @@ static void nsfs_evict(struct inode *inode)
 {
 	struct ns_common *ns = inode->i_private;
 	clear_inode(inode);
-	ns->ops->put(ns);
+	if (ns && ns->ops && ns->ops->put)
+		ns->ops->put(ns);
 }
 
 static void *__ns_get_path(struct path *path, struct ns_common *ns)
 {
 	struct vfsmount *mnt = nsfs_mnt;
-	struct qstr qname = { .name = "", };
 	struct dentry *dentry;
 	struct inode *inode;
 	unsigned long d;
@@ -65,7 +67,8 @@ static void *__ns_get_path(struct path *path, struct ns_common *ns)
 	if (!lockref_get_not_dead(&dentry->d_lockref))
 		goto slow;
 	rcu_read_unlock();
-	ns->ops->put(ns);
+	if (ns && ns->ops && ns->ops->put)
+		ns->ops->put(ns);
 got_it:
 	path->mnt = mntget(mnt);
 	path->dentry = dentry;
@@ -74,7 +77,8 @@ slow:
 	rcu_read_unlock();
 	inode = new_inode_pseudo(mnt->mnt_sb);
 	if (!inode) {
-		ns->ops->put(ns);
+		if (ns && ns->ops && ns->ops->put)
+			ns->ops->put(ns);
 		return ERR_PTR(-ENOMEM);
 	}
 	inode->i_ino = ns->inum;
@@ -84,7 +88,7 @@ slow:
 	inode->i_fop = &ns_file_operations;
 	inode->i_private = ns;
 
-	dentry = d_alloc_pseudo(mnt->mnt_sb, &qname);
+	dentry = d_alloc_pseudo(mnt->mnt_sb, &empty_name);
 	if (!dentry) {
 		iput(inode);
 		return ERR_PTR(-ENOMEM);
@@ -119,7 +123,7 @@ again:
 	return ret;
 }
 
-static int open_related_ns(struct ns_common *ns,
+int open_related_ns(struct ns_common *ns,
 		   struct ns_common *(*get_ns)(struct ns_common *ns))
 {
 	struct path path = {};
@@ -164,7 +168,10 @@ static int open_related_ns(struct ns_common *ns,
 static long ns_ioctl(struct file *filp, unsigned int ioctl,
 			unsigned long arg)
 {
+	struct user_namespace *user_ns;
 	struct ns_common *ns = get_proc_ns(file_inode(filp));
+	uid_t __user *argp;
+	uid_t uid;
 
 	switch (ioctl) {
 	case NS_GET_USERNS:
@@ -173,6 +180,15 @@ static long ns_ioctl(struct file *filp, unsigned int ioctl,
 		if (!ns->ops->get_parent)
 			return -EINVAL;
 		return open_related_ns(ns, ns->ops->get_parent);
+	case NS_GET_NSTYPE:
+		return ns->ops->type;
+	case NS_GET_OWNER_UID:
+		if (ns->ops->type != CLONE_NEWUSER)
+			return -EINVAL;
+		user_ns = container_of(ns, struct user_namespace, ns);
+		argp = (uid_t __user *) arg;
+		uid = from_kuid_munged(current_user_ns(), user_ns->owner);
+		return put_user(uid, argp);
 	default:
 		return -ENOTTY;
 	}
@@ -183,9 +199,11 @@ int ns_get_name(char *buf, size_t size, struct task_struct *task,
 {
 	struct ns_common *ns;
 	int res = -ENOENT;
+	const char *name;
 	ns = ns_ops->get(task);
 	if (ns) {
-		res = snprintf(buf, size, "%s:[%u]", ns_ops->name, ns->inum);
+		name = ns_ops->real_ns_name ? : ns_ops->name;
+		res = snprintf(buf, size, "%s:[%u]", name, ns->inum);
 		ns_ops->put(ns);
 	}
 	return res;

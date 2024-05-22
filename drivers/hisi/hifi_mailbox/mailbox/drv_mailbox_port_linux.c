@@ -16,10 +16,12 @@
 #include <linux/delay.h>
 #include <linux/freezer.h>
 #include <linux/completion.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/wait.h>
 #include <linux/spinlock.h>
 #include <linux/version.h>
+#include <linux/types.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #include <uapi/linux/sched/types.h>
 #endif
@@ -84,7 +86,9 @@ struct mb_local_work
     unsigned int             data_flag;       /*此邮箱是否有数据的标志位*/
     int		      (*cb)(unsigned int channel_id);
     struct mb_local_work            *next;          /*指向下一条*/
+#ifdef MAILBOX_OPEN_MNTN
     void                     *mb_priv;
+#endif
 };
 
 /*****************************************************************************
@@ -123,7 +127,7 @@ struct mb_mutex
 /*****************************************************************************
   2 全局变量定义
 *****************************************************************************/
-static struct wake_lock mb_lpwr_lock; /*防止在唤醒后，处理邮件过程中进入睡眠*/
+static struct wakeup_source mb_lpwr_lock; /*防止在唤醒后，处理邮件过程中进入睡眠*/
 
 static bool is_usb_suspend = false; /*防止在唤醒后，处理邮件过程中进入睡眠*/
 
@@ -191,7 +195,7 @@ void mailbox_usb_suspend(bool is_suspend)
 *****************************************************************************/
 MAILBOX_LOCAL void mailbox_receive_process(unsigned long data)
 {
-    struct mb_local_proc *proc = (struct mb_local_proc *)data;
+    struct mb_local_proc *proc = (struct mb_local_proc *)(uintptr_t)data;
     struct mb_local_work *work = proc->work_list;
 
 
@@ -199,7 +203,9 @@ MAILBOX_LOCAL void mailbox_receive_process(unsigned long data)
         /*遍历标志位，如果有置位，调用对应的邮箱ID号的回调函数*/
         if (MAILBOX_TRUE == work->data_flag) {
             work->data_flag = MAILBOX_FALSE;
+#ifdef MAILBOX_OPEN_MNTN
             mailbox_record_sche_recv(work->mb_priv);
+#endif
             if (MAILBOX_NULL != work->cb) {
                 if (MAILBOX_OK !=  work->cb(work->channel_id))
                 {
@@ -211,8 +217,8 @@ MAILBOX_LOCAL void mailbox_receive_process(unsigned long data)
         }
         work = work->next;
     }
-    if (wake_lock_active(&mb_lpwr_lock)) {
-        wake_unlock(&mb_lpwr_lock);/*lint !e455*/
+    if (mb_lpwr_lock.active) {
+        __pm_relax(&mb_lpwr_lock);/*lint !e455*/
     }
 }
 
@@ -224,13 +230,11 @@ MAILBOX_LOCAL int mailbox_receive_task(void * data)
     param.sched_priority = (proc->priority < MAX_RT_PRIO) ? proc->priority : (MAX_RT_PRIO-1);
     (void)sched_setscheduler(current, SCHED_FIFO, &param);
 
-    /*set_freezable();*/          /*  advised by l56193         */
-
     do {
         wait_event(proc->wait, proc->incoming);
         proc->incoming = MAILBOX_FALSE;
 
-        mailbox_receive_process((unsigned long)data);
+        mailbox_receive_process((uintptr_t)data);
 
     }while (!kthread_should_stop());
     return MAILBOX_OK;
@@ -245,7 +249,7 @@ MAILBOX_EXTERN int mailbox_init_platform(void)
     unsigned int            proc_id;
     struct task_struct *task = MAILBOX_NULL;
 
-    wake_lock_init(&mb_lpwr_lock, WAKE_LOCK_SUSPEND, "mailbox_low_power_wake_lock");
+    wakeup_source_init(&mb_lpwr_lock, "mailbox_low_power_wake_lock");
 
     /*创建平台任务中断信号量部分*/
     while(count) {
@@ -257,7 +261,7 @@ MAILBOX_EXTERN int mailbox_init_platform(void)
             init_waitqueue_head(&local_proc->wait);
 
             /* 创建邮箱收数据处理任务*/
-            task = kthread_run(mailbox_receive_task, (void*)local_proc, local_proc->proc_name);
+            task = kthread_run(mailbox_receive_task, (void*)local_proc, "%s", local_proc->proc_name);
             if (IS_ERR(task)) {
                 return mailbox_logerro_p1(MAILBOX_ERR_LINUX_TASK_CREATE, proc_id);
             }
@@ -266,7 +270,7 @@ MAILBOX_EXTERN int mailbox_init_platform(void)
         if ((MAILBOX_RECV_TASKLET == proc_id) ||
            (MAILBOX_RECV_TASKLET_HI == proc_id)) {
 	        tasklet_init(&local_proc->tasklet,
-		    mailbox_receive_process, (unsigned long)local_proc);
+		    mailbox_receive_process, (uintptr_t)local_proc);
 
         }
         count--;
@@ -291,12 +295,14 @@ MAILBOX_LOCAL int mailbox_ipc_process(
             /*设置任务邮箱工作队列链表中此邮箱的数据标志位*/
             local_work->data_flag = MAILBOX_TRUE;
 
+#ifdef MAILBOX_OPEN_MNTN
             mailbox_record_sche_send(local_work->mb_priv);
+#endif
 
             /* usb driver may use mailbox in suspend context
              * wake_lock will make suspend flow aborted */
             if(!is_usb_suspend)
-                wake_lock(&mb_lpwr_lock);
+                __pm_stay_awake(&mb_lpwr_lock);
 
             if ((proc_id > MAILBOX_RECV_TASK_START) /*lint !e456 */
                 && (proc_id < MAILBOX_RECV_TASK_END)) {
@@ -315,7 +321,7 @@ MAILBOX_LOCAL int mailbox_ipc_process(
 
             } else if(MAILBOX_RECV_INT_IRQ == proc_id) {
                 /*中断处理方式，在中断中直接处理邮箱数据*/
-                mailbox_receive_process((unsigned long)local_proc);
+                mailbox_receive_process((uintptr_t)local_proc);
 
             } else {
                 is_find = MAILBOX_FALSE;
@@ -467,11 +473,8 @@ MAILBOX_EXTERN int mailbox_channel_register(
 			local_cfg->dst_id  = dst_id;
 
 			if(MIALBOX_DIRECTION_RECEIVE == direct) {
-				IPC_IntConnect((IPC_INT_LEV_E)int_src , (VOIDFUNCPTR)mailbox_ipc_int_handle, int_src);
+				IPC_IntConnect((IPC_INT_LEV_E)int_src , mailbox_ipc_int_handle, int_src);
 				IPC_IntEnable ((IPC_INT_LEV_E)int_src);
-
-				/*板侧ST用例通道注册*/
-				//test_mailbox_msg_reg(channel_id);
 			}
 			break;
 		}

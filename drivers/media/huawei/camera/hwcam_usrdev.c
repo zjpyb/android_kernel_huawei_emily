@@ -1,4 +1,26 @@
-
+/*
+ *  Hisilicon K3 SOC camera driver source file
+ *
+ *  Copyright (C) Huawei Technology Co., Ltd.
+ *
+ * Author:
+ * Email:
+ * Date:	  2013-10-30
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 
 #include <linux/debugfs.h>
@@ -14,7 +36,7 @@
 #include <media/v4l2-fh.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-core.h>
-#include "securec.h"
+#include <securec.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 #include <media/videobuf2-v4l2.h>
 #endif
@@ -110,7 +132,6 @@ hwcam_user_create_instance(
         user->vb2q.mem_ops = &s_mops_hwcam_vbuf;
     }
     user->vb2q.io_modes = VB2_USERPTR;
-    /* user->vb2q.io_flags = 0; */
     user->vb2q.buf_struct_size = sizeof(hwcam_vbuf_t);
     user->vb2q.drv_priv = user;
     user->vb2q.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
@@ -584,7 +605,7 @@ hwcam_dev_vo_streamoff(
         enum v4l2_buf_type buf_type)
 {
     unsigned i;
-    struct vb2_buffer *vb;
+    struct vb2_buffer *vb = NULL;
     hwcam_dev_t* cam = video_drvdata(filep);
 	hwcam_user_t* user = VO2USER(fh);
 
@@ -1088,8 +1109,8 @@ s_vtbl_hwcam_dev =
 
 int hwsensor_notify(struct device* pdev,struct v4l2_event* ev)
 {
-    struct v4l2_device* pv4l2 = NULL;
-    hwcam_dev_t* pcam;
+    struct v4l2_device *pv4l2 = NULL;
+    hwcam_dev_t *pcam = NULL;
     if(pdev){
         pv4l2 = (struct v4l2_device*)dev_get_drvdata(pdev);
     }
@@ -1116,6 +1137,7 @@ hwcam_dev_create(
         int* dev_num)
 {
 	int rc = 0;
+	int ret = 0;
 	int name_len = 0;
 	char media_prefix[10];
     struct v4l2_device* v4l2 = NULL;
@@ -1168,7 +1190,10 @@ hwcam_dev_create(
     }
 
     gen_media_prefix(media_prefix,HWCAM_DEVICE_GROUP_ID, sizeof(media_prefix));
-    snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    ret = snprintf_s(vdev->name, sizeof(vdev->name), sizeof(vdev->name) - 1, "%s", media_prefix);
+    if (ret < 0) {
+        HWCAM_CFG_ERR("snprintf_s media_prefix failed");
+    }
     strlcpy(vdev->name + strlen(vdev->name), "hwcam-userdev", sizeof(vdev->name) - strlen(vdev->name));
     name_len = strlen(vdev->name);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))

@@ -1040,7 +1040,7 @@ static ssize_t __FUNC(struct elevator_queue *e, char *page)		\
 }
 
 #ifdef CONFIG_ROW_VIP_QUEUE
-SHOW_FUNCTION(row_vip_quantum_show,
+SHOW_FUNCTION(row_hp_vip_quantum_show,
 	rowd->row_queues[ROWQ_PRIO_HIGH_VIP].disp_quantum);
 #endif
 SHOW_FUNCTION(row_hp_read_quantum_show,
@@ -1081,7 +1081,7 @@ static ssize_t __FUNC(struct elevator_queue *e,				\
 }
 
 #ifdef CONFIG_ROW_VIP_QUEUE
-STORE_FUNCTION(row_vip_quantum_store,
+STORE_FUNCTION(row_hp_vip_quantum_store,
 &rowd->row_queues[ROWQ_PRIO_HIGH_VIP].disp_quantum, 1, INT_MAX);
 #endif
 STORE_FUNCTION(row_hp_read_quantum_store,
@@ -1122,9 +1122,6 @@ STORE_FUNCTION(row_low_starv_limit_store,
 				      row_##name##_store)
 
 static struct elv_fs_entry row_attrs[] = {
-#ifdef CONFIG_ROW_VIP_QUEUE
-	ROW_ATTR(vip_quantum),
-#endif
 	ROW_ATTR(hp_read_quantum),
 	ROW_ATTR(rp_read_quantum),
 	ROW_ATTR(hp_swrite_quantum),
@@ -1140,7 +1137,7 @@ static struct elv_fs_entry row_attrs[] = {
 };
 
 static struct elevator_type iosched_row = {
-	.ops = {
+	.ops.sq = {
 		.elevator_merge_req_fn		= row_merged_requests,
 		.elevator_dispatch_fn		= row_dispatch_requests,
 		.elevator_add_req_fn		= row_add_request,

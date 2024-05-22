@@ -24,7 +24,7 @@
 #include <huawei_platform/log/hw_log.h>
 #include "soc_rtctimerwdtv100_interface.h"
 #include <hisi_charging_watchdog.h>
-#include "securec.h"
+#include <securec.h>
 #ifdef CONFIG_HISI_BB
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
@@ -94,7 +94,10 @@ static int rdr_charge_syswdt_init(void)
 	struct rdr_exception_info_s einfo;
 	unsigned int ret;
 	errno_t ret_s;
-	memset_s(&einfo, sizeof(struct rdr_exception_info_s), 0, sizeof(struct rdr_exception_info_s));
+	ret_s = memset_s(&einfo, sizeof(struct rdr_exception_info_s), 0, sizeof(struct rdr_exception_info_s));
+	if (ret_s) {
+		chgwdt_err(" memset_s einfo failed.\n");
+	}
 	einfo.e_modid = MODID_CHARGER_S_WDT;
 	einfo.e_modid_end = MODID_CHARGER_S_WDT;
 	/*处理级别最高. */
@@ -283,6 +286,7 @@ free_iomap:
 	iounmap(g_di->base);
 free_dev:
 	kfree(g_di);
+	g_di = NULL;
 out:
 	return ret;
 }

@@ -1,4 +1,9 @@
 #include "gtx8.h"
+#define SS51_ISP_CODE 0x01
+#define FW_BOOT_CODE 0x0e
+#define FW_PID_OFFSET 4
+
+static int gtx8_fw_update_proc_gt7382(void);
 
 struct fw_update_ctrl update_ctrl = {
 	.status = UPSTA_NOTWORK,
@@ -248,6 +253,651 @@ static int gtx8_check_update(const struct firmware_info *fw_info)
 }
 
 /**
+ * gtx8_check_update_gt7382 - compare the version of firmware running in
+ *  touch device with the version getting from the firmware file.
+ * @fw_info: firmware information to be compared
+ * return: 0 firmware in the touch device needs to be updated
+ * < 0 no need to update firmware
+ */
+static int gtx8_check_update_gt7382(const struct firmware_info *fw_info)
+{
+	struct gtx8_ts_version fw_ver;
+	int ret;
+	int res;
+
+	TS_LOG_INFO("%s run\n", __func__);
+	/* read version from chip, if we got invalid
+	 * firmware version, maybe firmware in flash is
+	 * incorrect, so we need to update firmware
+	 */
+	ret = gtx8_ts->ops.read_version(&fw_ver);
+	if (ret)
+		TS_LOG_ERR("%s, read_version failed\n", __func__);
+	if (fw_ver.valid) {
+		TS_LOG_INFO("ic pid:%*ph\n", sizeof(fw_ver.pid), fw_ver.pid);
+		TS_LOG_INFO("fw pid:%*ph\n",
+			sizeof(fw_info->fw_pid), fw_info->fw_pid);
+		TS_LOG_INFO("pid len:%d\n", gtx8_ts->reg.pid_len);
+		if (memcmp(fw_ver.pid, &(fw_info->fw_pid[FW_PID_OFFSET]),
+			gtx8_ts->reg.pid_len)) {
+			TS_LOG_ERR("Product ID is not match\n");
+			return -EPERM;
+		}
+
+		TS_LOG_INFO("ic vid:%*ph\n", sizeof(fw_ver.vid), fw_ver.vid);
+		TS_LOG_INFO("fw vid:%*ph\n",
+			sizeof(fw_info->fw_vid), fw_info->fw_vid);
+		res = memcmp(fw_ver.vid, fw_info->fw_vid, gtx8_ts->reg.vid_len);
+		if (res == 0) {
+			TS_LOG_ERR("FW version is equal to the IC's\n");
+			return -EPERM;
+		}
+		if (res > 0)
+			TS_LOG_INFO("Warning: fw version is lower the IC's\n");
+	} /* else invalid firmware, update firmware */
+
+	TS_LOG_INFO("Firmware needs to be updated\n");
+	return 0;
+}
+
+static int gtx8_hold_dsp_gt7382(void)
+{
+	int retry_times = GTX8_RETRY_NUM_50;
+	int ret = 0;
+	u8 index;
+	u8 write_value = 0x06; /* ILM access enable */
+	u8 buf_tmp[2] = {0};
+
+	buf_tmp[0] = write_value;
+
+	TS_LOG_INFO("%s run\n", __func__);
+
+	/* the same effect between write 0x04 to 0x8040 and
+	 * write 0x06 to 0x50c0,
+	 * if use  write 0x04 to 0x8040 ,close hid first
+	 */
+	for (index = 0; index < retry_times; index++) {
+		ret = gtx8_ts->ops.i2c_write(HW_REG_ILM_ACCESS, buf_tmp, 1);
+		if (ret < 0) {
+			TS_LOG_ERR("write 0x50c0 failed\n");
+			continue;
+		}
+
+		mdelay(10); /* ic need */
+		write_value = 0;
+		ret = gtx8_ts->ops.i2c_read(HW_REG_ILM_ACCESS,
+			&(write_value), 1);
+		if (write_value == buf_tmp[0]) {
+			ret = 1;
+			break;
+		}
+		ret = 0;
+	}
+	if (index >= retry_times) {
+		TS_LOG_ERR("%s:write 0x06 to 0x50c0 and check fail!",
+			__func__);
+		return -EINVAL;
+	}
+	if (ret == 0) {
+		TS_LOG_ERR("%s:write 0x06 to 0x50c0 and check fail!",
+			__func__);
+		return -EINVAL;
+	}
+
+	/* clear watchdog */
+	write_value = 0x00;
+	/* 0x40b0 is the timer of watchdog,0x437c is the enable of watchdog */
+	ret = gtx8_ts->ops.i2c_write(HW_REG_WATCH_DOG, &write_value, 1);
+	if (ret < 0)
+		TS_LOG_INFO("%s: clear watch dog,write 0x00 to 0x437c fail!",
+			__func__);
+	TS_LOG_INFO("%s exit,ret:%d\n", __func__, ret);
+	return ret;
+}
+
+static int gtx8_bank_select_gt7382(u8 bank)
+{
+	int ret;
+
+	ret = gtx8_ts->ops.i2c_write(HW_REG_BANK_SELECT_GT7382, &bank, 1);
+	return ret;
+}
+
+static int gtx8_set_boot_from_sram_gt7382(void)
+{
+	int ret;
+	u8 reg0[GTX8_REG_LEN] = { 0x00, 0x00, 0x00, 0x00 };
+	u8 reg1[GTX8_REG_LEN] = { 0xb8, 0x3f, 0x35, 0x56 };
+	u8 reg2[GTX8_REG_LEN] = { 0xb9, 0x3e, 0xb5, 0x54 };
+
+	/* enable ILM */
+	ret = gtx8_ts->ops.i2c_write(HW_REG_ILM_ACCESS1, reg0, 1);
+	if (ret < 0) {
+		TS_LOG_ERR("%s:[set_boot_from_sram] write 0x434c fail\n",
+			__func__);
+		goto exit;
+	}
+	/* set green chn */
+	ret = gtx8_ts->ops.i2c_write(HW_REG_GREEN_CHN1, reg1, GTX8_REG_LEN);
+	if (ret < 0) {
+		TS_LOG_ERR("%s:[set_boot_from_sram] write 0xf7cc fail\n",
+			__func__);
+		goto exit;
+	}
+	ret = gtx8_ts->ops.i2c_write(HW_REG_GREEN_CHN2, reg2, GTX8_REG_LEN);
+	if (ret < 0) {
+		TS_LOG_ERR("%s:[set_boot_from_sram] write 0xf7ec fail\n",
+			__func__);
+		goto exit;
+	}
+	ret = 0;
+exit:
+	return ret;
+
+}
+
+static int gtx8_ilm_access_gt7382(u8 enable)
+{
+	u8 data = 0;
+
+	if (enable) {
+		data = 6; /* enable ilm access cmd */
+		return gtx8_ts->ops.i2c_write(HW_REG_ILM_ACCESS, &data, 1);
+	}
+
+	return gtx8_ts->ops.i2c_write(HW_REG_ILM_ACCESS, &data, 1);
+}
+
+static int gtx8_wait_sta_gt7382(u16 sta_addr, u8 sta, u16 timeout)
+{
+	u16 i;
+	u16 cnt;
+	u8 data;
+	int ret = NO_ERR;
+	int len = 1; /* read/write data len */
+
+	cnt = timeout / 10; /* delay step 10ms */
+	for (i = 0; i < cnt; i++) {
+		ret = gtx8_ts->ops.i2c_read(sta_addr, &data, len);
+		if (ret)
+			TS_LOG_ERR("%s, i2c read failed\n", __func__);
+		if (data == sta)
+			return 0;
+		mdelay(10); /* wait 10ms for retry */
+	}
+	return -EINVAL;
+}
+
+static int gtx8_load_isp_gt7382(struct firmware_data *fw_data)
+{
+	int ret;
+	int i;
+	struct fw_subsys_info *fw_isp = NULL;
+	u8 retry_cnt = GTX8_RETRY_NUM_3;
+	u8 data;
+
+	TS_LOG_INFO("%s run\n", __func__);
+
+	ret = gtx8_ilm_access_gt7382(1); /* 0: disable, else: enable */
+	if (ret < 0) {
+		TS_LOG_ERR("%s:ilm_access enable fail\n", __func__);
+		goto exit;
+	}
+
+	/* select bank 2; */
+	ret = gtx8_bank_select_gt7382(2);
+	if (ret < 0) {
+		TS_LOG_ERR("%s:select bank 2 failed\n", __func__);
+		goto exit;
+	}
+
+	/* download isp */
+	for (i = 0; i < fw_data->fw_info.subsys_num; i++) {
+		if (fw_data->fw_info.subsys[i].type == SS51_ISP_CODE) {
+			fw_isp = &(fw_data->fw_info.subsys[i]);
+			break;
+		}
+	}
+	if (fw_isp == NULL) {
+		ret = 0;
+		TS_LOG_ERR("%s no isp in bin file\n", __func__);
+		goto exit;
+	}
+
+	for (i = 0; i < retry_cnt; i++) {
+		ret = gtx8_reg_write_confirm(HW_REG_RAM_ADDR,
+			(u8 *)fw_isp->data, fw_isp->size);
+		if (ret == 0)
+			break;
+	}
+
+	if (i > retry_cnt) {
+		TS_LOG_INFO("%s:down load isp code to ram fail\n", __func__);
+		goto exit;
+	}
+
+	TS_LOG_INFO("Success send ISP data to IC\n");
+
+	data = 0;
+	ret = gtx8_ts->ops.i2c_write(HW_REG_DOWNL_STATE, &data, 1);
+	if (ret < 0) {
+		TS_LOG_ERR("%s:download sta addr[0x4195] write 0 fail\n",
+			__func__);
+		goto exit;
+	}
+
+	ret = gtx8_ts->ops.i2c_write(HW_REG_DOWNL_COMMAND, &data, 1);
+	if (ret < 0) {
+		TS_LOG_ERR("%s:download cmd addr[0x4196] write 0 fail\n",
+			__func__);
+		goto exit;
+	}
+
+	ret = gtx8_set_boot_from_sram_gt7382();
+	if (ret < 0) {
+		TS_LOG_ERR("%s:set_boot_from_sram fail\n", __func__);
+		goto exit;
+	}
+
+	ret = gtx8_ilm_access_gt7382(0); /* 0: disable, else: enable */
+	if (ret < 0) {
+		TS_LOG_ERR("%s:ILM access to 0 fail\n", __func__);
+		goto exit;
+	}
+
+	data = 0;
+	ret = gtx8_ts->ops.i2c_write(HW_REG_HOLD_CPU, &data, 1);
+	if (ret < 0) {
+		TS_LOG_ERR("%s:hold cpu fail\n", __func__);
+		goto exit;
+	}
+
+	/* Check ISP Run, timeout 1000ms */
+	ret = gtx8_wait_sta_gt7382(HW_REG_DOWNL_STATE, 0xff, 1000);
+	if (ret < 0) {
+		TS_LOG_ERR("%s: fw update isp don't run\n", __func__);
+		goto exit;
+	}
+	ret = 0;
+	TS_LOG_INFO("%s,isp running\n", __func__);
+
+exit:
+	TS_LOG_INFO("%s exit:%d\n", __func__, ret);
+	return ret;
+}
+
+/**
+ * gtx8_update_prepare_gt7382 - update prepare, loading ISP program
+ * and make sure the ISP is running.
+ * return: 0 ok, <0 error
+ */
+static int gtx8_update_prepare_gt7382(void)
+{
+	int reset_gpio = gtx8_ts->dev_data->ts_platform_data->reset_gpio;
+	u8 retry_cnt = GTX8_RETRY_NUM_20;
+	int ret;
+	int i;
+	u8 spi_dis;
+	int len;
+
+	TS_LOG_INFO("%s run\n", __func__);
+	/* reset ic */
+	TS_LOG_INFO("fwupdate chip reset\n");
+	gpio_direction_output(reset_gpio, 0);
+	udelay(2000); /* hold reset low level 2ms */
+	gpio_direction_output(reset_gpio, 1);
+	mdelay(10); /* ic need delay */
+	/* hold dsp */
+	ret = gtx8_hold_dsp_gt7382();
+	if (ret < 0) {
+		TS_LOG_INFO("%s: hold dsp failed\n", __func__);
+		goto exit;
+	}
+	TS_LOG_INFO("hold dsp sucessful\n");
+
+	spi_dis = 0; /* disable spi */
+	len = 1; /* read/write data len */
+	for (i = 0; i < retry_cnt; i++) {
+		/* disable spi between GM11 and G1 */
+		ret = gtx8_ts->ops.i2c_write(HW_REG_SPI_ACCESS, &spi_dis, len);
+		if (ret >= 0) {
+			ret = gtx8_ts->ops.i2c_read(HW_REG_SPI_STATE,
+				&spi_dis, len);
+			if (ret >= 0 && (spi_dis & SPI_STATUS_FLAG) == 0)
+				break;
+		}
+
+		spi_dis = 2; /* disable G1 */
+		ret = gtx8_ts->ops.i2c_write(HW_REG_G1_ACCESS1, &spi_dis, len);
+		if (ret < 0 && (i == retry_cnt - 1))
+			TS_LOG_ERR("write 0x4255 fail\n");
+		ret = gtx8_ts->ops.i2c_write(HW_REG_G1_ACCESS2, &spi_dis, len);
+		if (ret < 0 && (i == retry_cnt - 1))
+			TS_LOG_ERR("write 0x4299 fail\n");
+	}
+	if (i >= retry_cnt) {
+		ret = -EINVAL;
+		TS_LOG_ERR("disable G1 failed\n");
+		goto exit;
+	}
+
+	ret = gtx8_load_isp_gt7382(&update_ctrl.fw_data);
+	if (ret < 0) {
+		TS_LOG_INFO("%s: load isp failed\n", __func__);
+		goto exit;
+	}
+	ret = 0;
+
+exit:
+	TS_LOG_INFO("%s exit\n", __func__);
+	return ret;
+
+}
+
+static s32 gtx8_write_u32_gt7382(u16 addr, u32 data)
+{
+	u8 buf[GTX8_REG_LEN] = {0};
+	u16 len = GTX8_REG_LEN; /* write data len */
+	int ret;
+
+	buf[0] = data & 0xff;
+	buf[1] = (data >> 8) & 0xff;
+	buf[2] = (data >> 16) & 0xff;
+	buf[3] = (data >> 24) & 0xff;
+	ret = gtx8_ts->ops.i2c_write(addr, buf, len);
+	if (ret)
+		TS_LOG_ERR("%s, i2c write failed\n", __func__);
+
+	return ret;
+}
+
+static int gtx8_set_checksum_gt7382(u8 *code, u32 len)
+{
+	u32 chksum = 0;
+	u32 tmp;
+	u32 i;
+	int ret;
+
+	for (i = 0; i < len; i += sizeof(u32)) {
+		tmp = *(u32 *)(code + i);
+		chksum += tmp;
+	}
+	ret = gtx8_write_u32_gt7382(HW_REG_PACKET_CHECKSUM, chksum);
+	if (ret)
+		TS_LOG_ERR("%s, write u32 failed\n", __func__);
+	return ret;
+}
+
+static int gtx8_ph_write_cmd_gt7382(u8 cmd)
+{
+	int len = 1; /* cmd length */
+	int ret;
+
+	ret = gtx8_ts->ops.i2c_write(HW_REG_DOWNL_COMMAND, &cmd, len);
+	if (ret)
+		TS_LOG_ERR("%s, i2c write failed\n", __func__);
+	return ret;
+}
+
+static int gtx8_send_fw_packet_gt7382(struct fw_subsys_info *fw_x)
+{
+	u32 remain_len;
+	u32 current_len;
+	u32 write_addr;
+	s32 retry_cnt = GTX8_RETRY_NUM_3;
+	int ret = NO_ERR;
+	int j;
+	u8 *fw_addr = NULL;
+	int time_delay;
+
+	TS_LOG_INFO("%s run\n", __func__);
+	write_addr = fw_x->flash_addr * 256; /* get real flash addr */
+	remain_len = fw_x->size;
+	fw_addr = (u8 *)(fw_x->data);
+	TS_LOG_INFO("subsystem type:0x%x,addr:0x%x,len:%d\n",
+		fw_x->type, write_addr, remain_len);
+
+	while (remain_len > 0) {
+		current_len = remain_len;
+		if (current_len > ISP_MAX_BUFFERSIZE)
+			current_len = ISP_MAX_BUFFERSIZE;
+
+		for (j = 0; j < retry_cnt; j++) {
+			/* set packet size */
+			ret = gtx8_write_u32_gt7382(HW_REG_PACKET_SIZE,
+				current_len);
+			if (ret < 0) {
+				TS_LOG_ERR("%s:set packet size failed\n",
+					__func__);
+				continue;
+			}
+			/* set flash addr */
+			ret = gtx8_write_u32_gt7382(HW_REG_PACKET_ADDR,
+				write_addr);
+			if (ret < 0) {
+				TS_LOG_ERR("%s:set flash addr failed\n",
+					__func__);
+				continue;
+			}
+			/* set checksum */
+			ret = gtx8_set_checksum_gt7382(fw_addr, current_len);
+			if (ret < 0) {
+				TS_LOG_ERR("%s:set check sum failed\n",
+					__func__);
+				continue;
+			}
+
+			/* Inform ISP to be ready for writing to flash */
+			ret = gtx8_ph_write_cmd_gt7382(ISP_READY_FLAG);
+			if (ret < 0) {
+				TS_LOG_ERR("%s,send cmd 0x55 failed\n",
+					__func__);
+				continue;
+			}
+			ret = gtx8_reg_write_confirm(HW_REG_RAM_ADDR, fw_addr,
+				current_len);
+			if (ret < 0) {
+				TS_LOG_ERR("%s: write fw failed\n", __func__);
+				continue;
+			}
+
+			/* delay 1000ms to wait start to write */
+			time_delay = 1000;
+			ret = gtx8_wait_sta_gt7382(HW_REG_DOWNL_STATE,
+				START_WRITE_FLASH, time_delay);
+			if (ret < 0) {
+				TS_LOG_ERR("%s: write over1\n", __func__);
+				continue;
+			}
+			ret = gtx8_ph_write_cmd_gt7382(START_WRITE_FLASH);
+			if (ret < 0) {
+				TS_LOG_ERR("%s,Inform ISP start to write flash fail\n",
+					__func__);
+				continue;
+			}
+			/* delay 600ms to wait download state */
+			time_delay = 600;
+			ret = gtx8_wait_sta_gt7382(HW_REG_DOWNL_STATE,
+				WRITE_OVER2_FLAG, time_delay);
+			if (ret < 0) {
+				TS_LOG_ERR("%s:write over2 failed\n", __func__);
+				continue;
+			}
+			time_delay = 600; /* delay 600ms to write flash */
+			ret = gtx8_wait_sta_gt7382(HW_REG_DOWNL_RESULT,
+				WRITE_TO_FLASH_FLAG, time_delay);
+			if (ret < 0) {
+				TS_LOG_INFO("%s:write flash failed\n",
+					__func__);
+				continue;
+			}
+			break;
+		}
+		if (j >= retry_cnt)
+			goto FW_UPDATE_END;
+
+		remain_len -= current_len;
+		fw_addr += current_len;
+		write_addr += current_len;
+	}
+
+FW_UPDATE_END:
+	TS_LOG_INFO("%s exit,ret:%d\n", __func__, ret);
+	return ret;
+}
+
+/**
+ * gtx8_flash_firmware_gt7382 - flash firmware
+ * @fw_data: firmware data
+ * return: 0 ok, < 0 error
+ */
+static int gtx8_flash_firmware_gt7382(struct firmware_data *fw_data)
+{
+	struct fw_update_ctrl *fw_ctrl = NULL;
+	struct firmware_info  *fw_info = NULL;
+	struct fw_subsys_info *fw_x = NULL;
+	int retry = GTX8_RETRY_NUM_3;
+	int i;
+	int fw_num;
+	int prog_step;
+	int ret;
+
+	/*
+	 * start from subsystem 1,
+	 * subsystem 0 is the ISP program
+	 */
+	fw_ctrl = container_of(fw_data, struct fw_update_ctrl, fw_data);
+	fw_info = &fw_data->fw_info;
+	fw_num = fw_info->subsys_num;
+
+	/* we have 80% work here */
+	prog_step = 80 / (fw_num - 1);
+
+	for (i = 0; i < fw_num && retry;) {
+		TS_LOG_INFO("---Start to flash subsystem[%d] ---\n", i);
+		fw_x = &fw_info->subsys[i];
+		if (fw_x->type == SS51_ISP_CODE) {
+			TS_LOG_INFO("current subsystem is isp,no need to upgrade\n");
+			i++;
+			continue;
+		}
+		/* no need update bootcode */
+		if ((fw_x->type == FW_BOOT_CODE) &&
+			(fw_info->reserved[0] == 1)) {
+			TS_LOG_INFO("current subsystem is bootcode,no need to upgrade\n");
+			i++;
+			continue;
+		}
+
+		ret = gtx8_send_fw_packet_gt7382(fw_x);
+		if (ret == 0) {
+			TS_LOG_INFO("--- End flash subsystem[%d]: OK ---\n", i);
+			fw_ctrl->progress += prog_step;
+			i++;
+		} else if (ret == -EAGAIN) {
+			retry--;
+			TS_LOG_ERR("--- End flash subsystem%d: Fail, errno:%d, retry:%d ---\n",
+				i, ret, GTX8_RETRY_NUM_3 - retry);
+		} else if (ret < 0) { /* bus error */
+			TS_LOG_ERR("--- End flash subsystem%d: Fatal error:%d exit ---\n",
+				i, ret);
+			goto exit_flash;
+		}
+	}
+	ret = 0;
+
+exit_flash:
+	return ret;
+}
+
+static int gtx8_fw_update_proc_gt7382(void)
+{
+	int ret;
+	int retry0 = FW_UPDATE_RETRY;
+	int retry1 = FW_UPDATE_RETRY;
+
+	if (update_ctrl.status == UPSTA_PREPARING ||
+		update_ctrl.status == UPSTA_UPDATING) {
+		TS_LOG_ERR("Firmware update already in progress\n");
+		return NO_ERR;
+	}
+
+	update_ctrl.progress = FW_UPDATE_0_PERCENT;
+	update_ctrl.status = UPSTA_PREPARING;
+
+	ret = gtx8_parse_firmware(&update_ctrl.fw_data);
+	if (ret < 0) {
+		update_ctrl.status = UPSTA_ABORT;
+		goto err_parse_fw;
+	}
+
+	update_ctrl.progress = FW_UPDATE_10_PERCENT;
+	if (update_ctrl.force_update == false) {
+		ret = gtx8_check_update_gt7382(&update_ctrl.fw_data.fw_info);
+		if (ret < 0) {
+			update_ctrl.status = UPSTA_ABORT;
+			goto err_check_update;
+		}
+	}
+
+start_update:
+	update_ctrl.progress = FW_UPDATE_20_PERCENT;
+	update_ctrl.status = UPSTA_UPDATING; /* show upgrading status */
+	ret = gtx8_update_prepare_gt7382();
+	if ((ret == -EAGAIN) && (--retry0 > 0)) {
+		TS_LOG_ERR("Bus error, retry prepare ISP:%d\n",
+			FW_UPDATE_RETRY - retry0);
+		goto start_update;
+	} else if (ret < 0) {
+		TS_LOG_ERR("Failed to prepare ISP, exit update:%d\n", ret);
+		update_ctrl.status = UPSTA_FAILED;
+		goto err_fw_prepare;
+	}
+
+	ret = gtx8_flash_firmware_gt7382(&update_ctrl.fw_data);
+	if ((ret == -ETIMEOUT) && (--retry1 > 0)) {
+		/*
+		 * we will retry[twice] if returns bus error[i2c/spi]
+		 * we will do hardware reset and re-prepare ISP and then retry
+		 * flashing
+		 */
+		TS_LOG_ERR("Bus error, retry firmware update:%d\n",
+			FW_UPDATE_RETRY - retry1);
+		goto start_update;
+	} else if (ret < 0) {
+		TS_LOG_ERR("Fatal error, exit update:%d\n", ret);
+		update_ctrl.status = UPSTA_FAILED;
+		goto err_fw_flash;
+	}
+
+	update_ctrl.status = UPSTA_SUCCESS;
+
+err_fw_flash:
+err_fw_prepare:
+	ret = gtx8_ts->ops.chip_reset();
+	if (ret)
+		TS_LOG_ERR("GT738x reset chip error, ret:%d!\n", ret);
+
+err_check_update:
+err_parse_fw:
+
+	ret = gtx8_ts->ops.feature_resume(gtx8_ts);
+	if (ret)
+		TS_LOG_INFO("feature resume error, ret:%d!\n", ret);
+	ret = gtx8_ts->ops.read_version(&gtx8_ts->hw_info);
+	if (ret)
+		TS_LOG_ERR("read version error,ret:%d!\n", ret);
+	if (update_ctrl.status == UPSTA_SUCCESS)
+		TS_LOG_INFO("Firmware update successfully\n");
+	else if (update_ctrl.status == UPSTA_FAILED)
+		TS_LOG_ERR("Firmware update failed\n");
+
+	update_ctrl.progress = FW_UPDATE_100_PERCENT; /* 100% */
+
+	return ret;
+}
+
+/**
  * gtx8_load_isp - load ISP program to deivce ram
  * @fw_data: firmware data
  * return 0 ok, <0 error
@@ -334,7 +984,9 @@ static int gtx8_load_isp(struct firmware_data *fw_data)
 	}
 	TS_LOG_DEBUG("Success run isp, set 0x%x-->0x00\n",
 					HW_REG_CPU_CTRL);
-
+	if (gtx8_ts->ic_type == IC_TYPE_6861)
+		/* ic need 10 ms delay */
+		mdelay(10);
 	/* check isp work state */
 	for (i = 0; i < 200; i++) {
 		ret = gtx8_reg_read(HW_REG_ISP_RUN_FLAG,
@@ -366,6 +1018,8 @@ static int gtx8_update_prepare(void)
 	int reset_gpio = gtx8_ts->dev_data->ts_platform_data->reset_gpio;
 	int retry = 20;
 	int ret = NO_ERR;
+	int iic_dis_retry;
+	u8 iic_dis[DMNNY_BYTE_LEN_2] = {0};
 
 	gtx8_ts->ops.i2c_write(0x4506, temp_buf, 8);
 
@@ -375,6 +1029,30 @@ static int gtx8_update_prepare(void)
 	gpio_direction_output(reset_gpio, 1);
 	udelay(10000);
 
+	if (gtx8_ts->ic_type == IC_TYPE_6861) {
+		iic_dis_retry = GTX8_RETRY_NUM_3;
+		do {
+			iic_dis[0] = 0;
+			iic_dis[1] = 0;
+			/* 0x227C, disable i2c pull up reg */
+			ret = gtx8_reg_write_confirm(0x227C, iic_dis,
+				DMNNY_BYTE_LEN_2);
+			if (ret < 0) {
+				TS_LOG_ERR("disable-iic error,retry=%d\n",
+					iic_dis_retry);
+				/* ic need 30 ms delay */
+				msleep(30);
+			} else {
+				break;
+			}
+		} while (--iic_dis_retry);
+		if (!iic_dis_retry) {
+			TS_LOG_ERR("disable-iic error, return=%d\n", ret);
+			return -EINVAL;
+		} else {
+			TS_LOG_INFO("disable-iic success\n");
+		}
+	}
 	retry = 20;
 	do {
 		reg_val[0] = 0x24;
@@ -758,7 +1436,7 @@ err_parse_fw:
 int gtx8_update_firmware(void)
 {
 	int ret = NO_ERR;
-
+	struct gtx8_ts_data *ts = gtx8_ts;
 	static DEFINE_MUTEX(fwu_lock);
 
 	mutex_lock(&fwu_lock);
@@ -773,9 +1451,19 @@ int gtx8_update_firmware(void)
 		ret = 0;
 		goto out;
 	}
-
+	if (ts->support_wake_lock_suspend == GT8X_WAKE_LOCK_SUSPEND_SUPPORT)
+		/* add wakelock,avoid i2c suspend */
+		__pm_stay_awake(&ts->wake_lock);
 	/* ready to update */
-	ret = gtx8_fw_update_proc();
+	if (ts->ic_type == IC_TYPE_7382)
+		ret = gtx8_fw_update_proc_gt7382();
+	else
+		ret = gtx8_fw_update_proc();
+	if (ret)
+		TS_LOG_ERR("update error!\n");
+	if (ts->support_wake_lock_suspend == GT8X_WAKE_LOCK_SUSPEND_SUPPORT)
+		/* add wakelock,avoid i2c suspend */
+		__pm_relax(&ts->wake_lock);
 
 	/* clean */
 	gtx8_release_firmware(&update_ctrl.fw_data);

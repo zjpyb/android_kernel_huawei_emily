@@ -477,7 +477,7 @@ void mmc_process_ap_err(struct mmc_card *card)
 	if (mmc_card_removable_mmc(card))
 		WARN_ON(1);
 	else
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 }
 
 int hisi_mmc_reset(struct mmc_host *host)
@@ -541,12 +541,12 @@ static int __mmc_send_status_direct(struct mmc_card *card, u32 *status,
 	int err;
 	struct mmc_command cmd = {0};
 	struct mmc_request mrq = {NULL};
-	struct mmc_host *host;
+	struct mmc_host *host = NULL;
 
 	if (!card)
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 	if (!card->host)/*lint !e613*/
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 
 	host = card->host;/*lint !e613*/
 	cmd.opcode = MMC_SEND_STATUS;
@@ -582,7 +582,7 @@ static int __mmc_send_status_direct(struct mmc_card *card, u32 *status,
  */
 int mmc_switch_irq_safe(struct mmc_card *card, u8 set, u8 index, u8 value)
 {
-	struct mmc_host *host;
+	struct mmc_host *host = NULL;
 	int err;
 	struct mmc_command cmd = {0};
 	struct mmc_request mrq = {NULL};
@@ -590,9 +590,9 @@ int mmc_switch_irq_safe(struct mmc_card *card, u8 set, u8 index, u8 value)
 	u32 cmd_retries = 10;
 
 	if (!card)
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 	if (!card->host)/*lint !e613*/
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 	host = card->host;/*lint !e613*/
 
 	cmd.opcode = MMC_SWITCH;

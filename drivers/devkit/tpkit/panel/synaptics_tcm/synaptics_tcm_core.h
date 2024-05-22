@@ -480,6 +480,12 @@ struct syna_tcm_device_info {
 	struct list_head support_fn_list;
 };
 
+/* if add new scene, please check SCENE_SUPPORT_MAX! */
+#define SCENE_SUPPORT_MAX		22
+#define SCENC_MODE_ORIGINAL		0 /* default */
+#define SCENC_MODE_POWERGENIUS		1 /* most used beijing */
+#define SCENE_MODE_ITOUCH		2 /* most used shanghai */
+
 struct syna_tcm_hcd {
 	struct ts_kit_device_data *syna_tcm_chip_data;
 	struct syna_tcm_device_info tcm_mod_info;
@@ -547,6 +553,9 @@ struct syna_tcm_hcd {
 	const struct syna_tcm_hw_interface *hw_if;
 	char fw_name[MAX_STR_LEN * 4];
 	unsigned int aft_wxy_enable;
+	unsigned int scene_type_mode; /* 0-default 1-beijing 2-shanghai */
+	unsigned int scene_type_num; /* support scene number */
+	unsigned int scene_support_array[SCENE_SUPPORT_MAX]; /* support scene type */
 	unsigned int esd_report_status;
 	unsigned int use_esd_report;
 	unsigned int use_dma_download_firmware;
@@ -769,6 +778,10 @@ static inline unsigned int le4_to_uint(const unsigned char *src)
 
 static inline unsigned int ceil_div(unsigned int dividend, unsigned divisor)
 {
+	if (!divisor) {
+		TS_LOG_ERR("divisor is ZERO\n");
+		return -EINVAL;
+	}
 	return (dividend + divisor - 1) / divisor;
 }
 

@@ -1,10 +1,7 @@
 /*
- * ARGO		An implementation of the TCP Argo Algorithm.
- *
- * Version:	@(#)tcp_argo.c	0.0.2	04/09/2017
- *
- * Author:	Zhong Zhang, <zz.ustc@gmail.com>
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2018. All rights reserved.
+ * Description: An implementation of the TCP Argo Algorithm.
+ * Author: Zhong Zhang, <zz.ustc@gmail.com>
  */
 #include <net/tcp.h>
 
@@ -12,28 +9,40 @@
 int sysctl_tcp_argo __read_mostly = 1;
 EXPORT_SYMBOL(sysctl_tcp_argo);
 
-int sysctl_argo_log_mask __read_mostly = 0;
+int sysctl_argo_log_mask __read_mostly;
 EXPORT_SYMBOL(sysctl_argo_log_mask);
 
-static bool argo_is_thin_stream(struct tcp_sock *tp)
+#define SHIFT_4X (2)
+#define SHIFT_8X (3)
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#define tcp_time_stamp tcp_jiffies32
+#endif
+
+static bool argo_is_thin_stream(const struct tcp_sock *tp)
 {
 	long offs = tp->argo->high_sacked - tp->rcv_nxt;
-	
-    if (offs > (tp->mss_cache << 3))
+	if (offs > (tp->mss_cache << SHIFT_8X))
 		return false;
 
 	return true;
 }
 
-static bool argo_is_timeout_retrans(struct tcp_sock *tp)
+static bool argo_is_timeout_retrans(const struct tcp_sock *tp)
 {
-	/* TODO: only use rcv_rtt in fastpath */
-	if (jiffies_to_msecs(tp->rcv_rtt_est.rtt >> 3) < (ARGO_RTO_MIN >> 1)) {
-		/* TODO */
+	unsigned int rtt_ms;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	rtt_ms = jiffies_to_msecs(tp->rcv_rtt_est.rtt_us >> SHIFT_8X);
+#else
+	rtt_ms = jiffies_to_msecs(tp->rcv_rtt_est.rtt >> SHIFT_8X);
+#endif
+
+	if (rtt_ms < (ARGO_RTO_MIN >> 1)) {
 		if (jiffies_to_msecs(tcp_time_stamp - tp->argo->rcv_nxt_jiffies) > ARGO_RTO_MIN)
 			return true;
 	} else {
-		if (tp->argo->retrans_tsval[3])
+		if (tp->argo->retrans_tsval[ARRAY_SIZE(tp->argo->retrans_tsval) - 1])
 			return true;
 	}
 
@@ -42,21 +51,23 @@ static bool argo_is_timeout_retrans(struct tcp_sock *tp)
 
 void argo_clear_hints(struct tcp_argo *p)
 {
-	memset(&p->hints, 0x00,
-	       sizeof(struct tcp_argo) - offsetof(struct tcp_argo, hints));
+	(void)memset(&p->hints, 0x00,
+		     sizeof(struct tcp_argo) - offsetof(struct tcp_argo, hints));
 }
 EXPORT_SYMBOL(argo_clear_hints);
 
-static inline bool argo_time_to_init(struct tcp_sock *tp, struct sk_buff *skb)
+static inline bool argo_time_to_init(const struct tcp_sock *tp,
+				     const struct sk_buff *skb)
 {
 	const char *delim = "wlan0";
 	int len = strlen(delim);
 
 	ARGO_LOGD("Argo time to init dest addr: %x, dest port: %u, "
 		  "sysctl_tcp_argo: %u, dev name: %s,"
-		  "argo: %pK, tstamp: %x, "
+		  "argo: %p, tstamp: %x, "
 		  "sack: %x, syn: %x.",
-		  ((struct sock *)tp)->sk_daddr, ((struct sock *)tp)->sk_dport,
+		  ((const struct sock *)tp)->sk_daddr,
+		  ((const struct sock *)tp)->sk_dport,
 		  sysctl_tcp_argo, skb->dev->name,
 		  tp->argo, tp->rx_opt.tstamp_ok,
 		  tp->rx_opt.sack_ok, tcp_hdr(skb)->syn);
@@ -79,7 +90,7 @@ static inline bool argo_time_to_init(struct tcp_sock *tp, struct sk_buff *skb)
 	return true;
 }
 
-void argo_try_to_init(struct sock *sk, struct sk_buff *skb)
+void argo_try_to_init(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -91,10 +102,9 @@ void argo_try_to_init(struct sock *sk, struct sk_buff *skb)
 }
 EXPORT_SYMBOL(argo_try_to_init);
 
-void  argo_deinit(struct sock *sk)
+void argo_deinit(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-
 	if (tp->argo) {
 		ARGO_LOGI("Argo deinit. dest addr: %x, dest port: %u.",
 			  sk->sk_daddr, sk->sk_dport);
@@ -103,12 +113,76 @@ void  argo_deinit(struct sock *sk)
 }
 EXPORT_SYMBOL(argo_deinit);
 
+static void argo_check_ts(struct sock *sk)
+{
+	int i;
+	int nums;
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (!tp->argo->snd_high_tsval && !tp->argo->snd_high_tsecr) {
+		/* Init */
+		tp->argo->snd_high_tsval = tp->rx_opt.rcv_tsval;
+		tp->argo->snd_high_tsecr = tp->rx_opt.rcv_tsecr;
+		/* Check pingpong */
+		tp->argo->high_snd_nxt = tp->snd_nxt;
+	} else if (before(tp->rx_opt.rcv_tsval, tp->argo->snd_high_tsval) ||
+		before(tp->rx_opt.rcv_tsecr, tp->argo->snd_high_tsecr)) {
+		ARGO_LOGD("Arog disable because of disorder. "
+		"dest addr: %x, dest port: %u.",
+		sk->sk_daddr, sk->sk_dport);
+		/* Obviously, disorder occurred in the network. */
+		tp->argo->disable_argo = true;
+	} else {
+		/* Update */
+		tp->argo->snd_high_tsval = tp->rx_opt.rcv_tsval;
+		tp->argo->snd_high_tsecr = tp->rx_opt.rcv_tsecr;
+	}
+
+	if (!tp->argo->retrans_tsval[0]) {
+		tp->argo->retrans_tsval[0] = tcp_time_stamp + tp->tsoffset;
+		tp->argo->rcv_nxt_jiffies = tcp_time_stamp;
+	} else {
+		nums = sizeof(tp->argo->retrans_tsval) >> SHIFT_4X;
+		for (i = 1; i < nums; i++)
+			if (!tp->argo->retrans_tsval[i] &&
+			    !before(tp->rx_opt.rcv_tsecr,
+				    tp->argo->retrans_tsval[i - 1]))
+				tp->argo->retrans_tsval[i] = tcp_time_stamp + tp->tsoffset;
+	}
+}
+
+static void argo_check_seq(struct sock *sk, struct tcp_skb_cb *tcb)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (!tp->argo->high_sacked ||
+	    after(tcb->end_seq, tp->argo->high_sacked)) {
+		tp->argo->high_sacked = tcb->end_seq;
+	} else if (tp->rcv_nxt == tcb->seq &&
+		   !before(tp->rx_opt.rcv_tsecr,
+		   tp->argo->retrans_tsval[0])) {
+		if (!argo_is_thin_stream(tp)) {
+			tp->argo->snd_high_seq = tp->argo->high_sacked;
+			tp->argo->snd_retrans_stamp = tp->rx_opt.rcv_tsval;
+		} else {
+			ARGO_LOGD("Argo disable because of thin stream. "
+				  "dest addr: %x, dest port: %u.",
+				  sk->sk_daddr, sk->sk_dport);
+			tp->argo->disable_argo = true;
+		}
+	} else {
+		ARGO_LOGD("Argo disable because of timestamp "
+			  "echo reply check. "
+			  "dest addr: %x, dest port: %u",
+			  sk->sk_daddr, sk->sk_dport);
+		tp->argo->disable_argo = true;
+	}
+}
+
 void argo_calc_high_seq(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-	int i = 0;
-	int nums = 0;
 
 	if (!tp->argo)
 		return;
@@ -138,66 +212,13 @@ void argo_calc_high_seq(struct sock *sk, struct sk_buff *skb)
 		tp->argo->delay_ack_nums = 0;
 	}
 
-	if (!tp->argo->snd_high_tsval && !tp->argo->snd_high_tsecr) {
-		/* Init */
-		tp->argo->snd_high_tsval = tp->rx_opt.rcv_tsval;
-		tp->argo->snd_high_tsecr = tp->rx_opt.rcv_tsecr;
-		/* Check pingpong */
-		tp->argo->high_snd_nxt = tp->snd_nxt;
-	} else if (before(tp->rx_opt.rcv_tsval, tp->argo->snd_high_tsval) ||
-		   before(tp->rx_opt.rcv_tsecr, tp->argo->snd_high_tsecr)) {
-        	ARGO_LOGD("Arog disable because of disorder. "
-			  "dest addr: %x, dest port: %u.",
-			  sk->sk_daddr, sk->sk_dport);
-		/* Obviously, disorder occurred in the network. */
-        	tp->argo->disable_argo = true;
-	} else {
-		/* Update */
-		tp->argo->snd_high_tsval = tp->rx_opt.rcv_tsval;
-		tp->argo->snd_high_tsecr = tp->rx_opt.rcv_tsecr;
-	}
+	argo_check_ts(sk);
 
-	/* TODO */
-	if (!tp->argo->retrans_tsval[0]) {
-		tp->argo->retrans_tsval[0] = tcp_time_stamp + tp->tsoffset;
-		tp->argo->rcv_nxt_jiffies = tcp_time_stamp;
-	} else {
-		nums = sizeof(tp->argo->retrans_tsval) >> 2;
-		for (i = 1; i < nums; i++)
-			if (!tp->argo->retrans_tsval[i] &&
-			    !before(tp->rx_opt.rcv_tsecr,
-				    tp->argo->retrans_tsval[i-1]))
-				tp->argo->retrans_tsval[i] = tcp_time_stamp + tp->tsoffset;
-	}
-
-	if (!tp->argo->snd_high_seq && !tp->argo->disable_argo) {
-		if (!tp->argo->high_sacked ||
-		    after(tcb->end_seq, tp->argo->high_sacked)) {
-			tp->argo->high_sacked = tcb->end_seq;
-		} else if (tp->rcv_nxt == tcb->seq &&
-			   !before(tp->rx_opt.rcv_tsecr,
-			   tp->argo->retrans_tsval[0])) {
-			if (!argo_is_thin_stream(tp)) {
-				tp->argo->snd_high_seq = tp->argo->high_sacked;
-				tp->argo->snd_retrans_stamp = tp->rx_opt.rcv_tsval;
-			} else {
-				ARGO_LOGD("Argo disable because of thin stream. "
-					  "dest addr: %x, dest port: %u.",
-					  sk->sk_daddr, sk->sk_dport);
-				tp->argo->disable_argo = true;
-			}
-		} else {
-			ARGO_LOGD("Argo disable because of timestamp "
-				  "echo reply check. "
-				  "dest addr: %x, dest port: %u",
-				  sk->sk_daddr, sk->sk_dport);
-			tp->argo->disable_argo = true;
-		}
-	}
+	if (!tp->argo->snd_high_seq && !tp->argo->disable_argo)
+		argo_check_seq(sk, tcb);
 
 	/* Check timeout retransmission */
 	if (tp->rcv_nxt == tcb->seq) {
-		/* TODO */
 		if (argo_is_timeout_retrans(tp)) {
 			ARGO_LOGD("Argo disable because of timeout retrans. "
 				  "dest addr: %x, dest port: %u",
@@ -205,8 +226,8 @@ void argo_calc_high_seq(struct sock *sk, struct sk_buff *skb)
 			tp->argo->disable_argo = true;
 		}
 
-		memset(tp->argo->retrans_tsval, 0x00,
-		       sizeof(tp->argo->retrans_tsval));
+		(void)memset(tp->argo->retrans_tsval, 0x00,
+			     sizeof(tp->argo->retrans_tsval));
 		tp->argo->retrans_tsval[0] = tcp_time_stamp + tp->tsoffset;
 		tp->argo->rcv_nxt_jiffies = tcp_time_stamp;
 	}
@@ -326,7 +347,7 @@ EXPORT_SYMBOL(argo_delay_acks_in_fastpath);
 
 bool tcp_argo_send_ack_immediatly(struct tcp_sock *tp)
 {
-	if ((!tp->argo || (tp->argo && !tp->argo->delay_ack_nums)))
+	if (!tp->argo || (tp->argo && !tp->argo->delay_ack_nums))
 		return true;
 	else
 		return false;

@@ -27,6 +27,7 @@
 #include <linux/delay.h>
 #include <linux/suspend.h>
 #include <linux/reboot.h>
+#include <linux/types.h>
 
 #include <linux/firmware.h>
 #include <linux/errno.h>
@@ -70,7 +71,7 @@ struct hi64xx_hifi_img_dl_priv *dl_data = NULL;
 
 extern int slimbus_bus_configure(slimbus_bus_config_type_t type);
 
-static int hi64xx_soc_dma_stop(int ch)
+static int hi64xx_soc_dma_stop(uint32_t ch)
 {
 	int count = 0;
 
@@ -90,7 +91,7 @@ static int hi64xx_soc_dma_stop(int ch)
 
 }
 
-static int hi64xx_codec_dma_stop(int ch)
+static int hi64xx_codec_dma_stop(uint32_t ch)
 {
 	int count = 0;
 
@@ -111,7 +112,7 @@ static int hi64xx_codec_dma_stop(int ch)
 
 int hi64xx_release_all_dma(void)
 {
-	int ch_num = 0;
+	uint32_t ch_num = 0;
 	int ret = 0;
 
 	for (ch_num = 0; ch_num < HI6402_DMA_CH_COUNT; ch_num++) {
@@ -142,7 +143,7 @@ static void hi64xx_img_bss_page_dl(uint32_t des_addr, uint32_t src_addr, uint32_
 							 hi64xx_hifi_read_reg(HI64xx_CX_CURR_CNT0(DMA_IMG_DL_CH)),
 							 hi64xx_hifi_read_reg(HI64xx_CX_CONFIG(DMA_IMG_DL_CH)));
 			if (0 != hi64xx_codec_dma_stop(DMA_IMG_DL_CH)) {
-				HI64XX_DSP_ERROR("section download error des_addr 0x%pK\n", (void *)(unsigned long)des_addr);
+				HI64XX_DSP_ERROR("section download error des_addr 0x%pK\n", (void *)(uintptr_t)des_addr);
 				return;
 			}
 			break;
@@ -198,7 +199,7 @@ static void hi64xx_img_page_dl(uint32_t des_addr, uint32_t src_addr, uint32_t si
 				if (ret)
 					HI64XX_DSP_WARNING("page dl return ret %d\n", ret);
 				hi64xx_hifi_reg_clr_bit(dl_data->dl_config.dspif_clk_en_addr,2);
-				HI64XX_DSP_ERROR("section download error des_addr 0x%pK\n", (void *)(unsigned long)des_addr);
+				HI64XX_DSP_ERROR("section download error des_addr 0x%pK\n", (void *)(uintptr_t)des_addr);
 				return;
 			}
 			if(0 != hi64xx_soc_dma_stop(DMA_IMG_DL_CH)) {
@@ -206,7 +207,7 @@ static void hi64xx_img_page_dl(uint32_t des_addr, uint32_t src_addr, uint32_t si
 				if (ret)
 					HI64XX_DSP_WARNING("page dl return ret %d\n", ret);
 				hi64xx_hifi_reg_clr_bit(dl_data->dl_config.dspif_clk_en_addr,2);
-				HI64XX_DSP_ERROR("section download error des_addr 0x%pK\n", (void *)(unsigned long)des_addr);
+				HI64XX_DSP_ERROR("section download error des_addr 0x%pK\n", (void *)(uintptr_t)des_addr);
 				return;
 			}
 			break;
@@ -233,7 +234,7 @@ static int hi64xx_hifi_check_load_addr(struct drv_hifi_image_sec *img_sec)
 		HI64XX_DSP_DEBUG("des_addr check ok\n");
 		return 0;
 	} else {
-		HI64XX_DSP_ERROR("des_addr check error, addr:%pK\n", (void *)(unsigned long)(img_sec->des_addr));
+		HI64XX_DSP_ERROR("des_addr check error, addr:%pK\n", (void *)(uintptr_t)(img_sec->des_addr));
 		return -1;
 	}
 }
@@ -308,7 +309,7 @@ exit:
 	return ret;
 }
 
-static void hi64xx_img_sec_dl_reg(uint32_t *src, uint32_t des, int size, int type)
+static void hi64xx_img_sec_dl_reg(uint32_t *src, uint32_t des, uint32_t size, int type)
 {
 	switch (type) {
 	case DRV_HIFI_IMAGE_SEC_TYPE_BSS:
@@ -362,7 +363,7 @@ static void hi64xx_img_sec_dl_dma(uint32_t *src_addr, uint32_t des_addr, int typ
 			src_addr_v[2*i+1] = src_addr[i]&0xffff0000;/*lint !e679*/
 		}
 
-		HI64XX_DSP_INFO("codec dma des phy addr:0x%pK, size:0x%x\n", (void *)(unsigned long)des_addr, size);
+		HI64XX_DSP_INFO("codec dma des phy addr:0x%pK, size:0x%x\n", (void *)(uintptr_t)des_addr, size);
 
 		hi64xx_hifi_write_reg(HI64xx_CX_SRC_ADDR(DMA_IMG_DL_CH), HI6402_DSP_IF2);
 		hi64xx_hifi_write_reg(HI64xx_CX_CONFIG(DMA_IMG_DL_CH), 0x47711046);
@@ -395,7 +396,7 @@ static void hi64xx_img_sec_dl_dma(uint32_t *src_addr, uint32_t des_addr, int typ
 void hi64xx_hifi_download_slimbus(const struct firmware *fw)
 {
 	struct drv_hifi_image_head *head = NULL;
-	uint32_t *src_addr;
+	uint32_t *src_addr = NULL;
 	uint32_t des_addr;
 	unsigned int i = 0;
 
@@ -414,7 +415,7 @@ void hi64xx_hifi_download_slimbus(const struct firmware *fw)
 	/* set slimbus */
 	slimbus_bus_configure(SLIMBUS_BUS_CONFIG_IMGDOWN);
 
-	soc_dma_vir = (uint64_t)ioremap(ASP_DMAC_BASE_ADDR, ASP_DMAC_SIZE);
+	soc_dma_vir = (uintptr_t)ioremap(ASP_DMAC_BASE_ADDR, ASP_DMAC_SIZE);
 	if (!soc_dma_vir) {
 		HI64XX_DSP_ERROR("asp dmac base addr remap error\n");
 		goto err;
@@ -445,7 +446,7 @@ void hi64xx_hifi_download_slimbus(const struct firmware *fw)
 
 err:
 	if (soc_dma_vir) {
-		iounmap((void __iomem *)soc_dma_vir);
+		iounmap((void __iomem *)(uintptr_t)soc_dma_vir);
 		soc_dma_vir = 0;
 	}
 	slimbus_bus_configure(SLIMBUS_BUS_CONFIG_NORMAL);
@@ -458,7 +459,7 @@ void hi64xx_hifi_download(const struct firmware *fw, enum bustype_select bus_sel
 {
 	struct drv_hifi_image_head *head = NULL;
 	unsigned int des_addr;
-	unsigned int *src_addr;
+	unsigned int *src_addr = NULL;
 	unsigned int i = 0;
 	int ret = 0;
 
@@ -485,13 +486,13 @@ void hi64xx_hifi_download(const struct firmware *fw, enum bustype_select bus_sel
 		HI64XX_DSP_DEBUG("hifi: sections_num = %d,des_addr = 0x%pK, load_attib = %d, size = 0x%x,"
 				 " sn = %d, src_offset = 0x%x, type = %d\n", \
 				 head->sections_num,\
-				 (void *)(unsigned long)(head->sections[i].des_addr),\
+				 (void *)(uintptr_t)(head->sections[i].des_addr),\
 				 head->sections[i].load_attib,\
 				 head->sections[i].size,\
 				 head->sections[i].sn,\
 				 head->sections[i].src_offset,\
 				 head->sections[i].type);
-		HI64XX_DSP_INFO("[0x%pK]->[0x%pK]\n", src_addr, (void *)(unsigned long)des_addr);
+		HI64XX_DSP_INFO("[0x%pK]->[0x%pK]\n", src_addr, (void *)(uintptr_t)des_addr);
 		hi64xx_img_sec_dl_reg(src_addr, des_addr,
 							  head->sections[i].size, head->sections[i].type);
 	}

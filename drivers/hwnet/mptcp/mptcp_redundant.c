@@ -40,6 +40,10 @@ enum  SCHED_STATE {
 #define SCHED_SECO_ONLY_JIFFIES	msecs_to_jiffies(10000)
 #define SCHED_MIN_JIFFIES	msecs_to_jiffies(100)
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#define tcp_time_stamp tcp_jiffies32
+#endif
+
 /* Struct to store the data of a single subflow */
 struct redsched_sock_data {
 	/* The skb or NULL */
@@ -211,9 +215,10 @@ static void xengine_report_mptcp_path_switch(struct tcp_sock *primary,
 					    struct tcp_sock *secondly)
 {
 	struct mptcp_hw_ext_sock_path_switch report;
-	struct sock *meta_sk;
-	struct sock *from_sk, *to_sk;
-	struct dst_entry *dst;
+	struct sock *meta_sk = NULL;
+	struct sock *from_sk = NULL;
+	struct sock *to_sk = NULL;
+	struct dst_entry *dst = NULL;
 
 	if (!primary || !secondly) {
 		mptcp_debug("%s: subflow is NULL \n", __func__);
@@ -278,19 +283,18 @@ static void xengine_report_mptcp_path_switch(struct tcp_sock *primary,
 
 	mptcp_info("%s: switch from %s[%d] to %s[%d] \n", __func__,
 		report.src_path, report.src_rtt, report.dst_path, report.dst_rtt);
-	Emcom_Xengine_MptcpSocketSwitch(&report, sizeof(report));
+	emcom_xengine_mptcp_socket_switch(&report, sizeof(report));
 }
 #endif
 
 static inline bool check_subsk_is_good(struct sock *sk, u32 threshold)
 {
-	struct tcp_sock *tp;
+	struct tcp_sock *tp = (struct tcp_sock *)sk;
 
 	if (TCP_CA_Loss == inet_csk(sk)->icsk_ca_state) {
 		mptcp_debug("%s: sk %pK is in TCP_CA_Loss\n", __func__, sk);
 		return false;
 	}
-	tp = (struct tcp_sock *)sk;
 	/* make sure the srtt_us is update recently */
 	if (before(tcp_time_stamp, tp->rcv_tstamp) ||
 	    after(tcp_time_stamp, tp->rcv_tstamp + SCHED_REDUNDANT_JIFFIES)) {
@@ -312,7 +316,7 @@ static bool schduled_get_subflows(struct sock *meta_sk, struct sock **prim_subsk
 	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	bool is_new_subsk_added = false;
-	struct redsched_sock_data *sk_data;
+	struct redsched_sock_data *sk_data = NULL;
 	u32 threshold = *(u32 *)&meta_tp->mptcp_sched_params[0];
 
 	if (!prim_subsk || !seco_subsk) {
@@ -359,7 +363,7 @@ static void schduled_update_prio(struct sock *meta_sk, u32 old_state, u32 new_st
 	struct sock *subsk = NULL;
 	struct mptcp_cb *mpcb = meta_tp->mpcb;
 	bool is_subtp_prio_changed = false;
-	struct redsched_sock_data *sk_data;
+	struct redsched_sock_data *sk_data = NULL;
 	int low_prio;
 
 	mptcp_for_each_sk(mpcb, subsk) {
@@ -463,7 +467,7 @@ static void schduled_depend_on_priority(struct sock *meta_sk)
 	struct sock *prim_subsk = NULL, *seco_subsk = NULL;
 	u32 sched_state;
 	u32 threshold = *(u32 *)&meta_tp->mptcp_sched_params[0];
-	struct redsched_cb_data *cb_data;
+	struct redsched_cb_data *cb_data = NULL;
 	bool is_new_subsk_added = true;
 
 	is_new_subsk_added = schduled_get_subflows(meta_sk, &prim_subsk, &seco_subsk);

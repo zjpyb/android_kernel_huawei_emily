@@ -83,7 +83,7 @@ u32 hisi_pmic_read(struct hisi_pmic *pmic, int reg)
 {
 	u32 ret;
 	u8 read_value = 0;
-	struct spmi_device *pdev;
+	struct spmi_device *pdev = NULL;
 
 	if (NULL == g_pmic) {
 		pr_err(" g_pmic  is NULL\n");
@@ -108,7 +108,7 @@ EXPORT_SYMBOL(hisi_pmic_read);
 void hisi_pmic_write(struct hisi_pmic *pmic, int reg, u32 val)
 {
 	u32 ret;
-	struct spmi_device *pdev;
+	struct spmi_device *pdev = NULL;
 
 	if (NULL == g_pmic) {
 		pr_err(" g_pmic  is NULL\n");
@@ -231,7 +231,7 @@ u32 hisi_pmic_read_sub_pmu(u8 sid, int reg)
 {
 	u32 ret;
 	u8 read_value = 0;
-	struct spmi_device *pdev;
+	struct spmi_device *pdev = NULL;
 
 	if(strstr(saved_command_line, "androidboot.swtype=factory"))
 	{
@@ -260,7 +260,7 @@ EXPORT_SYMBOL(hisi_pmic_read_sub_pmu);
 void hisi_pmic_write_sub_pmu(u8 sid, int reg, u32 val)
 {
 	u32 ret;
-	struct spmi_device *pdev;
+	struct spmi_device *pdev = NULL;
 	if(strstr(saved_command_line, "androidboot.swtype=factory"))
 	{
 		if (NULL == g_pmic) {
@@ -489,12 +489,15 @@ static int hisi_irq_map(struct irq_domain *d, unsigned int virq,
 			  irq_hw_number_t hw)
 {
 	struct hisi_pmic *pmic = d->host_data;
+	int ret = 0;
 
 	irq_set_chip_and_handler_name(virq, &hisi_pmu_irqchip,
 				      handle_simple_irq, "hisi");
 	irq_set_chip_data(virq, pmic);
-	irq_set_irq_type(virq, IRQ_TYPE_NONE);
-
+	ret = irq_set_irq_type(virq, IRQ_TYPE_NONE);
+	if (ret < 0) {
+		pr_err("irq set type fail\n");
+	}
 	return 0;
 }
 
@@ -672,7 +675,7 @@ int hisi_pmic_get_vbus_status(void)
 	if (0 == g_pmic_vbus.addr)
 		return -1;
 
-	if (hisi_pmic_reg_read(g_pmic_vbus.addr) & BIT(g_pmic_vbus.bit))
+	if (hisi_pmic_reg_read(g_pmic_vbus.addr) & BIT((unsigned int)g_pmic_vbus.bit))
 		return 1;
 
 	return 0;

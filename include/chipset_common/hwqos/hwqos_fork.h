@@ -1,19 +1,26 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019-2019. All rights reserved.
- * Description: Qos schedule declaration
- * Author: JiangXiaofeng jiangxiaofeng8@huawei.com
- * Create: 2019-03-01
+ * hwqos_fork.h
+ *
+ * Qos schedule declaration
+ *
+ * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #ifndef HWQOS_FORK_H
 #define HWQOS_FORK_H
 
-#define QOS_BASE_VALUE 0x1
+struct task_struct;
 
-static inline void init_task_qos_info(struct task_struct *p)
-{
-	atomic_set(&(p->dynamic_qos), QOS_BASE_VALUE);
-	atomic_set(&(p->trans_flags), 0);
-	p->static_vip = 0;
-}
+void init_task_qos_info(struct task_struct *p);
+void release_task_qos_info(struct task_struct *p);
 #endif

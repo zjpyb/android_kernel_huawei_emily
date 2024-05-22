@@ -40,6 +40,7 @@ enum setting_params_req_type
 	REQ_TYPE_DEL_UID_NETID_ENTRY = 3,
 	REQ_TYPE_SET_ALPHA_FILTER_ALG_PARAMS = 4,
 	REQ_TYPE_SET_FILTER_ALG_CHANGE_THRESHOLD = 5,
+	REQ_TYPE_SET_PCIE_POWER_LEVEL = 6,
 	REQ_TYPE_BUTT,
 };
 
@@ -108,5 +109,5 @@ extern void mplk_add_nw_bind(uid_t uid, uint32_t netid);
 extern void mplk_close_socket_by_uid(uint32_t strategy, uid_t uid);
 #endif
 extern void set_slow_proba_threshold(int threshold_normal, int threshold_slow, int threshold_init);
-
+extern void config_pcie_power_level(int power_level, int timeout);
 #endif /*_NB_NETLINK_H*/

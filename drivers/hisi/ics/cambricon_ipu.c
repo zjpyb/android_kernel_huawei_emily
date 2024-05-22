@@ -36,7 +36,7 @@
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/input.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/clk.h>
 #include <linux/hwspinlock.h>
 #include <asm/uaccess.h>
@@ -51,7 +51,9 @@
 #include <linux/time.h>
 #include <linux/jiffies.h>
 
+#ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
+#endif /* CONFIG_HUAWEI_DSM */
 #include "ipu_smmu_drv.h"
 #include "ipu_clock.h"
 #include "cambricon_ipu.h"
@@ -195,6 +197,7 @@ static unsigned int ipu_minor = 0;
 struct cambricon_ipu_private *adapter = NULL;
 static struct class *dev_class = NULL;
 
+#ifdef CONFIG_HUAWEI_DSM
 /* DSM information about ai module */
 static struct dsm_dev dsm_ai = {
 	.name           = "dsm_ai",
@@ -237,6 +240,12 @@ do {\
 	}\
 } while(0)
 
+#else
+#define DSM_AI_REGISTER()
+#define DSM_AI_UNREGISTER()
+#define DSM_AI_KERN_ERROR_REPORT(error_no, fmt, args...)
+
+#endif /* CONFIG_HUAWEI_DSM */
 
 struct ioctl_out_params {
 	bool ret_directly;
@@ -262,7 +271,9 @@ static int ipu_open(struct inode *inode, struct file *filp);
 static int ipu_release(struct inode *inode, struct file *filp);
 static ssize_t ipu_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos);
 static long ipu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
+#ifdef CONFIG_COMPAT
 static long ipu_ioctl32(struct file *fd, unsigned int cmd, unsigned long arg);
+#endif
 static loff_t ipu_llseek(struct file *filp, loff_t off, int whence);
 static long ipu_write_dword(struct cambricon_ipu_private *, unsigned long, struct ioctl_out_params *);
 static long ipu_set_map(struct cambricon_ipu_private *, unsigned long, struct ioctl_out_params *);
@@ -485,7 +496,9 @@ static const struct file_operations ipu_fops = {
 	.release		= ipu_release,
 	.write			= ipu_write,
 	.unlocked_ioctl = ipu_ioctl,
+#ifdef CONFIG_COMPAT
 	.compat_ioctl	= ipu_ioctl32,
+#endif
 	.llseek 		= ipu_llseek,
 };/*lint !e785*/
 /* ipu platform device */
@@ -920,6 +933,7 @@ static void performance_monitor_close(void)
 	// todo: here you can calc by this data, e.g. you can calc the accurate time clapse by (FRAME_CYC_CNT * BUS clock)
 }
 
+#ifdef CAMBRICON_IPU_IRQ
 /* ipu interrupt init, including update ipu status, clear interrupt, and unmask interrupt */
 void ipu_interrupt_init(void)
 {
@@ -943,6 +957,7 @@ void ipu_interrupt_deinit(void)
 	iowrite32(ICS_IRQ_MASK_NO_SECURITY,
 		(void *)(uintptr_t)((uintptr_t)adapter->ics_irq_io_addr + adapter->irq_reg_offset.ics_irq_mask_ns));
 }
+#endif
 
 void ipu_reset_proc(unsigned int addr)
 {
@@ -1050,15 +1065,20 @@ void ipu_reset_proc(unsigned int addr)
 	}
 	mutex_unlock(&adapter->bandwidth_lmt_mutex);
 
+#ifdef IPU_SMMU_ENABLE
 	ipu_smmu_init(adapter->smmu_ttbr0,
 		(uintptr_t)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
+#endif
 
+#ifdef CAMBRICON_IPU_IRQ
 	ipu_interrupt_init();
+#endif
 
 	printk(KERN_DEBUG"[%s]: ipu_recover finished!\n", __func__);
 	mutex_unlock(&adapter->reset_mutex);
 }
 
+#ifdef CAMBRICON_IPU_IRQ
 
 static bool cambricon_ipu_workqueue(void) {
 	taskElement Element;
@@ -1147,7 +1167,7 @@ static void ipu_level1_irq_handler(void)
 		if (lv1_int_status & INTERRUPTINST_INTERRUPT_MASK) {
 			detect_fault = detect_fault | INTERRUPTINST_INTERRUPT_MASK;
 			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_INTERRUPT_INST_REG));
-			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_INTERRUPT_INST_REG));
+			iowrite32(0, (void *)((unsigned long)(adapter->config_reg_virt_addr) + IPU_INTERRUPT_INST_REG));
 			printk(KERN_ERR"[%s]: IPU_ERROR:INTERRUPTINST_INTERRUPT error, fault_status=0x%x\n", __func__, fault_status);
 		}
 		if (lv1_int_status & CT_INTERRUPT_MASK) {
@@ -1227,8 +1247,8 @@ static void ipu_core_irq_handler(void)
  */
 static irqreturn_t ipu_interrupt_handler(int irq, void *dev)
 {
-	bool ipu_smmu_err_isr;
-	struct cambricon_ipu_private *pdev;
+	bool ipu_smmu_err_isr = false;
+	struct cambricon_ipu_private *pdev = NULL;
 
 	if (dev == NULL) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:no device\n", __func__);
@@ -1287,6 +1307,7 @@ static irqreturn_t ipu_interrupt_handler(int irq, void *dev)
 
 	return IRQ_HANDLED;
 }
+#endif
 
 /* here void (*function)(unsigned long) is a standard Linux timer callback function,
 	it will register as a callback func for ipu resume watchdog */
@@ -1294,8 +1315,10 @@ static int ipu_reset(void *arg)
 {
 	static unsigned long last_computed_task = 0;
 
+	#ifdef CONFIG_HUAWEI_DSM
 	char register_info_flag[] = "NULL";
 	char *perr = register_info_flag;
+	#endif /* CONFIG_HUAWEI_DSM */
 
 	UNUSED_PARAMETER(arg);
 
@@ -1340,12 +1363,14 @@ static int ipu_reset(void *arg)
 		/* get memory info in register */
 		ipu_smmu_dump_strm();
 
+#ifdef CONFIG_HUAWEI_DSM
 		/* WTD time out, report to DSM */
 		perr = register_info;
 		DSM_AI_KERN_ERROR_REPORT(DSM_AI_KERN_WTD_TIMEOUT_ERR_NO,
 			"IPU soft watchdog timeout, ipu_status=%d, ttbr0=%x, inst_set=%d, offchip{set=%x, base=%x}, last_computed_task=%d, register_info=%s.\n",
 			adapter->ipu_power_up, adapter->smmu_ttbr0, adapter->boot_inst_set.boot_inst_recorded_is_config, adapter->boot_inst_set.access_ddr_addr_is_config,
 			adapter->boot_inst_set.ipu_access_ddr_addr, adapter->computed_task_cnt, perr);
+#endif /* CONFIG_HUAWEI_DSM */
 
 		rdr_system_error((unsigned int)MODID_NPU_EXC_DEAD, 0, 0);
 	}
@@ -1397,10 +1422,12 @@ int ipu_power_up(void)
 	int ret;
 	unsigned int reg_bandwidth;
 
+#ifdef IPU_SMMU_ENABLE
 	if (0 == adapter->smmu_ttbr0) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:FATAL, adapter->smmu_ttbr0 is NULL\n", __func__);
 		return -EFAULT;
 	}
+#endif
 
 	if (adapter->ipu_power_up) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:ipu is already power-up\n", __func__);
@@ -1441,6 +1468,7 @@ int ipu_power_up(void)
 
 	do_gettimeofday(&tv3);
 
+#ifdef IPU_SMMU_ENABLE
 	ipu_smmu_init(adapter->smmu_ttbr0,
 		(uintptr_t)adapter->smmu_rw_err_virtual_addr, adapter->feature_tree.smmu_port_select, adapter->feature_tree.smmu_mstr_hardware_start);
 
@@ -1451,9 +1479,12 @@ int ipu_power_up(void)
 	mutex_unlock(&adapter->stat_mutex);
 
 	do_gettimeofday(&tv4);
+#endif
 
+#ifdef CAMBRICON_IPU_IRQ
 	ipu_interrupt_init();
 	do_gettimeofday(&tv5);
+#endif
 
 	if (((tv5.tv_sec - tv1.tv_sec)*1000000 + (tv5.tv_usec - tv1.tv_usec)) > 1000) {
 		printk(KERN_WARNING"[%s]: IPU_WARN: ipu PU/CLK/SMMU_INIT/ISR_INIT elapse is %ld/%ld/%ld/%ld usec\n", __func__,
@@ -1471,7 +1502,7 @@ int ipu_power_up(void)
 /* ipu char device ops function implementation, inode:node of file, filp: pointer of file */
 static int ipu_open(struct inode *inode, struct file *filp)
 {
-	struct cambricon_ipu_private *dev;
+	struct cambricon_ipu_private *dev = NULL;
 
 	if (!inode || !filp){
 		printk(KERN_ERR"[%s]: IPU_ERROR:invalid input parameter !\n", __func__);
@@ -1490,7 +1521,7 @@ static int ipu_open(struct inode *inode, struct file *filp)
 		mutex_unlock(&adapter->open_mutex);
 		return -EBUSY;
 	} else {
-		wake_lock(&adapter->wakelock);
+		__pm_stay_awake(&adapter->wakelock);
 		adapter->ipu_device_opened = true;
 	}
 
@@ -1528,6 +1559,7 @@ int ipu_power_down(void)
 	}
 
 	do_gettimeofday(&tv1);
+#ifdef IPU_SMMU_ENABLE
 	ipu_smmu_deinit();
 
 	mutex_lock(&adapter->stat_mutex);
@@ -1536,9 +1568,12 @@ int ipu_power_down(void)
 	}
 	mutex_unlock(&adapter->stat_mutex);
 
+#endif
 
 	do_gettimeofday(&tv2);
+#ifdef CAMBRICON_IPU_IRQ
 	ipu_interrupt_deinit();
+#endif
 
 	/* Set clock rate to default(which should always be generated from PPLL0) */
 	do_gettimeofday(&tv3);
@@ -1576,7 +1611,7 @@ int ipu_power_down(void)
 /* ipu device release and power down */
 static int ipu_release(struct inode *inode, struct file *filp)
 {
-	struct cambricon_ipu_private *dev;
+	struct cambricon_ipu_private *dev = NULL;
 	int ret;
 	struct irq_data *desc = irq_get_irq_data(adapter->irq);
 	struct irq_common_data *d = desc ? desc->common : NULL;
@@ -1635,7 +1670,7 @@ static int ipu_release(struct inode *inode, struct file *filp)
 	adapter->clk.voted_peri_volt = 0;
 	mutex_unlock(&adapter->clk.clk_mutex);
 
-	wake_unlock(&adapter->wakelock);
+	__pm_relax(&adapter->wakelock);
 	adapter->ipu_device_opened = false;
 	mutex_unlock(&adapter->open_mutex);/*lint !e455*/
 
@@ -1762,7 +1797,7 @@ static long ipu_set_map(struct cambricon_ipu_private *dev, unsigned long arg, st
 static long ipu_set_reset_virt_addr(struct cambricon_ipu_private *dev, unsigned long arg, struct ioctl_out_params *out_params)
 {
 	long ret;
-	struct memory_manage_node *node;
+	struct memory_manage_node *node = NULL;
 
 	if (!arg) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:input parameter arg is NULL, FATAL arg and ignore\n", __func__);
@@ -1927,7 +1962,7 @@ static ioctl_cb ipu_obtain_ioctl_callback(unsigned int cmd)
 
 static int input_filp_check(struct file *filp, unsigned int cmd)
 {
-	struct cambricon_ipu_private *dev;
+	struct cambricon_ipu_private *dev = NULL;
 	if (!filp){
 		printk(KERN_ERR"[%s]: IPU_ERROR:input parameter filp is invalid !\n", __func__);
 		return -EINVAL;
@@ -2021,9 +2056,9 @@ static long ipu_process_workqueue(struct cambricon_ipu_private *dev, unsigned lo
 
 static long ipu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	ioctl_cb ioctl_callback;
+	ioctl_cb ioctl_callback = NULL;
 	long ret = -EINVAL;
-	struct cambricon_ipu_private *dev;
+	struct cambricon_ipu_private *dev = NULL;
 	struct ioctl_out_params out_params;
 
 	if (!adapter) {
@@ -2073,12 +2108,14 @@ static long ipu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	return ret;
 }
 
+#ifdef CONFIG_COMPAT
 static long ipu_ioctl32(struct file *fd, unsigned int cmd, unsigned long arg)
 {
 	void *ptr_user = compat_ptr(arg);
 
 	return ipu_ioctl(fd, cmd, (uintptr_t)ptr_user);
 }
+#endif
 
 static ssize_t ipu_write_when_ipu_down(struct cambricon_ipu_private *dev, const char __user *buf, size_t count, loff_t *f_pos)
 {
@@ -2135,7 +2172,7 @@ static ssize_t ipu_write(struct file *filp, const char __user *buf, size_t count
 {
 	int ipu_power_up_flag;
 	ssize_t ret_value = 0;
-	struct cambricon_ipu_private *dev;
+	struct cambricon_ipu_private *dev = NULL;
 
 	if (!filp || !buf || !f_pos) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:input parameter filp or buf is invalid !\n", __func__);
@@ -2188,7 +2225,7 @@ static ssize_t ipu_write(struct file *filp, const char __user *buf, size_t count
 /* set file position in IPU where CPU to write */
 static loff_t ipu_llseek(struct file *filp, loff_t off, int whence)
 {
-	struct cambricon_ipu_private *dev;
+	struct cambricon_ipu_private *dev = NULL;
 	loff_t pos;
 
 	if (!filp) {
@@ -2279,7 +2316,8 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 	int err;
 	dev_t chrdev = 0;
 	struct device *temp = NULL;
-	struct resource *res, *res_cfg;
+	struct resource *res = NULL;
+	struct resource *res_cfg = NULL;
 	unsigned long  size;
 
 	printk(KERN_DEBUG"[%s]: Initializing IPU device!\n", __func__);
@@ -2399,6 +2437,7 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		goto unmap_reg;
 	}
 
+#ifdef CAMBRICON_IPU_IRQ
 	/* request ipu irq */
 	if (request_threaded_irq(adapter->irq, NULL, ipu_interrupt_handler,
 		(unsigned long)(IRQF_ONESHOT | IRQF_TRIGGER_HIGH), IPU_NAME, &(adapter->cdev))) {
@@ -2407,6 +2446,7 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		goto unmap_reg;
 	}
 	printk(KERN_DEBUG"[%s]: IPU Require IRQ Succeeded\n", __func__);
+#endif
 
 	/* Add ipu char device to system, udev can auto detect */
 	cdev_init(&(adapter->cdev), &ipu_fops);
@@ -2433,6 +2473,7 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		goto destroy_class;
 	}
 
+#ifdef CAMBRICON_IPU_IRQ
 	if (!ipu_get_irq_offset(&pdev->dev)) {
 		printk(KERN_ERR"[%s]: fatal err, ipu irq is unsupported\n", __func__);
 		goto destroy_device;
@@ -2445,6 +2486,7 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		goto destroy_device;
 	}
 
+#endif
 
 	if (!ipu_smmu_master_get_offset(&pdev->dev)) {
 		printk(KERN_ERR"[%s]: fatal err, ipu_smmu_master is unsupported\n", __func__);
@@ -2475,6 +2517,7 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		goto unmap_bandwidth_lmt;
 	}
 
+#ifdef IPU_SMMU_ENABLE
 	adapter->smmu_rw_err_virtual_addr = devm_kzalloc(&pdev->dev, ICS_SMMU_WR_ERR_BUFF_LEN + 0X80, GFP_KERNEL);
 	if (!adapter->smmu_rw_err_virtual_addr) {
 		err = -ENOMEM;
@@ -2484,6 +2527,7 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 
 	adapter->smmu_ttbr0 = ipu_get_smmu_base_phy(&pdev->dev);
 
+#endif
 
 	err = ipu_mntn_rdr_init();
 	if (err) {
@@ -2491,7 +2535,7 @@ static int cambricon_ipu_probe(struct platform_device *pdev)
 		goto exit_error;
 	}
 
-	wake_lock_init(&adapter->wakelock, WAKE_LOCK_SUSPEND, "ipu_process");
+	wakeup_source_init(&adapter->wakelock, "ipu_process");
 
 	ipu_watchdog_init(&adapter->reset_wtd, adapter->feature_tree.soft_watchdog_enable, ipu_reset_irq);
 
@@ -2521,7 +2565,9 @@ destroy_class:
 destroy_cdev:
 	cdev_del(&(adapter->cdev));
 free_irq:
+#ifdef CAMBRICON_IPU_IRQ
 	free_irq(adapter->irq, &(adapter->cdev));
+#endif
 unmap_reg:
 	iounmap(adapter->config_reg_virt_addr);
 	adapter->config_reg_virt_addr = NULL;
@@ -2576,11 +2622,13 @@ static int __exit cambricon_ipu_remove(struct platform_device *pdev)
 			adapter->ics_irq_io_addr = NULL;
 		}
 
-		wake_lock_destroy(&adapter->wakelock);
+		wakeup_source_trash(&adapter->wakelock);
 
 		cdev_del(&(adapter->cdev));
 
+#ifdef CAMBRICON_IPU_IRQ
 		free_irq(adapter->irq, &(adapter->cdev));
+#endif
 
 		kfifo_free(&FIFO_TaskElements);
 		if (adapter->config_reg_virt_addr) {
@@ -2604,10 +2652,12 @@ static int __exit cambricon_ipu_remove(struct platform_device *pdev)
 
 
 
+#ifdef IPU_SMMU_ENABLE
 		if (adapter->smmu_rw_err_virtual_addr) {
 			devm_kfree(&pdev->dev, adapter->smmu_rw_err_virtual_addr);
 			adapter->smmu_rw_err_virtual_addr = NULL;
 		}
+#endif
 
 		devm_kfree(&pdev->dev, adapter);
 		adapter = NULL;

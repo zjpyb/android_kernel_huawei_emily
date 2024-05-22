@@ -6,7 +6,7 @@
 #define ID_OTP_CTRL0	0x51
 #define ID_OTP_CTRL1	0x52
 #define ID_OTP_0	0x4d
-#define HI6423_READ_TIMES	4
+#define HI6423_READ_TIMES	(HISI_PMU_IP_SIZE / 2) /* 6423 dieid: 32bit, exactly 1/2 of total size */
 
 /*define hi6423v100 & hi6422v300 commen para*/
 #define OPEN_CLK_VALUE	0x5a
@@ -20,13 +20,13 @@
 #define AND_VALUE6	0xc0
 
 #define HISI_PMU_TMP_BUF	50
-#define HISI_PMU_IP_SIZE	8
+#define HISI_PMU_IP_SIZE	8 /* 8 bytes */
 #define HISI_PMU_BUF_SIZE	100
 
 /*define hi6422v300 register*/
 #define OTP_119_112		0xf6
 #define OTP_REG_BEGIN	0x0c
-#define HI6422_OTP_REG_NUM	8
+#define HI6422_OTP_REG_NUM	(HISI_PMU_IP_SIZE)
 #define RST_REG_NUM		4
 
 enum hi6422v300_reg {

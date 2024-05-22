@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -21,10 +22,6 @@
 
 #ifdef CONFIG_ION
 #include <linux/hisi/hisi_ion.h>
-#endif
-
-#ifdef CONFIG_HUAWEI_UNMOVABLE_ISOLATE
-#include <linux/unmovable_isolate.h>
 #endif
 
 #ifdef CONFIG_OF_RESERVED_MEM
@@ -92,7 +89,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "Active(file):   ", pages[LRU_ACTIVE_FILE]);
 	show_val_kb(m, "Inactive(file): ", pages[LRU_INACTIVE_FILE]);
 	show_val_kb(m, "Unevictable:    ", pages[LRU_UNEVICTABLE]);
-	show_val_kb(m, "Mlocked:        ", global_page_state(NR_MLOCK));
+	show_val_kb(m, "Mlocked:        ", global_zone_page_state(NR_MLOCK));
 
 #ifdef CONFIG_HIGHMEM
 	show_val_kb(m, "HighTotal:      ", i.totalhigh);
@@ -118,17 +115,17 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		    global_node_page_state(NR_FILE_MAPPED));
 	show_val_kb(m, "Shmem:          ", i.sharedram);
 	show_val_kb(m, "Slab:           ",
-		    global_page_state(NR_SLAB_RECLAIMABLE) +
-		    global_page_state(NR_SLAB_UNRECLAIMABLE));
+		    global_node_page_state(NR_SLAB_RECLAIMABLE) +
+		    global_node_page_state(NR_SLAB_UNRECLAIMABLE));
 
 	show_val_kb(m, "SReclaimable:   ",
-		    global_page_state(NR_SLAB_RECLAIMABLE));
+		    global_node_page_state(NR_SLAB_RECLAIMABLE));
 	show_val_kb(m, "SUnreclaim:     ",
-		    global_page_state(NR_SLAB_UNRECLAIMABLE));
+		    global_node_page_state(NR_SLAB_UNRECLAIMABLE));
 	seq_printf(m, "KernelStack:    %8lu kB\n",
-		   global_page_state(NR_KERNEL_STACK_KB));
+		   global_zone_page_state(NR_KERNEL_STACK_KB));
 	show_val_kb(m, "PageTables:     ",
-		    global_page_state(NR_PAGETABLE));
+		    global_zone_page_state(NR_PAGETABLE));
 #ifdef CONFIG_QUICKLIST
 	show_val_kb(m, "Quicklists:     ", quicklist_total_size());
 #endif
@@ -136,7 +133,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "NFS_Unstable:   ",
 		    global_node_page_state(NR_UNSTABLE_NFS));
 	show_val_kb(m, "Bounce:         ",
-		    global_page_state(NR_BOUNCE));
+		    global_zone_page_state(NR_BOUNCE));
 	show_val_kb(m, "WritebackTmp:   ",
 		    global_node_page_state(NR_WRITEBACK_TEMP));
 	show_val_kb(m, "CommitLimit:    ", vm_commit_limit());
@@ -163,35 +160,29 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 #ifdef CONFIG_CMA
 	show_val_kb(m, "CmaTotal:       ", totalcma_pages);
 	show_val_kb(m, "CmaFree:        ",
-		    global_page_state(NR_FREE_CMA_PAGES));
+		    global_zone_page_state(NR_FREE_CMA_PAGES));
 #endif
 
 #ifdef CONFIG_ION
-	show_val_kb(m, "IonTotalCache:  ", global_page_state(NR_IONCACHE_PAGES));
+	show_val_kb(m, "IonTotalCache:  ", global_zone_page_state(NR_IONCACHE_PAGES));
 	show_val_kb(m, "IonTotalUsed:   ",
 		    hisi_ion_total() >> PAGE_SHIFT);
 #endif
+
 #ifdef CONFIG_TASK_PROTECT_LRU
-	show_val_kb(m, "PActive(anon):  ",
-		    global_page_state(NR_PROTECT_ACTIVE_ANON));
-	show_val_kb(m, "PInactive(anon):",
-		    global_page_state(NR_PROTECT_INACTIVE_ANON));
-	show_val_kb(m, "PActive(file):  ",
-		    global_page_state(NR_PROTECT_ACTIVE_FILE));
-	show_val_kb(m, "PInactive(file):",
-		    global_page_state(NR_PROTECT_INACTIVE_FILE));
-#endif
-#ifdef CONFIG_HUAWEI_UNMOVABLE_ISOLATE
-	show_val_kb(m, "Isolate1Free:   ",
-		    global_page_state(NR_FREE_UNMOVABLE_ISOLATE1_PAGES));
-	show_val_kb(m, "Isolate2Free:   ",
-		    global_page_state(NR_FREE_UNMOVABLE_ISOLATE2_PAGES));
+	show_val_kb(m, "PActive(anon):   ",
+			  global_zone_page_state(NR_PROTECT_ACTIVE_ANON));
+	show_val_kb(m, "PInactive(anon):   ",
+			  global_zone_page_state(NR_PROTECT_INACTIVE_ANON));
+	show_val_kb(m, "PActive(file):   ",
+			  global_zone_page_state(NR_PROTECT_ACTIVE_FILE));
+	show_val_kb(m, "PInactive(file):   ",
+			  global_zone_page_state(NR_PROTECT_INACTIVE_FILE));
 #endif
 #ifdef CONFIG_OF_RESERVED_MEM
 	show_val_kb(m, "RsvTotalUsed:   ",
-		    dt_memory_reserved_sizeinfo_get() >> PAGE_SHIFT);
+			dt_memory_reserved_sizeinfo_get() >> PAGE_SHIFT);
 #endif
-
 	hugetlb_report_meminfo(m);
 
 	arch_report_meminfo(m);

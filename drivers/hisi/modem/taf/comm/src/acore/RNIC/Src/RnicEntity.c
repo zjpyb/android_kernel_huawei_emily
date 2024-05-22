@@ -57,6 +57,9 @@
 #include "RnicDebug.h"
 #include "RnicCtx.h"
 #include "product_config.h"
+#if (VOS_WIN32 == VOS_OS_VER)
+#include <stdio.h>
+#endif
 #include "mdrv.h"
 #include "PppRnicInterface.h"
 #include "RnicSndMsg.h"
@@ -109,14 +112,18 @@ VOS_VOID RNIC_SendULDataInPdpActive(
     {
         ucSendAdsRabId = ucRabId;
     }
+#if (MULTI_MODEM_NUMBER >= 2)
     else if (MODEM_ID_1 == pstNetCntxt->enModemId)
     {
         ucSendAdsRabId = ucRabId | RNIC_RABID_TAKE_MODEM_1_MASK;
     }
+#if (MULTI_MODEM_NUMBER == 3)
     else if (MODEM_ID_2 == pstNetCntxt->enModemId)
     {
         ucSendAdsRabId = ucRabId | RNIC_RABID_TAKE_MODEM_2_MASK;
     }
+#endif
+#endif
     else
     {
         IMM_ZcFreeAny(pstImmZc);
@@ -148,6 +155,7 @@ VOS_VOID RNIC_SendULDataInPdpActive(
     return;
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_VOID RNIC_ProcVoWifiULData(
     struct sk_buff                     *pstSkb,
@@ -177,6 +185,7 @@ VOS_VOID RNIC_ProcVoWifiULData(
 
     return;
 }
+#endif
 
 
 VOS_VOID RNIC_SendULIpv4Data(
@@ -187,11 +196,14 @@ VOS_VOID RNIC_SendULIpv4Data(
     IMM_ZC_STRU                        *pstImmZc = VOS_NULL_PTR;
     RNIC_RMNET_ID_ENUM_UINT8            enRmNetId;
     VOS_UINT8                           ucRabId;
+#if (FEATURE_ON == FEATURE_IMS)
     VOS_UINT32                          ulNonEmpty = VOS_FALSE;
+#endif
 
     pstImmZc  = (IMM_ZC_STRU *)pstSkb;
     enRmNetId = pstNetCntxt->enRmNetId;
 
+#if (FEATURE_ON == FEATURE_IMS)
     /* 当IMS域为WIFI时，RMNET_IMS网卡出口的数据通过RNIC和CDS之间的核间消息传递 */
     if (RNIC_RMNET_R_IS_VALID(pstNetCntxt->enRmNetId))
     {
@@ -209,6 +221,7 @@ VOS_VOID RNIC_SendULIpv4Data(
 
         return;
     }
+#endif
 
     /* 获取网卡映射的RABID */
     ucRabId = RNIC_GET_SPEC_NET_IPV4_RABID(enRmNetId);
@@ -234,11 +247,14 @@ VOS_VOID RNIC_SendULIpv6Data(
     IMM_ZC_STRU                        *pstImmZc = VOS_NULL_PTR;
     RNIC_RMNET_ID_ENUM_UINT8            enRmNetId;
     VOS_UINT8                           ucRabId;
+#if (FEATURE_ON == FEATURE_IMS)
     VOS_UINT32                          ulNonEmpty = VOS_FALSE;
+#endif
 
     pstImmZc  = (IMM_ZC_STRU *)pstSkb;
     enRmNetId = pstNetCntxt->enRmNetId;
 
+#if (FEATURE_ON == FEATURE_IMS)
     /* 当IMS域为WIFI时，RMNET_IMS网卡出口的数据通过RNIC和CDS之间的核间消息传递 */
     if (RNIC_RMNET_R_IS_VALID(pstNetCntxt->enRmNetId))
     {
@@ -256,6 +272,7 @@ VOS_VOID RNIC_SendULIpv6Data(
 
         return;
     }
+#endif
 
     /* 获取网卡映射的RABID */
     ucRabId = RNIC_GET_SPEC_NET_IPV6_RABID(enRmNetId);
@@ -585,6 +602,7 @@ VOS_INT32 RNIC_NetIfRxEx(
     }
     else
     {
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
         if (RNIC_NET_IF_NAPI == RNIC_GET_Net_API())
         {
             /* 正常情况下，下行数据包入Poll队列，等待网络协议栈取走。
@@ -605,6 +623,7 @@ VOS_INT32 RNIC_NetIfRxEx(
             }
         }
         else
+#endif
         {
             lNetRxRet = netif_rx(pstImmZc);
         }
@@ -617,11 +636,13 @@ VOS_INT32 RNIC_NetIfRxEx(
         return RNIC_RX_PKT_FAIL;
     }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /*
      * NAPI+GRO模式下，并没有直接送协议栈，而是等协议栈调用
      * RNIC_Poll主动来取数据包，在poll中统计下行发送数据
      */
     if (RNIC_NET_IF_NAPI != RNIC_GET_Net_API())
+#endif
     {
         /* 增加下行发送数据统计 */
         RNIC_DBG_SEND_DL_PKT_NUM(1, enRmNetId);
@@ -753,6 +774,7 @@ VOS_INT RNIC_BST_GetModemInfo(
     return VOS_OK;
 }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 
 VOS_INT32 RNIC_CalcNapiWeight(VOS_UINT8 ucRmNetId)
 {
@@ -901,4 +923,5 @@ VOS_INT32 RNIC_Poll(
 
     return lRxNum;
 }
+#endif
 

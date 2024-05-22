@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the linux kernel.
 #
@@ -14,7 +15,7 @@ obj-y                          += init_task.o
 endif
 
 ifeq ($(TARGET_BUILD_VARIANT),eng)
-EXTRA_CFLAGS += -DCMDLINE_INFO_FILTER
+ccflags-y += -DCMDLINE_INFO_FILTER
 endif
 
 mounts-y			:= do_mounts.o

@@ -213,11 +213,13 @@ IP_DATA_TYPE_ENUM_UINT8 TTF_ParseIpDataType
         return IP_DATA_TYPE_BUTT;
     }
 
+    #if (FEATURE_ON == FEATURE_BASTET)
     if(TTF_PS_DATA_PRIORITY_HIGH == pMemPt->ucDataPriority)
     {
         TTF_LOG(ulPid, DIAG_MODE_COMM, PS_PRINT_WARNING, "TTF_ParseIpDataType user high priority data.");
         return IP_DATA_TYPE_USER_HIGH;
     }
+    #endif
 
     /* 安全检查: 检查数据包大小是否能够容纳对应协议包头，不能容纳的异常包，就不用继续解析了*/
     if (PS_FAIL == TTF_CheckIpDataByProtocalType(pData, pMemPt->usUsed, usIpHeadLen, usIpTotalLen, enDataProtocalType))

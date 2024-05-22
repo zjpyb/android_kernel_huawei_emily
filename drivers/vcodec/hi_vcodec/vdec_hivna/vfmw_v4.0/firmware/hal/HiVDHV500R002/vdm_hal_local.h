@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ * Description: vdec hal for local export header file.
+ * Author: gaoyajun<gaoyajun@hisilicon.com>
+ * Create: 2017-11-26
+ */
 
 #ifndef _VDM_HAL_LOCAL_HEADER_
 #define _VDM_HAL_LOCAL_HEADER_
@@ -7,59 +13,59 @@
 #include "vfmw.h"
 #include "vdm_hal.h"
 
-#define    VHB_STRIDE_BYTE             (0x400)                       // byte stride
+// byte stride
+#define    VHB_STRIDE_BYTE              0x400
 #define    HW_MEM_SIZE                 (640 * 1024 + 64 * 4)
-#define    HW_HEVC_MEM_SIZE            (2 * 1024 * 1024 + 64 * 4)                //(4*1024*1024 + 100*1024)
+// (4*1024*1024 + 100*1024)
+#define    HW_HEVC_MEM_SIZE            (2 * 1024 * 1024 + 64 * 4)
 
 #define    MSG_SLOT_NUM                (MAX_SLICE_SLOT_NUM + 5 + 1)
-#define    UP_MSG_SLOT_INDEX           (0)
-#define    RP_MSG_SLOT_INDEX           (2)
-#define    DN_MSG_HEAD_SLOT_INDEX      (4)
-#define    DN_MSG_SLOT_INDEX           (5)
-#define    CA_HEVC_MN_ADDR_LEN         (1024)
+#define    UP_MSG_SLOT_INDEX            0
+#define    RP_MSG_SLOT_INDEX            2
+#define    DN_MSG_HEAD_SLOT_INDEX       4
+#define    DN_MSG_SLOT_INDEX            5
+#define    CA_HEVC_MN_ADDR_LEN          1024
 #define    CA_MN_ADDR_LEN              (64 * 4 * 20)
-#define    SED_TOP_ADDR_LEN            (352 * 96)   //(64*4*96)
-#define    PMV_TOP_ADDR_LEN            (352 * 128)  //(64*4*96)
-#define    RCN_TOP_ADDR_LEN            (352 * 128)  //(64*4*96)
-#define    ITRANS_TOP_ADDR_LEN         (352 * 128)  //(128*128)
-#define    DBLK_TOP_ADDR_LEN           (352 * 192)  //(128*512)
-#define    PPFD_BUF_LEN_DEFAULT        (64 * 4 * 400) //(64*4*800)
+#define    SED_TOP_ADDR_LEN            (352 * 96) // (64*4*96)
+#define    PMV_TOP_ADDR_LEN            (352 * 128) // (64*4*96)
+#define    RCN_TOP_ADDR_LEN            (352 * 128) // (64*4*96)
+#define    ITRANS_TOP_ADDR_LEN         (352 * 128) // (128*128)
+#define    DBLK_TOP_ADDR_LEN           (352 * 192) // (128*512)
+#define    PPFD_BUF_LEN_DEFAULT        (64 * 4 * 400) // (64*4*800)
 
 #define    INTENSITY_CONV_TAB_ADDR_LEN (256 * 2 * 2 * 3)
 #define    VP8_TAB_ADDR_LEN            (32 * 1024)
 #define    VP6_TAB_ADDR_LEN            (4 * 1024)
-#define    MAX_REF_FRAME_NUM           (16)
+#define    MAX_REF_FRAME_NUM            16
 
-/*********************************************************
-                       for hevc
-**********************************************************/
+/****************** for hevc ****************************/
 #ifdef VFMW_HEVC_SUPPORT
 
 /*** UHD decode memory define ***/
 #define CFG_HEVC_PROFILE_LEVEL_5
-#define CFG_HEVC_MAX_PIX_HEIGHT                     (2304)
+#define CFG_HEVC_MAX_PIX_HEIGHT                      2304
 
-#if defined (CFG_HEVC_PROFILE_LEVEL_5)
+#if defined(CFG_HEVC_PROFILE_LEVEL_5)
 #define HEVC_PROFILE_LEVEL_5
 #else
 #define HEVC_PROFILE_LEVEL_6
 #endif
 
-#if defined (HEVC_PROFILE_LEVEL_5)
-#define HEVC_MAX_SLICE_NUM                           (200)
+#if defined(HEVC_PROFILE_LEVEL_5)
+#define HEVC_MAX_SLICE_NUM                            200
 #else
-#define HEVC_MAX_SLICE_NUM                           (600)
+#define HEVC_MAX_SLICE_NUM                            600
 #endif
 
-#if !defined (CFG_HEVC_MAX_PIX_WIDTH)
-#define HEVC_MAX_PIX_WIDTH                           (4096)
+#if !defined(CFG_HEVC_MAX_PIX_WIDTH)
+#define HEVC_MAX_PIX_WIDTH                            4096
 #else
 #define HEVC_MAX_PIX_WIDTH                           (CFG_HEVC_MAX_PIX_WIDTH)
 #endif
 
 // 3798MV100 logic support tile num is 20x22
-#if !defined (CFG_HEVC_MAX_PIX_HEIGHT)
-#define HEVC_MAX_PIX_HEIGHT                          (4096)
+#if !defined(CFG_HEVC_MAX_PIX_HEIGHT)
+#define HEVC_MAX_PIX_HEIGHT                           4096
 #else
 #define HEVC_MAX_PIX_HEIGHT                          (CFG_HEVC_MAX_PIX_HEIGHT)
 #endif
@@ -69,7 +75,7 @@
 #define HEVC_PMV_TOP_ADDR_LEN                        (64*4*HEVC_MAX_PIX_WIDTH)
 #define HEVC_PMV_LEFT_ADDR_LEN                       (64*4*HEVC_MAX_PIX_HEIGHT)
 #define HEVC_RCN_TOP_ADDR_LEN                        (64*4*HEVC_MAX_PIX_WIDTH)
-#define HEVC_TILE_SEGMENT_INFO_LEN                	 (2048)
+#define HEVC_TILE_SEGMENT_INFO_LEN                    2048
 #define HEVC_SAO_LEFT_ADDR_LEN                       (64*4*HEVC_MAX_PIX_HEIGHT)
 #define HEVC_DBLK_LEFT_ADDR_LEN                      (64*4*HEVC_MAX_PIX_HEIGHT)
 #define HEVC_SAO_TOP_ADDR_LEN                        (64*4*HEVC_MAX_PIX_WIDTH)
@@ -89,8 +95,9 @@
 #define  VP9_DBLK_LEFT_ADDR_LEN                   (VP9_MAX_PIC_HEIGHT * 8)
 
 #ifndef VP9_NEW_PROB
-#define  VP9_PROB_TAB_ADDR_LEN                    (20 * 64 * 4)//(18 * 64 * 4)
-#define  VP9_PROB_CNT_ADDR_LEN                    (VP9_MAX_PIC_WIDTH * 4)    /* 3301 is enought */
+#define  VP9_PROB_TAB_ADDR_LEN                    (20 * 64 * 4)
+/* 3301 is enought */
+#define  VP9_PROB_CNT_ADDR_LEN                    (VP9_MAX_PIC_WIDTH * 4)
 #else
 #define  VP9_PROB_TAB_ADDR_LEN                    (20*64*4)
 #define  VP9_PROB_CNT_ADDR_LEN                    (20*64*4)
@@ -173,122 +180,122 @@
 #endif
 
 typedef struct {
-	USIGN mbamt_to_dec           :20;
-	USIGN memory_clock_gating_en :1;
-	USIGN module_clock_gating_en :1;
-	USIGN marker_bit_detect_en   :1;
-	USIGN ac_last_detect_en      :1;
-	USIGN coef_idx_detect_en     :1;
-	USIGN vop_type_detect_en     :1;
-	USIGN reserved               :2;
-	USIGN luma_sum_en            :1;
-	USIGN luma_historgam_en      :1;
-	USIGN load_qmatrix_flag      :1;
-	USIGN sec_mode_en            :1;
-} BASIC_CFG0;
+	USIGN mbamt_to_dec           : 20;
+	USIGN memory_clock_gating_en : 1;
+	USIGN module_clock_gating_en : 1;
+	USIGN marker_bit_detect_en   : 1;
+	USIGN ac_last_detect_en      : 1;
+	USIGN coef_idx_detect_en     : 1;
+	USIGN vop_type_detect_en     : 1;
+	USIGN reserved               : 2;
+	USIGN luma_sum_en            : 1;
+	USIGN luma_historgam_en      : 1;
+	USIGN load_qmatrix_flag      : 1;
+	USIGN sec_mode_en            : 1;
+} basic_cfg0;
 
 typedef struct {
-	USIGN mbamt_to_dec           :20;
-	USIGN memory_clock_gating_en :1;
-	USIGN module_clock_gating_en :1;
-	USIGN marker_bit_detect_en   :1;
-	USIGN ac_last_detect_en      :1;
-	USIGN coef_idx_detect_en     :1;
-	USIGN vop_type_detect_en     :1;
-	USIGN work_mode              :2;
-	USIGN luma_sum_en            :1;
-	USIGN luma_histogram_en      :1;
-	USIGN load_qmatrix_flag      :1;
-	USIGN vdh_safe_flag          :1;
-} HEVC_BASIC_CFG0;
+	USIGN mbamt_to_dec           : 20;
+	USIGN memory_clock_gating_en : 1;
+	USIGN module_clock_gating_en : 1;
+	USIGN marker_bit_detect_en   : 1;
+	USIGN ac_last_detect_en      : 1;
+	USIGN coef_idx_detect_en     : 1;
+	USIGN vop_type_detect_en     : 1;
+	USIGN work_mode              : 2;
+	USIGN luma_sum_en            : 1;
+	USIGN luma_histogram_en      : 1;
+	USIGN load_qmatrix_flag      : 1;
+	USIGN vdh_safe_flag          : 1;
+} hevc_basic_cfg0;
 
 typedef struct {
-	USIGN video_standard     :4;
-	USIGN reserved:                           9;
-	USIGN uv_order_en        :1;
-	USIGN fst_slc_grp        :1;
-	USIGN mv_output_en       :1;
-	USIGN max_slcgrp_num     :12;
-	USIGN line_num_output_en :1;
-	USIGN vdh_2d_en          :1;
-	USIGN compress_en        :1;
-	USIGN ppfd_en            :1;
-} BASIC_CFG1;
+	USIGN video_standard     : 4;
+	USIGN reserved :                           9;
+	USIGN uv_order_en        : 1;
+	USIGN fst_slc_grp        : 1;
+	USIGN mv_output_en       : 1;
+	USIGN max_slcgrp_num     : 12;
+	USIGN line_num_output_en : 1;
+	USIGN vdh_2d_en          : 1;
+	USIGN compress_en        : 1;
+	USIGN ppfd_en            : 1;
+} basic_cfg1;
 
 typedef struct {
-	USIGN video_standard     :4;
-	USIGN reserved           :9;
-	USIGN uv_order_en        :1;
-	USIGN fst_slc_grp        :1;
-	USIGN mv_output_en       :1;
-	USIGN max_slcgrp_num     :12;
-	USIGN line_num_output_en :1;
-	USIGN vdh_2d_en          :1;
-	USIGN frm_cmp_en         :1;
-	USIGN ppfd_en            :1;
-} HEVC_BASIC_CFG1;
+	USIGN video_standard     : 4;
+	USIGN reserved           : 9;
+	USIGN uv_order_en        : 1;
+	USIGN fst_slc_grp        : 1;
+	USIGN mv_output_en       : 1;
+	USIGN max_slcgrp_num     : 12;
+	USIGN line_num_output_en : 1;
+	USIGN vdh_2d_en          : 1;
+	USIGN frm_cmp_en         : 1;
+	USIGN ppfd_en            : 1;
+} hevc_basic_cfg1;
 
 typedef struct {
-	USIGN video_standard:                       4;
-	USIGN reserved:                             9;
-	USIGN uv_order_en:                          1;
-	USIGN fst_slc_grp:                          1;
-	USIGN mv_output_en:                         1;
-	USIGN max_slcgrp_num:                       12;
-	USIGN line_num_output_en:                   1;
-	USIGN vdh_2d_en:                            1;
-	USIGN frm_cmp_en:                           1;
-	USIGN ppfd_en:                              1;
-} VP9_BASIC_CFG1;
+	USIGN video_standard :                       4;
+	USIGN reserved :                             9;
+	USIGN uv_order_en :                          1;
+	USIGN fst_slc_grp :                          1;
+	USIGN mv_output_en :                         1;
+	USIGN max_slcgrp_num :                       12;
+	USIGN line_num_output_en :                   1;
+	USIGN vdh_2d_en :                            1;
+	USIGN frm_cmp_en :                           1;
+	USIGN ppfd_en :                              1;
+} vp9_basic_cfg1;
 
 typedef struct {
-	USIGN av_msg_addr        :32;
-} AVM_ADDR;
+	USIGN av_msg_addr        : 32;
+} avm_addr;
 
 typedef struct {
-	USIGN va_msg_addr        :32;
-} VAM_ADDR;
+	USIGN va_msg_addr        : 32;
+} vam_addr;
 
 typedef struct {
-	USIGN stream_base_addr   :32;
-} STREAM_BASE_ADDR;
+	USIGN stream_base_addr   : 32;
+} stream_basic_addr;
 
 typedef struct {
-	USIGN ystaddr_1d         :32;
-} YSTADDR_1D;
+	USIGN ystaddr_1d         : 32;
+} ystaddr_1d;
 
 typedef struct {
-	USIGN ff_apt_en          :1;
-	USIGN reserved           :31;
-} FF_APT_EN;
+	USIGN ff_apt_en          : 1;
+	USIGN reserved           : 31;
+} ff_apt_en;
 
 typedef struct {
-	USIGN ref_pic_type_0     :2;
-	USIGN ref_pic_type_1     :2;
-	USIGN ref_pic_type_2     :2;
-	USIGN ref_pic_type_3     :2;
-	USIGN ref_pic_type_4     :2;
-	USIGN ref_pic_type_5     :2;
-	USIGN ref_pic_type_6     :2;
-	USIGN ref_pic_type_7     :2;
+	USIGN ref_pic_type_0     : 2;
+	USIGN ref_pic_type_1     : 2;
+	USIGN ref_pic_type_2     : 2;
+	USIGN ref_pic_type_3     : 2;
+	USIGN ref_pic_type_4     : 2;
+	USIGN ref_pic_type_5     : 2;
+	USIGN ref_pic_type_6     : 2;
+	USIGN ref_pic_type_7     : 2;
 
-	USIGN ref_pic_type_8     :2;
-	USIGN ref_pic_type_9     :2;
-	USIGN ref_pic_type_10    :2;
-	USIGN ref_pic_type_11    :2;
-	USIGN ref_pic_type_12    :2;
-	USIGN ref_pic_type_13    :2;
-	USIGN ref_pic_type_14    :2;
-	USIGN ref_pic_type_15    :2;
-} REF_PIC_TYPE;
-
-typedef struct {
-	USIGN ppfd_buf_addr     :32;
-} PPFD_BUF_ADDR;
+	USIGN ref_pic_type_8     : 2;
+	USIGN ref_pic_type_9     : 2;
+	USIGN ref_pic_type_10    : 2;
+	USIGN ref_pic_type_11    : 2;
+	USIGN ref_pic_type_12    : 2;
+	USIGN ref_pic_type_13    : 2;
+	USIGN ref_pic_type_14    : 2;
+	USIGN ref_pic_type_15    : 2;
+} ref_pic_type;
 
 typedef struct {
-	USIGN ppfd_buf_len      :16;
-	USIGN reserved          :16;
-} PPFD_BUF_LEN;
+	USIGN ppfd_buf_addr     : 32;
+} ppfd_buf_addr;
+
+typedef struct {
+	USIGN ppfd_buf_len      : 16;
+	USIGN reserved          : 16;
+} ppfd_buf_len;
 
 #endif

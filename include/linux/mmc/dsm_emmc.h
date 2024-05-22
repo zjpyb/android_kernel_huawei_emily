@@ -25,29 +25,30 @@ deta version  0x02 ;
  */
 enum DSM_EMMC_ERR
 {
-	DSM_EMMC_INIT_ERROR = 928002020,                    /* 20300 */
-	DSM_EMMC_TUNING_ERROR = 928002000,                  /* 20301 */
-	DSM_EMMC_READ_ERR = 928002008,                      /* 20302 */
-	DSM_EMMC_WRITE_ERR = 928002009,                     /* 20303 */
-	DSM_EMMC_DATA0_BUSY_ERROR = 928002021,              /* 20304 */
-	DSM_EMMC_PRE_EOL_INFO_ERR = 928002002,              /* 20305 */
-	DSM_EMMC_LIFE_TIME_EST_ERR = 928002003,             /* 20306 */
-	DSM_EMMC_THROUGHPUT_MONITOR_ERROR = 928002022,      /* 20307 */
-	DSM_STORAGE_EXT4_ERROR_NO = 928002023,              /* 20308 */
-	DSM_SYSTEM_W_ERR = 928002006,                       /* 20309 */
-	DSM_EMMC_ERASE_ERR = 928002004,                     /* 20310 */
-	DSM_EMMC_VDET_ERR = 928002001,                      /* 20311 */
-	DSM_EMMC_SEND_CXD_ERR = 928002005,                  /* 20312 */
-	DSM_EMMC_SET_BUS_WIDTH_ERR = 928002015,             /* 20313 */
-	DSM_EMMC_RSP_ERR  = 928002011,                      /* 20314 */
-	DSM_EMMC_RW_TIMEOUT_ERR  = 928002024,               /* 20315 */
-	DSM_EMMC_HOST_ERR  = 928002016,                     /* 20316 */
-	DSM_EMMC_URGENT_BKOPS  = 928002012,                 /* 20317 */
-	DSM_EMMC_DYNCAP_NEEDED  = 928002013,                /* 20318 */
-	DSM_EMMC_SYSPOOL_EXHAUSTED  = 928002025,            /* 20319 */
-	DSM_EMMC_PACKED_FAILURE  = 928002014,               /* 20320 */
-	DSM_EMMC_DATA_CRC = 928002030,
-	DSM_EMMC_COMMAND_CRC = 928002031,
+	DSM_EMMC_TUNING_ERROR             = 928002000,
+	DSM_EMMC_VDET_ERR                 = 928002001,
+	DSM_EMMC_PRE_EOL_INFO_ERR         = 928002002,
+	DSM_EMMC_LIFE_TIME_EST_ERR        = 928002003,
+	DSM_EMMC_ERASE_ERR                = 928002004,
+	DSM_EMMC_SEND_CXD_ERR             = 928002005,
+	DSM_SYSTEM_W_ERR                  = 928002006,
+	DSM_EMMC_READ_ERR                 = 928002008,
+	DSM_EMMC_WRITE_ERR                = 928002009,
+	DSM_EMMC_RSP_ERR                  = 928002011,
+	DSM_EMMC_URGENT_BKOPS             = 928002012,
+	DSM_EMMC_DYNCAP_NEEDED            = 928002013,
+	DSM_EMMC_PACKED_FAILURE           = 928002014,
+	DSM_EMMC_SET_BUS_WIDTH_ERR        = 928002015,
+	DSM_EMMC_HOST_ERR                 = 928002016,
+	DSM_EMMC_INIT_ERROR               = 928002020,
+	DSM_EMMC_DATA0_BUSY_ERROR         = 928002021,
+	DSM_EMMC_THROUGHPUT_MONITOR_ERROR = 928002022,
+	DSM_STORAGE_EXT4_ERROR_NO         = 928002023,
+	DSM_EMMC_RW_TIMEOUT_ERR           = 928002024,
+	DSM_EMMC_SYSPOOL_EXHAUSTED        = 928002025,
+	DSM_EMMC_DATA_CRC                 = 928002030,
+	DSM_EMMC_COMMAND_CRC              = 928002031,
+	DSM_EMMC_IO_TIMEOUT               = 928002037,
 };
 
 
@@ -68,7 +69,7 @@ extern int dsm_emmc_get_life_time(struct mmc_card *card);
 #define DSM_EMMC_LOG(card, no, fmt, a...) \
 	do { \
 		char msg[MSG_MAX_SIZE]; \
-		snprintf(msg, MSG_MAX_SIZE-1, fmt, ## a); \
+		snprintf(msg, MSG_MAX_SIZE-1, fmt, ## a); /* unsafe_function_ignore: snprintf */ \
 		mutex_lock(&g_emmc_dsm_log.lock); \
 		if(dsm_emmc_get_log((card), (no), (msg))){ \
 			if(!dsm_client_ocuppy(emmc_dclient)) { \

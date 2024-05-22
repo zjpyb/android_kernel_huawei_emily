@@ -26,17 +26,17 @@
 enum ion_lb_pid_ids {
 	INVALID_PID = -1,
 	ION_LB_BYPASS = PID_BY_PASS,
-	ION_LB_OPENCL = PID_OPENCL,
+	ION_LB_CAMAIP = PID_CAMAIP,
 	ION_LB_GPUFBO = PID_GPUFBO,
 	ION_LB_GPUTXT = PID_GPUTXT,
 	ION_LB_IDISPLAY = PID_IDISPLAY,
-	ION_LB_JPEG = PID_JPEG,
+	ION_LB_NPU = PID_NPU,
 	ION_LB_VIDEO = PID_VIDEO,
-	ION_LB_DMAP = PID_DMAP,
+	ION_LB_CAMTOF = PID_CAMTOF,
 	ION_LB_TINY = PID_TINY,
 	ION_LB_AUDIO = PID_AUDIO,
-	ION_LB_MAX = 10,
-
+	ION_LB_VOICE = PID_VOICE,
+	ION_LB_MAX = PID_MAX,
 };
 #endif
 
@@ -58,7 +58,7 @@ enum ion_heap_ids {
 	ION_DMA_POOL_HEAP_ID = 4,
 	ION_IRIS_DAEMON_HEAP_ID = 5,
 	ION_CAMERA_DAEMON_HEAP_ID = 6,
-	ION_OVERLAY_HEAP_ID = 7,
+	ION_TINY_HEAP_ID = 7,
 	ION_VCODEC_HEAP_ID = 8,
 	ION_ISP_HEAP_ID = 9,
 	ION_FB_HEAP_ID = 10,
@@ -73,9 +73,7 @@ enum ion_heap_ids {
 	ION_CAMERA_HEAP_ID = 19,
 	ION_DRM_HEAP_ID = 20,
 	ION_ALGO_HEAP_ID = 21,
-#ifdef CONFIG_ION_HISI_FAMA_MISC
-	ION_FAMA_MISC_HEAP_ID = 30,
-#endif
+	ION_DRM_CPA_HEAP_ID = 22,
 	ION_HEAP_ID_RESERVED = 31, /* Bit reserved */
 };
 
@@ -83,6 +81,7 @@ enum ion_heap_ids {
  * Macro should be used with ion_heap_ids defined above.
  */
 #define ION_HEAP(bit) (1 << (bit))
+#define ION_ALL_HEAP (~0U)
 #define ION_8K_ALIGN(len)  ALIGN(len, SZ_8K)
 #define IOMMU_PAGE_SIZE SZ_8K
 
@@ -116,17 +115,9 @@ struct ion_smart_pool_info_data {
 	int water_mark;
 };
 
-#ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
-struct ion_special_scene_pool_info_data {
-	int water_mark;
-	int worker_mask;
-	int autostop_timeout;
-};
-#endif
-
 #define HISI_ION_NAME_LEN 16
 
-struct ion_heap_info_data{
+struct ion_heap_info_data {
 	char name[HISI_ION_NAME_LEN];
 	phys_addr_t heap_phy;
 	unsigned int  heap_size;
@@ -136,7 +127,7 @@ struct ion_kern_va_data {
 	unsigned int kern_va_h;
 	unsigned int kern_va_l;
 };
-struct ion_issupport_iommu_data{
+struct ion_issupport_iommu_data {
 	int is_support_iommu;
 };
 
@@ -160,19 +151,14 @@ enum ION_HISI_CUSTOM_CMD {
 	ION_HISI_CUSTOM_GET_MEDIA_HEAP_MODE,
 	ION_HISI_CUSTOM_SET_FLAG,
 	ION_HISI_CUSTOM_SET_SMART_POOL_INFO,
-#ifdef CONFIG_HISI_SPECIAL_SCENE_POOL
-	ION_HISI_CUSTOM_SPECIAL_SCENE_ENTER,
-	ION_HISI_CUSTOM_SPECIAL_SCENE_EXIT,
-#endif
 };
 
 enum ION_HISI_HEAP_MODE {
-	ION_CARVEROUT_MODE=0,
-	ION_IOMMU_MODE=1,
+	ION_CARVEROUT_MODE = 0,
+	ION_IOMMU_MODE = 1,
 };
 
-#ifdef CONFIG_ION_HISI_SECSG
-enum ion_ta_tag{
+enum ion_ta_tag {
 	ION_SEC_CMD_PGATBLE_INIT = 0,
 	ION_SEC_CMD_ALLOC,
 	ION_SEC_CMD_FREE,
@@ -182,30 +168,24 @@ enum ion_ta_tag{
 	ION_SEC_CMD_UNMAP_USER,
 	ION_SEC_CMD_TABLE_SET,
 	ION_SEC_CMD_TABLE_CLEAN,
+#ifdef CONFIG_SECMEM_TEST
+	ION_SEC_CMD_TEST,
+#endif
 	ION_SEC_CMD_MAX,
 };
-#endif
+
+enum SEC_SVC {
+	SEC_TUI = 0,
+	SEC_EID = 1,
+	SEC_TINY = 2,
+	SEC_FACE_ID = 3,
+	SEC_FACE_ID_3D = 4,
+	SEC_DRM_TEE = 5,
+	SEC_SVC_MAX,
+};
 
 #define TINY_SYSTEM   0x0        /* tiny version system for chip test*/
 #define FULL_SYSTEM   0x1        /* full version system */
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
-int ion_handle_get_flags(struct ion_client *client, struct ion_handle *handle,
-			 unsigned long *flags);
-
-/**
- * hisi_ion_client_create() - create iommu mapping for the given handle
- * @heap_mask:	ion heap type mask
- * @name:	the client name
- * @return:     the client handle
- *
- * This function should called by high-level user in kernel. Before users
- * can access a buffer, they should get a client via calling this function.
- */
-struct ion_client *hisi_ion_client_create(const char *name);
-
-struct ion_device * get_ion_device(void);
-#endif
 
 struct platform_device *get_hisi_ion_platform_device(void);
 
@@ -228,14 +208,40 @@ static inline unsigned long hisi_ion_total(void)
 #endif
 
 int hisi_ion_memory_info(bool verbose);
+int hisi_ion_proecss_info(void);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 int ion_secmem_get_phys(struct dma_buf *dmabuf, phys_addr_t *addr, size_t *len);
 int hisi_ion_cache_operate(int fd, unsigned long uaddr,
 	unsigned long offset, unsigned long length,
 	unsigned int cmd);
+
+#ifdef CONFIG_ION_HISI_SECSG
+struct cma *get_sec_cma(void);
+int secmem_get_buffer(int fd, struct sg_table **table, u64 *id,
+		      enum SEC_SVC *type);
+#else
+static inline struct cma *get_sec_cma(void)
+{
+	return NULL;
+}
+
+static inline int secmem_get_buffer(int fd, struct sg_table **table,
+				    u64 *id, enum SEC_SVC *type)
+{
+	return -EINVAL;
+}
 #endif
 
-struct cma *get_sec_cma(void);
+#ifdef CONFIG_ION_HISI
+struct sg_table *hisi_secmem_alloc(int id, unsigned long size);
+void hisi_secmem_free(int id, struct sg_table *table);
+#else
+static inline struct sg_table *hisi_secmem_alloc(int id, unsigned long size)
+{
+	return NULL;
+}
+
+static inline void hisi_secmem_free(int id, struct sg_table *table) {}
+#endif
 
 #endif

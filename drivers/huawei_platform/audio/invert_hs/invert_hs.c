@@ -1,13 +1,22 @@
 /*
- * invert_hs.c -- invert headset driver
+ * invert_hs.c
  *
- * Copyright (c) 2015 Huawei Technologies CO., Ltd.
+ * invert headset driver
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
-/*lint -e528 -e529 */
+
+#include "huawei_platform/audio/invert_hs.h"
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/device.h>
@@ -19,18 +28,14 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
-#include <linux/wakelock.h>
-/*lint -save -e* */
+#include <linux/pm_wakeup.h>
 #include <linux/workqueue.h>
-/*lint -restore*/
 #include <linux/regulator/consumer.h>
 #include <linux/of_irq.h>
 #include <linux/of_gpio.h>
 #include <linux/uaccess.h>
 #include <linux/pinctrl/consumer.h>
 #include <huawei_platform/log/hw_log.h>
-
-#include "huawei_platform/audio/invert_hs.h"
 
 #define HWLOG_TAG invert_hs
 HWLOG_REGIST();
@@ -41,225 +46,207 @@ enum invert_hs_gpio_type {
 };
 
 struct invert_hs_data {
-	int gpio_mic_gnd;         /* switch chip control gpio*/
+	/* switch chip control gpio */
+	int gpio_mic_gnd;
 	int gpio_type;
 	struct mutex invert_hs_lock;
-	struct wake_lock wake_lock;
-	struct workqueue_struct* anc_hs_invert_ctl_delay_wq;
+	struct wakeup_source wake_lock;
+	struct workqueue_struct *anc_hs_invert_ctl_delay_wq;
 	struct delayed_work anc_hs_invert_ctl_delay_work;
 };
 
-static struct invert_hs_data *pdata;
+static struct invert_hs_data *invert_hs_pdata;
 
-/*lint -save -e* */
 static inline int invert_hs_gpio_get_value(int gpio)
 {
-	if (pdata->gpio_type == INVERT_HS_GPIO_CODEC) {
+	if (invert_hs_pdata->gpio_type == INVERT_HS_GPIO_CODEC)
 		return gpio_get_value_cansleep(gpio);
-	} else {
-		return gpio_get_value(gpio);
-	}
+	return gpio_get_value(gpio);
 }
-/*lint -restore*/
 
 static inline void invert_hs_gpio_set_value(int gpio, int value)
 {
-	if (pdata->gpio_type == INVERT_HS_GPIO_CODEC) {
+	if (invert_hs_pdata->gpio_type == INVERT_HS_GPIO_CODEC)
 		gpio_set_value_cansleep(gpio, value);
-	} else {
+	else
 		gpio_set_value(gpio, value);
-	}
 }
 
-/*lint -save -e* */
-static void anc_hs_invert_ctl_work(struct work_struct* work)
+static void anc_hs_invert_ctl_work(struct work_struct *work)
 {
-	wake_lock(&pdata->wake_lock);
-	mutex_lock(&pdata->invert_hs_lock);
+	__pm_stay_awake(&invert_hs_pdata->wake_lock);
+	mutex_lock(&invert_hs_pdata->invert_hs_lock);
 
-	invert_hs_gpio_set_value(pdata->gpio_mic_gnd, INVERT_HS_MIC_GND_CONNECT);
+	invert_hs_gpio_set_value(invert_hs_pdata->gpio_mic_gnd,
+		INVERT_HS_MIC_GND_CONNECT);
 
-	mutex_unlock(&pdata->invert_hs_lock);
-	wake_unlock(&pdata->wake_lock);
+	mutex_unlock(&invert_hs_pdata->invert_hs_lock);
+	__pm_relax(&invert_hs_pdata->wake_lock);
 }
-/*lint -restore*/
 
-/**
- * invert_hs_control - call this function to connect mic and gnd pin
- *                       for invert headset
- *
- **/
-/*lint -save -e* */
 int invert_hs_control(int connect)
 {
 	/* invert_hs driver not be probed, just return */
-	if (pdata == NULL) {
+	if (!invert_hs_pdata)
 		return -ENODEV;
-	}
 
-	wake_lock_timeout(&pdata->wake_lock, msecs_to_jiffies(1000));
+	__pm_wakeup_event(&invert_hs_pdata->wake_lock, 1000);
 
-	switch(connect) {
-		case INVERT_HS_MIC_GND_DISCONNECT:
-			cancel_delayed_work(&pdata->anc_hs_invert_ctl_delay_work);
-			flush_workqueue(pdata->anc_hs_invert_ctl_delay_wq);
-
-			wake_lock(&pdata->wake_lock);
-			mutex_lock(&pdata->invert_hs_lock);
-
-			invert_hs_gpio_set_value(pdata->gpio_mic_gnd, INVERT_HS_MIC_GND_DISCONNECT);
-
-			mutex_unlock(&pdata->invert_hs_lock);
-			wake_unlock(&pdata->wake_lock);
-
-			hwlog_info("invert_hs_control: disconnect MIC and GND.");
-			break;
-		case INVERT_HS_MIC_GND_CONNECT:
-			queue_delayed_work(pdata->anc_hs_invert_ctl_delay_wq,
-					&pdata->anc_hs_invert_ctl_delay_work,
-					msecs_to_jiffies(3000));
-			hwlog_info("invert_hs_control: queue delay work.");
-			break;
-		default:
-			hwlog_info("invert_hs_control: unknown connect type.");
-			break;
+	switch (connect) {
+	case INVERT_HS_MIC_GND_DISCONNECT:
+		cancel_delayed_work(
+			&invert_hs_pdata->anc_hs_invert_ctl_delay_work);
+		flush_workqueue(invert_hs_pdata->anc_hs_invert_ctl_delay_wq);
+		__pm_stay_awake(&invert_hs_pdata->wake_lock);
+		mutex_lock(&invert_hs_pdata->invert_hs_lock);
+		invert_hs_gpio_set_value(invert_hs_pdata->gpio_mic_gnd,
+			INVERT_HS_MIC_GND_DISCONNECT);
+		mutex_unlock(&invert_hs_pdata->invert_hs_lock);
+		__pm_relax(&invert_hs_pdata->wake_lock);
+		hwlog_info("%s: disconnect MIC and GND", __func__);
+		break;
+	case INVERT_HS_MIC_GND_CONNECT:
+		queue_delayed_work(invert_hs_pdata->anc_hs_invert_ctl_delay_wq,
+				&invert_hs_pdata->anc_hs_invert_ctl_delay_work,
+				msecs_to_jiffies(3000));
+		hwlog_info("%s: queue delay work", __func__);
+		break;
+	default:
+		hwlog_info("%s: unknown connect type", __func__);
+		break;
 	}
 
 	return 0;
 }
-/*lint -restore*/
 
 static const struct of_device_id invert_hs_of_match[] = {
-	{
-		.compatible = "huawei,invert_hs",
-	},
-	{ },
+	{ .compatible = "huawei,invert_hs", },
+	{},
 };
-/*lint -save -e* */
 MODULE_DEVICE_TABLE(of, invert_hs_of_match);
-/*lint -restore*/
 
 /* load dts config for board difference */
 static void load_invert_hs_config(struct device_node *node)
 {
-	int temp = 0;
-	/*lint -save -e* */
-	if (!of_property_read_u32(node, "gpio_type", &temp)) {
-	/*lint -restore*/
-		pdata->gpio_type = temp;
-	} else {
-		pdata->gpio_type = INVERT_HS_GPIO_SOC;
-	}
+	int temp;
 
+	if (!of_property_read_u32(node, "gpio_type", &temp))
+		invert_hs_pdata->gpio_type = temp;
+	else
+		invert_hs_pdata->gpio_type = INVERT_HS_GPIO_SOC;
 }
 
-/*lint -save -e* */
+static int invert_hs_init_mic_gnd_gpio(struct device_node *node)
+{
+	int ret;
+
+	/* get mic->gnd control gpio */
+	invert_hs_pdata->gpio_mic_gnd =  of_get_named_gpio(node, "gpios", 0);
+	if (invert_hs_pdata->gpio_mic_gnd < 0) {
+		hwlog_err("gpio_mic_gnd is unvalid\n");
+		return -ENOENT;
+	}
+
+	if (!gpio_is_valid(invert_hs_pdata->gpio_mic_gnd)) {
+		hwlog_err("gpio is unvalid\n");
+		return -ENOENT;
+	}
+
+	/* apply for mic->gnd gpio */
+	ret = gpio_request(invert_hs_pdata->gpio_mic_gnd, "gpio_mic_gnd");
+	if (ret) {
+		hwlog_err("error request GPIO for mic_gnd fail %d\n", ret);
+		return -ENOENT;
+	}
+	gpio_direction_output(invert_hs_pdata->gpio_mic_gnd,
+		INVERT_HS_MIC_GND_CONNECT);
+	return 0;
+}
+
+static int invert_hs_create_workqueue(void)
+{
+	mutex_init(&invert_hs_pdata->invert_hs_lock);
+	wakeup_source_init(&invert_hs_pdata->wake_lock, "invert_hs_wakelock");
+
+	invert_hs_pdata->anc_hs_invert_ctl_delay_wq =
+		create_singlethread_workqueue("anc_hs_invert_ctl_delay_wq");
+	if (!(invert_hs_pdata->anc_hs_invert_ctl_delay_wq)) {
+		hwlog_err("%s: invert_ctl wq create failed\n", __func__);
+		return -ENOMEM;
+	}
+	INIT_DELAYED_WORK(&invert_hs_pdata->anc_hs_invert_ctl_delay_work,
+			anc_hs_invert_ctl_work);
+	return 0;
+}
+
+static void invert_hs_remove_workqueue(void)
+{
+	if (!invert_hs_pdata->anc_hs_invert_ctl_delay_wq)
+		return;
+	cancel_delayed_work(&invert_hs_pdata->anc_hs_invert_ctl_delay_work);
+	flush_workqueue(invert_hs_pdata->anc_hs_invert_ctl_delay_wq);
+	destroy_workqueue(invert_hs_pdata->anc_hs_invert_ctl_delay_wq);
+}
+
 static int invert_hs_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *node =  dev->of_node;
-	int ret = 0;
-	struct pinctrl *p;
-	struct pinctrl_state *pinctrl_def;
+	struct device_node *node = dev->of_node;
+	int ret;
+	struct pinctrl *p = NULL;
+	struct pinctrl_state *pinctrl_def = NULL;
 
-	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-	if (NULL == pdata) {
-		hwlog_err("cannot allocate anc hs dev data\n");
+	invert_hs_pdata = devm_kzalloc(dev, sizeof(*invert_hs_pdata),
+		GFP_KERNEL);
+	if (!invert_hs_pdata)
 		return -ENOMEM;
-	}
 
-	mutex_init(&pdata->invert_hs_lock);
-	wake_lock_init(&pdata->wake_lock, WAKE_LOCK_SUSPEND, "invert_hs_wakelock");
-
-	pdata->anc_hs_invert_ctl_delay_wq =
-		create_singlethread_workqueue("anc_hs_invert_ctl_delay_wq");
-	if (!(pdata->anc_hs_invert_ctl_delay_wq)) {
-		hwlog_err("%s : invert_ctl wq create failed\n", __FUNCTION__);
-		ret = -ENOMEM;
+	ret = invert_hs_create_workqueue();
+	if (ret)
 		goto err_out;
-	}
-
-	INIT_DELAYED_WORK(&pdata->anc_hs_invert_ctl_delay_work, anc_hs_invert_ctl_work);
 
 	p = devm_pinctrl_get(dev);
 	hwlog_info("invert_hs:node name is %s\n", node->name);
 	if (IS_ERR(p)) {
-		hwlog_err("could not get pinctrl dev.\n");
-		ret = -1;
+		hwlog_err("could not get pinctrl dev\n");
+		ret = -ENOENT;
 		goto err_invert_ctl_delay_wq;
 	}
 	pinctrl_def = pinctrl_lookup_state(p, "default");
 	if (IS_ERR(pinctrl_def))
-		hwlog_err("could not get defstate.\n");
+		hwlog_info("could not get defstate\n");
 
 	ret = pinctrl_select_state(p, pinctrl_def);
 	if (ret)
-		hwlog_err("could not set pins to default state.\n");
+		hwlog_info("could not set pins to default state\n");
 
-	/* get mic->gnd control gpio */
-	pdata->gpio_mic_gnd =  of_get_named_gpio(node, "gpios", 0);
-	if (pdata->gpio_mic_gnd < 0) {
-		hwlog_err("gpio_mic_gnd is unvalid!\n");
-		/*lint -save -e* */
-		ret = -ENOENT;
-		/*lint -restore*/
+	ret = invert_hs_init_mic_gnd_gpio(node);
+	if (ret)
 		goto err_invert_ctl_delay_wq;
-	}
 
-	if (!gpio_is_valid(pdata->gpio_mic_gnd)) {
-		hwlog_err("gpio is unvalid!\n");
-		/*lint -save -e* */
-		ret = -ENOENT;
-		/*lint -restore*/
-		goto gpio_mic_gnd_err;
-	}
-
-	/* applay for mic->gnd gpio */
-	ret = gpio_request(pdata->gpio_mic_gnd, "gpio_mic_gnd");
-	if (ret) {
-		hwlog_err("error request GPIO for mic_gnd fail %d\n", ret);
-		goto gpio_mic_gnd_err;
-	}
-	gpio_direction_output(pdata->gpio_mic_gnd, INVERT_HS_MIC_GND_CONNECT);
-
-	/* load dts config for board difference */
 	load_invert_hs_config(node);
-
-	hwlog_info("invert_hs probe success!\n");
-
+	hwlog_info("invert_hs probe success\n");
 	return 0;
 
-
-gpio_mic_gnd_err:
-	gpio_free(pdata->gpio_mic_gnd);
 err_invert_ctl_delay_wq:
-	if (pdata->anc_hs_invert_ctl_delay_wq) {
-		cancel_delayed_work(&pdata->anc_hs_invert_ctl_delay_work);
-		flush_workqueue(pdata->anc_hs_invert_ctl_delay_wq);
-		destroy_workqueue(pdata->anc_hs_invert_ctl_delay_wq);
-	}
+	invert_hs_remove_workqueue();
 err_out:
-	kfree(pdata);
-	pdata = NULL;
-
+	kfree(invert_hs_pdata);
+	invert_hs_pdata = NULL;
 	return ret;
-
 }
-/*lint -restore*/
+
 
 static int invert_hs_remove(struct platform_device *pdev)
 {
-	if (pdata == NULL) {
+	if (!invert_hs_pdata)
 		return 0;
-	}
 
-	if (pdata->anc_hs_invert_ctl_delay_wq) {
-		cancel_delayed_work(&pdata->anc_hs_invert_ctl_delay_work);
-		flush_workqueue(pdata->anc_hs_invert_ctl_delay_wq);
-		destroy_workqueue(pdata->anc_hs_invert_ctl_delay_wq);
-	}
+	invert_hs_remove_workqueue();
 
-	gpio_free(pdata->gpio_mic_gnd);
+	gpio_free(invert_hs_pdata->gpio_mic_gnd);
+	kfree(invert_hs_pdata);
+	invert_hs_pdata = NULL;
 
 	return 0;
 }
@@ -284,10 +271,9 @@ static void __exit invert_hs_exit(void)
 	platform_driver_unregister(&invert_hs_driver);
 }
 
-/*lint -save -e* */
 device_initcall(invert_hs_init);
 module_exit(invert_hs_exit);
-/*lint -restore*/
 
-MODULE_DESCRIPTION("invert headset driver");
 MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("invert headset driver");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

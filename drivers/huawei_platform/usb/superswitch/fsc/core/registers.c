@@ -549,13 +549,17 @@ void FUSB3601_RegSetTxData(DeviceReg_t *registers, FSC_U8 *data, FSC_U32 length)
 void FUSB3601_RegSetBits(DeviceReg_t *registers, enum RegAddress address, FSC_U8 mask)
 {
   FSC_U8 *reg = FUSB3601_AddressToRegister(registers, address);
-  *reg |= mask;
+
+	if (reg)
+		*reg |= mask;
 }
 
 void FUSB3601_RegClearBits(DeviceReg_t *registers, enum RegAddress address, FSC_U8 mask)
 {
   FSC_U8 *reg = FUSB3601_AddressToRegister(registers, address);
-  *reg &= ~mask;
+
+	if (reg)
+		*reg &= ~mask;
 }
 
 

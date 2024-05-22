@@ -97,7 +97,7 @@ extern int bind_local_ports(u16 *local_port);
 extern int unbind_local_ports(u16 local_port);
 extern int adjust_traffic_flow_by_pkg(uint8_t *buf, int cnt);
 extern void bastet_wake_up_traffic_flow(void);
-extern int set_current_net_device_name(char *iface);
+extern int set_current_net_device_name(const char *iface);
 extern void bastet_reconn_failed(struct bst_sock_comm_prop prop);
 extern int bastet_reconn_proxyid_set(struct reconn_id id);
 extern int bastet_sync_prop_start(struct bst_set_sock_sync_prop *set_prop);
@@ -121,7 +121,7 @@ extern int bastet_set_freezer(struct freezer_state freezer);
 /*
  * Indicate Message Api
  */
-int post_indicate_packet(bst_ind_type type, void *info, unsigned int len)
+int post_indicate_packet(bst_ind_type type, const void *info, unsigned int len)
 {
 	struct data_packet *pkt = NULL;
 
@@ -555,7 +555,7 @@ static long bastet_ioctl(struct file *flip, unsigned int cmd, unsigned long arg)
 		break;
 	}
 	case BST_IOC_NF_CONTROL: {
-		bool isRegister;
+		bool isRegister = true;
 
 		BASTET_LOGI("BST_IOC_NF_CONTROL");
 		if (copy_from_user(&isRegister, argp, sizeof(bool))) {

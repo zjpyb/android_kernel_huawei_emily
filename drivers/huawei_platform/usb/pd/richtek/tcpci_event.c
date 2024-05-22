@@ -139,7 +139,7 @@ static bool __pd_get_event(struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
 
 bool pd_get_event(struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
 {
-	bool ret;
+	bool ret = false;
 
 	mutex_lock(&tcpc_dev->access_lock);
 	ret = __pd_get_event(tcpc_dev, pd_event);
@@ -176,7 +176,7 @@ static bool __pd_put_event(struct tcpc_device *tcpc_dev,
 bool pd_put_event(struct tcpc_device *tcpc_dev, const pd_event_t *pd_event,
 	bool from_port_partner)
 {
-	bool ret;
+	bool ret = false;
 
 	mutex_lock(&tcpc_dev->access_lock);
 	ret = __pd_put_event(tcpc_dev, pd_event, from_port_partner);
@@ -890,6 +890,18 @@ void pd_notify_pe_src_explicit_contract(pd_port_t *pd_port)
 	/*mutex_unlock(&tcpc_dev->access_lock); */
 }
 
+static void tcpci_event_wake_lock(struct tcpc_device *tcpc)
+{
+	if (!tcpc->tcpci_event_wakelock.active)
+		__pm_stay_awake(&tcpc->tcpci_event_wakelock);
+}
+
+static void tcpci_event_wake_unlock(struct tcpc_device *tcpc)
+{
+	if (tcpc->tcpci_event_wakelock.active)
+		__pm_relax(&tcpc->tcpci_event_wakelock);
+}
+
 /* ---- init  ---- */
 static int tcpc_event_thread(void *param)
 {
@@ -908,9 +920,14 @@ static int tcpc_event_thread(void *param)
 				tcpc_dev->event_loop_thead_stop);
 		if (kthread_should_stop() || tcpc_dev->event_loop_thead_stop)
 			break;
+
+		tcpci_event_wake_lock(tcpc_dev);
+
 		do {
 			atomic_dec_if_positive(&tcpc_dev->pending_event);
 		} while (pd_policy_engine_run(tcpc_dev));
+
+		tcpci_event_wake_unlock(tcpc_dev);
 	}
 
 	return 0;
@@ -921,7 +938,8 @@ int tcpci_event_init(struct tcpc_device *tcpc_dev)
 	tcpc_dev->event_task = kthread_create(tcpc_event_thread, tcpc_dev,
 			"tcpc_event_%s.%p", dev_name(&tcpc_dev->dev), tcpc_dev);
 	tcpc_dev->event_loop_thead_stop = false;
-
+	wakeup_source_init(&tcpc_dev->tcpci_event_wakelock,
+			"tcpci_event_wakelock");
 	init_waitqueue_head(&tcpc_dev->event_loop_wait_que);
 	atomic_set(&tcpc_dev->pending_event, 0);
 	wake_up_process(tcpc_dev->event_task);
@@ -934,5 +952,6 @@ int tcpci_event_deinit(struct tcpc_device *tcpc_dev)
 	tcpc_dev->event_loop_thead_stop = true;
 	wake_up_interruptible(&tcpc_dev->event_loop_wait_que);
 	kthread_stop(tcpc_dev->event_task);
+	wakeup_source_trash(&tcpc_dev->tcpci_event_wakelock);
 	return 0;
 }

@@ -202,7 +202,7 @@ int block_fix_scf_constraint(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_
 		}
 
 		if ((g_dss_version_tag == FB_ACCEL_HI366x) ||
-			((g_dss_version_tag & (FB_ACCEL_KIRIN970 | FB_ACCEL_DSSV501 | FB_ACCEL_DSSV510 | FB_ACCEL_DSSV320 | FB_ACCEL_DSSV330))
+			((g_dss_version_tag & (FB_ACCEL_KIRIN970 | FB_ACCEL_DSSV501 | FB_ACCEL_DSSV510 | FB_ACCEL_DSSV320 | FB_ACCEL_DSSV330 | FB_ACCEL_DSSV350))
 			&& (layer->need_cap & CAP_2D_SHARPNESS))) {
 			if (scf_layer_num >= MAX_OFFLINE_LAYER_NUMBER) {
 				HISI_FB_ERR("layer number in offline [%d] is more than scf moudle [%d]\n",
@@ -583,7 +583,7 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 		rect_transform.h = h_layer->src_rect.h;
 		h_v_layer->block_info.arsr2p_in_rect = rect_transform; //new added
 		h_v_layer->src_rect = rect_transform;  //arsr2p input rect
-		rect_across_rect(h_v_layer->src_rect, h_v_layer->src_rect_mask, &h_v_layer->src_rect_mask);
+		(void)rect_across_rect(h_v_layer->src_rect, h_v_layer->src_rect_mask, &h_v_layer->src_rect_mask);
 		h_v_layer->dst_rect = dst_cross_rect;	//arsr2p output rect
 	}
 
@@ -602,8 +602,6 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 			output_span = dst_rect.w;
 			input_startpos = output_startpos;
 			input_span = output_span;
-		} else {
-			dst_rect = h_layer->dst_rect;
 		}
 
 		h_ratio = (DSS_WIDTH(h_layer->src_rect.w) * SCF_INC_FACTOR + SCF_INC_FACTOR / 2 - acc_hscl) /
@@ -671,7 +669,7 @@ static int create_h_v_block_layer(dss_layer_t *h_layer, dss_layer_t *h_v_layer,
 	}
 
 	h_v_layer->src_rect = rect_transform;
-	rect_across_rect(h_v_layer->src_rect, h_v_layer->src_rect_mask, &h_v_layer->src_rect_mask);
+	(void)rect_across_rect(h_v_layer->src_rect, h_v_layer->src_rect_mask, &h_v_layer->src_rect_mask);
 	h_v_layer->dst_rect = dst_cross_rect;
 
 	return 0;
@@ -775,7 +773,7 @@ static int wb_create_h_v_block_layer(dss_overlay_t *pov_req_h_v, dss_layer_t *h_
 	}
 
 	h_v_layer->src_rect = rect_transform;
-	rect_across_rect(h_v_layer->src_rect, h_v_layer->src_rect_mask, &h_v_layer->src_rect_mask);
+	(void)rect_across_rect(h_v_layer->src_rect, h_v_layer->src_rect_mask, &h_v_layer->src_rect_mask);
 
 	h_v_layer->dst_rect = dst_cross_rect;
 
@@ -833,9 +831,9 @@ int get_block_layers(dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block,
 	}
 
 	// init pov_req_v_block
-	pov_h_v_block = (dss_overlay_block_t *)pov_req_h_v->ov_block_infos_ptr;
+	pov_h_v_block = (dss_overlay_block_t *)(uintptr_t)pov_req_h_v->ov_block_infos_ptr;
 	memcpy(pov_req_h_v, pov_req, sizeof(dss_overlay_t));
-	pov_req_h_v->ov_block_infos_ptr = (uint64_t)(pov_h_v_block);
+	pov_req_h_v->ov_block_infos_ptr = (uint64_t)(uintptr_t)(pov_h_v_block);
 
 	if (calc_dest_block_size(pov_req, pov_h_block) == BLOCK_SIZE_INVALID) {
 		pov_req_h_v->ov_block_nums = 1;

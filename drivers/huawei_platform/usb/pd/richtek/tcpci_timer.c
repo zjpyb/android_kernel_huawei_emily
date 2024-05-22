@@ -1066,6 +1066,8 @@ void tcpc_enable_timer(struct tcpc_device *tcpc, uint32_t timer_id)
 	mod = tout % 1000000;
 
 	mutex_unlock(&tcpc->timer_lock);
+	__pm_wakeup_event(&tcpc->tcpci_timer_wakelock,
+				TCPC_TIMER_WAKELOCK_TIMEOUT);
 	hrtimer_start(&tcpc->tcpc_timer[timer_id],
 				ktime_set(r, mod*1000), HRTIMER_MODE_REL);
 }
@@ -1159,7 +1161,7 @@ static int tcpc_timer_thread(void *param)
 {
 	struct tcpc_device *tcpc_dev = param;
 
-	volatile uint64_t *timer_tick;
+	volatile uint64_t *timer_tick = NULL;
 	struct sched_param sch_param = {.sched_priority = MAX_RT_PRIO - 1};
 
 
@@ -1187,6 +1189,8 @@ int tcpci_timer_init(struct tcpc_device *tcpc_dev)
 	tcpc_dev->timer_task = kthread_create(tcpc_timer_thread, tcpc_dev,
 			"tcpc_timer_%s.%p", dev_name(&tcpc_dev->dev), tcpc_dev);
 	init_waitqueue_head(&tcpc_dev->timer_wait_que);
+	wakeup_source_init(&tcpc_dev->tcpci_timer_wakelock,
+			"tcpci_timer_wakelock");
 
 	tcpc_dev->timer_tick = 0;
 	tcpc_dev->timer_enable_mask = 0;
@@ -1216,6 +1220,7 @@ int tcpci_timer_deinit(struct tcpc_device *tcpc_dev)
 			hrtimer_try_to_cancel(&tcpc_dev->tcpc_timer[i]);
 	}
 
+	wakeup_source_trash(&tcpc_dev->tcpci_timer_wakelock);
 	pr_info("%s : de init OK\n", __func__);
 	mutex_unlock(&tcpc_dev->timer_lock);
 	return 0;

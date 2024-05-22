@@ -932,7 +932,7 @@ int ecc_is_key_valid(unsigned int curve_id, unsigned int ndigits,
  * ECC private keys are generated using the method of extra random bits,
  * equivalent to that described in FIPS 186-4, Appendix B.4.1.
  *
- * d = (c mod(n¨C1)) + 1    where c is a string of random bits, 64 bits longer
+ * d = (c mod(nâ€“1)) + 1    where c is a string of random bits, 64 bits longer
  *                         than requested
  * 0 <= c mod(n-1) <= n-2  and implies that
  * 1 <= d <= n-1
@@ -964,7 +964,7 @@ int ecc_gen_privkey(unsigned int curve_id, unsigned int ndigits, u64 *privkey)
 	 * DRBG with a security strength of 256.
 	 */
 	if (crypto_get_default_rng())
-		err = -EFAULT;
+		return -EFAULT;
 
 	err = crypto_rng_get_bytes(crypto_default_rng, (u8 *)priv, nbytes);
 	crypto_put_default_rng();
@@ -989,7 +989,6 @@ int ecc_make_pub_key(unsigned int curve_id, unsigned int ndigits,
 	int ret = 0;
 	struct ecc_point *pk;
 	u64 priv[ndigits];
-	
 	const struct ecc_curve *curve = ecc_get_curve(curve_id);
 
 	if (!private_key || !curve) {

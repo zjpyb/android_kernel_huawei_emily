@@ -58,7 +58,7 @@ static ssize_t pmalloc_pool_show_protected(struct kobject *dev,
 					   struct kobj_attribute *attr,
 					   char *buf)
 {
-	struct pmalloc_data *data;
+	struct pmalloc_data *data = NULL;
 
 	data = container_of(attr, struct pmalloc_data, attr_protected);
 	if (data->protected)
@@ -71,7 +71,7 @@ static ssize_t pmalloc_pool_show_avail(struct kobject *dev,
 				       struct kobj_attribute *attr,
 				       char *buf)
 {
-	struct pmalloc_data *data;
+	struct pmalloc_data *data = NULL;
 
 	data = container_of(attr, struct pmalloc_data, attr_avail);
 	return snprintf(buf, PAGE_SIZE, "%lu\n", gen_pool_avail(data->pool));/* unsafe_function_ignore: snprintf *//*lint !e421*/
@@ -81,7 +81,7 @@ static ssize_t pmalloc_pool_show_size(struct kobject *dev,
 				      struct kobj_attribute *attr,
 				      char *buf)
 {
-	struct pmalloc_data *data;
+	struct pmalloc_data *data = NULL;
 
 	data = container_of(attr, struct pmalloc_data, attr_size);
 	return snprintf(buf, PAGE_SIZE, "%lu\n", gen_pool_size(data->pool));/* unsafe_function_ignore: snprintf *//*lint !e421*/
@@ -99,7 +99,7 @@ static ssize_t pmalloc_pool_show_chunks(struct kobject *dev,
 					struct kobj_attribute *attr,
 					char *buf)
 {
-	struct pmalloc_data *data;
+	struct pmalloc_data *data = NULL;
 	unsigned long chunks_num = 0;
 
 	data = container_of(attr, struct pmalloc_data, attr_chunks);
@@ -164,12 +164,12 @@ do { \
 
 struct gen_pool *pmalloc_create_pool(const char *name, int min_alloc_order)
 {
-	struct gen_pool *pool;
-	const char *pool_name;
-	struct pmalloc_data *data;
+	struct gen_pool *pool = NULL;
+	const char *pool_name = NULL;
+	struct pmalloc_data *data = NULL;
 
 	if (!name) {
-		WARN_ON(1);
+		WARN_ON(1u);/*lint !e665 !e146*/
 		return NULL;
 	}
 
@@ -219,7 +219,7 @@ same_name_err:
 
 static inline int check_input_params(struct gen_pool *pool, size_t req_size)
 {
-	struct pmalloc_data *data;
+	struct pmalloc_data *data = NULL;
 	unsigned long overhead;
 	unsigned int order;
 
@@ -237,7 +237,7 @@ static inline int check_input_params(struct gen_pool *pool, size_t req_size)
 		return -1;
 
 	if (unlikely(data->protected)) {
-		WARN_ON(1);
+		WARN_ON(1u);/*lint !e665 !e146*/
 		return -1;
 	}
 	return 0;
@@ -246,7 +246,7 @@ static inline int check_input_params(struct gen_pool *pool, size_t req_size)
 
 static inline void tag_chunk(const void *chunk)
 {
-	struct vmap_area *va;
+	struct vmap_area *va = NULL;
 
 	va = find_vmap_area((unsigned long)(uintptr_t)chunk);
 	if (likely(va)) {
@@ -256,7 +256,7 @@ static inline void tag_chunk(const void *chunk)
 
 static inline void untag_chunk(const void *chunk)
 {
-	struct vmap_area *va;
+	struct vmap_area *va = NULL;
 
 	va = find_vmap_area((unsigned long)(uintptr_t)chunk);
 	if (likely(va)) {
@@ -266,9 +266,9 @@ static inline void untag_chunk(const void *chunk)
 
 bool pmalloc_prealloc(struct gen_pool *pool, size_t req_size)
 {
-	void *chunk;
+	void *chunk = NULL;
 	size_t chunk_size;
-	bool add_error;
+	bool add_error = false;
 	size_t real_size;
 	unsigned long overhead;
 	unsigned int order;
@@ -302,9 +302,9 @@ abort:
 
 void *pmalloc(struct gen_pool *pool, size_t req_size, gfp_t gfp)
 {
-	void *chunk;
+	void *chunk = NULL;
 	size_t chunk_size;
-	bool add_error;
+	bool add_error = false;
 	size_t real_size;
 	unsigned long retval, overhead;
 	unsigned int order;
@@ -389,22 +389,28 @@ static void pmalloc_chunk_set_protection(struct gen_pool *pool,
 	const bool *flag = data;
 	size_t chunk_size = chunk->end_addr + 1 - chunk->start_addr;
 	unsigned long pages = chunk_size / PAGE_SIZE;
-
+	int ret;
 	BUG_ON(chunk_size & (PAGE_SIZE - 1));
 
 	if (*flag) {
 		set_memory_ro(chunk->start_addr, pages);
-		hkip_register_ro_mod((void *)(uintptr_t)chunk->start_addr, chunk_size);
+		ret = hkip_register_ro_mod((void *)(uintptr_t)chunk->start_addr, chunk_size);
+		if (ret){
+			pr_err("hhee lkm register ro data failed\n");
+		}
 	} else {
-		hkip_unregister_ro_mod((void *)(uintptr_t)chunk->start_addr, chunk_size);
+		ret = hkip_unregister_ro_mod((void *)(uintptr_t)chunk->start_addr, chunk_size);
+		if (ret){
+			pr_err("hhee lkm unregister ro data failed\n");
+		}
 		set_memory_rw(chunk->start_addr, pages);
 	}
 }
 
 static int pmalloc_pool_set_protection(struct gen_pool *pool, bool protection)
 {
-	struct pmalloc_data *data;
-	struct gen_pool_chunk *chunk;
+	struct pmalloc_data *data = NULL;
+	struct gen_pool_chunk *chunk = NULL;
 
 	if (unlikely(!pool))
 		return -EINVAL;
@@ -415,7 +421,7 @@ static int pmalloc_pool_set_protection(struct gen_pool *pool, bool protection)
 		return -EINVAL;
 
 	if (unlikely(data->protected == protection)) {
-		WARN_ON(1);
+		WARN_ON(1u);/*lint !e665 !e146*/
 		return 0;
 	}
 
@@ -445,7 +451,7 @@ static void pmalloc_chunk_free(struct gen_pool *pool,
 
 int pmalloc_destroy_pool(struct gen_pool *pool)
 {
-	struct pmalloc_data *data;
+	struct pmalloc_data *data = NULL;
 
 	if (unlikely(NULL == pool))
 		return -EINVAL;
@@ -477,7 +483,8 @@ int pmalloc_destroy_pool(struct gen_pool *pool)
  */
 static int __init pmalloc_late_init(void)
 {
-	struct pmalloc_data *data, *n;
+	struct pmalloc_data *data = NULL;
+	struct pmalloc_data *n =NULL;
 
 	pmalloc_kobject = kobject_create_and_add("pmalloc", kernel_kobj);
 

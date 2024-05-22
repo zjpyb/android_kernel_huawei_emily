@@ -48,7 +48,7 @@ VL53L0_Error VL53L0_check_part_used(VL53L0_DEV Dev,
 {
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
 	uint8_t ModuleIdInt;
-	char *ProductId_tmp;
+	char *ProductId_tmp = NULL;
 
 	LOG_FUNCTION_START("");
 

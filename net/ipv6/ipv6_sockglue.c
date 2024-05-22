@@ -48,16 +48,13 @@
 #include <net/addrconf.h>
 #include <net/inet_common.h>
 #include <net/tcp.h>
-#ifdef CONFIG_MPTCP
-#include <net/mptcp.h>
-#include <net/mptcp_v4.h>
-#endif
 #include <net/udp.h>
 #include <net/udplite.h>
 #include <net/xfrm.h>
 #include <net/compat.h>
+#include <net/seg6.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 struct ip6_ra_chain *ip6_ra_chain;
 DEFINE_RWLOCK(ip6_ra_lock);
@@ -71,6 +68,8 @@ int ip6_ra_control(struct sock *sk, int sel)
 		return -ENOPROTOOPT;
 
 	new_ra = (sel >= 0) ? kmalloc(sizeof(*new_ra), GFP_KERNEL) : NULL;
+	if (sel >= 0 && !new_ra)
+		return -ENOMEM;
 
 	write_lock_bh(&ip6_ra_lock);
 	for (rap = &ip6_ra_chain; (ra = *rap) != NULL; rap = &ra->next) {
@@ -219,12 +218,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 				sock_prot_inuse_add(net, &tcp_prot, 1);
 				local_bh_enable();
 				sk->sk_prot = &tcp_prot;
-#ifdef CONFIG_MPTCP
-				if (sock_flag(sk, SOCK_MPTCP))
-					icsk->icsk_af_ops = &mptcp_v4_specific;
-				else
-#endif
-					icsk->icsk_af_ops = &ipv4_specific;
+				icsk->icsk_af_ops = &ipv4_specific;
 				sk->sk_socket->ops = &inet_stream_ops;
 				sk->sk_family = PF_INET;
 				tcp_sync_mss(sk, icsk->icsk_pmtu_cookie);
@@ -250,12 +244,6 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 			pktopt = xchg(&np->pktoptions, NULL);
 			kfree_skb(pktopt);
 
-#ifdef CONFIG_MPTCP
-			if (is_meta_sk(sk))
-				sk->sk_destruct = mptcp_sock_destruct;
-			else
-#endif
-				sk->sk_destruct = inet_sock_destruct;
 			/*
 			 * ... and add it to the refcnt debug socks count
 			 * in the new family. -acme
@@ -455,6 +443,15 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 
 				break;
 #endif
+			case IPV6_SRCRT_TYPE_4:
+			{
+				struct ipv6_sr_hdr *srh = (struct ipv6_sr_hdr *)
+							  opt->srcrt;
+
+				if (!seg6_validate_srh(srh, optlen))
+					goto sticky_done;
+				break;
+			}
 			default:
 				goto sticky_done;
 			}
@@ -520,7 +517,7 @@ sticky_done:
 			break;
 
 		memset(opt, 0, sizeof(*opt));
-		atomic_set(&opt->refcnt, 1);
+		refcount_set(&opt->refcnt, 1);
 		opt->tot_len = sizeof(*opt) + optlen;
 		retv = -EFAULT;
 		if (copy_from_user(opt+1, optval, optlen))
@@ -750,14 +747,9 @@ done:
 			retv = -ENOBUFS;
 			break;
 		}
-		gsf = kmalloc(optlen, GFP_KERNEL);
-		if (!gsf) {
-			retv = -ENOBUFS;
-			break;
-		}
-		retv = -EFAULT;
-		if (copy_from_user(gsf, optval, optlen)) {
-			kfree(gsf);
+		gsf = memdup_user(optval, optlen);
+		if (IS_ERR(gsf)) {
+			retv = PTR_ERR(gsf);
 			break;
 		}
 		/* numsrc >= (4G-140)/128 overflow in 32 bits */
@@ -900,6 +892,10 @@ pref_skip_coa:
 	case IPV6_AUTOFLOWLABEL:
 		np->autoflowlabel = valbool;
 		np->autoflowlabel_set = 1;
+		retv = 0;
+		break;
+	case IPV6_RECVFRAGSIZE:
+		np->rxopt.bits.recvfragsize = valbool;
 		retv = 0;
 		break;
 	}
@@ -1335,6 +1331,10 @@ static int do_ipv6_getsockopt(struct sock *sk, int level, int optname,
 
 	case IPV6_AUTOFLOWLABEL:
 		val = ip6_autoflowlabel(sock_net(sk), np);
+		break;
+
+	case IPV6_RECVFRAGSIZE:
+		val = np->rxopt.bits.recvfragsize;
 		break;
 
 	default:

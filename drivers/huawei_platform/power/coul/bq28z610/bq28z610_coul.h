@@ -3,7 +3,7 @@
  *
  * coul with bq28z610 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,18 +16,18 @@
  *
  */
 
-#ifndef _BQ28Z610_COUL_
-#define _BQ28Z610_COUL_
+#ifndef _BQ28Z610_COUL_H_
+#define _BQ28Z610_COUL_H_
 
 #define ABNORMAL_BATT_TEMPERATURE_LOW     (-40)
-#define ABNORMAL_BATT_TEMPERATURE_HIGH    (80)
-#define DEFAULT_TEMP                      (25)
-#define TEMP_TOO_HOT                      (60)
+#define ABNORMAL_BATT_TEMPERATURE_HIGH    80
+#define DEFAULT_TEMP                      25
+#define TEMP_TOO_HOT                      60
 #define TEMP_TOO_COLD                     (-20)
 
-#define TEMP_PARA_LEVEL                   (10)
-#define VOLT_PARA_LEVEL                   (4)
-#define SEGMENT_PARA_LEVEL                (2)
+#define TEMP_PARA_LEVEL                   10
+#define VOLT_PARA_LEVEL                   4
+#define SEGMENT_PARA_LEVEL                2
 
 #define BATTERY_DEFAULT_CAPACITY          50
 #define BATTERY_FULL_CAPACITY             100
@@ -105,7 +105,6 @@ struct bq28z610_reg_cache {
 struct bq28z610_device_info {
 	struct i2c_client *client;
 	struct device *dev;
-
 	struct bq28z610_reg_cache cache;
 	int charge_status;
 	int vbat_max;
@@ -153,4 +152,4 @@ enum bq28z610_sysfs_type {
 	BQ28Z610_SYSFS_GAUGELOG,
 };
 
-#endif /* _BQ28Z610_COUL_ */
+#endif /* _BQ28Z610_COUL_H_ */

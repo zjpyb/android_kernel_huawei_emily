@@ -4,9 +4,8 @@ obj-$(CONFIG_HISI_COUL)		        += coul/
 obj-$(CONFIG_HISI_CHARGER)		+= charger/
 obj-$(CONFIG_HISI_SOH)	                += soh/
 obj-$(CONFIG_HISI_ASW)	                += asw/
+obj-$(CONFIG_HISI_CHARGE_TIME)             += charge_time/
 
 ifeq ($(HLTHERM_RUNTEST),true)
 CFLAGS_KERNEL += -DCONFIG_HLTHERM_RUNTEST
 endif
-
-EXTRA_CFLAGS += -Idrivers/hisi/tzdriver/libhwsecurec/

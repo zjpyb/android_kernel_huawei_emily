@@ -65,7 +65,7 @@ struct hw_sw_core_data {
 struct hw_sw_disc_data {
 	struct platform_device *pm_pdev;
 	struct hw_sw_core_data *core_data;
-	struct wake_lock kb_wakelock;
+	struct wakeup_source kb_wakelock;
 	struct delayed_work kb_channel_work;
 	struct completion kb_comm_complete;
 
@@ -255,24 +255,24 @@ static int sw_disconnect_device(struct hw_sw_core_data *core_data)
 static void swkb_wake_lock_timeout(struct hw_sw_disc_data *pdisc_data,
 	long timeout)
 {
-	if (!wake_lock_active(&pdisc_data->kb_wakelock)) {
-		wake_lock_timeout(&pdisc_data->kb_wakelock, timeout);
+	if (!pdisc_data->kb_wakelock.active) {
+		__pm_wakeup_event(&pdisc_data->kb_wakelock, jiffies_to_msecs(timeout));
 		SW_PRINT_INFO("swkb wake lock\n");
 	}
 }
 
 static void swkb_wake_lock(struct hw_sw_disc_data *pdisc_data)
 {
-	if (!wake_lock_active(&pdisc_data->kb_wakelock)) {
-		wake_lock(&pdisc_data->kb_wakelock);
+	if (!pdisc_data->kb_wakelock.active) {
+		__pm_stay_awake(&pdisc_data->kb_wakelock);
 		SW_PRINT_INFO("swkb wake lock\n");
 	}
 }
 
 static void swkb_wake_unlock(struct hw_sw_disc_data *pdisc_data)
 {
-	if (wake_lock_active(&pdisc_data->kb_wakelock)) {
-		wake_unlock(&pdisc_data->kb_wakelock);
+	if (pdisc_data->kb_wakelock.active) {
+		__pm_relax(&pdisc_data->kb_wakelock);
 		SW_PRINT_INFO("swkb wake unlock\n");
 	}
 }
@@ -551,6 +551,11 @@ static int sw_process_cmd_disconnect(struct hw_sw_core_data *core_data,
 	if (ret == 0) {
 		swkb_wake_lock_timeout(pdisc_data, DEFAULT_WAKE_TIMEOUT);
 		kernel_send_kb_cmd(KBHB_IOCTL_STOP, 0);
+		if (pdisc_data->kb_online == DEVSTAT_CHGDEV_ONLINE) {
+			pdisc_data->kb_online = DEVSTAT_NONEDEV;
+			SW_PRINT_INFO("charge device remove\n");
+			return ret;
+		}
 		sw_notify_android_uevent(KBSTATE_OFFLINE);
 	}
 	return ret;
@@ -590,8 +595,6 @@ static void sw_core_event(struct work_struct *work)
 	SW_PRINT_FUNCTION_NAME;
 
 	core_data = container_of(work, struct hw_sw_core_data, events);
-	if (core_data == NULL)
-		return;
 
 	while ((skb = sw_skb_dequeue(core_data, RX_DATA_QUEUE))) {
 		skb_orphan(skb);
@@ -673,7 +676,7 @@ static void sw_fb_notifier_action(int screen_on_off)
 static int sw_fb_notifier(struct notifier_block *nb,
 	unsigned long action, void *data)
 {
-	int *blank;
+	int *blank = NULL;
 	struct fb_event *event = data;
 
 	if (event == NULL) {
@@ -689,6 +692,12 @@ static int sw_fb_notifier(struct notifier_block *nb,
 
 	switch (action) {
 	case FB_EVENT_BLANK: /* change finished */
+		/* only notify main screen on/off info */
+		if (event->info != registered_fb[0]) {
+			SW_PRINT_INFO("not main screen info, just return\n");
+			return NOTIFY_OK;
+		}
+
 		switch (*blank) {
 		case FB_BLANK_UNBLANK: /* screen on */
 			SW_PRINT_INFO("screen on\n");
@@ -723,8 +732,6 @@ static void swkb_channel_com_work(struct work_struct *work)
 	struct hw_sw_disc_data *pdisc_data = container_of(work,
 		struct hw_sw_disc_data, kb_channel_work.work);
 
-	if (pdisc_data == NULL)
-		return;
 
 	SW_PRINT_INFO("start\n");
 	swkb_wake_lock(pdisc_data);
@@ -839,6 +846,34 @@ static struct kb_dev_ops sw_kbhubops = {
 	.notify_event = swkb_notify_event_callback,
 };
 
+/*
+ * Note: CMD_KB_EVENT data format to sensorhub
+ * led(1 byte) + len(1 byte) + data_type(1 byte) + reserved(1 byte) +
+ * data (12 bytes)
+ * sensohub used led byte for Caps Lock, other must set it to 0xff
+ * sw may detect kb or charger insert, only use byte[4] to indicate it
+ */
+static void sw_detect_notify_connect_device(enum sw_connect_dev_num dev)
+{
+	u8 buffer[SW_REPORT_DATA_SIZE] = { 0 };
+
+	/*
+	 * buffer[0]: not led control data
+	 * buffer[1]: data is 1byte
+	 * buffer[2]: connect type data
+	 * buffer[3]: reserved
+	 * buffer[4]: kb or charge connect
+	 */
+	buffer[0] = SW_KB_EVENT_LED_INVALID;
+	buffer[1] = 1;
+	buffer[2] = SW_KB_EVENT_TYPE_CONNECT_DEV;
+	buffer[3] = 0;
+	buffer[4] = dev;
+
+	kernel_send_kb_report_event(KBHB_IOCTL_CMD, buffer,
+		SW_REPORT_DATA_SIZE);
+}
+
 static int sw_detect_notifier_call(struct notifier_block *detect_nb,
 	unsigned long event, void *data)
 {
@@ -846,11 +881,18 @@ static int sw_detect_notifier_call(struct notifier_block *detect_nb,
 
 	if (pdisc_data != NULL) {
 		SW_PRINT_ERR("sw_detect_notifier_call event %lx\n", event);
+
 		if (event == DEVSTAT_KBDEV_ONLINE) {
 			swkb_wake_lock_timeout(pdisc_data,
 				DEFAULT_WAKE_TIMEOUT);
 			/* notify sensorhub start work */
 			kernel_send_kb_cmd(KBHB_IOCTL_START, 0);
+			sw_detect_notify_connect_device(SW_DEV_KB);
+		} else if (event == DEVSTAT_CHGDEV_ONLINE) {
+			swkb_wake_lock_timeout(pdisc_data,
+				DEFAULT_WAKE_TIMEOUT);
+			kernel_send_kb_cmd(KBHB_IOCTL_START, 0);
+			sw_detect_notify_connect_device(SW_DEV_CHARGER);
 		}
 		pdisc_data->kb_online = event;
 	}
@@ -902,8 +944,8 @@ static int sw_probe(struct platform_device *pdev)
 	/* get reference of pdev */
 	pdisc_data->pm_pdev = pdev;
 
-	wake_lock_init(&pdisc_data->kb_wakelock,
-		WAKE_LOCK_SUSPEND, "swkb_wakelock");
+	wakeup_source_init(&pdisc_data->kb_wakelock,
+		"swkb_wakelock");
 	INIT_DELAYED_WORK(&pdisc_data->kb_channel_work, swkb_channel_com_work);
 
 	init_completion(&pdisc_data->kb_comm_complete);
@@ -923,13 +965,13 @@ static int sw_probe(struct platform_device *pdev)
 
 	ret = register_reboot_notifier(&plat_poweroff_notifier);
 	if (ret) {
-		SW_PRINT_ERR("register_reboot_notifier fail (err=%d)\n", ret);
+		SW_PRINT_ERR("register_reboot_notifier fail err=%d\n", ret);
 		goto err_exception;
 	}
 
 	ret = kbdev_proxy_register(&sw_kbhubops);
 	if (ret) {
-		SW_PRINT_ERR("kbdev_proxy_register fail (err=%d)\n", ret);
+		SW_PRINT_ERR("kbdev_proxy_register fail err=%d\n", ret);
 		goto err_exception;
 	}
 
@@ -939,7 +981,7 @@ static int sw_probe(struct platform_device *pdev)
 err_exception:
 	sw_core_exit(pdisc_data->core_data);
 err_core_init:
-	wake_lock_destroy(&pdisc_data->kb_wakelock);
+	wakeup_source_trash(&pdisc_data->kb_wakelock);
 	sw_detectops_destroy(&pdisc_data->detect_ops);
 	kfree(pdisc_data);
 	return ret;

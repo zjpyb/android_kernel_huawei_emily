@@ -48,11 +48,11 @@
 #define KB_ONLINE_MAX_ADC_LIMIT         (1550)
 
 #define KB_DETECT_DELAY_TIME_MS         (300)
-#define RECHECK_ADC_DELAY_MS            (1)
 
 struct sw_kb_detectparam {
 	int kb_tx_gpio;
 	int kb_vdd_ctrl;
+	int kb_power_switch_gpio;
 
 	int kb_connect_adc_min;
 	int kb_connect_adc_max;
@@ -68,6 +68,7 @@ static void sw_keyboard_disconnected(struct sw_gpio_detector *detector,
 		SW_PRINT_INFO("sw_keyboard_disconnected, enable irq\n");
 		detector->dev_state = DEVSTAT_NONEDEV;
 		gpio_set_value(param->kb_vdd_ctrl, 0);
+		gpio_set_value(param->kb_power_switch_gpio, 0);
 	}
 	if (detector->control_irq != NULL)
 		detector->control_irq(detector, true);
@@ -82,6 +83,7 @@ static void sw_keyboard_connected(struct sw_gpio_detector *detector,
 	if (detector->dev_state == DEVSTAT_NONEDEV) {
 		gpio_set_value(param->kb_vdd_ctrl, 1);
 		detector->dev_state = DEVSTAT_KBDEV_ONLINE;
+		gpio_set_value(param->kb_power_switch_gpio, 1);
 		SW_PRINT_INFO("sw_keyboard_connected, notify sensorhub\n");
 	}
 
@@ -146,7 +148,7 @@ retry_check:
 static int sw_kb_devdetect(struct sw_gpio_detector *detector,
 	struct sw_dev_detector *devdetector)
 {
-	bool kb_isonline;
+	bool kb_isonline = false;
 	struct sw_kb_detectparam *kb_param;
 
 	if ((detector == NULL) || (devdetector == NULL))
@@ -225,12 +227,15 @@ static int sw_kb_notifyevent(struct sw_gpio_detector *detector,
 static int sw_parse_kbdetectparam(struct device_node *np,
 	struct sw_kb_detectparam *kb_param)
 {
+	struct device_node *pogopin_chg_np = NULL;
+
 	kb_param->kb_tx_gpio = -1;
 	kb_param->kb_vdd_ctrl = -1;
 	kb_param->kb_connect_adc_min = -1;
 	kb_param->kb_connect_adc_max = -1;
 	kb_param->kb_online_adc_min = -1;
 	kb_param->kb_online_adc_max = -1;
+	kb_param->kb_power_switch_gpio = -1;
 
 	if (of_property_read_u32(np, "kb_connect_adc_min",
 				&kb_param->kb_connect_adc_min)) {
@@ -270,6 +275,17 @@ static int sw_parse_kbdetectparam(struct device_node *np,
 	if (kb_param->kb_vdd_ctrl < 0) {
 		SW_PRINT_ERR("kb_vdd_ctrl failed\n");
 		goto err_free_gpio;
+	}
+
+	pogopin_chg_np = of_find_node_by_name(NULL, "huawei_pogopin_charger");
+	if (pogopin_chg_np) {
+		kb_param->kb_power_switch_gpio =
+			of_get_named_gpio(pogopin_chg_np,
+				"power_switch_gpio", 0);
+		if (kb_param->kb_power_switch_gpio < 0)
+			SW_PRINT_ERR("gpio(power_switch_gpio) failed\n");
+	} else {
+		SW_PRINT_ERR("node(huawei_pogopin_charger) failed\n");
 	}
 
 	return 0;

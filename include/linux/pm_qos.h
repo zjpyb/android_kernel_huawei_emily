@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_PM_QOS_H
 #define _LINUX_PM_QOS_H
 /* interface for the pm_qos_power infrastructure of the linux kernel.
@@ -6,7 +7,6 @@
  */
 #include <linux/plist.h>
 #include <linux/notifier.h>
-#include <linux/miscdevice.h>
 #include <linux/device.h>
 #include <linux/workqueue.h>
 
@@ -22,12 +22,13 @@ enum {
 	PM_QOS_MEMORY_THROUGHPUT_UP_THRESHOLD,
 #endif
 
-#ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
-	PM_QOS_ACPUDDR_LINK_GOVERNOR_LEVEL,
+#ifdef CONFIG_HISI_FREQ_LINK
+	PM_QOS_FREQ_LINK_LEVEL,
 #endif
 
 #ifdef CONFIG_HISI_NPUFREQ_PM_QOS
 	PM_QOS_HISI_NPU_FREQ_DNLIMIT,
+	PM_QOS_HISI_NPU_FREQ_UPLIMIT,
 #endif
 	/* insert new class ID */
 	PM_QOS_NUM_CLASSES,
@@ -46,17 +47,18 @@ enum pm_qos_flags_status {
 #define PM_QOS_NETWORK_LAT_DEFAULT_VALUE	(2000 * USEC_PER_SEC)
 #define PM_QOS_NETWORK_THROUGHPUT_DEFAULT_VALUE	0
 #define PM_QOS_MEMORY_BANDWIDTH_DEFAULT_VALUE	0
+#ifdef CONFIG_HISI_NPUFREQ_PM_QOS
+#define PM_QOS_HISI_NPU_FREQ_DNLIMIT_DEFAULT_VALUE	0
+#define PM_QOS_HISI_NPU_FREQ_UPLIMIT_DEFAULT_VALUE	20*1000
+#endif
 
 #ifdef CONFIG_DEVFREQ_GOV_PM_QOS
 #define PM_QOS_MEMORY_LATENCY_DEFAULT_VALUE	0
 #define PM_QOS_MEMORY_THROUGHPUT_DEFAULT_VALUE	0
 #define PM_QOS_MEMORY_THROUGHPUT_UP_THRESHOLD_DEFAULT_VALUE	30000
 #endif
-#ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
-#define PM_QOS_ACPUDDR_LINK_GOVERNOR_LEVEL_DEFAULT_VALUE 2
-#endif
-#ifdef CONFIG_HISI_NPUFREQ_PM_QOS
-#define PM_QOS_HISI_NPU_FREQ_DNLIMIT_DEFAULT_VALUE	0
+#ifdef CONFIG_HISI_FREQ_LINK
+#define PM_QOS_FREQ_LINK_LEVEL_DEFAULT_VALUE 2
 #endif
 #define PM_QOS_RESUME_LATENCY_DEFAULT_VALUE	0
 #define PM_QOS_LATENCY_TOLERANCE_DEFAULT_VALUE	0
@@ -134,8 +136,8 @@ enum pm_qos_req_action {
 	PM_QOS_REMOVE_REQ	/* Remove an existing request */
 };
 
-#ifdef CONFIG_HISI_CPUDDR_FREQ_LINK
-/* Action requested to ddr cpu freq link level*/
+#ifdef CONFIG_HISI_FREQ_LINK
+/* Action requested to freq link level*/
 enum {
 	LINK_LEVEL_0 = 0,
 	LINK_LEVEL_1,
@@ -180,8 +182,6 @@ int dev_pm_qos_add_notifier(struct device *dev,
 			    struct notifier_block *notifier);
 int dev_pm_qos_remove_notifier(struct device *dev,
 			       struct notifier_block *notifier);
-int dev_pm_qos_add_global_notifier(struct notifier_block *notifier);
-int dev_pm_qos_remove_global_notifier(struct notifier_block *notifier);
 void dev_pm_qos_constraints_init(struct device *dev);
 void dev_pm_qos_constraints_destroy(struct device *dev);
 int dev_pm_qos_add_ancestor_request(struct device *dev,
@@ -206,6 +206,7 @@ static inline s32 dev_pm_qos_requested_flags(struct device *dev)
 {
 	return dev->power.qos->flags_req->data.flr.flags;
 }
+
 static inline s32 dev_pm_qos_raw_read_value(struct device *dev)
 {
 	return IS_ERR_OR_NULL(dev->power.qos) ?
@@ -237,12 +238,6 @@ static inline int dev_pm_qos_add_notifier(struct device *dev,
 			{ return 0; }
 static inline int dev_pm_qos_remove_notifier(struct device *dev,
 					     struct notifier_block *notifier)
-			{ return 0; }
-static inline int dev_pm_qos_add_global_notifier(
-					struct notifier_block *notifier)
-			{ return 0; }
-static inline int dev_pm_qos_remove_global_notifier(
-					struct notifier_block *notifier)
 			{ return 0; }
 static inline void dev_pm_qos_constraints_init(struct device *dev)
 {

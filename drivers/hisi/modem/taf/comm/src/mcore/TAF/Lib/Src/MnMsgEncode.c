@@ -56,6 +56,9 @@
 #include  "MnMsgTs.h"
 #include "TafStdlib.h"
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+#include  "NasMultiInstanceApi.h"
+#endif
 
 
 VOS_UINT32 MSG_EncodeUserData(
@@ -1843,6 +1846,11 @@ VOS_UINT32   MN_MSG_Segment(
     MN_MSG_SUBMIT_STRU                  *pstSubmit;
     MN_MSG_UDH_CONCAT_8_STRU            *pstConcat_8;
     MN_MSG_USER_HEADER_TYPE_STRU        *pstUserHeader;
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    MODEM_ID_ENUM_UINT16                enModemId;
+
+    enModemId = NAS_MULTIINSTANCE_GetCurrInstanceModemId(WUEPS_PID_TAF);
+#endif
 
     if ((VOS_NULL_PTR == pstLongSubmit)
      || (VOS_NULL_PTR == pucNum)
@@ -1853,7 +1861,11 @@ VOS_UINT32   MN_MSG_Segment(
     }
 
     /*分段消息的属性填充并根据分段属性按submit TPDU格式编码*/
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     pstSubmit = (MN_MSG_SUBMIT_STRU *)PS_MEM_ALLOC(WUEPS_PID_TAF, sizeof(MN_MSG_SUBMIT_STRU));
+#else
+    pstSubmit = (MN_MSG_SUBMIT_STRU *)NAS_MULTIINSTANCE_MemAlloc(enModemId, WUEPS_PID_TAF, sizeof(MN_MSG_SUBMIT_STRU));
+#endif
     if (VOS_NULL_PTR == pstSubmit)
     {
         MN_ERR_LOG("MN_MSG_Segment: Fail to Alloc memory.");
@@ -1894,7 +1906,11 @@ VOS_UINT32   MN_MSG_Segment(
                    pstLongSubmit->stLongUserData.pucOrgData,
                    pstSubmit->stUserData.ulLen);
         ulRet = MSG_EncodeSubmit(pstSubmit, pstRawData);
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
         PS_MEM_FREE(WUEPS_PID_TAF, pstSubmit);
+#else
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSubmit);
+#endif
         return ulRet;
     }
 
@@ -1916,7 +1932,11 @@ VOS_UINT32   MN_MSG_Segment(
     if (ulUdhl >= (MN_MSG_MAX_8_BIT_LEN - 1))
     {
         MN_WARN_LOG("MN_MSG_Segment: the length of message is invalid.");
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
         PS_MEM_FREE(WUEPS_PID_TAF, pstSubmit);
+#else
+        NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSubmit);
+#endif
         return MN_ERR_CLASS_SMS_MSGLEN_OVERFLOW;
     }
 
@@ -1950,14 +1970,22 @@ VOS_UINT32   MN_MSG_Segment(
         ulRet = MSG_EncodeSubmit(pstSubmit, pstRawData);
         if ( MN_ERR_NO_ERROR != ulRet )
         {
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
             PS_MEM_FREE(WUEPS_PID_TAF, pstSubmit);
+#else
+            NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSubmit);
+#endif
             return ulRet;
         }
         pstConcat_8->ucSeqNum++;
         pstRawData++;
     }
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     PS_MEM_FREE(WUEPS_PID_TAF, pstSubmit);
+#else
+    NAS_MULTIINSTANCE_MemFree(enModemId, WUEPS_PID_TAF, pstSubmit);
+#endif
     return MN_ERR_NO_ERROR;
 }
 

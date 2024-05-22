@@ -84,6 +84,7 @@ typedef enum {
 	VIBRATOR,
 	FINGERPRINT_UD,
 	TOF,
+	TP_UD,
 	SENSOR_MAX
 }SENSOR_DETECT_LIST;
 
@@ -202,6 +203,7 @@ struct als_platform_data {
 	uint8_t als_phone_tp_colour;
 	uint8_t als_extend_data[SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE];
 	uint8_t is_bllevel_supported;
+	uint8_t als_always_open;
 };
 
 struct ps_platform_data {
@@ -380,6 +382,46 @@ struct fingerprint_platform_data {
 	GPIO_NUM_TYPE gpio_reset_sh;
 	uint16_t poll_interval;
 	uint16_t tp_hover_support;
+};
+struct tp_ud_algo_config {
+	uint16_t move_area_x_min;
+	uint16_t move_area_x_max;
+	uint16_t move_area_y_min;
+	uint16_t move_area_y_max;
+	uint16_t finger_area_x_min;
+	uint16_t finger_area_x_max;
+	uint16_t finger_area_y_min;
+	uint16_t finger_area_y_max;
+	uint16_t coor_scale;
+};
+
+struct tp_ud_platform_data {
+	struct sensor_combo_cfg cfg;
+	uint16_t reg;
+	GPIO_NUM_TYPE gpio_irq;
+	GPIO_NUM_TYPE gpio_irq_sh;
+	GPIO_NUM_TYPE gpio_cs;
+	uint16_t gpio_irq_pull_up_status;
+	uint16_t pressure_support;
+	uint16_t anti_forgery_support;
+	uint32_t ic_type;
+	uint32_t hover_enable;
+	uint32_t i2c_max_speed_hz;
+	uint32_t spi_max_speed_hz;
+	uint8_t spi_mode;
+	uint16_t fw_power_config_reg;
+	uint16_t fw_touch_data_reg;
+	uint16_t fw_touch_command_reg;
+	uint16_t fw_addr_3;
+	uint16_t fw_addr_4;
+	uint16_t fw_addr_5;
+	uint16_t fw_addr_6;
+	uint16_t fw_addr_7;
+	uint16_t tp_sensorhub_irq_flag;
+	uint16_t tp_sensor_spi_sync_cs_low_delay_us;
+	uint16_t soft_reset_support;
+	struct tp_ud_algo_config algo_conf;
+	uint16_t touch_report_restore_support;
 };
 
 struct key_platform_data {

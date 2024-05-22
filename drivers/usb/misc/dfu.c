@@ -16,12 +16,6 @@
 #include <linux/mutex.h>
 #include <uapi/linux/dfu.h>
 
-#define DFU_UNIT_TEST
-
-#ifdef DFU_UNIT_TEST
-struct usb_dfu *dfu_test;
-#endif
-
 /*
  * dfu class requests
  */
@@ -56,6 +50,7 @@ struct usb_dfu *dfu_test;
 /*
  * dfu state
  */
+#define DFU_STATE_LEN				1
 /* #define	DFU_STATE_APP_IDLE			0 */
 /* #define	DFU_STATE_APP_DETACH			1 */
 #define	DFU_STATE_DFU_IDLE			2
@@ -98,6 +93,7 @@ enum {
 	DUF_MODE_PROCOTOL = 2,
 };
 
+#define DFU_CONTROL_MAXPACKET 512
 struct usb_dfu {
 	struct miscdevice dfu_dev;
 	struct usb_interface *usb_intf;
@@ -115,6 +111,7 @@ struct usb_dfu {
 	unsigned int detach_timeout;
 
 	void *load_buf;
+	u8 control_data[DFU_CONTROL_MAXPACKET];
 };
 
 static DEFINE_MUTEX(dfu_access_lock);
@@ -154,7 +151,7 @@ static int dfu_detach(struct usb_dfu *dfu)
 	return 0;
 }
 
-static int dfu_getstatus(struct usb_dfu *dfu, void *data)
+static int dfu_getstatus(struct usb_dfu *dfu, struct dfu_status *status)
 {
 	ssize_t result = 0;
 	struct usb_device *usb_dev = interface_to_usbdev(dfu->usb_intf);
@@ -164,12 +161,15 @@ static int dfu_getstatus(struct usb_dfu *dfu, void *data)
 			USB_REQ_DFU_GETSTATUS,
 			USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 			0, usb_intf->cur_altsetting->desc.bInterfaceNumber,
-			data, 6, 5000);
+			&dfu->control_data, sizeof(struct dfu_status), 5000);
 	if (result < 0) {
 		dev_err(&dfu->usb_intf->dev, "%s: USB receive error: %zd\n",
 				__func__, result);
 		return result;
 	}
+
+	if (result == sizeof(struct dfu_status))
+		memcpy(status, &dfu->control_data, sizeof(struct dfu_status));
 
 	return result;
 }
@@ -215,10 +215,10 @@ static int dfu_abort(struct usb_dfu *dfu)
 	return result;
 }
 
-static int dfu_getstate(struct usb_dfu *dfu, void *data)
+#ifdef SUPPORT_DFU_GETSTATE
+static int dfu_getstate(struct usb_dfu *dfu, u8 *state)
 {
 	ssize_t result = 0;
-	char state;
 	struct usb_device *usb_dev = interface_to_usbdev(dfu->usb_intf);
 	struct usb_interface *usb_intf = dfu->usb_intf;
 
@@ -226,9 +226,7 @@ static int dfu_getstate(struct usb_dfu *dfu, void *data)
 			USB_REQ_DFU_GETSTATE,
 			USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
 			0, usb_intf->cur_altsetting->desc.bInterfaceNumber,
-			&state, 1, 5000);
-
-	((char *)data)[0] = state;
+			&dfu->control_data, DFU_STATE_LEN, 5000);
 
 	if (result < 0) {
 		dev_err(&dfu->usb_intf->dev, "%s: USB receive error: %zd\n",
@@ -236,8 +234,12 @@ static int dfu_getstate(struct usb_dfu *dfu, void *data)
 		return result;
 	}
 
+	if (result == DFU_STATE_LEN)
+		*state = dfu->control_data[0];
+
 	return result;
 }
+#endif
 
 static ssize_t dfu_download(struct usb_dfu *dfu, void *data,
 		size_t size, int blocknum)
@@ -451,7 +453,7 @@ static ssize_t dfu_write(struct file *file, const char __user *buf,
 {
 	struct miscdevice *miscdev = file->private_data;
 	struct usb_dfu *dfu = miscdev_to_dfu(miscdev);
-	void *buffer;
+	void *buffer = NULL;
 	int ret;
 
 	if (!buf) {
@@ -740,7 +742,7 @@ static int dfu_parse_descriptor(struct usb_dfu *dfu)
 	struct usb_device *udev = dfu->usb_dev;
 	struct device *dev = &udev->dev;
 	struct usb_host_interface *interface = intf->cur_altsetting;
-	struct dfu_descriptor *dfu_desc;
+	struct dfu_descriptor *dfu_desc = NULL;
 	char *p;
 
 	if (usb_get_extra_descriptor(interface, DFU_DT_FUNC, &dfu_desc)) {
@@ -849,10 +851,6 @@ static int usbdfu_probe(struct usb_interface *intf,
 		return ret;
 	}
 
-#ifdef DFU_UNIT_TEST
-	dfu_test = dfu;
-#endif
-
 	return 0;
 }
 
@@ -877,11 +875,7 @@ static void usbdfu_disconnect(struct usb_interface *intf)
 	}
 
 	mutex_unlock(&dfu_access_lock);
-#ifdef DFU_UNIT_TEST
-	dfu_test = NULL;
-#endif
 }
-
 
 /* Treat USB reset pretty much the same as suspend/resume */
 static int usbdfu_pre_reset(struct usb_interface *intf)
@@ -894,7 +888,6 @@ static int usbdfu_post_reset(struct usb_interface *intf)
 {
 	return 0;
 }
-
 
 static const struct usb_device_id dfu_usb_ids[] = {
 	{
@@ -947,92 +940,3 @@ module_exit(dfu_exit);
 MODULE_AUTHOR("liuyu <liuyu712@hisilicon.com>");
 MODULE_DESCRIPTION("driver for dfu");
 MODULE_LICENSE("GPL");
-
-
-#ifdef DFU_UNIT_TEST
-
-void dfu_test_dfu_detach(void)
-{
-	int ret = 0;
-
-	if (!dfu_test)
-		return;
-
-	ret = dfu_detach(dfu_test);
-	pr_info("[%s]ret %d\n", __func__, ret);
-}
-
-void dfu_test_dfu_getstatus(void)
-{
-	struct dfu_status status;
-	int ret = 0;
-
-	if (!dfu_test)
-		return;
-
-	ret = dfu_getstatus(dfu_test, &status);
-	pr_info("[%s]ret %d\n", __func__, ret);
-
-	pr_info("status: %02x %02x %02x %02x %02x %02x\n", status.bStatus,
-		status.bwPollTimeout0, status.bwPollTimeout1,
-		status.bwPollTimeout2, status.bState, status.iString);
-}
-
-void dfu_test_dfu_clrstatus(void)
-{
-	int ret = 0;
-
-	if (!dfu_test)
-		return;
-
-	ret = dfu_clearstatus(dfu_test);
-	pr_info("[%s]ret %d\n", __func__, ret);
-}
-
-void dfu_test_dfu_abort(void)
-{
-	int ret = 0;
-
-	if (!dfu_test)
-		return;
-
-	ret = dfu_abort(dfu_test);
-	pr_info("[%s]ret %d\n", __func__, ret);
-}
-
-void dfu_test_dfu_getstate(void)
-{
-	char state;
-	int ret = 0;
-
-	if (!dfu_test)
-		return;
-
-	ret = dfu_getstate(dfu_test, &state);
-	pr_info("[%s]ret %d, state %d\n", __func__, ret, state);
-}
-
-char data[512];
-void dfu_test_dfu_download(void)
-{
-	int ret = 0;
-
-	if (!dfu_test)
-		return;
-
-	ret = dfu_download(dfu_test, data, 512, 1);
-	pr_info("[%s]ret %d\n", __func__, ret);
-}
-
-void dfu_test_dfu_upload(void)
-{
-	int ret = 0;
-
-	if (!dfu_test)
-		return;
-
-	ret = dfu_upload(dfu_test, data, 512, 1);
-	pr_info("[%s]ret %d\n", __func__, ret);
-}
-
-#endif

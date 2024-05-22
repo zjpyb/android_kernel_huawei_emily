@@ -86,8 +86,10 @@ VOS_VOID RNIC_InitCtx(
 
     TAF_MEM_SET_S(g_astRnicStats, sizeof(g_astRnicStats), 0x00, sizeof(g_astRnicStats));
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /* 初始化RNIC下行数据到Linux网络协议栈API模式信息 */
     RNIC_InitRnicNetInterfaceCfg(pstRnicCtx);
+#endif
 
     RNIC_InitUsbTetherInfo();
 
@@ -112,6 +114,7 @@ VOS_VOID RNIC_InitCtx(
 
         pstRnicCtx->astSpecCtx[ucIndex].enRatType        = IMSA_RNIC_IMS_RAT_TYPE_BUTT;
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
         if (VOS_NULL_PTR != pstRnicCtx->astSpecCtx[ucIndex].pstPriv)
         {
             pstRnicCtx->astSpecCtx[ucIndex].pstPriv->stNapi.weight = RNIC_GET_NAPI_WEIGHT();
@@ -121,6 +124,7 @@ VOS_VOID RNIC_InitCtx(
         IMM_ZcQueueHeadInit(RNIC_GET_PollBuff_QUE(ucIndex));
 
         pstRnicCtx->astSpecCtx[ucIndex].enNapiRcvIf      = RNIC_NAPI_GRO_RCV_IF;
+#endif
     }
 
     /* 初始化RNIC定时器上下文 */
@@ -301,6 +305,7 @@ VOS_VOID RNIC_InitIpfMode(
     return;
 }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 
 VOS_VOID RNIC_CheckNetIfCfgValid(
     RNIC_CTX_STRU                      *pstRnicCtx
@@ -381,6 +386,7 @@ VOS_VOID RNIC_InitRnicNetInterfaceCfg(
 
     return;
 }
+#endif
 
 
 VOS_VOID RNIC_InitUsbTetherInfo(VOS_VOID)
@@ -531,6 +537,7 @@ VOS_SEM RNIC_GetResetSem(VOS_VOID)
     return g_stRnicCtx.hResetSem;
 }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 
 VOS_UINT32 RNIC_UpdateRmnetNapiRcvIfByName(VOS_INT32 ulRmNetId)
 {
@@ -580,4 +587,5 @@ VOS_VOID RNIC_UpdateIpv6RmnetNapiRcvIfDefault(VOS_INT32 ulRmNetId)
 
     return;
 }
+#endif
 

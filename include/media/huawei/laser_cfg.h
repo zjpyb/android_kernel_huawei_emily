@@ -1,4 +1,26 @@
-
+/*
+ *  Hisilicon K3 SOC camera driver source file
+ *
+ *  Copyright (C) Huawei Technology Co., Ltd.
+ *
+ * Author:
+ * Email:
+ * Date:	  2013-12-12
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 
 #ifndef __HW_ALAN_KERNEL_HWCAM_LASER_CFG_H__
@@ -113,7 +135,6 @@ typedef struct _tag_hwlaser_info
 
 typedef struct _tag_hwlaser_status_t
 {
-    // char                                        product_name[HWLASER_NAME_SIZE];
     char                                        name[HWLASER_NAME_SIZE];
     int                                         status; // 0-> ok; other: erro
 }hwlaser_status_t;
@@ -437,21 +458,6 @@ typedef struct _tag_hwlaser_roi_full_t {
      **/
 } hwlaser_roi_full_t;
 
-
-typedef uint8_t RoiStatus_t;
-#define HWLASER_ROISTATUS_NOT_VALID                 ((RoiStatus_t)  0)
-#define HWLASER_ROISTATUS_VALID_NOT_LAST            ((RoiStatus_t)  1)
-#define HWLASER_ROISTATUS_VALID_LAST                ((RoiStatus_t)  2)
-
-#define HWLASER_MAX_RANGE_RESULTS              4
-
-typedef uint32_t FixPoint1616_t;
-
-
-
-
-
-
 typedef struct _tag_hwlaser_ranging_measurement_data {
 
     uint8_t RangeQualityLevel;
@@ -702,18 +708,11 @@ typedef struct _tag_hw_laser_ctrl {
     struct v4l2_fh *fh;
 }hw_laser_ctrl_t;
 
-//extern int laser_probe(struct i2c_client *client, const struct i2c_device_id *id);
-
-//extern int laser_remove(struct i2c_client *client);
-
-extern long stmvl53l0_laser_ioctl(void *hw_data, unsigned int cmd, void  *p); 
-
+extern long stmvl53l0_laser_ioctl(void *hw_data, unsigned int cmd, void  *p);
 
 #define HWLASER_IOCTL_GET_INFO                 _IOR('S', BASE_VIDIOC_PRIVATE + 1, hwlaser_info_t)
 
 #define HWLASER_IOCTL_CONFIG               	_IOWR('A', BASE_VIDIOC_PRIVATE + 2, hwlaser_config_data_t)
-
-
 
 #define HWLASER_IOCTL_POWERON  _IO('B', BASE_VIDIOC_PRIVATE + 3)
 #define HWLASER_IOCTL_MATCHID                  _IOWR('C', BASE_VIDIOC_PRIVATE + 4, hwlaser_status_t)
@@ -726,16 +725,6 @@ extern long stmvl53l0_laser_ioctl(void *hw_data, unsigned int cmd, void  *p);
 #define HWLASER_IOCTL_STOP                     _IO('J', BASE_VIDIOC_PRIVATE + 11)
 #define HWLASER_IOCTL_MZ_DATA                  _IOWR('K', BASE_VIDIOC_PRIVATE + 12, hwlaser_RangingData_t)
 #define HWLASER_IOCTL_PERFORM_CALIBRATION      _IOWR('L', BASE_VIDIOC_PRIVATE + 13, hwlaser_ioctl_perform_calibration_t)
-
-
-
-
-
-
-
-
-
-
 
 #endif // __HW_ALAN_KERNEL_HWCAM_LASER_CFG_H__
 

@@ -59,6 +59,7 @@ int kirin_pcie_rescan_ep(u32 rc_idx);
 int pcie_ep_link_ltssm_notify(u32 rc_id, u32 link_status);
 int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(void* data),
 				int (*poweroff)(void* data), void* data);
+void kirin_pcie_apb_info_dump(void);
 
 #else
 static inline int kirin_pcie_register_event(struct kirin_pcie_register_event *reg)
@@ -91,12 +92,12 @@ static inline int kirin_pcie_enumerate(u32 rc_idx)
 	return -EINVAL;
 }
 
-int kirin_pcie_remove_ep(u32 rc_idx)
+static inline int kirin_pcie_remove_ep(u32 rc_idx)
 {
 	return -EINVAL;
 }
 
-int kirin_pcie_rescan_ep(u32 rc_idx)
+static inline int kirin_pcie_rescan_ep(u32 rc_idx)
 {
 	return -EINVAL;
 }
@@ -110,6 +111,11 @@ static inline int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(vo
 				int (*poweroff)(void* data), void* data)
 {
 	return -EINVAL;
+}
+
+static inline void kirin_pcie_apb_info_dump(void)
+{
+	return;
 }
 
 #endif /* CONFIG_PCIE_KIRIN */

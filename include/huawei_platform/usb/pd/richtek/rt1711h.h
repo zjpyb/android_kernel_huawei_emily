@@ -198,7 +198,8 @@
 	pd_dbg_info("%s() line-%d: " format,\
 	__func__, __LINE__, ##args)
 #else
-#define RT1711_INFO(foramt, args...)
+#define RT1711_INFO(format, args...) \
+	pr_info("%s:" format, __func__, ##args)
 #endif
 
 #endif /* #ifndef __LINUX_RT1711H_H */

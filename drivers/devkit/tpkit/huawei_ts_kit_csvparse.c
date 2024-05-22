@@ -139,9 +139,10 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name, int32_t  *data, int
 		goto exit_free;
 	}
 
-	buf = (char *)kzalloc(stat.size + 1, GFP_KERNEL);
-	if(NULL == buf) {
-		TS_LOG_ERR("%s: kzalloc %lld bytes failed.\n", __func__, stat.size);
+	buf = (char *)vmalloc(stat.size + 1);
+	if (buf == NULL) {
+		TS_LOG_ERR("%s: vmalloc %lld bytes failed\n", __func__,
+			stat.size);
 		ret = -ESRCH;
 		goto exit_free;
 	}
@@ -185,11 +186,8 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name, int32_t  *data, int
 exit_free:
 	TS_LOG_INFO("%s exit free\n", __func__);
 	set_fs(org_fs);
-	if(buf) {
-		TS_LOG_INFO("kfree buf\n");
-		kfree(buf);
-		buf = NULL;
-	}
+	vfree(buf);
+	buf = NULL;
 
 	if (!IS_ERR_OR_NULL(fp)) {		//fp open fail not means fp is NULL, so free fp may cause Uncertainty
 		TS_LOG_INFO("filp close\n");

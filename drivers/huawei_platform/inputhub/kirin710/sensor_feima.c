@@ -12,6 +12,7 @@
 
 #define MIN_CAP_PROX_MODE 0
 #define MAZ_CAP_PROX_MODE 2
+#define MAR_PHONE_TYPE 47
 #define ONE_MILLION 1000000
 
 struct class *sensors_class;
@@ -908,50 +909,6 @@ static ssize_t store_ois_ctrl(struct device *dev, struct device_attribute *attr,
 	return size;
 }
 
-int send_als_ud_data_to_mcu(int tag, uint32_t subcmd, const void *data, int length, bool is_recovery)
-{
-	int ret;
-	write_info_t pkg_ap;
-	pkt_parameter_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-
-	pkg_ap.tag = tag;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	cpkt.subcmd = subcmd;
-	pkg_ap.wr_buf = &hd[1];
-	pkg_ap.wr_len = length + SUBCMD_LEN;
-	memcpy(cpkt.para, data, length);
-
-	if (is_recovery)
-		return write_customize_cmd(&pkg_ap, NULL, false);
-
-	ret = write_customize_cmd(&pkg_ap, NULL, true);
-	if (ret) {
-		hwlog_err("send als ud data to mcu fail,ret=%d\n", ret);
-		return -1;
-	}
-
-	return 0;
-}
-void save_light_to_sensorhub(uint32_t mipi_level, uint32_t bl_level)
-{
-	uint64_t timestamp = 0;
-	struct timespec64 ts;
-	uint32_t para[3];
-
-	if (als_data.is_bllevel_supported) {
-		get_monotonic_boottime64(&ts);
-		timestamp = ((unsigned long long)(ts.tv_sec * NSEC_PER_SEC) +
-			(unsigned long long)ts.tv_nsec) / ONE_MILLION;
-		para[0] = mipi_level;
-		para[1] = bl_level;
-		para[2] = (uint64_t)timestamp;
-		send_als_ud_data_to_mcu(TAG_ALS, SUB_CMD_UPDATE_BL_LEVEL,
-				(const void *)&(para), sizeof(para), false);
-	}
-}
 /*files create for every sensor*/
 DEVICE_ATTR(enable, 0660, show_enable, store_enable);
 DEVICE_ATTR(set_delay, 0660, show_set_delay, store_set_delay);
@@ -1302,6 +1259,60 @@ static ssize_t show_sleeve_test_threshhold(struct device *dev, struct device_att
 	hwlog_info("sleeve_test get threshhold fail, phone_color(%d)\n", phone_color);
 	return -1;
 }
+
+int send_als_ud_data_to_mcu(int tag, uint32_t subcmd, const void *data, int length, bool is_recovery)
+{
+	int ret;
+	write_info_t pkg_ap;
+	read_info_t pkg_mcu;
+	pkt_parameter_req_t cpkt;
+	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+
+	memset(&pkg_ap, 0, sizeof(pkg_ap));
+	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
+
+	pkg_ap.tag = tag;
+	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
+	cpkt.subcmd = subcmd;
+	pkg_ap.wr_buf = &hd[1];
+	pkg_ap.wr_len = length+SUBCMD_LEN;
+	memcpy(cpkt.para, data, length);
+
+	if (is_recovery) {
+		return write_customize_cmd(&pkg_ap, NULL, false);
+	}
+
+	ret = write_customize_cmd(&pkg_ap,  &pkg_mcu, true);
+	if (ret) {
+		hwlog_err("send tag %d calibrate data to mcu fail,ret=%d\n", tag, ret);
+		return -1;
+	}
+	if (pkg_mcu.errno != 0) {
+		hwlog_err("send tag %d  calibrate data fail,err=%d\n", tag, pkg_mcu.errno);
+		return -1;
+	}
+
+	return 0;
+}
+
+void save_light_to_sensorhub(uint32_t mipi_level, uint32_t bl_level)
+{
+	uint64_t timestamp = 0;
+	struct timespec64 ts;
+	uint32_t para[3];
+
+	if (als_data.is_bllevel_supported) {
+		get_monotonic_boottime64(&ts);
+		timestamp = ((unsigned long long)(ts.tv_sec * NSEC_PER_SEC) +
+				(unsigned long long)ts.tv_nsec) / ONE_MILLION;
+		para[0] = (uint32_t)mipi_level;
+		para[1] = (uint32_t)bl_level;
+		para[2] = (uint32_t)timestamp;
+		send_als_ud_data_to_mcu(TAG_ALS, SUB_CMD_UPDATE_BL_LEVEL,
+				(const void *)&(para), sizeof(para), false);
+	}
+}
+
 
 static DEVICE_ATTR(sleeve_test_prepare, 0220, NULL, store_sleeve_test_prepare);
 static DEVICE_ATTR(sleeve_test_threshhold, 0440, show_sleeve_test_threshhold, NULL);

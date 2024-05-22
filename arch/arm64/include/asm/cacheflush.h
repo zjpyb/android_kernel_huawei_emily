@@ -40,9 +40,9 @@
  *	the implementation assumes non-aliasing VIPT D-cache and (aliasing)
  *	VIPT or ASID-tagged VIVT I-cache.
  *
- *	flush_cache_all()
+ *  flush_cache_all()
  *
- *	 	Unconditionally clean and invalidate the entire cache.
+ *      Unconditionally clean and invalidate the entire cache.
  *
  *	flush_cache_mm(mm)
  *
@@ -70,12 +70,14 @@
  *		- size   - region size
  */
 extern void flush_cache_all(void);
-extern void flush_cache_range(struct vm_area_struct *vma, unsigned long start, unsigned long end);
 extern void flush_icache_range(unsigned long start, unsigned long end);
 extern void __flush_dcache_area(void *addr, size_t len);
+extern void __inval_dcache_area(void *addr, size_t len);
 extern void __clean_dcache_area_poc(void *addr, size_t len);
+extern void __clean_dcache_area_pop(void *addr, size_t len);
 extern void __clean_dcache_area_pou(void *addr, size_t len);
 extern long __flush_cache_user_range(unsigned long start, unsigned long end);
+extern void sync_icache_aliases(void *kaddr, unsigned long len);
 
 static inline void flush_cache_mm(struct mm_struct *mm)
 {
@@ -83,6 +85,11 @@ static inline void flush_cache_mm(struct mm_struct *mm)
 
 static inline void flush_cache_page(struct vm_area_struct *vma,
 				    unsigned long user_addr, unsigned long pfn)
+{
+}
+
+static inline void flush_cache_range(struct vm_area_struct *vma,
+				     unsigned long start, unsigned long end)
 {
 }
 
@@ -153,10 +160,6 @@ static inline void flush_cache_vunmap(unsigned long start, unsigned long end)
 {
 }
 
-int set_memory_ro(unsigned long addr, int numpages);
-int set_memory_rw(unsigned long addr, int numpages);
-int set_memory_x(unsigned long addr, int numpages);
-int set_memory_nx(unsigned long addr, int numpages);
-int set_memory_valid(unsigned long addr, unsigned long size, int enable);
+int set_memory_valid(unsigned long addr, int numpages, int enable);
 
 #endif

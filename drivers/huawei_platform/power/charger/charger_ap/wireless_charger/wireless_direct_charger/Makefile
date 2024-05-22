@@ -1,1 +1,1 @@
-obj-$(CONFIG_WIRELESS_CHARGER) += wireless_sc.o wireless_direct_charger.o
+obj-$(CONFIG_WIRELESS_CHARGER) += wireless_sc.o wireless_direct_charger.o wireless_dc_error_handle.o

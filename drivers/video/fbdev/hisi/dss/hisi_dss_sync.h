@@ -159,7 +159,7 @@ int hisi_dss_inc_timeline(struct hisi_dss_timeline *tl, int increment)
 {
 	int rc;
 
-	if (!tl) {
+	if (tl == NULL) {
 		pr_err("invalid parameters\n");
 		return -EINVAL;
 	}

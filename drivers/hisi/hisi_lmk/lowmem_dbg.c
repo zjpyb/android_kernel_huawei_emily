@@ -20,8 +20,12 @@
 #include <linux/version.h>
 #include <linux/hisi/page_tracker.h>
 #include <log/log_usertype.h>
+#ifdef CONFIG_SLUB
 #include <linux/slub_def.h>
-
+#endif
+#ifdef CONFIG_HISI_PAGE_TRACE
+#include <linux/hisi/mem_trace.h>
+#endif
 #include "lowmem_killer.h"
 
 #define LMK_PRT_TSK_RSS 10000
@@ -38,22 +42,12 @@ static DEFINE_MUTEX(lowmem_dump_mutex);
 static DECLARE_WORK(lowmem_dbg_wk, lowmem_dump);
 static DECLARE_WORK(lowmem_dbg_verbose_wk, lowmem_dump);
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
-static const char state_to_char[] = TASK_STATE_TO_CHAR_STR;
-static char task_state_char(unsigned long state)
-{
-	int bit = state ? __ffs(state) + 1 : 0;
-
-	return bit < sizeof(state_to_char) - 1 ? state_to_char[bit] : '?'; /*lint !e574 */
-}
-#endif
-
 static void dump_tasks(bool verbose)
 {
-	struct task_struct *p;
-	struct task_struct *task;
-	short tsk_oom_adj = 0;
-	unsigned long tsk_nr_ptes = 0;
+	struct task_struct *p = NULL;
+	struct task_struct *task = NULL;
+	short tsk_oom_adj;
+	unsigned long tsk_nr_ptes;
 	char task_state = 0;
 	char frozen_mark = ' ';
 
@@ -80,11 +74,7 @@ static void dump_tasks(bool verbose)
 		}
 
 		tsk_nr_ptes = (unsigned long)atomic_long_read(&task->mm->nr_ptes);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 		task_state = task_state_to_char(task);
-#else
-		task_state = task_state_char(task->state);
-#endif
 		frozen_mark = frozen(task) ? '*' : ' ';
 
 		pr_info("[%5d] %5d %5d %8lu %6lu %5lu %5lu %5hd %c %s%c\n",
@@ -95,7 +85,7 @@ static void dump_tasks(bool verbose)
 			tsk_oom_adj,
 			task_state,
 			task->comm,
-			frozen_mark); /*lint !e1058*/
+			frozen_mark);
 		task_unlock(task);
 	}
 	rcu_read_unlock();
@@ -103,27 +93,33 @@ static void dump_tasks(bool verbose)
 
 static void lowmem_dump(struct work_struct *work)
 {
-	bool verbose;
+	bool verbose = false;
 	int logusertype = get_logusertype_flag();
 
 	/*
-	* for internal debug, we hope print more lowmemory info.
-	*/
+	 * for internal debug, we hope print more lowmemory info.
+	 */
 	if (logusertype == BETA_USER || logusertype == OVERSEA_USER)
 		verbose = true;
 	else
 		verbose = (work == &lowmem_dbg_verbose_wk) ? true : false;
 
 	mutex_lock(&lowmem_dump_mutex);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
-        show_mem(SHOW_MEM_FILTER_NODES, NULL);
-#else
-	show_mem(SHOW_MEM_FILTER_NODES);
-#endif
+	show_mem(SHOW_MEM_FILTER_NODES, NULL);
 	dump_tasks(verbose);
 	ksm_show_stats();
+#ifdef CONFIG_ION
 	hisi_ion_memory_info(verbose);
+#endif
+#ifdef CONFIG_SLABINFO
 	show_slab(verbose);
+#endif
+#ifdef CONFIG_HISI_PAGE_TRACE
+	if (verbose) {
+		hisi_mem_stats_show();
+		hisi_vmalloc_detail_show();
+	}
+#endif
 	if (verbose)
 		page_tracker_wake_up();
 	mutex_unlock(&lowmem_dump_mutex);
@@ -143,10 +139,10 @@ void hisi_lowmem_dbg(short oom_score_adj)
 
 void hisi_lowmem_dbg_timeout(struct task_struct *p, struct task_struct *leader)
 {
-	struct task_struct *t;
+	struct task_struct *t = NULL;
 
 	pr_info("timeout '%s' (%d)\n", leader->comm, leader->pid);
-	for_each_thread(p, t) { /*lint !e64 */
+	for_each_thread(p, t) {
 		pr_info("  pid=%d tgid=%d %s mm=%d frozen=%d 0x%lx 0x%x\n",
 			t->pid, t->tgid, t->comm, t->mm ? 1 : 0,
 			frozen(t), t->state, t->flags);

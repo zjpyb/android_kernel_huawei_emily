@@ -24,8 +24,10 @@
 
 #define MNTN_DUMP_TAG "mntn_dump"
 #define HISI_PMIC_TAG "pmic"
+#define HISI_SUB_PMIC_TAG "sub_pmic"
 #define HISI_PMIC_MNTN_TAG "pmic_mntn"
 #define HISI_PMIC_REGULATOR_TAG "pmic_regulator"
+#define HISI_SUB_PMIC_REGULATOR_TAG "sub_pmic_regulator"
 #define HISI_PMIC_REGULATOR_DEBUG_TAG "pmic_regulator_debug"
 #define HISI_SPMI_TAG "spmi"
 #define HISI_SPMI_DBGFS_TAG "spmi_dbgfs"

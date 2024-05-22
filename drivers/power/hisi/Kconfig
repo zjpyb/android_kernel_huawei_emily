@@ -7,6 +7,10 @@ config HISI_BCI_BATTERY
         bool "hisi bci battery"
         default n
 
+config HISI_CHARGE_TIME
+        bool "Calculate the remaining time of charging"
+        default n
+
 source "drivers/power/hisi/charger/Kconfig"
 source "drivers/power/hisi/coul/Kconfig"
 source "drivers/power/hisi/soh/Kconfig"

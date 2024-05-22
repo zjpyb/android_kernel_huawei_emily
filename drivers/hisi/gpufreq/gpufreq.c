@@ -16,6 +16,7 @@
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <linux/of.h>
+#include <securec.h>
 
 #include <linux/hisi/hisi_mailbox.h>
 #include <linux/hisi/hisi_rproc.h>

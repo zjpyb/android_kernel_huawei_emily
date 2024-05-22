@@ -1,3 +1,21 @@
+/*
+ * huawei_charger_power_interface.c
+ *
+ * interface for power module
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/device.h>
@@ -12,14 +30,12 @@
 #define HWLOG_TAG power_if
 HWLOG_REGIST();
 
-
 struct power_if_device_info *g_power_if_info;
 
 static DEFINE_MUTEX(g_power_if_sysfs_get_mutex);
 static DEFINE_MUTEX(g_power_if_sysfs_set_mutex);
 
-
-static const char * const power_if_op_user_table[] = {
+static const char * const power_if_op_user_table[POWER_IF_OP_USER_END] = {
 	[POWER_IF_OP_USER_DEFAULT] = "default",
 	[POWER_IF_OP_USER_RC] = "rc",
 	[POWER_IF_OP_USER_HIDL] = "hidl",
@@ -34,36 +50,32 @@ static const char * const power_if_op_user_table[] = {
 	[POWER_IF_OP_USER_APP] = "app",
 	[POWER_IF_OP_USER_SHELL] = "shell",
 	[POWER_IF_OP_USER_KERNEL] = "kernel",
+	[POWER_IF_OP_USER_BSOH] = "bsoh",
 };
 
-static const char * const power_if_op_type_table[] = {
+static const char * const power_if_op_type_table[POWER_IF_OP_TYPE_END] = {
 	[POWER_IF_OP_TYPE_DCP] = "dcp",
-	[POWER_IF_OP_TYPE_DCP_SH] = "dcp_sh",
 	[POWER_IF_OP_TYPE_OTG] = "otg",
-	[POWER_IF_OP_TYPE_FCP] = "fcp",
-	[POWER_IF_OP_TYPE_FCP_AUX] = "fcp_aux",
+	[POWER_IF_OP_TYPE_HVC] = "hvc",
 	[POWER_IF_OP_TYPE_PD] = "pd",
-	[POWER_IF_OP_TYPE_PD_AUX] = "pd_aux",
 	[POWER_IF_OP_TYPE_LVC] = "lvc",
-	[POWER_IF_OP_TYPE_LVC_AUX] = "lvc_aux",
-	[POWER_IF_OP_TYPE_LVC_SH] = "lvc_sh",
-	[POWER_IF_OP_TYPE_LVC_AUX_SH] = "lvc_aux_sh",
 	[POWER_IF_OP_TYPE_SC] = "sc",
-	[POWER_IF_OP_TYPE_SC_AUX] = "sc_aux",
-	[POWER_IF_OP_TYPE_SC_SH] = "sc_sh",
-	[POWER_IF_OP_TYPE_SC_AUX_SH] = "sc_aux_sh",
 	[POWER_IF_OP_TYPE_WL] = "wl",
-	[POWER_IF_OP_TYPE_WL_LVC] = "wl_lvc",
 	[POWER_IF_OP_TYPE_WL_SC] = "wl_sc",
-	[POWER_IF_OP_TYPE_WL_REVERSE] = "wl_reverse",
 	[POWER_IF_OP_TYPE_ALL] = "all",
 };
 
-static const char * const power_if_sysfs_type_table[] = {
+static const char * const power_if_sysfs_type_table[POWER_IF_SYSFS_END] = {
 	[POWER_IF_SYSFS_ENABLE_CHARGER] = "enable_charger",
 	[POWER_IF_SYSFS_VBUS_IIN_LIMIT] = "iin_limit",
+	[POWER_IF_SYSFS_BATT_ICHG_LIMIT] = "ichg_limit",
+	[POWER_IF_SYSFS_BATT_ICHG_RATIO] = "ichg_ratio",
+	[POWER_IF_SYSFS_BATT_VTERM_DEC] = "vterm_dec",
+	[POWER_IF_SYSFS_RT_TEST_TIME] = "rt_test_time",
+	[POWER_IF_SYSFS_RT_TEST_RESULT] = "rt_test_result",
+	[POWER_IF_SYSFS_HOTA_IIN_LIMIT] = "hota_iin_limit",
+	[POWER_IF_SYSFS_STARTUP_IIN_LIMIT] = "startup_iin_limit",
 };
-
 
 static const char *power_if_get_op_user_name(unsigned int index)
 {
@@ -94,11 +106,11 @@ static int power_if_get_op_user(const char *str)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(power_if_op_user_table); i++) {
-		if (!strncmp(str, power_if_op_user_table[i], strlen(str)))
+		if (!strcmp(str, power_if_op_user_table[i]))
 			return i;
 	}
 
-	hwlog_err("invalid user_str(%s)\n", str);
+	hwlog_err("invalid user_str=%s\n", str);
 	return -1;
 }
 
@@ -107,11 +119,11 @@ static int power_if_get_op_type(const char *str)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(power_if_op_type_table); i++) {
-		if (!strncmp(str, power_if_op_type_table[i], strlen(str)))
+		if (!strcmp(str, power_if_op_type_table[i]))
 			return i;
 	}
 
-	hwlog_err("invalid type_str(%s)\n", str);
+	hwlog_err("invalid type_str=%s\n", str);
 	return -1;
 }
 
@@ -120,7 +132,7 @@ static int power_if_check_op_user(unsigned int index)
 	if ((index >= POWER_IF_OP_USER_BEGIN) && (index < POWER_IF_OP_USER_END))
 		return 0;
 
-	hwlog_err("invalid user(%d)\n", index);
+	hwlog_err("invalid user=%d\n", index);
 	return -1;
 }
 
@@ -129,7 +141,7 @@ static int power_if_check_op_type(unsigned int index)
 	if ((index >= POWER_IF_OP_TYPE_BEGIN) && (index < POWER_IF_OP_TYPE_END))
 		return 0;
 
-	hwlog_err("invalid type(%d)\n", index);
+	hwlog_err("invalid type=%d\n", index);
 	return -1;
 }
 
@@ -138,7 +150,7 @@ static int power_if_check_sysfs_type(unsigned int index)
 	if ((index >= POWER_IF_SYSFS_BEGIN) && (index < POWER_IF_SYSFS_END))
 		return 0;
 
-	hwlog_err("invalid sysfs_type(%d)\n", index);
+	hwlog_err("invalid sysfs_type=%d\n", index);
 	return -1;
 }
 
@@ -164,10 +176,8 @@ static struct power_if_ops *power_if_get_ops(unsigned int type)
 		return NULL;
 	}
 
-	if (!g_power_if_info->ops[type]) {
-		hwlog_err("ops is null\n");
+	if (!g_power_if_info->ops[type])
 		return NULL;
-	}
 
 	return g_power_if_info->ops[type];
 }
@@ -189,14 +199,54 @@ static int power_if_operator_get(unsigned int type, unsigned int sysfs_type,
 			hwlog_info("get enable charger=%d\n", *value);
 		}
 		break;
-
 	case POWER_IF_SYSFS_VBUS_IIN_LIMIT:
 		if (l_ops->get_iin_limit) {
 			ret = l_ops->get_iin_limit(value);
 			hwlog_info("get vbus iin_limit=%d\n", *value);
 		}
 		break;
-
+	case POWER_IF_SYSFS_BATT_ICHG_LIMIT:
+		if (l_ops->get_ichg_limit) {
+			ret = l_ops->get_ichg_limit(value);
+			hwlog_info("get battery ichg_limit=%d\n", *value);
+		}
+		break;
+	case POWER_IF_SYSFS_BATT_ICHG_RATIO:
+		if (l_ops->get_ichg_ratio) {
+			ret = l_ops->get_ichg_ratio(value);
+			hwlog_info("get battery ichg_ratio=%d\n", *value);
+		}
+		break;
+	case POWER_IF_SYSFS_BATT_VTERM_DEC:
+		if (l_ops->get_vterm_dec) {
+			ret = l_ops->get_vterm_dec(value);
+			hwlog_info("get battery vterm_dec=%d\n", *value);
+		}
+		break;
+	case POWER_IF_SYSFS_RT_TEST_TIME:
+		if (l_ops->get_rt_test_time) {
+			ret = l_ops->get_rt_test_time(value);
+			hwlog_info("get rt_test_time=%d\n", *value);
+		}
+		break;
+	case POWER_IF_SYSFS_RT_TEST_RESULT:
+		if (l_ops->get_rt_test_result) {
+			ret = l_ops->get_rt_test_result(value);
+			hwlog_info("get rt_test_result=%d\n", *value);
+		}
+		break;
+	case POWER_IF_SYSFS_HOTA_IIN_LIMIT:
+		if (l_ops->get_hota_iin_limit) {
+			ret = l_ops->get_hota_iin_limit(value);
+			hwlog_info("get hota iin_limit=%d\n", *value);
+		}
+		break;
+	case POWER_IF_SYSFS_STARTUP_IIN_LIMIT:
+		if (l_ops->get_startup_iin_limit) {
+			ret = l_ops->get_startup_iin_limit(value);
+			hwlog_info("get startup iin_limit=%d\n", *value);
+		}
+		break;
 	default:
 		break;
 	}
@@ -216,19 +266,25 @@ static int power_if_operator_set(unsigned int type, unsigned int sysfs_type,
 
 	switch (sysfs_type) {
 	case POWER_IF_SYSFS_ENABLE_CHARGER:
-		if (l_ops->set_enable_charger) {
+		if (l_ops->set_enable_charger)
 			ret = l_ops->set_enable_charger(value);
-			hwlog_info("set enable charger=%d\n", value);
-		}
 		break;
-
 	case POWER_IF_SYSFS_VBUS_IIN_LIMIT:
-		if (l_ops->set_iin_limit) {
+		if (l_ops->set_iin_limit)
 			ret = l_ops->set_iin_limit(value);
-			hwlog_info("set vbus iin_limit=%d\n", value);
-		}
 		break;
-
+	case POWER_IF_SYSFS_BATT_ICHG_LIMIT:
+		if (l_ops->set_ichg_limit)
+			ret = l_ops->set_ichg_limit(value);
+		break;
+	case POWER_IF_SYSFS_BATT_ICHG_RATIO:
+		if (l_ops->set_ichg_ratio)
+			ret = l_ops->set_ichg_ratio(value);
+		break;
+	case POWER_IF_SYSFS_BATT_VTERM_DEC:
+		if (l_ops->set_vterm_dec)
+			ret = l_ops->set_vterm_dec(value);
+		break;
 	default:
 		break;
 	}
@@ -248,7 +304,7 @@ static int power_if_common_sysfs_get(unsigned int user, unsigned int type,
 	if (power_if_check_paras(user, type, sysfs_type))
 		return -1;
 
-	hwlog_info("sysfs_get(%s): user(%s) type(%s)\n",
+	hwlog_info("sysfs_get=%s user=%s type=%s\n",
 		power_if_get_sysfs_type_name(sysfs_type),
 		power_if_get_op_user_name(user),
 		power_if_get_op_type_name(type));
@@ -276,10 +332,10 @@ static int power_if_common_sysfs_get(unsigned int user, unsigned int type,
 
 		memset(rd_buf, 0, POWER_IF_RD_BUF_SIZE);
 		if (ret == 0)
-			scnprintf(rd_buf, POWER_IF_RD_BUF_SIZE, "%s: %d\n",
+			scnprintf(rd_buf, POWER_IF_RD_BUF_SIZE, "%s %d\n",
 				power_if_get_op_type_name(type_s), value);
 		else
-			scnprintf(rd_buf, POWER_IF_RD_BUF_SIZE, "%s: invalid\n",
+			scnprintf(rd_buf, POWER_IF_RD_BUF_SIZE, "%s -1\n",
 				power_if_get_op_type_name(type_s));
 
 		strncat(buf, rd_buf, strlen(rd_buf));
@@ -300,7 +356,7 @@ static int power_if_common_sysfs_set(unsigned int user, unsigned int type,
 	if (power_if_check_paras(user, type, sysfs_type))
 		return -1;
 
-	hwlog_info("sysfs_set(%s): user(%s) type(%s) value(%d)\n",
+	hwlog_info("sysfs_set=%s user=%s type=%s value=%d\n",
 		power_if_get_sysfs_type_name(sysfs_type),
 		power_if_get_op_user_name(user),
 		power_if_get_op_type_name(type), value);
@@ -328,7 +384,7 @@ static int power_if_common_sysfs_set(unsigned int user, unsigned int type,
 int power_if_kernel_sysfs_get(unsigned int type, unsigned int sysfs_type,
 	unsigned int *value)
 {
-	hwlog_info("sysfs_get(%s): user(%s) type(%s)\n",
+	hwlog_info("sysfs_get=%s user=%s type=%s\n",
 		power_if_get_sysfs_type_name(sysfs_type),
 		power_if_get_op_user_name(POWER_IF_OP_USER_KERNEL),
 		power_if_get_op_type_name(type));
@@ -345,7 +401,6 @@ int power_if_kernel_sysfs_set(unsigned int type, unsigned int sysfs_type,
 }
 EXPORT_SYMBOL_GPL(power_if_kernel_sysfs_set);
 
-
 #ifdef CONFIG_SYSFS
 #define POWER_IF_SYSFS_FIELD(_name, n, m, store) \
 { \
@@ -354,10 +409,10 @@ EXPORT_SYMBOL_GPL(power_if_kernel_sysfs_set);
 }
 
 #define POWER_IF_SYSFS_FIELD_RW(_name, n) \
-	POWER_IF_SYSFS_FIELD(_name, n, 0644, power_if_sysfs_store)
+	POWER_IF_SYSFS_FIELD(_name, n, 0640, power_if_sysfs_store)
 
 #define POWER_IF_SYSFS_FIELD_RO(_name, n) \
-	POWER_IF_SYSFS_FIELD(_name, n, 0444, NULL)
+	POWER_IF_SYSFS_FIELD(_name, n, 0440, NULL)
 
 struct power_if_sysfs_field_info {
 	struct device_attribute attr;
@@ -372,6 +427,13 @@ static ssize_t power_if_sysfs_store(struct device *dev,
 static struct power_if_sysfs_field_info power_if_sysfs_field_tbl[] = {
 	POWER_IF_SYSFS_FIELD_RW(enable_charger, ENABLE_CHARGER),
 	POWER_IF_SYSFS_FIELD_RW(iin_limit, VBUS_IIN_LIMIT),
+	POWER_IF_SYSFS_FIELD_RW(ichg_limit, BATT_ICHG_LIMIT),
+	POWER_IF_SYSFS_FIELD_RW(ichg_ratio, BATT_ICHG_RATIO),
+	POWER_IF_SYSFS_FIELD_RW(vterm_dec, BATT_VTERM_DEC),
+	POWER_IF_SYSFS_FIELD_RO(rt_test_time, RT_TEST_TIME),
+	POWER_IF_SYSFS_FIELD_RO(rt_test_result, RT_TEST_RESULT),
+	POWER_IF_SYSFS_FIELD_RO(hota_iin_limit, HOTA_IIN_LIMIT),
+	POWER_IF_SYSFS_FIELD_RO(startup_iin_limit, STARTUP_IIN_LIMIT),
 };
 
 #define POWER_IF_ATTRS_SIZE  (ARRAY_SIZE(power_if_sysfs_field_tbl) + 1)
@@ -384,7 +446,8 @@ static const struct attribute_group power_if_sysfs_attr_group = {
 
 static void power_if_sysfs_init_attrs(void)
 {
-	int s, e = ARRAY_SIZE(power_if_sysfs_field_tbl);
+	int s;
+	int e = ARRAY_SIZE(power_if_sysfs_field_tbl);
 
 	for (s = 0; s < e; s++)
 		power_if_sysfs_attrs[s] =
@@ -396,7 +459,8 @@ static void power_if_sysfs_init_attrs(void)
 static struct power_if_sysfs_field_info *power_if_sysfs_field_lookup(
 	const char *name)
 {
-	int s, e = ARRAY_SIZE(power_if_sysfs_field_tbl);
+	int s;
+	int e = ARRAY_SIZE(power_if_sysfs_field_tbl);
 
 	for (s = 0; s < e; s++) {
 		if (!strncmp(name, power_if_sysfs_field_tbl[s].attr.attr.name,
@@ -429,12 +493,11 @@ static ssize_t power_if_sysfs_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct power_if_sysfs_field_info *info = NULL;
-
 	char user_name[POWER_IF_RD_BUF_SIZE] = {0};
 	char type_name[POWER_IF_RD_BUF_SIZE] = {0};
 	int user;
 	int type;
-	unsigned int value;
+	int value;
 
 	info = power_if_sysfs_field_lookup(attr->attr.name);
 	if (!info) {
@@ -442,27 +505,30 @@ static ssize_t power_if_sysfs_store(struct device *dev,
 		return -EINVAL;
 	}
 
+	/* reserve 2 bytes to prevent buffer overflow */
 	if (count >= (POWER_IF_RD_BUF_SIZE - 2)) {
 		hwlog_err("input too long\n");
 		return -EINVAL;
 	}
 
+	/* 3: the fields of "user type value" */
 	if (sscanf(buf, "%s %s %d", user_name, type_name, &value) != 3) {
 		hwlog_err("unable to parse input:%s\n", buf);
 		return -EINVAL;
 	}
 
-	user = power_if_get_op_user(user_name);
-	if (user < 0) {
-		hwlog_err("invalid user(%s)\n", user_name);
+	if (value < 0) {
+		hwlog_err("invalid value=%d\n", value);
 		return -EINVAL;
 	}
 
-	type = power_if_get_op_type(type_name);
-	if (type < 0) {
-		hwlog_err("invalid type(%s)\n", type_name);
+	user = power_if_get_op_user(user_name);
+	if (user < 0)
 		return -EINVAL;
-	}
+
+	type = power_if_get_op_type(type_name);
+	if (type < 0)
+		return -EINVAL;
 
 	power_if_common_sysfs_set(user, type, info->name, value);
 
@@ -488,7 +554,7 @@ int power_if_ops_register(struct power_if_ops *ops)
 	g_power_if_info->ops[type] = ops;
 	g_power_if_info->total_ops++;
 
-	hwlog_info("total_ops(%d) type(%d:%s) ops register ok\n",
+	hwlog_info("total_ops=%d type=%d:%s ops register ok\n",
 		g_power_if_info->total_ops, type, ops->type_name);
 
 	return 0;
@@ -498,9 +564,9 @@ static int __init power_interface_init(void)
 {
 #ifdef CONFIG_SYSFS
 	int ret;
+	struct class *power_class = NULL;
 #endif /* CONFIG_SYSFS */
 	struct power_if_device_info *info = NULL;
-	struct class *power_class = NULL;
 
 	hwlog_info("probe begin\n");
 
@@ -512,18 +578,17 @@ static int __init power_interface_init(void)
 
 #ifdef CONFIG_SYSFS
 	power_if_sysfs_init_attrs();
-
 	power_class = hw_power_get_class();
 	if (power_class) {
-		g_power_if_info->dev = device_create(power_class, NULL, 0, NULL,
+		info->dev = device_create(power_class, NULL, 0, NULL,
 			"interface");
-		if (IS_ERR(g_power_if_info->dev)) {
+		if (IS_ERR(info->dev)) {
 			hwlog_err("sysfs device create failed\n");
-			ret = PTR_ERR(g_power_if_info->dev);
+			ret = PTR_ERR(info->dev);
 			goto fail_create_device;
 		}
 
-		ret = sysfs_create_group(&g_power_if_info->dev->kobj,
+		ret = sysfs_create_group(&info->dev->kobj,
 			&power_if_sysfs_attr_group);
 		if (ret) {
 			hwlog_err("sysfs group create failed\n");
@@ -547,16 +612,20 @@ fail_create_device:
 
 static void __exit power_interface_exit(void)
 {
+	struct power_if_device_info *info = g_power_if_info;
+
 	hwlog_info("remove begin\n");
 
+	if (!info)
+		return;
+
 #ifdef CONFIG_SYSFS
-	sysfs_remove_group(&g_power_if_info->dev->kobj,
-		&power_if_sysfs_attr_group);
-	kobject_del(&g_power_if_info->dev->kobj);
-	kobject_put(&g_power_if_info->dev->kobj);
+	sysfs_remove_group(&info->dev->kobj, &power_if_sysfs_attr_group);
+	kobject_del(&info->dev->kobj);
+	kobject_put(&info->dev->kobj);
 #endif /* CONFIG_SYSFS */
 
-	kfree(g_power_if_info);
+	kfree(info);
 	g_power_if_info = NULL;
 
 	hwlog_info("remove ok\n");

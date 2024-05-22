@@ -3,7 +3,7 @@
 
 # Each configuration option enables a list of files.
 ifeq ($(TARGET_BUILD_VARIANT),eng)
-	EXTRA_CFLAGS += -DSMARTPAKIT_MISC_RW_PERMISSION_ENABLE
+	ccflags-y += -DSMARTPAKIT_MISC_RW_PERMISSION_ENABLE
 endif
 ifdef CONFIG_HUAWEI_SMARTPAKIT_AUDIO
 	ccflags-y += -Idrivers/devkit/audiokit/

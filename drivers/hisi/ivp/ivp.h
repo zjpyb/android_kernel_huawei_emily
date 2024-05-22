@@ -3,11 +3,12 @@
 //This is used to compat  mmap for Android 32Bit to Kernel 64Bit.
 //Must compat with IVP DTS
 
-#define SIZE_1MB                      ( 1 * 1024 * 1024)
-#define SIZE_2MB                      ( 2 * 1024 * 1024)
-#define MASK_1MB                      ( SIZE_1MB - 1)
-#define SIZE_4K                       ( 4 * 1024 )
+#define SIZE_1MB                      (1 * 1024 * 1024)
+#define SIZE_2MB                      (2 * 1024 * 1024)
+#define MASK_1MB                      (SIZE_1MB - 1)
+#define SIZE_4K                       (4 * 1024)
 #define IVP_MMAP_SHIFT                (4)
+#define SHIFT_1MB                     (20)
 
 #define IVP_MODULE_NAME               "hisi-ivp"
 #define IVP_REGULATOR                 "hisi-ivp"
@@ -48,30 +49,37 @@
 #define IVP_IOCTL_SMMU_INVALIDATE_TLB _IOW('v', 0x7b, unsigned int)
 #define IVP_IOCTL_BM_INIT             _IOW('v', 0x7c, unsigned int)
 #define IVP_IOCTL_CLK_LEVEL           _IOW('v', 0x7d, unsigned int)
-#define IVP_IOCTL_POWER_UP            _IOW('v', 0x7e, unsigned int)
-
+#define IVP_IOCTL_POWER_UP            _IOW('v', 0x7e, struct ivp_power_up_info)
+#define IVP_IOCTL_DUMP_DSP_STATUS     _IOW('v', 0x7f, unsigned int)
+#define IVP_IOCTL_QUERY_CHIP_TYPE     _IOW('v', 0x80, unsigned int)
 
 #define IVP_IOCTL_IPC_FLUSH_ENABLE    _IOWR('v', 0x89, unsigned int)
 #define IVP_IOCTL_LOAD_FIRMWARE       _IOW('v',  0x8A, struct ivp_image_info)
 
 enum SEC_MODE {
-    NOSEC_MODE = 0,
-    SECURE_MODE = 1
+	NOSEC_MODE = 0,
+	SECURE_MODE = 1
 };
 
 struct ivp_sect_info {
-    char name[64];
-    unsigned int index;
-    unsigned int len;
-    unsigned int ivp_addr;
-    unsigned int reserved;
-    union {
-        unsigned long acpu_addr;
-        char compat32[8];
-    };
+	char name[64];
+	unsigned int index;
+	unsigned int len;
+	unsigned int ivp_addr;
+	unsigned int reserved;
+	union {
+		unsigned long acpu_addr;
+		char compat32[8];
+	};
 };
+
 struct ivp_image_info {
-    char name[64];
-    unsigned int length;
+	char name[64];
+	unsigned int length;
+};
+
+struct ivp_power_up_info {
+	int sec_mode;
+	int sec_buff_fd;
 };
 #endif /* IVP_H_ */

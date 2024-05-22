@@ -56,7 +56,9 @@
 #include "TafSsaApi.h"
 #include "AtMtaInterface.h"
 #include "TafDrvAgent.h"
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 #include "AtXpdsInterface.h"
+#endif
 
 
 #define    THIS_FILE_ID        PS_FILE_ID_TAF_LOG_PRIVACY_MATCH_C
@@ -193,6 +195,7 @@ VOS_VOID* TAF_PrivacyMatchAppMnCallBackCsCall(
     return (VOS_VOID *)pstPrivacyAtIndEvt;
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_VOID* AT_PrivacyMatchCallAppEconfDialReq(
     MsgBlock                           *pstMsg
@@ -228,6 +231,7 @@ VOS_VOID* AT_PrivacyMatchCallAppEconfDialReq(
 
     return (VOS_VOID *)pstEconfDialReq;
 }
+#endif
 
 
 VOS_VOID* AT_PrivacyMatchRegisterSsMsg(
@@ -775,6 +779,7 @@ VOS_VOID* TAF_PrivacyMatchAtCallBackQryProc(
     return (VOS_VOID *)pucSendAtMsg;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_VOID*  TAF_XSMS_PrivacyMatchAppMsgTypeRcvInd(
     MsgBlock                           *pstMsg
@@ -927,6 +932,7 @@ VOS_VOID*  AT_PrivacyMatchAppMsgTypeSendReq(
 
     return (VOS_VOID *)pstMatchTafXsmsSendMsgReq;
 }
+#endif
 
 
 
@@ -1008,6 +1014,7 @@ VOS_VOID*  AT_PrivacyMatchMeidSetReq(
     return (VOS_VOID *)pstMatchAppMsgSetReq;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_VOID*  AT_PrivacyMatchAppMsgTypeWriteReq(
     MsgBlock                           *pstMsg
@@ -1189,6 +1196,7 @@ VOS_VOID* AT_PrivacyMatchCallAppSendContReq(
     return (VOS_VOID *)pstConttDtmfReq;
 }
 
+#if (FEATURE_ON == FEATURE_AGPS)
 
 VOS_VOID* AT_PrivacyMatchCagpsPosInfoRsp(
     MsgBlock                           *pstMsg
@@ -1600,7 +1608,9 @@ VOS_VOID* TAF_XPDS_PrivacyMatchAtUtsGpsPosInfoInd(
 
     return (VOS_VOID *)pstPrivacyMatchUtsPosInfo;
 }
+#endif
 
+#if (FEATURE_ON == FEATURE_CHINA_TELECOM_VOICE_ENCRYPT)
 
 VOS_VOID* TAF_PrivacyMatchCallAppEncryptVoiceReq(
     MsgBlock                           *pstMsg
@@ -1633,6 +1643,110 @@ VOS_VOID* TAF_PrivacyMatchCallAppEncryptVoiceReq(
     return (VOS_VOID *)pstEncryptVoiceReq;
 }
 
+#if (FEATURE_ON == FEATURE_CHINA_TELECOM_VOICE_ENCRYPT_TEST_MODE)
+
+VOS_VOID* TAF_PrivacyMatchCallAppSetEcKmcReq(
+    MsgBlock                           *pstMsg
+)
+{
+    TAF_CALL_APP_SET_EC_KMC_REQ_STRU   *pstSetEcKmcReq = VOS_NULL_PTR;
+    VOS_UINT32                          ulLength;
+
+    ulLength = pstMsg->ulLength + VOS_MSG_HEAD_LENGTH;
+
+    pstSetEcKmcReq  = (TAF_CALL_APP_SET_EC_KMC_REQ_STRU *)VOS_MemAlloc(pstMsg->ulSenderPid,
+                                                                       DYNAMIC_MEM_PT,
+                                                                       ulLength);
+
+    if (VOS_NULL_PTR == pstSetEcKmcReq)
+    {
+        return VOS_NULL_PTR;
+    }
+
+    TAF_MEM_CPY_S(pstSetEcKmcReq,
+                  sizeof(TAF_CALL_APP_SET_EC_KMC_REQ_STRU),
+                  pstMsg,
+                  ulLength);
+
+    TAF_MEM_SET_S(&(pstSetEcKmcReq->stKmcData),
+                  sizeof(MN_CALL_APP_EC_KMC_DATA_STRU),
+                  0,
+                  sizeof(MN_CALL_APP_EC_KMC_DATA_STRU));
+
+    return (VOS_VOID *)pstSetEcKmcReq;
+}
+
+
+VOS_VOID* TAF_XCALL_PrivacyMatchAppGetEcRandomCnf(
+    MsgBlock                           *pstMsg
+)
+{
+    TAF_CALL_APP_GET_EC_RANDOM_CNF_STRU                    *pstGetRandomCnf = VOS_NULL_PTR;
+    VOS_UINT32                                              ulLength;
+
+    ulLength = pstMsg->ulLength + VOS_MSG_HEAD_LENGTH;
+
+    /* 申请消息 */
+    pstGetRandomCnf = (TAF_CALL_APP_GET_EC_RANDOM_CNF_STRU *)VOS_MemAlloc(pstMsg->ulSenderPid,
+                                                                          DYNAMIC_MEM_PT,
+                                                                          ulLength);
+
+    if (VOS_NULL_PTR == pstGetRandomCnf)
+    {
+        return VOS_NULL_PTR;
+    }
+
+    TAF_MEM_CPY_S(pstGetRandomCnf,
+                  sizeof(TAF_CALL_APP_GET_EC_RANDOM_CNF_STRU),
+                  pstMsg,
+                  ulLength);
+
+    /* 将敏感信息设置为全0 */
+    TAF_MEM_SET_S(pstGetRandomCnf->stEccRandom,
+                  TAF_CALL_APP_EC_RANDOM_NUM * sizeof(TAF_CALL_APP_EC_RANDOM_DATA_STRU),
+                  0,
+                  TAF_CALL_APP_EC_RANDOM_NUM * sizeof(TAF_CALL_APP_EC_RANDOM_DATA_STRU));
+
+    return (VOS_VOID *)pstGetRandomCnf;
+}
+
+
+VOS_VOID* TAF_XCALL_PrivacyMatchAppGetEcKmcCnf(
+    MsgBlock                           *pstMsg
+)
+{
+    TAF_CALL_APP_GET_EC_KMC_CNF_STRU   *pstGetEcKmcCnf = VOS_NULL_PTR;
+    VOS_UINT32                          ulLength;
+
+    ulLength = pstMsg->ulLength + VOS_MSG_HEAD_LENGTH;
+
+    /* 申请消息 */
+    pstGetEcKmcCnf = (TAF_CALL_APP_GET_EC_KMC_CNF_STRU *)VOS_MemAlloc(pstMsg->ulSenderPid,
+                                                                      DYNAMIC_MEM_PT,
+                                                                      ulLength);
+
+    if (VOS_NULL_PTR == pstGetEcKmcCnf)
+    {
+        return VOS_NULL_PTR;
+    }
+
+    TAF_MEM_CPY_S(pstGetEcKmcCnf,
+                  sizeof(TAF_CALL_APP_GET_EC_KMC_CNF_STRU),
+                  pstMsg,
+                  ulLength);
+
+    /* 将敏感信息设置为全0 */
+    TAF_MEM_SET_S(&(pstGetEcKmcCnf->stKmcData),
+                  sizeof(MN_CALL_APP_EC_KMC_DATA_STRU),
+                  0,
+                  sizeof(MN_CALL_APP_EC_KMC_DATA_STRU));
+
+    return (VOS_VOID *)pstGetEcKmcCnf;
+}
+
+#endif
+#endif
+#endif
 
 
 VOS_VOID* TAF_MTA_PrivacyMatchCposrInd(

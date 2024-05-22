@@ -56,7 +56,6 @@ static ssize_t boot_time_proc_write(struct file *file, const char __user *buf,
 
 	/*only need the print time */
 	pr_err("bootanim has been complete, turn to Lancher!\n");
-	/*set_boot_keypoint(STAGE_KERNEL_BOOTANIM_COMPLETE);*/
 
 	bootanim_complete = COMPLETED_MASK;
 

@@ -68,6 +68,7 @@
 
 #define    THIS_FILE_ID        PS_FILE_ID_OM_ERRORLOG_C
 
+#if (FEATURE_ON == FEATURE_PTM)
 
 VOS_UINT32                              g_ulChrOmAcpuDbgFlag = VOS_FALSE;
 
@@ -1316,10 +1317,12 @@ EXPORT_SYMBOL(OM_ChrOpenLog);
 EXPORT_SYMBOL(OM_AcpuCfgBlackListTest);
 EXPORT_SYMBOL(OM_AcpuCfgPriorityTest);
 EXPORT_SYMBOL(OM_AcpuCfgPeriodTest);
+#endif
 
 VOS_UINT32 MSP_AppChrFidInit(enum VOS_INIT_PHASE_DEFINE ip)
 {
     
+#if (FEATURE_ON == FEATURE_PTM)
      VOS_UINT32 ulRelVal = 0;
      switch (ip)
      {
@@ -1340,6 +1343,7 @@ VOS_UINT32 MSP_AppChrFidInit(enum VOS_INIT_PHASE_DEFINE ip)
             break;
             
      }
+#endif
      return VOS_OK;
 }
 

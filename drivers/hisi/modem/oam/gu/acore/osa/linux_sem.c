@@ -79,6 +79,7 @@
 #include "v_private.h"
 
 
+#if (VOS_LINUX == VOS_OS_VER) || defined(LLT_OS_LINUX)
 
 /*****************************************************************************
     协议栈打印打点方式下的.C文件宏定义
@@ -470,5 +471,6 @@ VOS_VOID VOS_show_sem_info( VOS_VOID )
     (VOS_VOID)vos_printf("Max be used sem is %x.\r\n",vos_SemMaxSemId);
 }
 
+#endif
 
 

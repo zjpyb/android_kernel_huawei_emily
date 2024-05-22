@@ -21,7 +21,7 @@ int mipi_dsi_ulps_cfg(struct hisi_fb_data_type *hisifd, int enable);
 /*lint -e834 */
 static uint32_t get_data_t_hs_prepare(struct hisi_fb_data_type *hisifd, uint32_t accuracy, uint32_t ui)
 {
-	struct hisi_panel_info *pinfo;
+	struct hisi_panel_info *pinfo = NULL;
 	uint32_t data_t_hs_prepare = 0;
 
 	if ( NULL == hisifd) {
@@ -77,7 +77,7 @@ static uint32_t get_clk_post_delay_reality(uint32_t lp11_flag, struct mipi_dsi_p
 /*lint -e647 */
 static void get_dsi_dphy_ctrl(struct hisi_fb_data_type *hisifd, struct mipi_dsi_phy_ctrl *phy_ctrl)
 {
-	struct hisi_panel_info *pinfo;
+	struct hisi_panel_info *pinfo = NULL;
 	uint32_t dsi_bit_clk;
 
 	uint32_t ui;
@@ -282,7 +282,7 @@ static void get_dsi_dphy_ctrl(struct hisi_fb_data_type *hisifd, struct mipi_dsi_
 /*lint +e647 */
 static void get_dsi_cphy_ctrl(struct hisi_fb_data_type *hisifd, struct mipi_dsi_phy_ctrl *phy_ctrl)
 {
-	struct hisi_panel_info *pinfo;
+	struct hisi_panel_info *pinfo = NULL;
 
 	uint32_t ui;
 	uint32_t m_pll;
@@ -1023,6 +1023,7 @@ int mipi_dsi_clk_disable(struct hisi_fb_data_type *hisifd)
 /*******************************************************************************
 **
 */
+#if defined(CONFIG_HISI_FB_970)
 /*lint -e732*/
 static int mipi_dsi_pll_status_check_ec(struct hisi_fb_data_type *hisifd,
 	char __iomem *mipi_dsi_base)
@@ -1183,6 +1184,7 @@ REDO:
 	return 0;
 }
 /*lint +e732*/
+#endif
 /*lint -e776 -e715 -e712 -e737 -e776 -e838*/
 static int mipi_dsi_on_sub1(struct hisi_fb_data_type *hisifd, char __iomem *mipi_dsi_base)
 {
@@ -1541,13 +1543,17 @@ int mipi_dsi_on(struct platform_device *pdev)
 		mipi_dsi_ulps_cfg(hisifd, 1);
 	}
 
+	#if defined(CONFIG_HISI_FB_970)
 		mipi_dsi_pll_status_check_ec(hisifd, hisifd->mipi_dsi0_base);
 		if (is_dual_mipi_panel(hisifd)) {
 			mipi_dsi_pll_status_check_ec(hisifd, hisifd->mipi_dsi1_base);
 		}
+	#endif
 	} else if (hisifd->index == EXTERNAL_PANEL_IDX) {
 		mipi_dsi_on_sub1(hisifd, hisifd->mipi_dsi1_base);
+	#if defined(CONFIG_HISI_FB_970)
 		mipi_dsi_pll_status_check_ec(hisifd, hisifd->mipi_dsi1_base);
+	#endif
 	} else {
 		HISI_FB_ERR("fb%d, not supported!\n", hisifd->index);
 	}
@@ -1834,10 +1840,12 @@ static int mipi_dsi_ulps_exit(struct hisi_fb_data_type *hisifd,
 		tmp = inp32(mipi_dsi_base + MIPIDSI_PHY_STATUS_OFFSET);
 	}
 
+#if defined(CONFIG_HISI_FB_970)
 	if (need_pll_retry > 0) {
 		HISI_FB_ERR("need_pll_retry = 0x%x .\n", need_pll_retry);
 		mipi_dsi_pll_status_check_ec(hisifd, mipi_dsi_base);
 	}
+#endif
 
 	// enable DPHY clock lane's Hight Speed Clock
 	set_reg(mipi_dsi_base + MIPIDSI_LPCLK_CTRL_OFFSET, 0x1, 1, 0);
@@ -1882,9 +1890,9 @@ int mipi_dsi_ulps_cfg(struct hisi_fb_data_type *hisifd, int enable)
 static void mipi_dsi_set_cdphy_bit_clk_upt_cmd(struct hisi_fb_data_type *hisifd,
 	char __iomem *mipi_dsi_base, struct mipi_dsi_phy_ctrl* phy_ctrl)
 {
-	struct hisi_panel_info *pinfo;
+	struct hisi_panel_info *pinfo = NULL;
 	unsigned long dw_jiffies;
-	bool is_ready ;
+	bool is_ready = false;
 	uint32_t tmp = 0;
 
 	if (NULL == hisifd || NULL == phy_ctrl) {
@@ -1941,7 +1949,6 @@ static void mipi_dsi_set_cdphy_bit_clk_upt_cmd(struct hisi_fb_data_type *hisifd,
 	set_reg(mipi_dsi_base + MIPIDSI_CLKMGR_CFG_OFFSET,
 		(phy_ctrl->clk_division + (phy_ctrl->clk_division << 8)), 16, 0);
 	/*lint -e550 -e732*/
-	is_ready = false;
 	dw_jiffies = jiffies + HZ / 2;//500ms
 	do {
 		tmp = inp32(mipi_dsi_base + MIPIDSI_PHY_STATUS_OFFSET);
@@ -1963,7 +1970,7 @@ static void mipi_dsi_set_cdphy_bit_clk_upt_video(struct hisi_fb_data_type *hisif
 	char __iomem *mipi_dsi_base, struct mipi_dsi_phy_ctrl* phy_ctrl)
 {
 
-	struct hisi_panel_info *pinfo;
+	struct hisi_panel_info *pinfo = NULL;
 	uint32_t hline_time = 0;
 	uint32_t hsa_time = 0;
 	uint32_t hbp_time = 0;
@@ -1971,7 +1978,7 @@ static void mipi_dsi_set_cdphy_bit_clk_upt_video(struct hisi_fb_data_type *hisif
 	dss_rect_t rect;
 	unsigned long dw_jiffies;
 	uint32_t tmp;
-	bool is_ready;
+	bool is_ready = false;
 
 	if (NULL == hisifd || NULL == phy_ctrl) {
 		HISI_FB_ERR("hisifd or phy_ctrl is null.\n");
@@ -2029,7 +2036,6 @@ static void mipi_dsi_set_cdphy_bit_clk_upt_video(struct hisi_fb_data_type *hisif
 		mipi_config_dphy_spec1v2_parameter(mipi_dsi_base, pinfo);
 	}
 	/*lint -e550 -e732*/
-	is_ready = false;
 	dw_jiffies = jiffies + HZ / 2;
 	do {
 		tmp = inp32(mipi_dsi_base + MIPIDSI_PHY_STATUS_OFFSET);
@@ -2050,6 +2056,10 @@ static void mipi_dsi_set_cdphy_bit_clk_upt_video(struct hisi_fb_data_type *hisif
 	/* 4. Define the DPI Horizontal timing configuration:	*/
 
 	pixel_clk = mipi_pixel_clk(hisifd);
+	if (pixel_clk == 0) {
+		HISI_FB_ERR("The value of pixel_clk is 0\n");
+		return;
+	}
 	/*lint -e737 -e776 -e712*/
 	if (pinfo->mipi.phy_mode == DPHY_MODE) {
 		hsa_time = pinfo->ldi.h_pulse_width * phy_ctrl->lane_byte_clk / pixel_clk;
@@ -2109,7 +2119,7 @@ static bool check_pctrl_trstop_flag(struct hisi_fb_data_type *hisifd, int time_c
 int mipi_dsi_bit_clk_upt_isr_handler(struct hisi_fb_data_type *hisifd)
 {
 	struct mipi_dsi_phy_ctrl phy_ctrl = {0};
-	struct hisi_panel_info *pinfo;
+	struct hisi_panel_info *pinfo = NULL;
 	uint32_t dsi_bit_clk_upt;
 	uint32_t stopstate_msk = 0;
 	bool is_ready = false;
@@ -2234,6 +2244,12 @@ int mipi_dsi_bit_clk_upt_isr_handler(struct hisi_fb_data_type *hisifd)
 
 	HISI_FB_DEBUG("fb%d -.\n", hisifd->index);
 
+	return 0;
+}
+
+int mipi_dsi_reset_underflow_clear(struct hisi_fb_data_type *hisifd)
+{
+	(void)hisifd;
 	return 0;
 }
 

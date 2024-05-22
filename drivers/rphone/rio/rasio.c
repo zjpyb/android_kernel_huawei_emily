@@ -304,13 +304,13 @@ static struct fault_impl *rasio_check_fault_match(struct bio *bio,
 		return NULL;
 
 	/* match disk_name*/
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)	
-	bio_devname(bio->bi_disk, buf);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	bio_devname((struct bio *)bio->bi_disk, buf);
         if ((0 != strcmp(buf, fault->disk))
             && (0 != strcmp(bio->bi_disk->disk_name, buf)))
                 return NULL;
 #else
-	bdevname(bio->bi_bdev, buf);
+	bdevname((struct block_device *)bio->bi_bdev, buf);
         if ((0 != strcmp(buf, fault->disk))
             && (0 != strcmp(bio->bi_bdev->bd_disk->disk_name, buf)))
                 return NULL;

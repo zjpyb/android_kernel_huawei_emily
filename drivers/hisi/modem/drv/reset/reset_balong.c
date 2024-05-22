@@ -143,7 +143,11 @@ extern s32 bsp_rfile_reset_cb(DRV_RESET_CB_MOMENT_E eparam, s32 usrdata);
 extern s32 bsp_icc_channel_reset(DRV_RESET_CB_MOMENT_E stage, int usrdata);
 extern void ipc_modem_reset_cb(DRV_RESET_CB_MOMENT_E eparam, int usrdata);
 extern s32 bsp_mem_ccore_reset_cb(DRV_RESET_CB_MOMENT_E enParam, int userdata);
+#if(FEATURE_TDS_WCDMA_DYNAMIC_LOAD == FEATURE_ON)
+extern s32 bsp_loadps_reset_cb(DRV_RESET_CB_MOMENT_E eparam, s32 userdata);
+#else
 static inline s32 bsp_loadps_reset_cb(DRV_RESET_CB_MOMENT_E eparam, s32 userdata){return 0;}
+#endif
 
 s32 icc_channel_reset (DRV_RESET_CB_MOMENT_E stage, int userdata)
 {
@@ -267,6 +271,7 @@ s32 invoke_reset_cb(DRV_RESET_CB_MOMENT_E stage)
 	return ret;
 }
 
+#if defined(CONFIG_HISI_RPROC)
 s32 send_sync_msg_to_mcore(u32 reset_info, u32 *ack_val)
 {
 	s32 ret = 0;
@@ -290,6 +295,14 @@ s32 send_sync_msg_to_mcore(u32 reset_info, u32 *ack_val)
 	return ret;
 }
 
+#else
+s32 send_sync_msg_to_mcore(u32 reset_info, u32 *ack_val)
+{
+	reset_print_err("is stub\n");
+	return 0;
+}
+
+#endif
 
 s32 send_msg_to_hifi(DRV_RESET_CB_MOMENT_E stage)
 {

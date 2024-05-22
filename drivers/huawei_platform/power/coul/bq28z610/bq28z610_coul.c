@@ -3,7 +3,7 @@
  *
  * coul with bq28z610 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -36,8 +36,9 @@
 #ifdef CONFIG_HISI_BCI_BATTERY
 #include <linux/power/hisi/hisi_bci_battery.h>
 #endif
+#include <huawei_platform/power/power_dts.h>
 
-#include <bq28z610_coul.h>
+#include "bq28z610_coul.h"
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -51,23 +52,18 @@ static struct mutex bq28z610_mutex;
 static struct chrg_para_lut *p_batt_data;
 static struct device *coul_dev;
 
-#define MSG_LEN                      (2)
+#define MSG_LEN                      2
 
 static int bq28z610_read_block(struct bq28z610_device_info *di,
 	u8 reg, u8 *data, u8 len)
 {
 	struct i2c_msg msg[MSG_LEN];
-	int ret = 0;
-	int i = 0;
+	int ret;
+	int i;
 
-	if (di == NULL || data == NULL) {
+	if (!di || !di->client || !data) {
 		hwlog_err("di or data is null\n");
-		return -ENOMEM;
-	}
-
-	if (di->client->adapter == NULL) {
-		hwlog_err("adapter is null\n");
-		return -ENODEV;
+		return -EIO;
 	}
 
 	msg[0].addr = di->client->addr;
@@ -92,7 +88,7 @@ static int bq28z610_read_block(struct bq28z610_device_info *di,
 
 	if (ret < 0) {
 		hwlog_err("read_block failed[%x]\n", reg);
-		return -1;
+		return -EIO;
 	}
 
 	return 0;
@@ -109,7 +105,7 @@ static int bq28z610_read_word(u8 reg, u16 *data)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u8 buff[MSG_LEN] = {0};
-	int ret = 0;
+	int ret;
 
 	ret = bq28z610_read_block(di, reg, buff, 2); /* 2: one word */
 	if (ret)
@@ -124,16 +120,11 @@ static int bq28z610_write_block(struct bq28z610_device_info *di,
 {
 	struct i2c_msg msg;
 	int ret;
-	int i = 0;
+	int i;
 
-	if (di == NULL || buff == NULL) {
+	if (!di || !di->client || !buff) {
 		hwlog_err("di or buff is null\n");
 		return -EIO;
-	}
-
-	if (di->client->adapter == NULL) {
-		hwlog_err("adapter is null\n");
-		return -ENODEV;
 	}
 
 	buff[0] = reg;
@@ -155,7 +146,7 @@ static int bq28z610_write_block(struct bq28z610_device_info *di,
 
 	if (ret < 0) {
 		hwlog_err("write_block failed[%x]\n", reg);
-		return -1;
+		return -EIO;
 	}
 
 	return 0;
@@ -194,7 +185,7 @@ static int bq28z610_read_mac_data(u16 cmd, u8 *dat)
 	int i;
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -205,7 +196,7 @@ static int bq28z610_read_mac_data(u16 cmd, u8 *dat)
 		return 0;
 
 	if (len > 36)
-		len = 36;
+		len = 36; /* max buf size is 36 bytes */
 
 	/* here length includes checksum byte and length byte itself */
 	len = len - 2;
@@ -227,7 +218,7 @@ static int bq28z610_read_mac_data(u16 cmd, u8 *dat)
 	/* calculate checksum */
 	cksum_calc = checksum(buf, len);
 
-	/*read gauge calculated checksum */
+	/* read gauge calculated checksum */
 	ret = bq28z610_read_byte(BQ28Z610_MAC_DATA_CHECKSUM, &cksum);
 	if (ret)
 		return 0;
@@ -254,10 +245,10 @@ static int bq28z610_read_mac_data(u16 cmd, u8 *dat)
 
 static int bq28z610_is_ready(void)
 {
-	if (g_bq28z610_dev != NULL)
+	if (g_bq28z610_dev)
 		return 1;
-	else
-		return 0;
+
+	return 0;
 }
 
 static int bq28z610_get_battery_id_vol(void)
@@ -270,9 +261,9 @@ static int bq28z610_get_battery_temp(void)
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	int temp_c = ABNORMAL_BATT_TEMPERATURE_LOW - 1;
 	u16 temp_k = temp_c + 273; /* default offset:273 */
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -294,24 +285,24 @@ static int bq28z610_is_battery_exist(void)
 
 #ifdef CONFIG_HLTHERM_RUNTEST
 	return 0;
-#endif
+#endif /* CONFIG_HLTHERM_RUNTEST */
 
 	temp = bq28z610_get_battery_temp();
 
 	if ((temp <= ABNORMAL_BATT_TEMPERATURE_LOW) ||
 		(temp >= ABNORMAL_BATT_TEMPERATURE_HIGH))
 		return 0;
-	else
-		return 1;
+
+	return 1;
 }
 
 static int bq28z610_get_battery_soc(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 soc = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -333,7 +324,7 @@ static int bq28z610_get_battery_soc(void)
 
 int bq28z610_is_battery_reach_threshold(void)
 {
-	int soc = 0;
+	int soc;
 
 	if (!bq28z610_is_battery_exist())
 		return 0;
@@ -371,15 +362,12 @@ char *bq28z610_get_battery_brand(void)
 	case 'D':
 		strncat(brand, "desay", strlen("desay"));
 		break;
-
 	case 'I':
 		strncat(brand, "sunwoda", strlen("sunwoda"));
 		break;
-
 	case 'C':
 		strncat(brand, "coslight", strlen("coslight"));
 		break;
-
 	default:
 		strncat(brand, "error", strlen("error"));
 		break;
@@ -389,15 +377,12 @@ char *bq28z610_get_battery_brand(void)
 	case 'A':
 		strncat(brand, "atl", strlen("atl"));
 		break;
-
 	case 'L':
 		strncat(brand, "lg", strlen("lg"));
 		break;
-
 	case 'C':
 		strncat(brand, "coslight", strlen("coslight"));
 		break;
-
 	default:
 		strncat(brand, "error", strlen("error"));
 		break;
@@ -415,9 +400,9 @@ static int bq28z610_get_battery_vol(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 vol = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -441,9 +426,9 @@ static int bq28z610_get_battery_curr(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 curr = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -461,9 +446,9 @@ static int bq28z610_get_battery_avgcurr(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 avg_curr = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -481,9 +466,9 @@ static int bq28z610_get_battery_rm(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 rm = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -501,9 +486,9 @@ static int bq28z610_get_battery_dc(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 dc = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -521,9 +506,9 @@ static int bq28z610_get_battery_fcc(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 fcc = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -541,9 +526,9 @@ static int bq28z610_get_battery_tte(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 tte = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -567,9 +552,9 @@ static int bq28z610_get_battery_ttf(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 ttf = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -593,9 +578,9 @@ static int bq28z610_get_battery_cycle(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	u16 cycle = 0;
-	int ret = 0;
+	int ret;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -617,7 +602,7 @@ static int bq28z610_battery_unfiltered_soc(void)
 static int bq28z610_get_battery_health(void)
 {
 	int status = POWER_SUPPLY_HEALTH_GOOD;
-	int temp = 0;
+	int temp;
 
 	if (!bq28z610_is_battery_exist())
 		return 0;
@@ -633,8 +618,8 @@ static int bq28z610_get_battery_health(void)
 
 static int bq28z610_get_battery_capacity_level(void)
 {
-	int capacity = 0;
-	int status = 0;
+	int capacity;
+	int status;
 
 	if (!bq28z610_is_battery_exist())
 		return 0;
@@ -670,7 +655,7 @@ static int bq28z610_get_battery_vbat_max(void)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return 0;
 	}
@@ -710,11 +695,6 @@ static int bq28z610_device_check(void)
 static void charger_event_process(struct bq28z610_device_info *di,
 	unsigned int event)
 {
-	if (di == NULL) {
-		hwlog_err("di is null\n");
-		return;
-	}
-
 	switch (event) {
 	/* fall through: usb & ac event */
 	case VCHRG_START_USB_CHARGING_EVENT:
@@ -723,32 +703,26 @@ static void charger_event_process(struct bq28z610_device_info *di,
 		hwlog_info("receive charge start event = %d\n", event);
 		di->charge_status = CHARGE_STATE_START_CHARGING;
 		break;
-
 	case VCHRG_STOP_CHARGING_EVENT:
 		hwlog_info("receive charge stop event = %d\n", event);
 		di->charge_status = CHARGE_STATE_STOP_CHARGING;
 		break;
-
 	case VCHRG_CHARGE_DONE_EVENT:
 		hwlog_info("receive charge done event = %d\n", event);
 		di->charge_status = CHARGE_STATE_CHRG_DONE;
 		break;
-
 	case VCHRG_NOT_CHARGING_EVENT:
 		di->charge_status = CHARGE_STATE_NOT_CHARGING;
 		hwlog_err("charging is stop by fault\n");
 		break;
-
 	case VCHRG_POWER_SUPPLY_OVERVOLTAGE:
 		di->charge_status = CHARGE_STATE_NOT_CHARGING;
 		hwlog_err("charging is stop by overvoltage\n");
 		break;
-
 	case VCHRG_POWER_SUPPLY_WEAKSOURCE:
 		di->charge_status = CHARGE_STATE_NOT_CHARGING;
 		hwlog_err("charging is stop by weaksource\n");
 		break;
-
 	default:
 		di->charge_status = CHARGE_STATE_NOT_CHARGING;
 		hwlog_err("unknow event %d\n", event);
@@ -760,7 +734,7 @@ static int bq28z610_battery_charger_event_rcv(unsigned int evt)
 {
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 
-	if (di == NULL || !bq28z610_is_battery_exist())
+	if (!di || !bq28z610_is_battery_exist())
 		return 0;
 
 	charger_event_process(di, evt);
@@ -769,28 +743,29 @@ static int bq28z610_battery_charger_event_rcv(unsigned int evt)
 
 static int get_batt_para(void)
 {
-	int ret = 0;
-	int array_len = 0;
-	int i = 0;
-	int row = 0;
-	int col = 0;
+	int ret;
+	int array_len;
+	int i;
+	int row;
+	int col;
 	const char *string = NULL;
 	struct bq28z610_device_info *di = g_bq28z610_dev;
 	struct device_node *np = NULL;
 
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -EINVAL;
+	}
+
 	np = of_find_compatible_node(NULL, NULL, "Watt_2900_4400_battery");
-	if (np == NULL) {
+	if (!np) {
 		hwlog_err("Watt_2900_4400_battery dts read failed\n");
 		return -EINVAL;
 	}
 
 	/* vbat_max */
-	ret = of_property_read_u32(np, "vbat_max", &di->vbat_max);
-	if (ret) {
-		hwlog_err("vbat_max dts read failed\n");
-		di->vbat_max = BATTERY_DEFAULT_MAX_VOLTAGE;
-	}
-	hwlog_info("vbat_max=%d\n", di->vbat_max);
+	(void)power_dts_read_u32(np, "vbat_max",
+		(u32 *)&di->vbat_max, BATTERY_DEFAULT_MAX_VOLTAGE);
 
 	/* temp_para */
 	array_len = of_property_count_strings(np, "temp_para");
@@ -916,7 +891,7 @@ struct hisi_coul_ops bq28z610_ops = {
 	.dev_check = bq28z610_device_check,
 };
 
-#if CONFIG_SYSFS
+#ifdef CONFIG_SYSFS
 #define BQ28Z610_SYSFS_FIELD(_name, n, m, store) \
 { \
 	.attr = __ATTR(_name, m, bq28z610_sysfs_show, store), \
@@ -924,7 +899,7 @@ struct hisi_coul_ops bq28z610_ops = {
 }
 
 #define BQ28Z610_SYSFS_FIELD_RO(_name, n) \
-	BQ28Z610_SYSFS_FIELD(_name, n, 0444, NULL)
+	BQ28Z610_SYSFS_FIELD(_name, n, 0440, NULL)
 
 static ssize_t bq28z610_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
@@ -949,7 +924,8 @@ static const struct attribute_group bq28z610_sysfs_attr_group = {
 
 static void bq28z610_sysfs_init_attrs(void)
 {
-	int i, limit = ARRAY_SIZE(bq28z610_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(bq28z610_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++)
 		bq28z610_sysfs_attrs[i] =
@@ -961,7 +937,8 @@ static void bq28z610_sysfs_init_attrs(void)
 static struct bq28z610_sysfs_field_info *bq28z610_sysfs_field_lookup(
 	const char *name)
 {
-	int i, limit = ARRAY_SIZE(bq28z610_sysfs_field_tbl);
+	int i;
+	int limit = ARRAY_SIZE(bq28z610_sysfs_field_tbl);
 
 	for (i = 0; i < limit; i++) {
 		if (!strncmp(name, bq28z610_sysfs_field_tbl[i].attr.attr.name,
@@ -979,18 +956,18 @@ static ssize_t bq28z610_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct bq28z610_sysfs_field_info *info = NULL;
-	int temp = 0;
-	int voltage = 0;
-	int curr = 0;
-	int avg_curr = 0;
-	int soc = 100; /* full capacity */
-	int afsoc = 0;
-	int rm = 0;
-	int fcc = 0;
+	int temp;
+	int voltage;
+	int curr;
+	int avg_curr;
+	int soc;
+	int afsoc;
+	int rm;
+	int fcc;
 	int len = 0;
 
 	info = bq28z610_sysfs_field_lookup(attr->attr.name);
-	if (info == NULL) {
+	if (!info) {
 		hwlog_err("get sysfs entries failed\n");
 		return -EINVAL;
 	}
@@ -1000,7 +977,6 @@ static ssize_t bq28z610_sysfs_show(struct device *dev,
 		len = snprintf(buf, PAGE_SIZE,
 			"ss_VOL  ss_CUR  ss_AVGCUR  ss_SOC  SOC  ss_RM  ss_FCC  Temp  ");
 		break;
-
 	case BQ28Z610_SYSFS_GAUGELOG:
 		temp = bq28z610_get_battery_temp();
 		voltage = bq28z610_get_battery_vol();
@@ -1015,9 +991,8 @@ static ssize_t bq28z610_sysfs_show(struct device *dev,
 			"%-6d  %-6d  %-9d  %-6d  %-3d  %-5d  %-6d  %-4d  ",
 			voltage, curr, avg_curr, soc, afsoc, rm, fcc, temp);
 		break;
-
 	default:
-		hwlog_err("invalid sysfs_name(%d)\n", info->name);
+		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -1034,9 +1009,7 @@ static void bq28z610_sysfs_remove_group(struct bq28z610_device_info *di)
 {
 	sysfs_remove_group(&di->dev->kobj, &bq28z610_sysfs_attr_group);
 }
-
 #else
-
 static inline int bq28z610_sysfs_create_group(struct bq28z610_device_info *di)
 {
 	return 0;
@@ -1053,20 +1026,23 @@ static int bq28z610_probe(struct i2c_client *client,
 	struct bq28z610_device_info *di = NULL;
 	struct device_node *np = NULL;
 	struct class *power_class = NULL;
-	int ret = 0;
+	int ret;
 
 	hwlog_info("probe begin\n");
 
+	if (!client || !client->dev.of_node || !id)
+		return -ENODEV;
+
 	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	di->cache.vol = BATTERY_DEFAULT_VOLTAGE;
 	di->cache.temp = ABNORMAL_BATT_TEMPERATURE_LOW - 1;
 	di->cache.soc = BATTERY_DEFAULT_CAPACITY;
 	di->charge_status = CHARGE_STATE_NOT_CHARGING;
-	g_bq28z610_dev = di;
 
+	g_bq28z610_dev = di;
 	di->dev = &client->dev;
 	np = di->dev->of_node;
 	di->client = client;
@@ -1075,7 +1051,7 @@ static int bq28z610_probe(struct i2c_client *client,
 	mutex_init(&bq28z610_mutex);
 
 	p_batt_data = kzalloc(sizeof(*p_batt_data), GFP_KERNEL);
-	if (p_batt_data == NULL) {
+	if (!p_batt_data) {
 		ret = -ENOMEM;
 		goto bq28z610_fail_0;
 	}
@@ -1097,10 +1073,15 @@ static int bq28z610_probe(struct i2c_client *client,
 	}
 
 	power_class = hw_power_get_class();
-	if (power_class != NULL) {
-		if (coul_dev == NULL)
+	if (power_class) {
+		if (!coul_dev)
 			coul_dev = device_create(power_class, NULL, 0, NULL,
 				"coul");
+		if (IS_ERR(coul_dev)) {
+			hwlog_err("sysfs device create failed\n");
+			ret = PTR_ERR(coul_dev);
+			goto bq28z610_fail_3;
+		}
 
 		ret = sysfs_create_link(&coul_dev->kobj, &di->dev->kobj,
 			"coul_data");
@@ -1122,6 +1103,7 @@ bq28z610_fail_1:
 bq28z610_fail_0:
 	kfree(di);
 	di = NULL;
+
 	return ret;
 }
 
@@ -1130,6 +1112,9 @@ static int bq28z610_remove(struct i2c_client *client)
 	struct bq28z610_device_info *di = i2c_get_clientdata(client);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	bq28z610_sysfs_remove_group(di);
 
@@ -1147,7 +1132,7 @@ static const struct of_device_id bq28z610_of_match[] = {
 };
 
 static const struct i2c_device_id bq28z610_i2c_id[] = {
-	{"bq28z610_coul", 0}, {}
+	{ "bq28z610_coul", 0 }, {}
 };
 
 static struct i2c_driver bq28z610_driver = {
@@ -1163,13 +1148,7 @@ static struct i2c_driver bq28z610_driver = {
 
 static int __init bq28z610_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&bq28z610_driver);
-	if (ret)
-		hwlog_err("i2c_add_driver error\n");
-
-	return ret;
+	return i2c_add_driver(&bq28z610_driver);
 }
 
 static void __exit bq28z610_exit(void)

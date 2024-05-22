@@ -11,7 +11,8 @@
  */
 
 #include "hw_flash.h"
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/gpio.h>
@@ -167,7 +168,7 @@ typedef enum {
 
 /* Internal data struct define */
 struct hw_lm3646_mix_ir_private_data_t {
-    struct wake_lock  lm3646_mix_ir_wakelock;
+    struct wakeup_source  lm3646_mix_ir_wakelock;
     unsigned int need_wakelock;
     /* flash control pin */
     lm3646_mix_ir_pin_t pin[MAX_PIN];
@@ -308,7 +309,7 @@ static int hw_lm3646_mix_ir_init(struct hw_flash_ctrl_t *flash_ctrl)
     }
 
     if(WAKE_LOCK_ENABLE == pdata->need_wakelock) {
-        wake_lock_init(&pdata->lm3646_mix_ir_wakelock,WAKE_LOCK_SUSPEND,"lm3646_mix_ir");
+        wakeup_source_init(&pdata->lm3646_mix_ir_wakelock,"lm3646_mix_ir");
     }
 
     return rc;
@@ -605,14 +606,14 @@ static int hw_lm3646_mix_ir_flash_mode_regs_cfg(struct hw_flash_ctrl_t *flash_ct
     check_fault_and_report_dsm(reg_fault_clean);
     i2c_func->i2c_read(i2c_client, REG_FLAGS2, &reg_fault_clean);
 
-    rc |= i2c_func->i2c_read(i2c_client, REG_MAX_CURRENT, &reg_max_val_tmp);
+    rc += i2c_func->i2c_read(i2c_client, REG_MAX_CURRENT, &reg_max_val_tmp);
     //keep the current value of flash mode to avoid flicker when mode convert from flash to torch
     max_val = (reg_max_val_tmp & LM3646_TORCH_MAX_VAL_MASK) | max_val;
 
-    rc |= i2c_func->i2c_write(i2c_client, REG_FLASH_TIMEOUT, FLASH_TIMEOUT_TIME);
-    rc |= i2c_func->i2c_write(i2c_client, REG_MAX_CURRENT, max_val);
-    rc |= i2c_func->i2c_write(i2c_client, REG_FLASH_LED1, led1_val);
-    rc |= i2c_func->i2c_write(i2c_client, REG_MODE, reg_mode);
+    rc += i2c_func->i2c_write(i2c_client, REG_FLASH_TIMEOUT, FLASH_TIMEOUT_TIME);
+    rc += i2c_func->i2c_write(i2c_client, REG_MAX_CURRENT, max_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_FLASH_LED1, led1_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_MODE, reg_mode);
 
     cam_info("%s config flash1 = 0x%02x, max_val = 0x%02x, reg_mode = 0x%02x",
         __func__, led1_val, max_val, reg_mode);
@@ -649,13 +650,13 @@ static int hw_lm3646_mix_ir_torch_mode_regs_cfg(struct hw_flash_ctrl_t *flash_ct
     check_fault_and_report_dsm(reg_fault_clean);
     i2c_func->i2c_read(i2c_client, REG_FLAGS2, &reg_fault_clean);
 
-    rc |= i2c_func->i2c_read(i2c_client, REG_MAX_CURRENT, &reg_max_val_tmp);
+    rc += i2c_func->i2c_read(i2c_client, REG_MAX_CURRENT, &reg_max_val_tmp);
     //keep the current value of flash mode to avoid flicker when mode convert from flash to torch
     max_val = (reg_max_val_tmp & LM3646_FLASH_MAX_VAL_MASK) | max_val;
 
-    rc |= i2c_func->i2c_write(i2c_client, REG_MAX_CURRENT, max_val);
-    rc |= i2c_func->i2c_write(i2c_client, REG_TORCH_LED1, led1_val);
-    rc |= i2c_func->i2c_write(i2c_client, REG_MODE, reg_mode);
+    rc += i2c_func->i2c_write(i2c_client, REG_MAX_CURRENT, max_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_TORCH_LED1, led1_val);
+    rc += i2c_func->i2c_write(i2c_client, REG_MODE, reg_mode);
 
     cam_info("%s config torch1 = 0x%02x, max_val = 0x%02x, reg_mode = 0x%02x",
         __func__, led1_val, max_val, reg_mode);
@@ -691,15 +692,15 @@ static int hw_lm3646_mix_ir_action_ic_standby(struct hw_flash_ctrl_t *flash_ctrl
     check_fault_and_report_dsm(reg_fault_clean);
     i2c_func->i2c_read(i2c_client, REG_FLAGS2, &reg_fault_clean);
    
-    rc |= i2c_func->i2c_write(i2c_client, REG_MODE, MODE_STANDBY);
+    rc += i2c_func->i2c_write(i2c_client, REG_MODE, MODE_STANDBY);
 
     if (rc < 0) {
         report_dsm();
     }
 
-    rc |= hw_lm3646_mix_ir_set_pin(flash_ctrl, STROBE, LOW);
-    rc |= hw_lm3646_mix_ir_set_pin(flash_ctrl, TORCH, LOW);
-    rc |= hw_lm3646_mix_ir_set_pin(flash_ctrl, RESET, LOW);
+    hw_lm3646_mix_ir_set_pin(flash_ctrl, STROBE, LOW);
+    hw_lm3646_mix_ir_set_pin(flash_ctrl, TORCH, LOW);
+    hw_lm3646_mix_ir_set_pin(flash_ctrl, RESET, LOW);
 
     if(pdata->need_wakelock == WAKE_LOCK_ENABLE) {
         /**
@@ -707,7 +708,7 @@ static int hw_lm3646_mix_ir_action_ic_standby(struct hw_flash_ctrl_t *flash_ctrl
          * doing the unlock operation, so there is no dangers for the mutex being
          * unlocked before locked.
          */
-        wake_unlock(&pdata->lm3646_mix_ir_wakelock);/*lint !e455*/
+        __pm_relax(&pdata->lm3646_mix_ir_wakelock);/*lint !e455*/
     }
 
     return rc;
@@ -837,8 +838,8 @@ static int hw_lm3646_mix_ir_get_work_mode_strategy(struct hw_flash_ctrl_t *flash
                                                    lm3646_mix_ir_entire_ic_mode_t *ic_work_mode)
 {
     struct hw_lm3646_mix_ir_private_data_t *pdata = NULL;
-    lm3646_mix_ir_single_mode_t front_mode = SINGLE_STANDBY_MODE;
-    lm3646_mix_ir_single_mode_t back_mode  = SINGLE_STANDBY_MODE;
+    unsigned int front_mode = SINGLE_STANDBY_MODE;
+    unsigned int back_mode  = SINGLE_STANDBY_MODE;
 
     RETURN_ERROR_ON_NULL(flash_ctrl);
     RETURN_ERROR_ON_NULL(ic_work_mode);
@@ -961,7 +962,7 @@ static int hw_lm3646_mix_ir_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
          * 'wake_lock' will just add the event_count of the wake lock source,
          * and will not cause evil effects.
          */
-        wake_lock(&pdata->lm3646_mix_ir_wakelock);
+        __pm_stay_awake(&pdata->lm3646_mix_ir_wakelock);
     }
 
     rc = hw_lm3646_mix_ir_update_work_mode(flash_ctrl,cdata);

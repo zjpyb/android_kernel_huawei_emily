@@ -21,7 +21,6 @@
 #define PD_EVENT_BUF_SIZE	(8*2)
 
 struct tcpc_device;
-typedef struct __pd_port pd_port_t;
 
 typedef struct __pd_msg {
 	uint8_t frame_type;

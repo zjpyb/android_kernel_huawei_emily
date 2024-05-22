@@ -23,6 +23,7 @@
 #define HISI_DSS_SYNC_NAME_SIZE		64
 #define HISI_DSS_SYNC_DRIVER_NAME	"hisi_dss"
 
+#if defined(CONFIG_SYNC_FILE)
 /*
  * to_hisi_dss_fence - get hisi dss fence from fence base object
  * @fence: Pointer to fence base object
@@ -230,8 +231,11 @@ static int hisi_dss_inc_timeline_locked(struct hisi_dss_timeline *tl,
 
 	spin_lock_irqsave(&tl->lock, flags);
 	val = tl->next_value - tl->value;
-	if (val >= increment)
-		tl->value += increment;
+	if (val < increment) {
+		HISI_FB_INFO("timeline->value didnot update, val:%d, inc:%d, tl->value:%d!\n", val, increment, tl->value);
+	}
+	tl->value += increment;
+
 	spin_unlock_irqrestore(&tl->lock, flags);
 
 	list_for_each_entry_safe(f, next, &local_list_head, fence_list) {
@@ -332,7 +336,7 @@ struct hisi_dss_fence *hisi_dss_get_sync_fence(
 			value, tl->name, tl->value, tl->next_value);
 	}
 
-	return (struct hisi_dss_fence *) &f->base; //lint !e429
+	return f; //lint !e429
 }
 /*lint +e429 */
 /*
@@ -499,4 +503,5 @@ const char *hisi_dss_get_sync_fence_name(struct hisi_dss_fence *fence)
 	return fence->name;
 }
 
+#endif
 

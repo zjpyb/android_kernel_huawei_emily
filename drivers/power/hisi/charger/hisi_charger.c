@@ -18,7 +18,7 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/usb/otg.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
@@ -54,8 +54,8 @@ HWLOG_REGIST();
 #define hwlog_err(fmt, args...)  do { printk(KERN_ERR   "[hisi_charger]" fmt, ## args); } while (0)
 #endif
 
-static struct wake_lock charge_lock;
-static struct wake_lock stop_charge_lock;
+static struct wakeup_source charge_lock;
+static struct wakeup_source stop_charge_lock;
 struct charge_device_ops *g_ops = NULL;
 struct fcp_adapter_device_ops *g_fcp_ops = NULL;
 static enum fcp_check_stage_type fcp_stage = FCP_STAGE_DEFAUTL;
@@ -97,9 +97,9 @@ static struct charger_dsm err_count[]=
 **********************************************************/
 static void charge_wake_lock(void)
 {
-     if(!wake_lock_active(&charge_lock))
+     if(!charge_lock.active)
     {
-        wake_lock(&charge_lock);
+        __pm_stay_awake(&charge_lock);
         hwlog_info("charge wake lock\n");
     }
 }
@@ -111,9 +111,9 @@ static void charge_wake_lock(void)
 **********************************************************/
 static void charge_wake_unlock(void)
 {
-     if(wake_lock_active(&charge_lock))
+     if(charge_lock.active)
      {
-        wake_unlock(&charge_lock);
+        __pm_relax(&charge_lock);
         hwlog_info("charge wake unlock\n");
      }
 }
@@ -899,7 +899,7 @@ static void charge_stop_charging(struct charge_device_info *di)
             di->ops->set_batfet_disable(TRUE);
         }
     }
-    wake_lock_timeout(&stop_charge_lock, HZ);
+    __pm_wakeup_event(&stop_charge_lock, jiffies_to_msecs(HZ));
     mutex_lock(&charge_wakelock_flag_lock);
     charge_lock_flag = CHARGE_NO_NEED_WAKELOCK;
     charge_wake_unlock();
@@ -1406,13 +1406,13 @@ static ssize_t charge_sysfs_show(struct device *dev,
         return snprintf(buf,PAGE_SIZE, "%u\n", di->sysfs_data.wdt_disable);
     case CHARGE_SYSFS_CHARGELOG:
         mutex_lock(&di->sysfs_data.dump_reg_lock);
-        di->ops->dump_register(di->sysfs_data.reg_value);
+        di->ops->dump_register(di->sysfs_data.reg_value, CHARGELOG_SIZE);
         ret = snprintf(buf,PAGE_SIZE, "%s\n", di->sysfs_data.reg_value);
         mutex_unlock(&di->sysfs_data.dump_reg_lock);
         return ret;
     case CHARGE_SYSFS_CHARGELOG_HEAD:
         mutex_lock(&di->sysfs_data.dump_reg_head_lock);
-        di->ops->get_register_head(di->sysfs_data.reg_head);
+        di->ops->get_register_head(di->sysfs_data.reg_head, CHARGELOG_SIZE);
         ret = snprintf(buf,PAGE_SIZE, "%s\n", di->sysfs_data.reg_head);
         mutex_unlock(&di->sysfs_data.dump_reg_head_lock);
         return ret;
@@ -1808,8 +1808,8 @@ static int charge_probe(struct platform_device *pdev)
 
     platform_set_drvdata(pdev, di);
 
-    wake_lock_init(&charge_lock, WAKE_LOCK_SUSPEND, "charge_wakelock");
-    wake_lock_init(&stop_charge_lock, WAKE_LOCK_SUSPEND, "stop_charge_wakelock");
+    wakeup_source_init(&charge_lock, "charge_wakelock");
+    wakeup_source_init(&stop_charge_lock, "stop_charge_wakelock");
 
     INIT_DELAYED_WORK(&di->charge_work,charge_monitor_work);
     INIT_DELAYED_WORK(&di->otg_work,charge_otg_work);
@@ -1889,8 +1889,8 @@ static int charge_probe(struct platform_device *pdev)
 charge_fail_3:
     charge_sysfs_remove_group(di);
 charge_fail_2:
-    wake_lock_destroy(&charge_lock);
-    wake_lock_destroy(&stop_charge_lock);
+    wakeup_source_trash(&charge_lock);
+    wakeup_source_trash(&stop_charge_lock);
 charge_fail_1:
     di->ops = NULL;
     platform_set_drvdata(pdev, NULL);
@@ -1916,8 +1916,8 @@ static int charge_remove(struct platform_device *pdev)
     hisi_charger_type_notifier_unregister(&di->usb_nb);
     atomic_notifier_chain_unregister(&fault_notifier_list, &di->fault_nb);
     charge_sysfs_remove_group(di);
-    wake_lock_destroy(&charge_lock);
-    wake_lock_destroy(&stop_charge_lock);
+    wakeup_source_trash(&charge_lock);
+    wakeup_source_trash(&stop_charge_lock);
     cancel_delayed_work(&di->charge_work);
     cancel_delayed_work(&di->otg_work);
 
@@ -1994,7 +1994,7 @@ static int charge_suspend(struct platform_device *pdev, pm_message_t state)
     {
         if(charge_is_charging_full(di))
         {
-            if (!wake_lock_active(&charge_lock))
+            if (!charge_lock.active)
             {
                 cancel_delayed_work(&di->charge_work);
             }

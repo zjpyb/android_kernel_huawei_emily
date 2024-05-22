@@ -18,6 +18,7 @@
 #include <linux/cpumask.h>
 #include <linux/topology.h>
 #include <linux/cpufreq.h>
+#include <linux/hisi_rtg.h>
 #include <linux/kthread.h>
 #include <linux/percpu.h>
 #include <linux/math64.h>
@@ -34,7 +35,23 @@
 
 #include <trace/events/sched.h>
 
-#define NR_AVG_AMP	128
+#include "frame/frame.h"
+
+/*
+ * the type definition of cpu is not unified in kernel,
+ * which will cause pclint violation. In order to satisfy
+ * pclint while respecting kernel native code, we have to
+ * redefine some cpu related macro here
+ */
+#if NR_CPUS != 1
+#undef for_each_cpu
+#define for_each_cpu(cpu, mask)					\
+	for ((cpu) = -1;					\
+		(cpu) = (int) cpumask_next((cpu), (mask)),	\
+		(cpu) < (int) nr_cpu_ids;)
+#endif
+
+#define NR_AVG_AMP	128U
 
 struct cluster_data {
 	bool inited;
@@ -122,7 +139,7 @@ static ssize_t store_min_cpus(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -145,8 +162,7 @@ static ssize_t store_max_cpus(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -171,7 +187,7 @@ static ssize_t store_offline_delay_ms(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -195,7 +211,7 @@ static ssize_t store_task_thres(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	if (val < state->num_cpus)
@@ -221,7 +237,7 @@ static ssize_t store_busy_thres(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -244,7 +260,7 @@ static ssize_t store_idle_thres(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -267,7 +283,7 @@ static ssize_t store_open_thres(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -291,7 +307,7 @@ static ssize_t store_close_thres(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -323,8 +339,8 @@ static ssize_t show_active_cpus(const struct cluster_data *state, char *buf)
 
 static ssize_t show_global_state(const struct cluster_data *state, char *buf)
 {
-	struct cpu_data *c;
-	struct cluster_data *cluster;
+	struct cpu_data *c = NULL;
+	struct cluster_data *cluster = NULL;
 	ssize_t count = 0;
 	int cpu;
 	unsigned long flags;
@@ -333,7 +349,7 @@ static ssize_t show_global_state(const struct cluster_data *state, char *buf)
 	for_each_possible_cpu(cpu) {
 		c = &per_cpu(cpu_state, cpu);
 		cluster = c->cluster;
-		if (!cluster)
+		if (IS_ERR_OR_NULL(cluster))
 			continue;
 
 		if (!cluster->inited)
@@ -399,18 +415,18 @@ static ssize_t show_global_state(const struct cluster_data *state, char *buf)
 static ssize_t store_not_preferred(struct cluster_data *state,
 				   const char *buf, size_t count)
 {
-	struct cpu_data *c;
-	int cpu;
+	struct cpu_data *c = NULL;
+	unsigned int cpu;
 	unsigned int val;
 	unsigned long flags;
 	int ret;
 
-	ret = sscanf(buf, "%d %u\n", &cpu, &val);/* unsafe_function_ignore: sscanf */
-	if (ret != 2 || cpu >= nr_cpu_ids)
+	ret = sscanf(buf, "%u %u\n", &cpu, &val);/* unsafe_function_ignore: sscanf */
+	if (ret != 2 || cpu >= (unsigned int) nr_cpu_ids)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
-	if (cpumask_test_cpu(cpu, &state->cpu_mask)) {
+	if (cpumask_test_cpu((int) cpu, &state->cpu_mask)) {
 		c = &per_cpu(cpu_state, cpu);
 		c->not_preferred = !!val;
 	}
@@ -421,7 +437,7 @@ static ssize_t store_not_preferred(struct cluster_data *state,
 
 static ssize_t show_not_preferred(const struct cluster_data *state, char *buf)
 {
-	struct cpu_data *c;
+	struct cpu_data *c = NULL;
 	ssize_t count = 0;
 	unsigned long flags;
 	int cpu;
@@ -443,7 +459,7 @@ static ssize_t store_update_interval_ms(struct cluster_data *state,
 	unsigned int val;
 	unsigned long flags;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
@@ -465,7 +481,7 @@ static ssize_t store_boost(struct cluster_data *state,
 {
 	unsigned int val;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	__core_ctl_set_boost(state, val);
@@ -482,13 +498,11 @@ static ssize_t show_boost(const struct cluster_data *state,
 static ssize_t store_enable(struct cluster_data *state,
 			    const char *buf, size_t count)
 {
-	unsigned int val;
-	bool enable;
+	bool enable = false;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtobool(buf, &enable) != 0)
 		return -EINVAL;
 
-	enable = !!val;
 	if (enable != state->enable) {
 		state->enable = enable;
 		apply_need(state, false);
@@ -507,7 +521,7 @@ static ssize_t store_spread_affinity(struct cluster_data *state,
 {
 	unsigned int val;
 
-	if (sscanf(buf, "%u\n", &val) != 1)/* unsafe_function_ignore: sscanf */
+	if (kstrtouint(buf, 10, &val) != 0)
 		return -EINVAL;
 
 	state->spread_affinity = !!val;
@@ -584,7 +598,7 @@ static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
 	struct core_ctl_attr *cattr = to_attr(attr);
 	ssize_t ret = -EIO;
 
-	if (cattr->show)
+	if (cattr->show != NULL)
 		ret = cattr->show(data, buf);
 
 	return ret;
@@ -597,7 +611,7 @@ static ssize_t store(struct kobject *kobj, struct attribute *attr,
 	struct core_ctl_attr *cattr = to_attr(attr);
 	ssize_t ret = -EIO;
 
-	if (cattr->store)
+	if (cattr->store != NULL)
 		ret = cattr->store(data, buf, count);
 
 	return ret;
@@ -652,6 +666,22 @@ void core_ctl_update_nr_prod(struct rq *updated_rq)
 	spin_unlock_irqrestore(&per_cpu(nr_lock, cpu), flags);
 }
 EXPORT_SYMBOL(core_ctl_update_nr_prod);
+
+#ifdef CONFIG_SCHED_HISI_RUNNING_TASK_ROTATION
+static unsigned int cluster_real_big_tasks(struct cluster_data *cluster,
+					struct sched_nr_stat *stat)
+{
+	unsigned int nr_big = 0;
+
+	if (hisi_test_slow_cpu(cluster->first_cpu))
+		nr_big = stat->big_avg;
+	else
+		nr_big = stat->avg;
+
+	nr_big = DIV_ROUND_CLOSEST(nr_big, NR_AVG_AMP);
+	return min(nr_big, cluster->num_cpus);
+}
+#endif
 
 /**
  * get_nr_running_avg
@@ -715,7 +745,7 @@ static void get_nr_running_avg(struct cluster_data *cluster,
 		per_cpu(last_get_time, cpu) = curr_time;
 
 	/* do not take the nrrun into account when the cluster is isolated */
-	if (!diff || 0 == cluster->active_cpus)
+	if (diff == 0 || cluster->active_cpus == 0)
 		return;
 
 	stat->avg = (unsigned int)div64_u64(tmp_avg * NR_AVG_AMP, diff);
@@ -728,21 +758,28 @@ static void get_nr_running_avg(struct cluster_data *cluster,
 					  stat->iowait_avg, stat->nr_max);
 }
 
+int update_misfit_task(void);
+
 static int update_running_avg(void)
 {
 	struct sched_nr_stat stat;
-	unsigned int overflow_nrrun, overall_nrrun = 0;
+	unsigned int overflow_nrrun, spare_nrrun;
 	s64 now;
 	unsigned long flags;
-	struct cluster_data *cluster, *temp;
+	struct cluster_data *cluster = NULL, *temp = NULL;
+#ifdef CONFIG_SCHED_HISI_RUNNING_TASK_ROTATION
+	unsigned int big_avg = 0;
+#endif
+	int ret = 0;
 
 	spin_lock_irqsave(&state_lock, flags);
 
 	now = ktime_to_ms(ktime_get());
 	if (now < rq_avg_update_timestamp_ms + rq_avg_update_interval_ms) {
-		spin_unlock_irqrestore(&state_lock, flags);
-		return -1;
+		ret = -1;
+		goto check_misfit;
 	}
+
 	rq_avg_update_timestamp_ms = now;
 
 	list_for_each_entry(cluster, &cluster_list, cluster_node) {
@@ -750,9 +787,12 @@ static int update_running_avg(void)
 		cluster->last_nrrun = cluster->nrrun;
 		cluster->last_max_nrrun = cluster->max_nrrun;
 		get_nr_running_avg(cluster, &stat);
-		overall_nrrun += stat.avg;
 
-		cluster->nrrun = overall_nrrun;
+#ifdef CONFIG_SCHED_HISI_RUNNING_TASK_ROTATION
+		big_avg += cluster_real_big_tasks(cluster, &stat);
+#endif
+
+		cluster->nrrun = stat.avg;
 		cluster->max_nrrun = stat.nr_max;
 		/*
 		 * Big cluster only need to take care of big tasks, but if
@@ -769,22 +809,29 @@ static int update_running_avg(void)
 			/* this cluster is overload,
 			 * need share load to a bigger cluster
 			 */
-			if (stat.avg > cluster->num_cpus * NR_AVG_AMP) {
+			if (stat.avg > cluster->max_cpus * NR_AVG_AMP) {
 				overflow_nrrun = stat.avg -
-						 (cluster->num_cpus * NR_AVG_AMP);
+						 (cluster->max_cpus * NR_AVG_AMP);
 				if (overflow_nrrun > stat.big_avg)
 					stat.big_avg = overflow_nrrun;
 			}
 
-			stat.big_avg = min(stat.big_avg, temp->num_cpus * NR_AVG_AMP);
-
+			spare_nrrun = temp->max_cpus * NR_AVG_AMP;
 			/* prevent unisolate a cluster for little pulse load */
-			if (temp->active_cpus > 0 ||
-			    stat.big_avg > temp->open_thres)
-				temp->nrrun += stat.big_avg;
+			if (temp->nrrun < spare_nrrun &&
+			    (temp->active_cpus > 0 ||
+			     stat.big_avg > temp->open_thres)) {
+				spare_nrrun -= temp->nrrun;
+				spare_nrrun = min(spare_nrrun, stat.big_avg);
+				temp->nrrun += spare_nrrun;
+				cluster->nrrun -= min(cluster->nrrun,
+						      spare_nrrun);
+			}
 
-			if (temp->nrrun < temp->close_thres)
+			if (temp->nrrun < temp->close_thres) {
+				cluster->nrrun += temp->nrrun;
 				temp->nrrun = 0;
+			}
 
 			temp->nrrun = DIV_ROUND_UP(temp->nrrun, NR_AVG_AMP);
 		}
@@ -796,15 +843,22 @@ static int update_running_avg(void)
 		temp->nrrun = DIV_ROUND_UP(temp->nrrun, NR_AVG_AMP);
 	}
 
-	spin_unlock_irqrestore(&state_lock, flags);
+#ifdef CONFIG_SCHED_HISI_RUNNING_TASK_ROTATION
+	walt_rotation_checkpoint(big_avg);
+#endif
 
-	return 0;
+check_misfit:
+	if (!update_misfit_task())
+		ret = 0;
+
+	spin_unlock_irqrestore(&state_lock, flags);
+	return ret;
 }
 
 int update_misfit_task(void)
 {
-	struct cluster_data *cluster, *temp;
-	unsigned int misfits;
+	struct cluster_data *cluster = NULL, *temp = NULL;
+	unsigned int misfits, spare, cluster_id, rtg_nr_running;
 	int cpu, ret = -1;
 
 	list_for_each_entry(cluster, &cluster_list, cluster_node) {
@@ -820,11 +874,34 @@ int update_misfit_task(void)
 
 		if (cluster->cluster_node.prev != &cluster_list) {
 			temp = list_prev_entry(cluster, cluster_node);
-			if (temp->nrrun < misfits) {
-				temp->nrrun = misfits;
+			if (temp->max_cpus <= temp->nrrun)
+				continue;
+
+			spare = temp->max_cpus - temp->nrrun;
+			misfits = min(spare, misfits);
+
+			if (misfits) {
+				temp->nrrun += misfits;
+				cluster->nrrun = cluster->nrrun > misfits + 1 ?
+						 cluster->nrrun - misfits : 1;
 				ret = 0;
 			}
+
+			cluster_id = topology_physical_package_id(
+					cluster->first_cpu);
+			rtg_nr_running = get_cluster_grp_running(cluster_id);
+			if (rtg_nr_running > cluster->task_thres) {
+				rtg_nr_running -= cluster->task_thres;
+				temp->nrrun = max(temp->nrrun, rtg_nr_running);
+			}
 		}
+	}
+
+	cluster = list_first_entry(&cluster_list, struct cluster_data, cluster_node);
+	if (!update_frame_isolation() &&
+		cluster->nrrun == 0) {
+		cluster->nrrun = 1;
+		ret = 0;
 	}
 
 	return ret;
@@ -875,7 +952,7 @@ static bool adjustment_possible(const struct cluster_data *cluster,
 static bool eval_need(struct cluster_data *cluster, bool bypass_time_limit)
 {
 	unsigned long flags;
-	struct cpu_data *c;
+	struct cpu_data *c = NULL;
 	unsigned int busy_cpus = 0, last_need;
 	int ret = 0;
 	bool need_flag = false;
@@ -956,7 +1033,7 @@ static void core_ctl_update_busy(int cpu, unsigned int load, bool check_load)
 	bool old_is_busy = c->is_busy;
 	unsigned int old_load;
 
-	if (!cluster)
+	if (IS_ERR_OR_NULL(cluster))
 		return;
 
 	if (!cluster->inited)
@@ -1024,15 +1101,12 @@ EXPORT_SYMBOL(core_ctl_set_boost);
 
 void core_ctl_spread_affinity(cpumask_t *allowed_mask)
 {
-	struct cluster_data *cluster;
+	struct cluster_data *cluster = NULL;
 
 	if (unlikely(!initialized || !allowed_mask))
 		return;
 
 	if (cpumask_empty(allowed_mask))
-		return;
-
-	if (capable(CAP_SYS_ADMIN))
 		return;
 
 	cluster = list_first_entry(&cluster_list,
@@ -1042,6 +1116,9 @@ void core_ctl_spread_affinity(cpumask_t *allowed_mask)
 	    cluster->spread_affinity &&
 	    cpumask_subset(allowed_mask, &cluster->cpu_mask) &&
 	    cluster->cluster_node.next != &cluster_list) {
+		if (capable(CAP_SYS_ADMIN))
+			return;
+
 		cluster = list_next_entry(cluster, cluster_node);
 		cpumask_or(allowed_mask, allowed_mask, &cluster->cpu_mask);
 	}
@@ -1049,12 +1126,12 @@ void core_ctl_spread_affinity(cpumask_t *allowed_mask)
 
 void core_ctl_check(void)
 {
-	struct cluster_data *cluster;
+	struct cluster_data *cluster = NULL;
 
 	if (unlikely(!initialized))
 		return;
 
-	if (!update_running_avg() || !update_misfit_task()) {
+	if (!update_running_avg()) {
 		list_for_each_entry(cluster, &cluster_list, cluster_node) {
 			apply_need(cluster, false);
 		}
@@ -1063,17 +1140,19 @@ void core_ctl_check(void)
 
 static void move_cpu_lru(struct cpu_data *state, bool forward)
 {
+#ifdef CONFIG_MOVE_CPU_LRU
 	list_del(&state->sib);
 	if (forward)
 		list_add_tail(&state->sib, &state->cluster->lru);
 	else
 		list_add(&state->sib, &state->cluster->lru);
+#endif
 }
 
 static void __try_to_isolate(struct cluster_data *cluster,
 			     unsigned int need, bool isolate_busy)
 {
-	struct cpu_data *c, *tmp;
+	struct cpu_data *c = NULL, *tmp = NULL;
 	unsigned long flags;
 	unsigned int num_cpus = cluster->num_cpus;
 	unsigned int nr_isolated = 0;
@@ -1156,7 +1235,7 @@ static void update_isolated_time(struct cpu_data *cpu)
 static void __try_to_unisolate(struct cluster_data *cluster,
 			       unsigned int need, bool force)
 {
-	struct cpu_data *c, *tmp;
+	struct cpu_data *c = NULL, *tmp = NULL;
 	unsigned long flags;
 	unsigned int num_cpus = cluster->num_cpus;
 	unsigned int nr_unisolated = 0;
@@ -1264,7 +1343,7 @@ static int __ref cpuhp_core_ctl_online(unsigned int cpu)
 	struct cluster_data *cluster = state->cluster;
 	unsigned long flags;
 
-	if (unlikely(!cluster))
+	if (IS_ERR_OR_NULL(cluster))
 		return -ENODEV;
 
 	if (unlikely(!cluster->inited))
@@ -1291,7 +1370,7 @@ static int __ref cpuhp_core_ctl_offline(unsigned int cpu)
 	struct cluster_data *cluster = state->cluster;
 	unsigned long flags;
 
-	if (unlikely(!cluster))
+	if (IS_ERR_OR_NULL(cluster))
 		return -ENODEV;
 
 	if (unlikely(!cluster->inited))
@@ -1354,12 +1433,12 @@ static bool core_ctl_disable_cpumask_present;
 
 static int __init core_ctl_disable_setup(char *str)
 {
-	if (!str) {
+	if (str == NULL) {
 		pr_err("core_ctl: no cmdline str\n");
 		return -EINVAL;
 	}
 
-	if (0 == *str) {
+	if (*str == 0) {
 		pr_err("core_ctl: no valid cmdline\n");
 		return -EINVAL;
 	}
@@ -1373,7 +1452,7 @@ static int __init core_ctl_disable_setup(char *str)
 	}
 
 	core_ctl_disable_cpumask_present = true;
-	pr_info("disable_cpumask=%*pbl\n",
+	pr_info("disable_cpumask=%*pKbl\n",
 			cpumask_pr_args(core_ctl_disable_cpumask));/*lint !e663*/
 
 	return 0;
@@ -1395,7 +1474,7 @@ static bool should_skip(const struct cpumask *mask)
 
 static struct cluster_data *find_cluster_by_first_cpu(unsigned int first_cpu)
 {
-	struct cluster_data *temp;
+	struct cluster_data *temp = NULL;
 
 	list_for_each_entry(temp, &cluster_list, cluster_node) {
 		if (temp->first_cpu == first_cpu)
@@ -1407,7 +1486,7 @@ static struct cluster_data *find_cluster_by_first_cpu(unsigned int first_cpu)
 
 static void insert_cluster_by_cap(struct cluster_data *cluster)
 {
-	struct cluster_data *temp;
+	struct cluster_data *temp = NULL;
 
 	/* bigger capacity first */
 	list_for_each_entry(temp, &cluster_list, cluster_node) {
@@ -1423,10 +1502,10 @@ static void insert_cluster_by_cap(struct cluster_data *cluster)
 
 static int cluster_init(const struct cpumask *mask)
 {
-	struct device *dev;
+	struct device *dev = NULL;
 	unsigned int first_cpu = cpumask_first(mask);
-	struct cluster_data *cluster;
-	struct cpu_data *state;
+	struct cluster_data *cluster = NULL;
+	struct cpu_data *state = NULL;
 	int cpu;
 	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
 
@@ -1439,7 +1518,7 @@ static int cluster_init(const struct cpumask *mask)
 		return 0;
 
 	dev = get_cpu_device(first_cpu);
-	if (!dev) {
+	if (IS_ERR_OR_NULL(dev)) {
 		pr_err("core_ctl: fail to get cpu device\n");
 		return -ENODEV;
 	}
@@ -1447,7 +1526,7 @@ static int cluster_init(const struct cpumask *mask)
 	pr_info("Creating CPU group %d\n", first_cpu);
 
 	cluster = devm_kzalloc(dev, sizeof(*cluster), GFP_KERNEL);
-	if (!cluster) {
+	if (IS_ERR_OR_NULL(cluster)) {
 		pr_err("core_ctl: alloc cluster err\n");
 		return -ENOMEM;
 	}
@@ -1476,7 +1555,7 @@ static int cluster_init(const struct cpumask *mask)
 	cluster->active_cpus = get_active_cpu_count(cluster);
 
 	cluster->core_ctl_thread = kthread_run(try_core_ctl, (void *) cluster,
-					       "core_ctl/%d", first_cpu);
+					       "core_ctl/%u", first_cpu);
 	if (IS_ERR(cluster->core_ctl_thread)) {
 		pr_err("core_ctl: thread create err\n");
 		return PTR_ERR(cluster->core_ctl_thread);/*lint !e593*/

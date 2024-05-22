@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include "sched.h"
 
 /*
@@ -9,7 +10,8 @@
 
 #ifdef CONFIG_SMP
 static int
-select_task_rq_idle(struct task_struct *p, int cpu, int sd_flag, int flags)
+select_task_rq_idle(struct task_struct *p, int cpu, int sd_flag, int flags,
+		    int sibling_count_hint)
 {
 	return task_cpu(p); /* IDLE tasks as never migrated */
 }
@@ -24,7 +26,7 @@ static void check_preempt_curr_idle(struct rq *rq, struct task_struct *p, int fl
 }
 
 static struct task_struct *
-pick_next_task_idle(struct rq *rq, struct task_struct *prev, struct pin_cookie cookie)
+pick_next_task_idle(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
 	put_prev_task(rq, prev);
 	update_idle_core(rq);
@@ -52,10 +54,6 @@ static void put_prev_task_idle(struct rq *rq, struct task_struct *prev)
 
 static void task_tick_idle(struct rq *rq, struct task_struct *curr, int queued)
 {
-#ifdef CONFIG_HISI_CPUFREQ
-	/* Kick cpufreq. This will ensure slack-timer's freq update */
-	cpufreq_update_this_cpu(rq, 0);
-#endif
 }
 
 static void set_curr_task_idle(struct rq *rq)

@@ -10,34 +10,42 @@ typedef unsigned long long u64;
 #define PMU_RESET_REG_OFFSET (PMIC_HRST_REG13_ADDR(0))
 #define RST_FLAG_MASK (0xFF)
 #define PMU_RESET_VALUE_USED 0xFFFFFF00
+#define BOOTUP_KEYPOINT_OFFSET (PMIC_HRST_REG14_ADDR(0))
 #define PMU_RESET_RECORD_DDR_AREA_SIZE 0x100
 #define RECORD_PC_STR_MAX_LENGTH 0x48
 typedef struct
 {
  char exception_info[RECORD_PC_STR_MAX_LENGTH];
  unsigned long exception_info_len;
-}
-AP_RECORD_PC;
+} AP_RECORD_PC;
 #define ETR_MAGIC_START "ETRTRACE"
 #define ETR_MAGIC_SIZE ((unsigned int)sizeof(ETR_MAGIC_START))
+#define LOGBUF_DUMP_MAGIC 0xFFEE5A5A
 typedef struct
 {
     char magic[ETR_MAGIC_SIZE];
     u64 paddr;
     u32 size;
     u32 rd_offset;
-}
-AP_RECORD_ETR;
+} AP_RECORD_ETR;
+struct log_buf_dump_info {
+ u32 magic;
+ u32 reboot_reason;
+ u64 logbuf_addr;
+ u32 logbuf_size;
+ u32 idx_size;
+ u64 log_first_idx_addr;
+ u64 log_next_idx_addr;
+};
 #define BOARD_COLD_START_ADDR ((HISI_RESERVED_MNTN_PHYMEM_BASE_UNIQUE) + 0x280)
 #define FPGA_RESET_REG_ADDR ((HISI_RESERVED_MNTN_PHYMEM_BASE_UNIQUE) + 0x288)
 #define FPGA_BOOTUP_KEYPOINT_ADDR ((HISI_RESERVED_MNTN_PHYMEM_BASE_UNIQUE) + 0x290)
 #define FPGA_EXCSUBTYPE_REG_ADDR ((HISI_RESERVED_MNTN_PHYMEM_BASE_UNIQUE) + 0x298)
-#define BOOTUP_KEYPOINT_OFFSET (PMIC_HRST_REG14_ADDR(0))
 #define DFX_HEAD_SIZE 512
 #define TOTAL_NUMBER 5
 #define FASTBOOTLOG_SIZE HISI_SUB_RESERVED_FASTBOOT_LOG_PYHMEM_SIZE
-#define LAST_KMSG_SIZE HISI_RESERVED_PSTORE_PHYMEM_SIZE/2
-#define LAST_APPLOG_SIZE HISI_RESERVED_PSTORE_PHYMEM_SIZE/8
+#define LAST_KMSG_SIZE (HISI_RESERVED_PSTORE_PHYMEM_SIZE/2)
+#define LAST_APPLOG_SIZE (HISI_RESERVED_PSTORE_PHYMEM_SIZE/8)
 #define EVERY_NUMBER_SIZE (DFX_HEAD_SIZE + LAST_APPLOG_SIZE + LAST_KMSG_SIZE + FASTBOOTLOG_SIZE)
 #define DFX_MAGIC_NUMBER 0x2846579
 #define DFX_USED_SIZE (EVERY_NUMBER_SIZE*(TOTAL_NUMBER+1)+DFX_HEAD_SIZE)
@@ -238,6 +246,7 @@ typedef enum
     BR_POWERON_CHARGE = 0x2a,
     gpscoldboot = 0x2b,
     atfactoryreset0 = 0x2c,
+    fastbootd = 0x2e,
     REBOOT_REASON_LABEL1 = 0x40,
     AP_S_ABNORMAL = REBOOT_REASON_LABEL1,
     AP_S_TSENSOR0 = 0x41,
@@ -273,7 +282,8 @@ typedef enum
     AP_S_SUBPMU = 0x69,
     AP_S_VENDOR_PANIC = 0x6A,
     REBOOT_REASON_LABEL3 = 0x70,
-    CP_S_MODEMDMSS = REBOOT_REASON_LABEL3,
+    CP_S_EXCEPTION_START = REBOOT_REASON_LABEL3,
+    CP_S_MODEMDMSS = CP_S_EXCEPTION_START,
     CP_S_MODEMNOC = 0x71,
     CP_S_MODEMAP = 0x72,
     CP_S_EXCEPTION = 0x73,
@@ -291,6 +301,7 @@ typedef enum
     CP_S_TLDSP_EXC = 0x7f,
     CP_S_CPHY_EXC = 0x80,
     CP_S_GUCNAS_EXC = 0x81,
+    CP_S_EXCEPTION_END = CP_S_GUCNAS_EXC,
     SOCHIFI_S_EXCEPTION = 0x82,
     HIFI_S_RESETFAIL = 0x83,
     ISP_S_EXCEPTION = 0x84,
@@ -304,30 +315,30 @@ typedef enum
     WIFI_S_EXCEPTION = 0x8c,
     BFGX_S_EXCEPTION = 0x8d,
     AUDIO_CODEC_EXCEPTION = 0x8e,
-    REBOOT_REASON_LABEL4 = 0x90,
+    REBOOT_REASON_LABEL4 = 0xa0,
     XLOADER_S_DDRINIT_FAIL = REBOOT_REASON_LABEL4,
-    XLOADER_S_EMMCINIT_FAIL = 0x91,
-    XLOADER_S_LOAD_FAIL = 0x92,
-    XLOADER_S_VERIFY_FAIL = 0x93,
-    XLOADER_S_WATCHDOG = 0x94,
-    XLOADER_INSE_S_PANIC = 0x95,
-    XLOADER_MEMORY_REPAIR = 0x96,
-    FASTBOOT_EMMCINIT_FAIL = 0xa0,
-    FASTBOOT_S_PANIC = 0xa1,
-    FASTBOOT_S_WATCHDOG = 0xa2,
-    FASTBOOT_OCV_VOL_ERR = 0xa3,
-    FASTBOOT_BAT_TEMP_ERR = 0xa4,
-    FASTBOOT_MISC_ERR = 0xa5,
-    FASTBOOT_LD_DTIMG_ERR = 0xa6,
-    FASTBOOT_LD_OTHRIMG_ERR = 0xa7,
-    FASTBOOT_KERNELIMG_ERR = 0xa8,
-    FASTBOOT_LOADLPMCU_FAIL = 0xa9,
-    FASTBOOT_VERIFY_FAIL = 0xaa,
-    FASTBOOT_SOC_TEMP_ERR = 0xab,
-    FASTBOOT_FLASHCERT_FAIL = 0xac,
-    FASTBOOT_MULCOREON_FAIL = 0xad,
-    FASTBOOT_MULCOREOFF_FAIL = 0xae,
-    REBOOT_REASON_LABEL5 = 0xc0,
+    XLOADER_S_EMMCINIT_FAIL = 0xa1,
+    XLOADER_S_LOAD_FAIL = 0xa2,
+    XLOADER_S_VERIFY_FAIL = 0xa3,
+    XLOADER_S_WATCHDOG = 0xa4,
+    XLOADER_INSE_S_PANIC = 0xa5,
+    XLOADER_MEMORY_REPAIR = 0xa6,
+    FASTBOOT_EMMCINIT_FAIL = 0xb0,
+    FASTBOOT_S_PANIC = 0xb1,
+    FASTBOOT_S_WATCHDOG = 0xb2,
+    FASTBOOT_OCV_VOL_ERR = 0xb3,
+    FASTBOOT_BAT_TEMP_ERR = 0xb4,
+    FASTBOOT_MISC_ERR = 0xb5,
+    FASTBOOT_LD_DTIMG_ERR = 0xb6,
+    FASTBOOT_LD_OTHRIMG_ERR = 0xb7,
+    FASTBOOT_KERNELIMG_ERR = 0xb8,
+    FASTBOOT_LOADLPMCU_FAIL = 0xb9,
+    FASTBOOT_VERIFY_FAIL = 0xba,
+    FASTBOOT_SOC_TEMP_ERR = 0xbb,
+    FASTBOOT_FLASHCERT_FAIL = 0xbc,
+    FASTBOOT_MULCOREON_FAIL = 0xbd,
+    FASTBOOT_MULCOREOFF_FAIL = 0xbe,
+    REBOOT_REASON_LABEL5 = 0xd0,
     BFM_S_NATIVE_BOOT_FAIL = REBOOT_REASON_LABEL5,
     BFM_S_BOOT_TIMEOUT,
     BFM_S_FW_BOOT_FAIL,
@@ -383,6 +394,8 @@ enum MODID_LIST {
     HISI_BB_MOD_NPU_END = 0xc0000fff,
     HISI_BB_MOD_CONN_START = 0xc0001000,
     HISI_BB_MOD_CONN_END = 0xc0001fff,
+    HISI_BB_MOD_IVP_START = 0xc0002000,
+    HISI_BB_MOD_IVP_END = 0xc0002fff,
     HISI_BB_MOD_RANDOM_ALLOCATED_START = 0xd0000000,
     HISI_BB_MOD_RANDOM_ALLOCATED_END = 0xf0ffffff
 };
@@ -415,10 +428,9 @@ typedef struct
     u64 magic;
     u64 paddr;
     u32 size;
-}
-FTRACE_MDUMP_HEAD;
+} FTRACE_MDUMP_HEAD;
 #define DTS_MNTNDUMP_NAME "/reserved-memory/mntndump"
-#define MNTNDUMP_MAGIC (0xDEADBEEFDEADBEEF)
+#define MNTNDUMP_MAGIC (0xDEADBEEF)
 #define MAX_LEN_OF_MNTNDUMP_ADDR_STR (0x20)
 #define MNTN_DUMP_VERSION (0xFFFF0003)
 typedef enum {
@@ -429,9 +441,14 @@ typedef enum {
     MNTN_DUMP_FTRACE,
     MNTN_DUMP_PSTORE_RAMOOPS,
     MNTN_DUMP_BC_PANIC,
+    MNTN_DUMP_LOGBUF,
+#if defined(CONFIG_GCOV_KERNEL) || defined(CONFIG_HISI_GCOV_FASTBOOT)
+    MNTN_DUMP_GCOV,
+#endif
+    MNTN_DUMP_HWDIAG,
     MNTN_DUMP_MAX
 }mntn_dump_module;
-#define MNTN_DUMP_HEAD_SIZE (sizeof(struct mdump_head))
+#define MNTN_DUMP_HEAD_SIZE ( ((sizeof(struct mdump_head)) + sizeof(u64) - 1) & (~(sizeof(u64) - 1)) )
 #define MNTN_DUMP_ETR_SIZE (0x30)
 #define MNTN_DUMP_KASLR_SIZE (0x10)
 #define MNTN_DUMP_KERNEL_DUMP_SIZE (0x800)
@@ -439,6 +456,11 @@ typedef enum {
 #define MNTN_DUMP_FTRACE_SIZE (0x30)
 #define MNTN_DUMP_PSTORE_RAMOOPS_SIZE (0x30)
 #define MNTN_DUMP_BC_PANIC_SIZE (0x20)
+#define MNTN_DUMP_LOGBUF_SIZE (0x40)
+#if defined(CONFIG_GCOV_KERNEL) || defined(CONFIG_HISI_GCOV_FASTBOOT)
+#define MNTN_DUMP_GCOV_SIZE (0x10)
+#endif
+#define MNTN_DUMP_HWDIAG_SIZE (0x100)
 #define MNTN_DUMP_MAXSIZE (0x1000 - MNTN_DUMP_KASLR_SIZE)
 struct mdump_regs_info{
  int mid;
@@ -446,7 +468,8 @@ struct mdump_regs_info{
  unsigned int size;
 } ;
 struct mdump_head{
- unsigned long magic;
+ u32 crc;
+ u32 magic;
  unsigned int version;
  unsigned int nums;
  struct mdump_regs_info regs_info[MNTN_DUMP_MAX];
@@ -455,7 +478,8 @@ struct mdump_end{
  unsigned long magic;
 };
 struct mdump_pstore {
- unsigned long magic;
+ u32 crc;
+ u32 magic;
  unsigned long ramoops_addr;
  unsigned long ramoops_size;
 };
@@ -528,4 +552,10 @@ typedef struct hisiap_ringbuffer_s {
  char keys[HISIAP_KEYS_MAX + 1];
  u8 data[1];
 } hisiap_ringbuffer_t;
+#if defined(CONFIG_GCOV_KERNEL) || defined(CONFIG_HISI_GCOV_FASTBOOT)
+struct mdump_gcov {
+ unsigned long gcda_addr;
+ unsigned int gcda_size;
+};
+#endif
 #endif

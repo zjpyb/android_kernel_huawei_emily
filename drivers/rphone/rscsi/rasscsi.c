@@ -624,6 +624,7 @@ static void scsi_exit(void)
 	proc_exit(MODULE_NAME);
 	fault_restore();
 	workqueue_restore();
+	kmem_cache_destroy(delay_cache);
 }
 
 module_init(scsi_init);

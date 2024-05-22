@@ -21,7 +21,7 @@
 #include <asm/irq.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/workqueue.h>
 #include <linux/bitops.h>
@@ -35,6 +35,7 @@
 #include <huawei_platform/power/direct_charger.h>
 #endif
 #include <linux/hisi/usb/hisi_usb.h>
+#include <linux/power/hisi/charger/hisi_charger_scp.h>
 #ifdef CONFIG_USB_ANALOG_HS_INTERFACE
 #include <huawei_platform/audio/usb_analog_hs_interface.h>
 #endif
@@ -592,192 +593,6 @@ static int FUSB3601_accp_adapter_detect(void)
 	FUSB3601_core_redo_bc12_limited(&chip->port);
 	return -1;
 }
-static int FUSB3601_fcp_adapter_detect(void)
-{
-	int ret;
-#ifdef CONFIG_DIRECT_CHARGER
-	int val;
-#endif
-	ret = FUSB3601_accp_adapter_detect();
-	if (ACCP_ADAPTOR_DETECT_OTHER == ret) {
-		hwlog_info("fcp adapter other detect\n");
-		return FCP_ADAPTER_DETECT_OTHER;
-	}
-	if (ACCP_ADAPTOR_DETECT_FAIL == ret) {
-		hwlog_info("fcp adapter detect fail\n");
-		return FCP_ADAPTER_DETECT_FAIL;
-	}
-#ifdef CONFIG_DIRECT_CHARGER
-	if (FUSB3601_is_support_scp()) {
-		return FCP_ADAPTER_DETECT_SUCC;
-	}
-	ret = FUSB3601_accp_adapter_reg_read(&val, SCP_ADP_TYPE);
-	if(ret) {
-		hwlog_err("%s : read SCP_ADP_TYPE fail ,ret = %d \n",__func__,ret);
-		return FCP_ADAPTER_DETECT_SUCC;
-	}
-	return FCP_ADAPTER_DETECT_OTHER;
-#else
-	return FCP_ADAPTER_DETECT_SUCC;
-#endif
-}
-/****************************************************************************
-  Function:     FUSB3601_fcp_get_adapter_output_vol
-  Description:  get fcp output vol
-  Input:        NA.
-  Output:       fcp output vol(5V/9V/12V)
-  Return:        0: success
-                -1: fail
-***************************************************************************/
-static int FUSB3601_fcp_get_adapter_output_vol(int *vol)
-{
-    int num = 0;
-    int output_vol = 0;
-    int ret =0;
-
-    /*get adapter vol list number,exclude 5V*/
-    ret = FUSB3601_accp_adapter_reg_read(&num, FCP_SLAVE_REG_DISCRETE_CAPABILITIES);
-    /*currently,fcp only support three out vol config(5v/9v/12v)*/
-    if (ret || num > FCP_MAX_OUTPUT_VOL_NUM)
-    {
-        hwlog_err("%s: vout list support err, reg[0x21] = %d.\n", __func__, num);
-        return -1;
-    }
-
-    /*get max out vol value*/
-   ret = FUSB3601_accp_adapter_reg_read(&output_vol, FCP_SLAVE_REG_DISCRETE_OUT_V(num));
-    if(ret )
-    {
-        hwlog_err("%s: get max out vol value failed ,ouputvol=%d,num=%d.\n",__func__,output_vol,num);
-        return -1;
-    }
-    *vol = output_vol;
-    hwlog_info("%s: get adapter max out vol = %d,num= %d.\n", __func__, output_vol,num);
-    return 0;
-}
-
-
-/****************************************************************************
-  Function:     FUSB3601_fcp_set_adapter_output_vol
-  Description:  set fcp adapter output vol
-  Input:        NA
-  Output:       NA
-  Return:        0: success
-                -1: fail
-***************************************************************************/
-static int FUSB3601_fcp_set_adapter_output_vol(int output_vol)
-{
-    int val = 0;
-    int vol = 0;
-    int ret = 0;
-
-    /*read ID OUTI , for identify huawei adapter*/
-    ret = FUSB3601_accp_adapter_reg_read(&val, FCP_SLAVE_REG_ID_OUT0);
-    if(ret < 0)
-    {
-        hwlog_err("%s: adapter ID OUTI read failed, ret is %d \n",__func__,ret);
-        return -1;
-    }
-    hwlog_info("%s: id out reg[0x4] = %d.\n", __func__, val);
-
-	switch (output_vol) {
-	case FCP_OUTPUT_VOL_5V:
-		ret = FUSB3601_accp_adapter_reg_read(&vol,
-			FCP_SLAVE_REG_DISCRETE_OUT_V(0));
-		if (ret < 0) {
-			hwlog_err("%s get output_vol error\n", __func__);
-			return -1;
-		}
-		break;
-	case FCP_OUTPUT_VOL_9V:
-		/* get adapter max output vol value */
-		ret = FUSB3601_fcp_get_adapter_output_vol(&vol);
-		if (ret < 0) {
-			hwlog_err("%s: fcp get adapter output vol err\n",
-				__func__);
-			return -1;
-		}
-		if (vol > (FCP_OUTPUT_VOL_9V * FCP_VOL_STEP)) {
-			vol = FCP_OUTPUT_VOL_9V * FCP_VOL_STEP;
-			hwlog_info("limit adap to 9V, while support 12V\n");
-		}
-		break;
-	default:
-		hwlog_err("input val is invalid\n");
-		return -1;
-	}
-
-	hwlog_info("%s: output_vol=%d\n", __func__, vol);
-
-    /*retry if write fail */
-    ret |= FUSB3601_accp_adapter_reg_write(vol, FCP_SLAVE_REG_VOUT_CONFIG);
-    ret |= FUSB3601_accp_adapter_reg_read(&val, FCP_SLAVE_REG_VOUT_CONFIG);
-    hwlog_info("%s: vout config reg[0x2c] = %d.\n", __func__, val);
-    if(ret < 0 ||val != vol )
-    {
-        hwlog_err("%s:out vol config err, reg[0x2c] = %d.\n", __func__, val);
-        return -1;
-    }
-
-    ret = FUSB3601_accp_adapter_reg_write(FCP_SLAVE_SET_VOUT, FCP_SLAVE_REG_OUTPUT_CONTROL);
-    if(ret < 0)
-    {
-        hwlog_err("%s : enable adapter output voltage failed \n ",__func__);
-        return -1;
-    }
-    hwlog_info("fcp adapter output vol set ok.\n");
-    return 0;
-}
-
-/****************************************************************************
-  Function:     FUSB3601_fcp_get_adapter_max_power
-  Description:  get fcp adpter max power
-  Input:        NA.
-  Output:       NA
-  Return:       MAX POWER(W)
-***************************************************************************/
-static int FUSB3601_fcp_get_adapter_max_power(int *max_power)
-{
-    int reg_val = 0;
-    int ret =0;
-
-    /*read max power*/
-    ret = FUSB3601_accp_adapter_reg_read(&reg_val, FCP_SLAVE_REG_MAX_PWR);
-    if(ret != 0)
-    {
-        hwlog_err("%s: read max power failed \n",__func__);
-        return -1;
-    }
-
-    hwlog_info("%s: max power reg[0x22] = %d.\n", __func__, reg_val);
-    *max_power = (reg_val >> 1);
-    return 0;
-}
-
-/**********************************************************
-*  Function:       FUSB3601_fcp_get_adapter_output_current
-*  Discription:    fcp get the output current from adapter max power and output vol
-*  Parameters:     NA
-*  return value:  input_current(MA)
-**********************************************************/
-static int FUSB3601_fcp_get_adapter_output_current(void)
-{
-    int output_current = 0;
-    int output_vol = 0;
-    int max_power = 0;
-    int ret =0;
-
-    ret |= FUSB3601_fcp_get_adapter_output_vol(&output_vol);
-    ret |= FUSB3601_fcp_get_adapter_max_power(&max_power);
-    if (ret != 0 || 0 == output_vol)
-    {
-        hwlog_err("%s : output current read failed \n",__func__);
-        return -1;
-    }
-    output_current = max_power*1000/output_vol;
-    hwlog_info("%s: output current = %d.\n", __func__, output_current);
-    return output_current;
-}
 
 /**********************************************************
 *  Function:       FUSB3601_is_support_fcp
@@ -790,39 +605,7 @@ static int FUSB3601_is_support_fcp(void)
 {
 	return 0;
 }
-/**********************************************************
-*  Function:       fcp_adapter_status_check
-*  Discription:    when in fcp status ,it will check adapter reg status
-*  Parameters:     NA
-*  return value: 0:status ok ;FCP_ADAPTER_OTEMP:over temp;FCP_ADAPTER_OCURRENT: over current;FCP_ADAPTER_OVLT: over ovl;
-**********************************************************/
-static int FUSB3601_fcp_read_adapter_status (void)
-{
-    int val = 0,ret =0;
-    ret = FUSB3601_accp_adapter_reg_read(&val, FCP_ADAPTER_STATUS);
-    if(ret !=0)
-    {
-        hwlog_err("%s : read failed ,ret = %d \n",__func__,ret);
-        return 0;
-    }
-    hwlog_info("val is %d \n",val);
 
-    if( FCP_ADAPTER_OVLT == (val & FCP_ADAPTER_OVLT))
-    {
-       return FCP_ADAPTER_OVLT;
-    }
-
-    if( FCP_ADAPTER_OCURRENT == (val & FCP_ADAPTER_OCURRENT))
-    {
-        return FCP_ADAPTER_OCURRENT;
-    }
-
-    if( FCP_ADAPTER_OTEMP == (val & FCP_ADAPTER_OTEMP))
-    {
-        return FCP_ADAPTER_OTEMP;
-    }
-    return 0;
-}
 #ifdef CONFIG_DIRECT_CHARGER
 static int FUSB3601_is_support_scp(void)
 {
@@ -891,6 +674,7 @@ static int FUSB3601_scp_exit(void)
 #endif
 		data = FUSB3601_DPD_DISABLE;
 		ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE2, 1, &data);
+		hwlog_info("%s: ret = %d\n", __func__, ret);
 		FUSB3601_set_vbus_detach(port, VBUS_DETACH_ENABLE);
 		FUSB3601_ReadRegister(port, regFM_CONTROL4);
 		state_machine_need_resched = 1;
@@ -965,35 +749,27 @@ static enum hisi_charger_type FUSB3601_get_charger_type(void)
 }
 
 #endif
-struct fcp_adapter_device_ops FUSB3601_fcp_ops = {
-    .get_adapter_output_current = FUSB3601_fcp_get_adapter_output_current,
-    .set_adapter_output_vol     = FUSB3601_fcp_set_adapter_output_vol,
-    .detect_adapter             = FUSB3601_fcp_adapter_detect,
-    .is_support_fcp             = FUSB3601_is_support_fcp,
-    .switch_chip_reset          = FUSB3601_chip_reset_nothing,
-    .fcp_adapter_reset          = FUSB3601_fcp_adapter_reset,
-    .stop_charge_config        = FUSB3601_fcp_stop_charge_config,
-    .is_fcp_charger_type    = NULL,
-    .fcp_read_adapter_status = FUSB3601_fcp_read_adapter_status,
-    .fcp_read_switch_status = NULL,
-    .reg_dump = NULL,
-};
+
 struct charge_switch_ops FUSB3601_switch_ops = {
 	.get_charger_type = FUSB3601_get_charger_type,
 	.is_water_intrused = NULL,
 };
 
-static int fusb3601_scp_reg_read_block(int reg, int *val, int num)
+static int fusb3601_fcp_reg_read_block(int reg, int *val, int num)
 {
-	int ret = 0;
-	int i = 0;
+	int ret;
+	int i;
 	int data = 0;
-	FUSB3601_scp_error_flag = 0;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
 
 	for (i = 0; i < num; i++) {
-		ret = FUSB3601_scp_adapter_reg_read(&data, reg + i);
+		ret = FUSB3601_accp_adapter_reg_read(&data, reg + i);
 		if (ret) {
-			hwlog_err("error: scp read failed(reg=0x%x)!\n", reg + i);
+			hwlog_err("fcp read failed(reg=0x%x)\n", reg + i);
 			return -1;
 		}
 
@@ -1003,16 +779,81 @@ static int fusb3601_scp_reg_read_block(int reg, int *val, int num)
 	return 0;
 }
 
-static int fusb3601_scp_reg_write_block(int reg, int *val, int num)
+static int fusb3601_fcp_reg_write_block(int reg, const int *val, int num)
 {
-	int ret = 0;
-	int i = 0;
+	int ret;
+	int i;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
+
+	for (i = 0; i < num; i++) {
+		ret = FUSB3601_accp_adapter_reg_write(val[i], reg + i);
+		if (ret) {
+			hwlog_err("fcp write failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static struct fcp_protocol_ops fusb3601_fcp_protocol_ops = {
+	.chip_name = "fusb3601",
+	.reg_read = fusb3601_fcp_reg_read_block,
+	.reg_write = fusb3601_fcp_reg_write_block,
+	.detect_adapter = FUSB3601_accp_adapter_detect,
+	.soft_reset_master = FUSB3601_chip_reset_nothing,
+	.soft_reset_slave = FUSB3601_fcp_adapter_reset,
+	.get_master_status = NULL,
+	.stop_charging_config = FUSB3601_fcp_stop_charge_config,
+	.is_accp_charger_type = NULL,
+};
+
+static int fusb3601_scp_reg_read_block(int reg, int *val, int num)
+{
+	int ret;
+	int i;
+	int data = 0;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
+
+	FUSB3601_scp_error_flag = 0;
+
+	for (i = 0; i < num; i++) {
+		ret = FUSB3601_scp_adapter_reg_read(&data, reg + i);
+		if (ret) {
+			hwlog_err("scp read failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
+
+		val[i] = data;
+	}
+
+	return 0;
+}
+
+static int fusb3601_scp_reg_write_block(int reg, const int *val, int num)
+{
+	int ret;
+	int i;
+
+	if (!val) {
+		hwlog_err("val is null\n");
+		return -1;
+	}
+
 	FUSB3601_scp_error_flag = 0;
 
 	for (i = 0; i < num; i++) {
 		ret = FUSB3601_scp_adapter_reg_write(val[i], reg + i);
 		if (ret) {
-			hwlog_err("error: scp write failed(reg=0x%x)!\n", reg + i);
+			hwlog_err("scp write failed(reg=0x%x)\n", reg + i);
 			return -1;
 		}
 	}
@@ -1109,11 +950,6 @@ void FUSB3601_charge_register_callback(void)
     mutex_init(&FUSB3601_accp_detect_lock);
     mutex_init(&FUSB3601_accp_adaptor_reg_lock);
 
-    if( 0 == FUSB3601_is_support_fcp() && 0 ==fcp_adapter_ops_register(&FUSB3601_fcp_ops))
-    {
-        hwlog_info(" fcp adapter ops register success!\n");
-    }
-
     if(0 == charge_switch_ops_register(&FUSB3601_switch_ops))
     {
         hwlog_info(" charge switch ops register success!\n");
@@ -1122,11 +958,13 @@ void FUSB3601_charge_register_callback(void)
 	FUSB3601_wired_chsw_ops_register();
 #endif
 
+	if (FUSB3601_is_support_fcp() == 0)
+		fcp_protocol_ops_register(&fusb3601_fcp_protocol_ops);
+
 #ifdef CONFIG_DIRECT_CHARGER
-	if (0 == FUSB3601_is_support_scp()) {
+	if (FUSB3601_is_support_scp() == 0)
 		scp_protocol_ops_register(&fusb3601_scp_protocol_ops);
-	}
-#endif
+#endif /* CONFIG_DIRECT_CHARGER */
 
 	hwlog_info(" %s--!\n", __func__);
 }

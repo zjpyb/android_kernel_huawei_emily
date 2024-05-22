@@ -39,15 +39,15 @@ EXTRA_CFLAGS := -I../../include/ \
 		-Iinc/policy \
 		-Iinc/proc_mgmt \
 		-Iinc/tee \
-                -Idrivers/hisi/tzdriver \
-		-Idrivers/hisi/tzdriver/libhwsecurec
+		-Idrivers/hisi/tzdriver \
+		-I$(srctree)/lib/libc_sec/securec_v2/include
 
 ifeq ($(COMILE_BY_MODULE),offline)
 PWD := $(shell pwd)
 
 ANDROID_ROOT_DIR := $(PWD)/../../../../../..
 
-KERNEL_SRC_DIR := $(ANDROID_ROOT_DIR)/kernel/linux-4.9
+KERNEL_SRC_DIR := $(ANDROID_ROOT_DIR)/kernel/linux-4.14
 
 COMPILER_DIR := $(ANDROID_ROOT_DIR)/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
 

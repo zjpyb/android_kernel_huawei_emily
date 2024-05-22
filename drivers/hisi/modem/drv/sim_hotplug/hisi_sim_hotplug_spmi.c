@@ -736,7 +736,9 @@ static void hisi_sim_det_msg_to_ccore(struct hisi_sim_hotplug_info *info, u8 sim
 {
     int det_gpio_level  = 0;
     s32 ret             = 0;
+#ifdef CONFIG_HISI_BALONG_MODEM
     u32 channel_id      = 0;
+#endif
 
     if (runmode_is_factory())
     {
@@ -766,6 +768,7 @@ static void hisi_sim_det_msg_to_ccore(struct hisi_sim_hotplug_info *info, u8 sim
     }
     info->old_det_gpio_level = det_gpio_level;
 
+#ifdef CONFIG_HISI_BALONG_MODEM
     if (SIM0 == info->sim_id)
     {
         channel_id = SIM0_CHANNEL_ID;
@@ -794,11 +797,15 @@ static void hisi_sim_det_msg_to_ccore(struct hisi_sim_hotplug_info *info, u8 sim
     {
         LOGI("%s: send_msg_to_cp is not 1, so not bsp_icc_send to CP.\n", __func__);
     }
+#else
+    LOGI("%s: CONFIG_HISI_BALONG_MODEM undefined, so not call bsp_icc_send.\n", __func__);
+#endif
     update_sim_state_info(info->sim_id, sim_pluged);
 }
 
 static void hisi_sim_hpd_msg_to_ccore(struct hisi_sim_hotplug_info *info)
 {
+#ifdef CONFIG_HISI_BALONG_MODEM
     u32 channel_id  = 0;
     s32 ret         = 0;
     u8 sim_state    = SIM_HPD_LEAVE;
@@ -830,6 +837,9 @@ static void hisi_sim_hpd_msg_to_ccore(struct hisi_sim_hotplug_info *info)
     {
         LOGE("%s: sim%d, bsp_icc_send failed.\n", __func__, info->sim_id);
     }
+#else
+    LOGI("%s: CONFIG_HISI_BALONG_MODEM undefined, so not call bsp_icc_send.\n", __func__);
+#endif
 }
 
 static void det_irq_set_sim_insert(struct hisi_sim_hotplug_info *info)
@@ -1478,6 +1488,7 @@ static int hisi_sim_hotplug_remove(struct spmi_device *pdev)
     return 0;
 }
 
+#ifdef CONFIG_PM
 static int hisi_sim_hotplug_suspend(struct spmi_device *pdev, pm_message_t state)
 {
     struct hisi_sim_hotplug_info *info;
@@ -1515,6 +1526,7 @@ static int hisi_sim_hotplug_resume(struct spmi_device *pdev)
 
     return 0;
 }
+#endif
 
 static struct of_device_id hisi_sim_hotplug_of_match[] =
 {
@@ -1535,8 +1547,10 @@ static struct spmi_driver hisi_sim_hotplug_driver =
         .name       = "hisi-sim_hotplug",
         .of_match_table = of_match_ptr(hisi_sim_hotplug_of_match),
     },
+#ifdef CONFIG_PM
     .suspend        = hisi_sim_hotplug_suspend,
     .resume         = hisi_sim_hotplug_resume,
+#endif
 };
 
 int __init hisi_sim_hotplug_init(void)

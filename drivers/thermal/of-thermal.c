@@ -283,7 +283,7 @@ static int of_thermal_set_mode(struct thermal_zone_device *tz,
 
 	mutex_lock(&tz->lock);
 
-	if (mode == THERMAL_DEVICE_ENABLED ) {
+	if (mode == THERMAL_DEVICE_ENABLED) {
 		tz->polling_delay = data->polling_delay;
 #ifdef CONFIG_HISI_IPA_THERMAL
 		tz->passive_delay = data->passive_delay;
@@ -337,8 +337,10 @@ static int of_thermal_set_trip_temp(struct thermal_zone_device *tz, int trip,
 	if (trip >= data->ntrips || trip < 0)
 		return -EDOM;
 
-	if(!data->ops)
+#ifdef CONFIG_HISI_IPA_THERMAL
+	if (!data->ops)
 		return -EINVAL;
+#endif
 
 	if (data->ops->set_trip_temp) {
 		int ret;
@@ -764,6 +766,21 @@ bool thermal_of_get_cdev_type(struct thermal_zone_device *tzd,
 	for (i = 0; i < tz->num_tbps; i++) {
 		tbp = tz->tbps + i;
 
+		if (IS_ERR_OR_NULL(tbp)) {
+			pr_err("tbp is null\n");
+			return false;
+		}
+
+		if (IS_ERR_OR_NULL(tbp->cooling_device)) {
+			pr_err("tbp->cooling_device is null\n");
+			return false;
+		}
+
+		if (IS_ERR_OR_NULL(cdev->np)) {
+			pr_err("cdev->np is null\n");
+			return false;
+		}
+
 		if (tbp->cooling_device == cdev->np)
 			return tbp->is_soc_cdev;
 	}
@@ -1060,7 +1077,8 @@ int __init of_parse_thermal_zones(void)
 	for_each_available_child_of_node(np, child) {
 		struct thermal_zone_device *zone;
 		struct thermal_zone_params *tzp;
-		int i, mask = 0;
+		int i;
+		unsigned int mask = 0;
 		u32 prop;
 
 		tz = thermal_of_build_thermal_zone(child);
@@ -1117,7 +1135,7 @@ int __init of_parse_thermal_zones(void)
 		tzp->offset = tz->offset;
 
 		zone = thermal_zone_device_register(child->name, tz->ntrips,
-						    mask, tz,
+						    (int)mask, tz,
 						    ops, tzp,
 						    tz->passive_delay,
 						    tz->polling_delay);
@@ -1129,7 +1147,7 @@ int __init of_parse_thermal_zones(void)
 			of_thermal_free_zone(tz);
 			/* attempting to build remaining zones still */
 		}
-	}/*lint !e593*/
+	} /*lint !e593*/
 	of_node_put(np);
 
 	return 0;

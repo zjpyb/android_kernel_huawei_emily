@@ -3,7 +3,8 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/list.h>
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
@@ -149,7 +150,7 @@ EXPORT_SYMBOL(hisi_usb_stop_hifi_usb_reset_power);
 
 bool hisi_usb_using_hifi_usb(struct usb_device *udev)
 {
-	struct usb_hcd *hcd;
+	struct usb_hcd *hcd = NULL;
 
 	if (!udev)
 		return false;
@@ -167,27 +168,30 @@ bool hisi_usb_using_hifi_usb(struct usb_device *udev)
 EXPORT_SYMBOL(hisi_usb_using_hifi_usb);
 
 enum hibernation_ctrl_type {
-        USB_CTRL = 0,
-        FB_CTRL = 1 /* corresponding bit set to 1 means allowing hibernate */
+	USB_CTRL = 0,
+	FB_CTRL = 1,
+	AUDIO_CTRL = 2 /* corresponding bit set to 1 means allowing hibernate */
 };
 
 static void hifi_usb_hibernation_ctrl(enum hibernation_ctrl_type type, bool set)
 {
 	struct hifi_usb_proxy *proxy = hifi_usb;
 	unsigned int old_hibernation_ctrl = proxy->hibernation_ctrl;
-	unsigned int hibernation_ctrl_mask = (1 << USB_CTRL) | (1 << FB_CTRL);
+	unsigned int hibernation_ctrl_mask = (1 << USB_CTRL) | (1 << FB_CTRL |
+			1 << AUDIO_CTRL);
 	int ret;
 
 	DBG("+\n");
 
 	if (set)
-		proxy->hibernation_ctrl |= (1U << type);
+		proxy->hibernation_ctrl |= (1U << (unsigned int)type);
 	else
-		proxy->hibernation_ctrl &= ~(1U << type);
+		proxy->hibernation_ctrl &= ~(1U << (unsigned int)type);
 
-	DBG("hibernation control: USB %s, FB %s\n",
+	INFO("hibernation control: USB %s, FB %s, AUDIO %s\n",
 	    (proxy->hibernation_ctrl & (1 << USB_CTRL)) ? "allow" : "forbid",
-	    (proxy->hibernation_ctrl & (1 << FB_CTRL)) ? "allow" : "forbid");
+	    (proxy->hibernation_ctrl & (1 << FB_CTRL)) ? "allow" : "forbid",
+	    (proxy->hibernation_ctrl & (1 << AUDIO_CTRL)) ? "allow" : "forbid");
 
 	if ((proxy->hibernation_support != 0)
 			&& (proxy->hibernation_ctrl != old_hibernation_ctrl)) {
@@ -215,7 +219,7 @@ static void hifi_usb_hibernation_ctrl(enum hibernation_ctrl_type type, bool set)
 static int hifi_usb_fb_notifier_callback(struct notifier_block *self,
                                         unsigned long event, void *data)
 {
-	int *blank;
+	int *blank = NULL;
 	struct fb_event *evdata = data;
 	struct hifi_usb_proxy *proxy = hifi_usb;
 
@@ -298,7 +302,7 @@ void hisi_usb_check_huawei_earphone_device(struct usb_device *dev)
 
 	if ((dev->descriptor.idVendor == 0x12d1)
 			&& (dev->descriptor.idProduct == 0x3a07)) {
-		char feature[4];
+		unsigned char feature[4];
 		int ret;
 
 #define USB_REQ_VENDOR_FEATURE 0x1
@@ -327,6 +331,29 @@ void hisi_usb_check_huawei_earphone_device(struct usb_device *dev)
 }
 EXPORT_SYMBOL(hisi_usb_check_huawei_earphone_device);
 
+static void hifi_usb_hibernate_work(struct work_struct *work)
+{
+	struct hifi_usb_proxy *proxy = container_of(work,
+			struct hifi_usb_proxy, delayed_work.work);
+
+	mutex_lock(&proxy->msg_lock);
+	hifi_usb_hibernation_ctrl(AUDIO_CTRL, true);
+	mutex_unlock(&proxy->msg_lock);
+}
+
+void hifi_usb_complete_wakeup(void)
+{
+	struct hifi_usb_proxy *proxy = hifi_usb;
+
+	if (!proxy) {
+		WARN_ON(1);
+		return;
+	}
+
+	INFO("wakeup complete\n");
+	complete(&proxy->wakeup_completion);
+}
+
 /**
  * This function is called by audio_usb.
  */
@@ -334,7 +361,9 @@ int hisi_usb_check_hifi_usb_status(enum hifi_usb_status_trigger trigger)
 {
 	int ret = 0;
 	struct hifi_usb_proxy *proxy = hifi_usb;
+	unsigned long left_time;
 	char *trigger_name[] = {
+		"0",
 		"AUDIO",
 		"TCPC",
 		"FB",
@@ -350,13 +379,36 @@ int hisi_usb_check_hifi_usb_status(enum hifi_usb_status_trigger trigger)
 		return -ENODEV;
 	}
 
+	__pm_wakeup_event(&proxy->hifi_usb_wake_lock, 1000);
+
 	if (proxy->hibernation_support == 0)
 		return 0;
 
 	INFO("trigger %d(%s)\n", trigger, trigger_name[trigger]);
 
 	if ((trigger == HIFI_USB_AUDIO) || (trigger == HIFI_USB_FB)) {
-		ret = hisi_usb_otg_event_sync(TCPC_USB31_CONNECTED, HIFI_USB_WAKEUP, hisi_usb_otg_get_typec_orien());
+		mutex_lock(&proxy->status_check_lock);
+		reinit_completion(&proxy->wakeup_completion);
+
+		ret = hisi_usb_otg_event(HIFI_USB_WAKEUP);
+		if (!ret) {
+			left_time = wait_for_completion_timeout(
+					&proxy->wakeup_completion,
+					HIFI_USB_WAKEUP_TIMEOUT);
+			if (!left_time) {
+				ERR("wait for wakeup timeout\n");
+				ret = -ETIMEDOUT;
+			}
+		}
+		mutex_unlock(&proxy->status_check_lock);
+		if (trigger == HIFI_USB_AUDIO) {
+			mutex_lock(&proxy->msg_lock);
+			proxy->hibernation_ctrl &= ~(1 << AUDIO_CTRL);
+			mutex_unlock(&proxy->msg_lock);
+			queue_delayed_work(system_power_efficient_wq,
+					&proxy->delayed_work,
+					msecs_to_jiffies(HIFI_USB_HIBERNATE_DELAY));
+		}
 	} else if ((trigger == HIFI_USB_TCPC) || (trigger == HIFI_USB_PROXY)) {
 		ret = hisi_usb_otg_event(HIFI_USB_WAKEUP);
 	} else if (trigger == HIFI_USB_URB_ENQUEUE) {
@@ -370,7 +422,7 @@ EXPORT_SYMBOL(hisi_usb_check_hifi_usb_status);
 
 void hifi_usb_announce_udev(struct usb_device *udev)
 {
-	struct usb_hcd *hcd;
+	struct usb_hcd *hcd = NULL;
 
 	if ((!udev) || (!udev->parent) || (udev->parent->parent))
 		return;
@@ -383,7 +435,7 @@ void hifi_usb_announce_udev(struct usb_device *udev)
 	}
 }
 
-static int hifi_usb_send_op_msg(void *op_msg)
+static int hifi_usb_send_op_msg(const void *op_msg)
 {
 	int retval;
 	struct hifi_usb_proxy *proxy = hifi_usb;
@@ -413,6 +465,11 @@ static int hifi_usb_send_op_msg_and_wait(struct hifi_usb_proxy *proxy)
 		int ret = hisi_usb_check_hifi_usb_status(HIFI_USB_PROXY);
 		if (ret)
 			INFO("check_hifi_usb_status ret %d\n", ret);
+		return -ESHUTDOWN;
+	}
+
+	if (atomic_read(&proxy->hifi_reset_flag)) {
+		ERR("hifi reset, cannot send msg\n");
 		return -ESHUTDOWN;
 	}
 
@@ -511,7 +568,7 @@ void hifi_usb_proxy_free_dev(struct proxy_hcd_client *client, int slot_id)
 {
 	struct hifi_usb_proxy *proxy = client->client_priv;
 	struct hifi_usb_op_msg *op_msg = &proxy->op_msg;
-	struct usb_device *udev;
+	struct usb_device *udev = NULL;
 
 	INFO("\n");
 	mutex_lock(&proxy->msg_lock);
@@ -713,7 +770,7 @@ static inline void *op_msg_to_data(struct hifi_usb_proxy *proxy,
 static int add_comp_urb_to_list(struct hifi_usb_proxy *proxy,
 					struct hifi_usb_op_msg *op_msg)
 {
-	struct complete_urb_wrap *comp_urb;
+	struct complete_urb_wrap *comp_urb = NULL;
 	dma_addr_t urb_buf_dma;
 	void *urb_buf = op_msg_to_data(proxy, op_msg, &urb_buf_dma);
 
@@ -773,8 +830,8 @@ int handle_urb_complete (struct hifi_usb_proxy *proxy,
 					struct hifi_usb_op_msg *op_msg)
 {
 	struct urb_msg urb_msg;
-	struct hifi_urb_msg *msg;
-	void *data;
+	struct hifi_urb_msg *msg = NULL;
+	void *data = NULL;
 	dma_addr_t data_dma;
 	unsigned long flags;
 
@@ -871,8 +928,8 @@ static int do_isoc_xfer_test(struct proxy_hcd_client *client, struct urb_msg *ur
 static int prepare_urb_op_msg(struct hifi_usb_proxy *proxy,
 			struct urb_msg *urb_msg, struct hifi_usb_op_msg *op_msg)
 {
-	struct hifi_urb_msg *msg;
-	void *data;
+	struct hifi_urb_msg *msg = NULL;
+	void *data = NULL;
 	dma_addr_t data_dma;
 
 	op_msg->msg_id = ID_AP_HIFI_USB_HCD_MESG;
@@ -947,7 +1004,7 @@ static int hibernation_urb_enqueue(struct hifi_usb_proxy *proxy,
 			ret = -ESHUTDOWN;
 	} else {
 		/* for non ep0 xfers */
-		struct hifi_urb_msg *msg;
+		struct hifi_urb_msg *msg = NULL;
 		dma_addr_t msg_dma;
 
 		ret = prepare_urb_op_msg(proxy, urb_msg, op_msg);
@@ -1024,10 +1081,10 @@ static int find_comp_urb_and_free(struct proxy_hcd_client *client,
 			struct urb_msg *urb_msg)
 {
 	struct hifi_usb_proxy *proxy = client->client_priv;
-	struct complete_urb_wrap *wrap;
+	struct complete_urb_wrap *wrap = NULL, *tmp = NULL;
 	unsigned int found = 0;
 
-	list_for_each_entry(wrap, &proxy->complete_urb_list, list_node) {
+	list_for_each_entry_safe(wrap, tmp, &proxy->complete_urb_list, list_node) {
 		void *data;
 		dma_addr_t data_dma;
 
@@ -1050,9 +1107,9 @@ static int find_comp_urb_and_free(struct proxy_hcd_client *client,
 
 static void flush_completed_urb(struct hifi_usb_proxy *proxy)
 {
-	struct complete_urb_wrap *wrap;
+	struct complete_urb_wrap *wrap = NULL;
 	unsigned long flags;
-	void *data;
+	void *data = NULL;
 	dma_addr_t data_dma;
 
 	DBG("+\n");
@@ -1079,7 +1136,7 @@ static int hifi_usb_proxy_urb_dequeue (struct proxy_hcd_client *client,
 	struct hifi_usb_proxy *proxy = client->client_priv;
 	struct hifi_usb_op_msg __op_msg = {0};
 	struct hifi_usb_op_msg *op_msg = &__op_msg;
-	void *data;
+	void *data = NULL;
 	dma_addr_t data_dma;
 	int ret = 0;
 
@@ -1280,7 +1337,7 @@ static void hifi_usb_msg_work(struct work_struct *work);
 
 static int hifi_usb_init(struct proxy_hcd_client *client)
 {
-	struct hifi_usb_proxy *proxy;
+	struct hifi_usb_proxy *proxy = NULL;
 	int ret;
 
 	DBG("+\n");
@@ -1306,7 +1363,7 @@ static int hifi_usb_init(struct proxy_hcd_client *client)
 	INIT_LIST_HEAD(&proxy->complete_urb_list);
 	mutex_init(&proxy->msg_lock);
 	spin_lock_init(&proxy->lock);
-	wake_lock_init(&proxy->hifi_usb_wake_lock, WAKE_LOCK_SUSPEND,
+	wakeup_source_init(&proxy->hifi_usb_wake_lock,
 				"hifi_usb_wake_lock");
 	setup_timer(&proxy->confirm_udev_timer, confirm_udev_timer_fn,
 				(unsigned long)(uintptr_t)proxy);
@@ -1316,6 +1373,9 @@ static int hifi_usb_init(struct proxy_hcd_client *client)
 	proxy->client = client;
 	client->client_priv = proxy;
 	hifi_usb_hibernation_init(proxy);
+	mutex_init(&proxy->status_check_lock);
+	INIT_DELAYED_WORK(&proxy->delayed_work, hifi_usb_hibernate_work);
+	init_completion(&proxy->wakeup_completion);
 	hifi_usb_dts_config(proxy);
 
 	/* create debugfs node */
@@ -1476,9 +1536,10 @@ static void hifi_usb_handle_init_mesg(struct hifi_usb_proxy *proxy,
 	}
 	INFO("hifi reset route.\n");
 
+	atomic_set(&proxy->hifi_reset_flag, 1);
 	mutex_unlock(&proxy->msg_lock); /*lint !e455 */
 	phcd_giveback_all_urbs(proxy->client);
-	hisi_usb_stop_hifi_usb();
+	hisi_usb_stop_hifi_usb_reset_power();
 	mutex_lock(&proxy->msg_lock);
 } /*lint !e454 */
 
@@ -1501,7 +1562,7 @@ static int put_msg(struct hifi_usb_proxy *proxy, struct hifi_usb_op_msg *msg)
 
 struct hifi_usb_msg_wrap *get_msg(struct hifi_usb_proxy *proxy)
 {
-	struct hifi_usb_msg_wrap *wrap;
+	struct hifi_usb_msg_wrap *wrap = NULL;
 	unsigned long flags;
 
 	spin_lock_irqsave(&proxy->lock, flags);
@@ -1556,10 +1617,10 @@ static void handle_hub_status_change(struct hifi_usb_proxy *proxy,
 	}
 
 	HIFI_USB_STAT(stat_hub_status_change_msg, &proxy->stat);
-	if (!wake_lock_active(&proxy->hifi_usb_wake_lock)) {
+	if (!proxy->hifi_usb_wake_lock.active) {
 		INFO("hifi_usb_wake_lock on HUB_STATUS_CHANGE\n");
-		wake_lock_timeout(&proxy->hifi_usb_wake_lock,
-					msecs_to_jiffies(200));
+		__pm_wakeup_event(&proxy->hifi_usb_wake_lock,
+					200);
 	}
 	spin_unlock(&proxy->lock); /*lint !e455 */
 	proxy_port_status_change(proxy->client, op_msg->port_data.port_bitmap);
@@ -1622,7 +1683,7 @@ static void hifi_usb_handle_op_mesg(struct hifi_usb_proxy *proxy,
 		compl = 0;
 		if (proxy->runstop) {
 			INFO("hc died, to hisi_usb_stop_hifi_usb\n");
-			hisi_usb_stop_hifi_usb();
+			hisi_usb_stop_hifi_usb_reset_power();
 #ifdef CONFIG_HUAWEI_DSM
 			audio_dsm_report_info(AUDIO_CODEC, DSM_HIFIUSB_HC_DIED,
 					"USB controller dead\n");
@@ -1686,8 +1747,8 @@ static void hifi_usb_msg_handler(struct hifi_usb_proxy *hifiusb,
 
 static void hifi_usb_msg_work(struct work_struct *work)
 {
-	struct hifi_usb_proxy *hifiusb;
-	struct hifi_usb_msg_wrap *wrap;
+	struct hifi_usb_proxy *hifiusb = NULL;
+	struct hifi_usb_msg_wrap *wrap = NULL;
 
 	DBG("+\n");
 	/* hifiusb is safe, because stop_hifi_usb will disable irq and flush
@@ -1710,7 +1771,7 @@ static void hifi_usb_msg_work(struct work_struct *work)
 /* this is in interrupt, but not in irq */
 void hifi_usb_msg_receiver(struct hifi_usb_op_msg *__msg)
 {
-	struct hifi_usb_proxy *proxy;
+	struct hifi_usb_proxy *proxy = NULL;
 	struct hifi_usb_mesg_header *msg_header =
 		(struct hifi_usb_mesg_header *)__msg;
 
@@ -1754,6 +1815,7 @@ void hifi_usb_msg_receiver(struct hifi_usb_op_msg *__msg)
 		 * Deal with the init messages.
 		 */
 		INFO("HiFi USB just init\n");
+		atomic_set(&proxy->hifi_reset_flag, 0);
 		break;
 	case ID_HIFI_AP_USB_HCD_MESG:
 		/*
@@ -1764,10 +1826,10 @@ void hifi_usb_msg_receiver(struct hifi_usb_op_msg *__msg)
 		break;
 	case ID_HIFI_AP_USB_WAKEUP:
 		INFO("HiFi USB Wakeup AP\n");
-		if (!wake_lock_active(&proxy->hifi_usb_wake_lock)) {
+		if (!proxy->hifi_usb_wake_lock.active) {
 			INFO("hifi_usb_wake_lock on ID_HIFI_AP_USB_WAKEUP\n");
-			wake_lock_timeout(&proxy->hifi_usb_wake_lock,
-					msecs_to_jiffies(200));
+			__pm_wakeup_event(&proxy->hifi_usb_wake_lock,
+					200);
 		}
 
 		spin_unlock(&proxy->lock);
@@ -1962,7 +2024,7 @@ static void hifi_usb_phy_ldo_init(struct hifi_usb_proxy *hifiusb)
 	struct proxy_hcd		*phcd = client_to_phcd(client);
 	struct platform_device		*pdev = phcd->pdev;
 	struct device_node		*node = pdev->dev.of_node;
-	u32 ldo_cfg_buf[4];
+	u32 ldo_cfg_buf[4] = {0};
 	int ret;
 
 	ret = of_property_read_u32_array(node, "hifi_usb_phy_ldo_33v",
@@ -2077,7 +2139,7 @@ static int hifi_usb_hw_hibernate(void)
 static void hifi_usb_clear_port_reset_change(void)
 {
 	struct usb_ctrlrequest cmd = {0};
-	char hub_ctrl_buf[8];
+	u32 status = 0;
 
 	DBG("+\n");
 	cmd.bRequestType = (__u8)((ClearPortFeature >> 8) & 0xff);
@@ -2086,7 +2148,7 @@ static void hifi_usb_clear_port_reset_change(void)
 	cmd.wIndex = 1;
 	cmd.wLength = 0;
 
-	hifi_usb_proxy_hub_control_unlocked(&hifi_usb_phcd_client, &cmd, hub_ctrl_buf);
+	hifi_usb_proxy_hub_control_unlocked(&hifi_usb_phcd_client, &cmd, (char *)&status);
 	DBG("-\n");
 }
 
@@ -2142,7 +2204,7 @@ static bool ignore_and_clear_port_status_change_once(
 static int reinitialize_hifi_usb_context(struct hifi_usb_proxy *proxy)
 {
 	struct usb_device *udev = hifi_usb_to_udev(proxy);
-	int slot_id;
+	int slot_id = 0;
 	int ret;
 
 	DBG("+\n");
@@ -2188,7 +2250,7 @@ static int hifi_usb_reset_device(struct hifi_usb_proxy *proxy)
 
 int hifi_usb_revive(void)
 {
-	struct hifi_usb_proxy *proxy;
+	struct hifi_usb_proxy *proxy = NULL;
 	unsigned long jiffies_stamp;
 	unsigned long flags;
 	int ret;
@@ -2363,8 +2425,8 @@ EXPORT_SYMBOL(hifi_usb_hibernate);
 
 int start_hifi_usb(void)
 {
-	struct hifi_usb_proxy *proxy;
-	struct proxy_hcd_client *client;
+	struct hifi_usb_proxy *proxy = NULL;
+	struct proxy_hcd_client *client = NULL;
 	int ret;
 
 	INFO("+\n");
@@ -2382,12 +2444,14 @@ int start_hifi_usb(void)
 	proxy->hibernation_support = 0;
 	proxy->ignore_port_status_change_once = 0;
 	proxy->hibernation_ctrl &= ~(1 << USB_CTRL);
+	proxy->hibernation_ctrl |= (1 << AUDIO_CTRL);
 	proxy->hibernation_count = 0;
 	proxy->revive_time = 0;
 	proxy->max_revive_time = 0;
 	proxy->hifiusb_suspended = false;
 	proxy->hifiusb_hibernating = false;
 	proxy->hid_key_pressed = false;
+	atomic_set(&proxy->hifi_reset_flag, 0);
 
 	if (proxy->hibernation_policy == HIFI_USB_HIBERNATION_FORCE)
 			proxy->hibernation_support = 1;
@@ -2438,8 +2502,8 @@ int start_hifi_usb(void)
 	mod_timer(&proxy->confirm_udev_timer,
 				jiffies + HIFI_USB_CONFIRM_UDEV_CONNECT_TIME);
 
-	wake_lock_timeout(&proxy->hifi_usb_wake_lock,
-					msecs_to_jiffies(2000));
+	__pm_wakeup_event(&proxy->hifi_usb_wake_lock,
+					2000);
 
 	INFO("START_HIFI_USB time %d ms\n",
 			jiffies_to_msecs(jiffies - hisi_usb_start_hifi_jiffies));
@@ -2543,6 +2607,7 @@ done:
 	mutex_lock(&proxy->msg_lock);
 
 	proxy->hibernation_ctrl &= ~(1 << USB_CTRL);
+	proxy->hibernation_ctrl |= (1 << AUDIO_CTRL);
 	proxy->hibernation_support = 0;
 	proxy->hibernation_state = 0;
 

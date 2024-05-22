@@ -56,7 +56,9 @@
 #include  "IpComm.h"
 #include  "IpIpmGlobal.h"
 //#include  "msp_at.h"
+#if (FEATURE_ON == FEATURE_LTE)
 #include  "msp_diag.h"
+#endif
 
 /*lint -e767*/
 #define    THIS_FILE_ID        PS_FILE_ID_IPCOMM_C    /*´ýÐÞ¸Ä*/

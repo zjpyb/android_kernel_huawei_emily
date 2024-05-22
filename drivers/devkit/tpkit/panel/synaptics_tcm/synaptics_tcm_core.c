@@ -3177,6 +3177,51 @@ static void syna_tcm_parse_download_fw_dts(struct device_node *np,
 	}
 }
 
+static void syna_tcm_parse_scene_dts(struct device_node *np)
+{
+	int retval = NO_ERR;
+	int i;
+
+	retval = of_property_read_u32(np,
+			"scene_type_mode",
+			&tcm_hcd->scene_type_mode);
+	if (retval)
+		tcm_hcd->scene_type_mode = 0;
+	TS_LOG_INFO("use dts(retval = %d) for scene_type_mode = %d\n",
+			retval,
+			tcm_hcd->scene_type_mode);
+
+	retval = of_property_read_u32(np,
+			"scene_type_num",
+			&tcm_hcd->scene_type_num);
+	if (retval)
+		tcm_hcd->scene_type_num = 0;
+	TS_LOG_INFO("use dts(retval = %d) for scene_type_num = %d\n",
+			retval,
+			tcm_hcd->scene_type_num);
+
+	if ((tcm_hcd->scene_type_num <= SCENE_SUPPORT_MAX) &&
+		(tcm_hcd->scene_type_num > 0) &&
+		(tcm_hcd->scene_type_mode == SCENC_MODE_POWERGENIUS)) {
+		retval = of_property_read_u32_array(np,
+			"scene_support_array",
+			&tcm_hcd->scene_support_array[0],
+			tcm_hcd->scene_type_num);
+		if (retval) {
+			TS_LOG_INFO("device get scene_support_array failed\n");
+		} else {
+			for (i = 0; i < tcm_hcd->scene_type_num; i++)
+				TS_LOG_INFO("scene_support_array[%d] = %d\n",
+					i,
+					tcm_hcd->scene_support_array[i]);
+		}
+	} else {
+		tcm_hcd->scene_type_num = 0;
+		TS_LOG_INFO("set scene_type_num = %d\n", tcm_hcd->scene_type_num);
+	}
+}
+
+
 static void syna_tcm_parse_feature_dts(struct device_node *np, struct ts_kit_device_data *chip_data)
 {
 	int retval = NO_ERR;
@@ -3351,6 +3396,8 @@ static int syna_tcm_parse_dts(struct device_node *np, struct ts_kit_device_data 
 
 	syna_tcm_parse_feature_dts(np,chip_data);
 	syna_tcm_parse_download_fw_dts(np, chip_data);
+
+	syna_tcm_parse_scene_dts(np);
 	return 0;
 }
 
@@ -3763,47 +3810,103 @@ out:
 	return;
 }
 
+static int synaptics_tcm_check_scene_type(unsigned int stype)
+{
+	unsigned int i;
+	int error = -EINVAL;
+
+	if (!tcm_hcd->scene_type_num) {
+		TS_LOG_INFO("%s, not need check_scene type\n", __func__);
+		return NO_ERR;
+	}
+	for (i = 0; i < tcm_hcd->scene_type_num; i++) {
+		if (stype == tcm_hcd->scene_support_array[i])
+			error = NO_ERR;
+	}
+	return error;
+}
+
+static void synaptics_tcm_chip_touch_powergenius(unsigned char stype,
+	unsigned char soper, unsigned char param)
+{
+	int error;
+
+	error = synaptics_tcm_check_scene_type(stype);
+	if (error) {
+		TS_LOG_INFO("touch switch type %d not supported\n", stype);
+		return;
+	}
+
+	if ((stype >= TS_SWITCH_SCENE_3) && (stype <= TS_SWITCH_SCENE_20))
+		syna_tcm_scene_switch(stype, soper);
+}
+
 #define SYNA_SWITCH_MAX_INPUT_SEPARATE_NUM 2
-static void synaptics_tcm_chip_touch_switch(void)
+
+static int synaptics_tcm_chip_get_touch_switch_data(unsigned int *stype,
+	unsigned int *soper, unsigned int *para)
 {
 	char in_data[MAX_STR_LEN] = {0};
-	unsigned int stype = 0, soper = 0, para = 0;
 	int error = 0;
-	unsigned int i = 0, cnt = 0;
+	unsigned int cnt = 0;
+	unsigned int i;
 	struct ts_kit_device_data *syna_tcm_dev_data = NULL;
 
-	TS_LOG_INFO("%s enter\n", __func__);
-
-	if (NULL == tcm_hcd || NULL == tcm_hcd->syna_tcm_chip_data){
-		TS_LOG_ERR("%s, error chip data or hcd data\n",__func__);
-		goto out;
+	if ((tcm_hcd == NULL) || (tcm_hcd->syna_tcm_chip_data == NULL)) {
+		TS_LOG_ERR("%s, error chip data or hcd data\n", __func__);
+		return error;
 	}
 
 	syna_tcm_dev_data = tcm_hcd->syna_tcm_chip_data;
 
 	/* SWITCH_OPER,ENABLE_DISABLE,PARAM */
 	memcpy(in_data, syna_tcm_dev_data->touch_switch_info, MAX_STR_LEN -1);
-	TS_LOG_INFO("%s, in_data:%s\n",__func__, in_data);
+	TS_LOG_INFO("%s, in_data: %s\n", __func__, in_data);
+
 	for(i = 0; i < strlen(in_data) && (in_data[i] != '\n'); i++){
 		if(in_data[i] == ','){
 			cnt++;
 		}else if(!isdigit(in_data[i])){
 			TS_LOG_ERR("%s: input format error!!\n", __func__);
-			goto out;
+			return error;
 		}
 	}
 	if(cnt != SYNA_SWITCH_MAX_INPUT_SEPARATE_NUM){
 		TS_LOG_ERR("%s: input format error[separation_cnt=%d]!!\n", __func__, cnt);
-		goto out;
+		return error;
 	}
 
-	error = sscanf(in_data, "%u,%u,%u", &stype, &soper, &para);
-	if(error <= 0){
+	error = sscanf(in_data, "%u,%u,%u", stype, soper, para);
+	if (error <= 0)
 		TS_LOG_ERR("%s: sscanf error\n", __func__);
+
+	return error;
+}
+
+static void synaptics_tcm_chip_touch_switch(void)
+{
+	unsigned int stype = 0;
+	unsigned int soper = 0;
+	unsigned int para = 0;
+	int error;
+
+	TS_LOG_INFO("%s enter\n", __func__);
+
+	error = synaptics_tcm_chip_get_touch_switch_data(&stype, &soper, &para);
+	if (error <= NO_ERR)
+		goto out;
+
+	TS_LOG_INFO("stype = %u, soper = %u, para = %u\n", stype, soper, para);
+
+	if (tcm_hcd->scene_type_mode == SCENE_MODE_ITOUCH) {
+		/* itouch */
+		TS_LOG_INFO("itouch called\n");
+		goto out;
+	} else if (tcm_hcd->scene_type_mode == SCENC_MODE_POWERGENIUS) {
+		TS_LOG_INFO("powergenius called\n");
+		synaptics_tcm_chip_touch_powergenius(stype, soper, para);
 		goto out;
 	}
-	TS_LOG_DEBUG("stype=%u,soper=%u,param=%u\n", stype, soper, para);
-
 	/**
 	 * enter DOZE again after a period of time. the min unit of the time is 100ms,
 	 * for example, we set 30, the final time is 30 * 100 ms = 3s

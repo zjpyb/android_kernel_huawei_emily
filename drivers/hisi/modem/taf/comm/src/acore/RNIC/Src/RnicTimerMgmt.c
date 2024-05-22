@@ -123,6 +123,7 @@ VOS_VOID  RNIC_StartTimer(
         ulLen = VOS_TIMER_MAX_LENGTH - 1;
     }
 
+#if (FEATURE_ON == FEATURE_LTE)
     /* 如果还未设置唤醒源标志，并且是按需断开定时器，则设置该标志，并且设置32K时钟为唤醒源 */
     if ((VOS_FALSE == RNIC_GetTimer4WakeFlg())
       && (TI_RNIC_DEMAND_DIAL_DISCONNECT == enTimerId))
@@ -131,6 +132,7 @@ VOS_VOID  RNIC_StartTimer(
 
         RNIC_SetTimer4WakeFlg(VOS_TRUE);
     }
+#endif
 
      /* 如果是流量上报定时器，则挂在26M时钟上，以降低功耗 */
     if (RNIC_IS_DSFLOW_TIMER_ID(enTimerId))
@@ -198,6 +200,7 @@ VOS_VOID  RNIC_StopTimer(
     pstRnicTimerCtx[enTimerId].enTimerStatus = RNIC_TIMER_STATUS_STOP;
 
     /* 定时器状态勾包出来 */
+#if (FEATURE_ON == FEATURE_LTE)
     /* 如果已经设置了唤醒源标志，并且是按需断开定时器，则清除该标志，并且设置32K时钟为非唤醒源 */
     if ((VOS_TRUE == RNIC_GetTimer4WakeFlg())
      && (TI_RNIC_DEMAND_DIAL_DISCONNECT == enTimerId))
@@ -206,6 +209,7 @@ VOS_VOID  RNIC_StopTimer(
 
         RNIC_SetTimer4WakeFlg(VOS_FALSE);
     }
+#endif
 }
 
 
@@ -230,6 +234,7 @@ VOS_VOID  RNIC_StopAllTimer( VOS_VOID )
         }
     }
 
+#if (FEATURE_ON == FEATURE_LTE)
     /* 如果已经设置了唤醒源标志，则清除该标志，并且设置32K时钟为非唤醒源 */
     if (VOS_TRUE == RNIC_GetTimer4WakeFlg())
     {
@@ -237,6 +242,7 @@ VOS_VOID  RNIC_StopAllTimer( VOS_VOID )
 
         RNIC_SetTimer4WakeFlg(VOS_FALSE);
     }
+#endif
 }
 
 

@@ -4,4 +4,3 @@
 
 obj-$(CONFIG_HUAWEI_OCP)  += hw_ocp.o
 
-EXTRA_CFLAGS += -Idrivers/hisi/tzdriver/libhwsecurec

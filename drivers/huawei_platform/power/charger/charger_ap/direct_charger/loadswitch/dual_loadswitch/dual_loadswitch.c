@@ -37,7 +37,7 @@ int loadswitch_main_ops_register(struct loadswitch_ops *ops)
 {
 	int ret = 0;
 
-	if (ops != NULL) {
+	if (ops) {
 		g_main_ops = ops;
 		hwlog_info("dual loadswitch main ops register ok\n");
 	} else {
@@ -52,7 +52,7 @@ int loadswitch_aux_ops_register(struct loadswitch_ops *ops)
 {
 	int ret = 0;
 
-	if (ops != NULL) {
+	if (ops) {
 		g_aux_ops = ops;
 		hwlog_info("dual loadswitch aux ops register ok\n");
 	} else {
@@ -67,12 +67,12 @@ static int dual_loadswitch_charge_status(void)
 {
 	int ret = 0;
 
-	if (g_main_ops != NULL && g_main_ops->ls_status != NULL)
+	if (g_main_ops && g_main_ops->ls_status)
 		ret |= g_main_ops->ls_status();
 	else
 		ret |= -1;
 
-	if (g_aux_ops != NULL && g_aux_ops->ls_status != NULL)
+	if (g_aux_ops && g_aux_ops->ls_status)
 		ret |= g_aux_ops->ls_status();
 	else
 		ret |= -1;
@@ -84,10 +84,10 @@ static int dual_loadswitch_charge_init(void)
 {
 	int ret = 0;
 
-	if (g_main_ops != NULL && g_main_ops->ls_init != NULL)
+	if (g_main_ops && g_main_ops->ls_init)
 		ret |= g_main_ops->ls_init();
 
-	if (g_aux_ops != NULL && g_aux_ops->ls_init != NULL)
+	if (g_aux_ops && g_aux_ops->ls_init)
 		ret |= g_aux_ops->ls_init();
 
 	return ret;
@@ -97,10 +97,10 @@ static int dual_loadswitch_charge_exit(void)
 {
 	int ret = 0;
 
-	if (g_main_ops != NULL && g_main_ops->ls_exit != NULL)
+	if (g_main_ops && g_main_ops->ls_exit)
 		ret |= g_main_ops->ls_exit();
 
-	if (g_aux_ops != NULL && g_aux_ops->ls_exit != NULL)
+	if (g_aux_ops && g_aux_ops->ls_exit)
 		ret |= g_aux_ops->ls_exit();
 
 	return ret;
@@ -110,10 +110,10 @@ static int dual_loadswitch_enable(int enable)
 {
 	int ret = 0;
 
-	if (g_main_ops != NULL && g_main_ops->ls_enable != NULL)
+	if (g_main_ops && g_main_ops->ls_enable)
 		ret |= g_main_ops->ls_enable(enable);
 
-	if (g_aux_ops != NULL && g_aux_ops->ls_enable != NULL)
+	if (g_aux_ops && g_aux_ops->ls_enable)
 		ret |= g_aux_ops->ls_enable(enable);
 
 	return ret;
@@ -123,10 +123,10 @@ static int dual_loadswitch_discharge(int enable)
 {
 	int ret = 0;
 
-	if (g_main_ops != NULL && g_main_ops->ls_discharge != NULL)
+	if (g_main_ops && g_main_ops->ls_discharge)
 		ret |= g_main_ops->ls_discharge(enable);
 
-	if (g_aux_ops != NULL && g_aux_ops->ls_discharge != NULL)
+	if (g_aux_ops && g_aux_ops->ls_discharge)
 		ret |= g_aux_ops->ls_discharge(enable);
 
 	return ret;
@@ -136,10 +136,10 @@ static int dual_loadswitch_is_ls_close(void)
 {
 	int ret = 0;
 
-	if (g_main_ops != NULL && g_main_ops->is_ls_close != NULL)
+	if (g_main_ops && g_main_ops->is_ls_close)
 		ret |= g_main_ops->is_ls_close();
 
-	if (g_aux_ops != NULL && g_aux_ops->is_ls_close != NULL)
+	if (g_aux_ops && g_aux_ops->is_ls_close)
 		ret |= g_aux_ops->is_ls_close();
 
 	return ret;
@@ -149,7 +149,7 @@ static int dual_loadswitch_get_ls_id(void)
 {
 	int ret = -1;
 
-	if (g_main_ops != NULL && g_main_ops->get_ls_id != NULL)
+	if (g_main_ops && g_main_ops->get_ls_id)
 		ret = g_main_ops->get_ls_id();
 
 	return ret;
@@ -159,10 +159,10 @@ static int dual_loadswitch_config_watchdog_ms(int time)
 {
 	int ret = 0;
 
-	if (g_main_ops != NULL && g_main_ops->watchdog_config_ms != NULL)
+	if (g_main_ops && g_main_ops->watchdog_config_ms)
 		ret |= g_main_ops->watchdog_config_ms(time);
 
-	if (g_aux_ops != NULL && g_aux_ops->watchdog_config_ms != NULL)
+	if (g_aux_ops && g_aux_ops->watchdog_config_ms)
 		ret |= g_aux_ops->watchdog_config_ms(time);
 
 	return ret;
@@ -182,43 +182,40 @@ struct loadswitch_ops dual_loadswitch_ops = {
 static int dual_loadswitch_probe(struct platform_device *pdev)
 {
 	struct dual_loadswitch_info *info = NULL;
-	int ret = -1;
+	int ret;
 
 	hwlog_info("probe begin\n");
 
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
 	info = devm_kzalloc(&pdev->dev, sizeof(*info), GFP_KERNEL);
-	if (info == NULL)
+	if (!info)
 		return -ENOMEM;
 
 	dli = info;
-
 	info->pdev = pdev;
 	info->dev = &pdev->dev;
-	if (info->pdev == NULL || info->dev == NULL ||
-		info->dev->of_node == NULL) {
-		hwlog_err("device_node is null\n");
-		goto dual_loadswitch_fail_0;
-	}
 
-	ret = loadswitch_ops_register(&dual_loadswitch_ops);
+	ret = lvc_ops_register(&dual_loadswitch_ops);
 	if (ret) {
 		hwlog_err("dual loadswitch ops register failed\n");
 		goto dual_loadswitch_fail_0;
 	}
 
-	if (g_main_ops == NULL ||
-		g_main_ops->ls_init == NULL ||
-		g_main_ops->ls_enable == NULL ||
-		g_main_ops->ls_exit == NULL) {
+	if (!g_main_ops ||
+		!g_main_ops->ls_init ||
+		!g_main_ops->ls_enable ||
+		!g_main_ops->ls_exit) {
 		hwlog_err("main loadswitch ops is null\n");
 		ret = -EINVAL;
 		goto dual_loadswitch_fail_1;
 	}
 
-	if (g_aux_ops == NULL ||
-		g_aux_ops->ls_init == NULL ||
-		g_aux_ops->ls_enable == NULL ||
-		g_aux_ops->ls_exit == NULL) {
+	if (!g_aux_ops ||
+		!g_aux_ops->ls_init ||
+		!g_aux_ops->ls_enable ||
+		!g_aux_ops->ls_exit) {
 		hwlog_err("aux loadswitch ops is null\n");
 		ret = -EINVAL;
 		goto dual_loadswitch_fail_2;
@@ -246,12 +243,14 @@ static int dual_loadswitch_remove(struct platform_device *pdev)
 
 	hwlog_info("remove begin\n");
 
+	if (!info)
+		return -ENODEV;
+
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, info);
 	dli = NULL;
 
 	hwlog_info("remove end\n");
-
 	return 0;
 }
 

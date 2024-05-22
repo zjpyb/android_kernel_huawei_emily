@@ -22,12 +22,12 @@
 
 MODULE_LICENSE("GPL");
 
-static int hisi_dummy_ko_init(void)
+static int __init hisi_dummy_ko_init(void)
 {
 	return 0;
 }
 
-static void hisi_dummy_ko_exit(void)
+static void __exit hisi_dummy_ko_exit(void)
 {
 }
 

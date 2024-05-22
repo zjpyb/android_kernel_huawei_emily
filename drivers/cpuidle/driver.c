@@ -11,6 +11,7 @@
 #include <linux/mutex.h>
 #include <linux/module.h>
 #include <linux/sched.h>
+#include <linux/sched/idle.h>
 #include <linux/cpuidle.h>
 #include <linux/cpumask.h>
 #include <linux/tick.h>
@@ -178,36 +179,6 @@ static void __cpuidle_driver_init(struct cpuidle_driver *drv)
 	}
 }
 
-#ifdef CONFIG_ARCH_HAS_CPU_RELAX
-static int __cpuidle poll_idle(struct cpuidle_device *dev,
-			       struct cpuidle_driver *drv, int index)
-{
-	local_irq_enable();
-	if (!current_set_polling_and_test()) {
-		while (!need_resched())
-			cpu_relax();
-	}
-	current_clr_polling();
-
-	return index;
-}
-
-static void poll_idle_init(struct cpuidle_driver *drv)
-{
-	struct cpuidle_state *state = &drv->states[0];
-
-	snprintf(state->name, CPUIDLE_NAME_LEN, "POLL");
-	snprintf(state->desc, CPUIDLE_DESC_LEN, "CPUIDLE CORE POLL IDLE");
-	state->exit_latency = 0;
-	state->target_residency = 0;
-	state->power_usage = -1;
-	state->enter = poll_idle;
-	state->disabled = false;
-}
-#else
-static void poll_idle_init(struct cpuidle_driver *drv) {}
-#endif /* !CONFIG_ARCH_HAS_CPU_RELAX */
-
 /**
  * __cpuidle_register_driver: register the driver
  * @drv: a valid pointer to a struct cpuidle_driver
@@ -244,8 +215,6 @@ static int __cpuidle_register_driver(struct cpuidle_driver *drv)
 	if (drv->bctimer)
 		on_each_cpu_mask(drv->cpumask, cpuidle_setup_broadcast_timer,
 				 (void *)1, 1);
-
-	poll_idle_init(drv);
 
 	return 0;
 }
@@ -385,3 +354,45 @@ void cpuidle_driver_unref(void)
 
 	spin_unlock(&cpuidle_driver_lock);
 }
+
+#ifdef CONFIG_HISI_CPUIDLE_LP_MODE
+static int lp_mode_enabled = 0;
+int get_lp_mode(void)
+{
+	return lp_mode_enabled;
+}
+
+void cpuidle_switch_to_lp_mode(int enabled)
+{
+	int cpu, i;
+	struct cpuidle_driver *drv = NULL;
+
+	cpuidle_pause();
+
+	spin_lock(&cpuidle_driver_lock);
+
+	for_each_possible_cpu(cpu) {
+		drv = per_cpu(cpuidle_drivers, cpu);
+		if (drv == NULL)
+			continue;
+		if (cpumask_first(drv->cpumask) != cpu)
+			continue;
+
+		/* state0 will be ignored */
+		for (i = 1; i < drv->state_count; i++) {
+			if (enabled && drv->states[i].lp_exit_latency > drv->states[i].exit_latency)
+				continue;
+
+			if (!enabled && drv->states[i].lp_exit_latency < drv->states[i].exit_latency)
+				continue;
+
+			swap(drv->states[i].lp_exit_latency, drv->states[i].exit_latency);
+			swap(drv->states[i].lp_target_residency, drv->states[i].target_residency);
+		}
+	}
+	lp_mode_enabled = enabled;
+	spin_unlock(&cpuidle_driver_lock);
+
+	cpuidle_resume();
+}
+#endif // CONFIG_HISI_CPUIDLE_LP_MODE

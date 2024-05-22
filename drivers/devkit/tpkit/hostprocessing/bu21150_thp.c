@@ -367,6 +367,7 @@ static struct thp_device_ops bu21150_dev_ops = {
 static int __init thp_bu21150_module_init(void)
 {
 	int rc;
+	struct thp_core_data *cd = thp_get_core_data();
 
 	struct thp_device *dev = kzalloc(sizeof(struct thp_device), GFP_KERNEL);
 	if (!dev) {
@@ -385,7 +386,10 @@ static int __init thp_bu21150_module_init(void)
 	dev->ic_name = BU21150_IC_NAME;
 	dev->dev_node_name = THP_BU21150_DEV_NODE_NAME;
 	dev->ops = &bu21150_dev_ops;
-
+	if (cd && cd->fast_booting_solution) {
+		THP_LOG_ERR("%s: don't support this solution\n", __func__);
+		goto err;
+	}
 	rc = thp_register_dev(dev);
 	if (rc) {
 		THP_LOG_ERR("%s: register fail\n", __func__);

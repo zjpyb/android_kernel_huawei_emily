@@ -24,10 +24,11 @@
 
 struct dss_vote_cmd * get_dss_vote_cmd(struct hisi_fb_data_type *hisifd);
 int set_dss_vote_cmd(struct hisi_fb_data_type *hisifd, dss_vote_cmd_t dss_vote_cmd);
+int hisifb_offline_vote_ctrl(struct hisi_fb_data_type *hisifd, bool offline_start);
 int hisifb_set_dss_external_vote_pre(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock);
 int dpe_set_clk_rate(struct platform_device *pdev);
-int dpe_get_voltage_value(dss_vote_cmd_t *vote_cmd);
-int dpe_get_voltage_level(int votage_value);
+int dpe_get_voltage_value(uint32_t dss_voltage_level); /* get value by level */
+int dpe_get_voltage_level(int votage_value); /* get level by value */
 int hisifb_set_mmbuf_clk_rate(struct hisi_fb_data_type *hisifd);
 
 int dpe_set_pixel_clk_rate_on_pll0(struct hisi_fb_data_type *hisifd);
@@ -118,4 +119,6 @@ void dpe_update_g_gmp_state(unsigned int value);
 void dpe_set_gmp_state(struct hisi_fb_data_type *hisifd);
 ssize_t dpe_show_gmp_state(char *buf);
 void dpe_sbl_set_al_bl(struct hisi_fb_data_type *hisifd);
+bool is_vote_needed_for_low_temp(bool is_lowtemp, int volt_to_set);
+
 #endif

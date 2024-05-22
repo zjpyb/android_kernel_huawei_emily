@@ -73,19 +73,20 @@ static bool is_anon_page_enough(int anon_pages_min)
 	nr_pages += global_page_state(NR_ACTIVE_ANON);
 #endif
 
-	if (nr_pages > anon_pages_min)
+	if (nr_pages > anon_pages_min) {
 		return true;
-
+	}
 	return false;
 }
 
 static bool is_avail_above_target(int avail_target)
 {
 	long available;
-	available = si_mem_available();
-	if (available > avail_target)
-		return true;
 
+	available = si_mem_available();
+	if (available > avail_target) {
+		return true;
+	}
 	return false;
 }
 
@@ -118,17 +119,19 @@ static inline bool is_cpu_idle(struct rcc_module *rcc)
 	int threshold = rcc->idle_threshold;
 
 	/* when display off, we try do more work. */
-	if (rcc->display_off)
-		threshold += 5; /* cpu threshold increase 5 percent */
+	if (rcc->display_off) {
+		threshold += 5;
+	}
 
-	if (rcc->force_compress_flag)
-		threshold = 100; /* cpu threshold set to 100 percent */
+	if (rcc->force_compress_flag) {
+		threshold = 100;
+	}
 
 	if (rcc->cpu_load[0] <= threshold
 	    && rcc->cpu_load[1] <= threshold
-	    && rcc->cpu_load[2] <= threshold)
+	    && rcc->cpu_load[2] <= threshold) {
 		return true;
-
+	}
 	return false;
 }
 
@@ -175,7 +178,7 @@ static u64 get_idle_time(int cpu)
 static int _get_cpu_load(clock_t *last_cpu_stat)
 {
 	int i;
-	clock_t delta[INDEX_CPU_MAX], tmp;
+	clock_t delta[INDEX_CPU_MAX], tmp = 0;
 
 	u64 user, nice, system, idle;
 	u64 total_time, busy_time;
@@ -251,7 +254,7 @@ static int rcc_swap_out(int nr_pages, int scan_mode)
 	}
 
 #ifdef CONFIG_HUAWEI_RCC_DEBUG
-	pr_info("scan mode: %d swap:  %d/%d pages\n", scan_mode, real,
+	pr_info("scan mode: %d. swap:  %d/%d pages\n", scan_mode, real,
 		nr_pages);
 #endif
 	/* return real reclaimed page count */
@@ -273,9 +276,10 @@ static inline bool rcc_is_enabled(struct rcc_module *rcc)
  * return:
  *    thread exit code.
  */
-static int get_system_stat(struct rcc_module *rcc, bool end)
+static unsigned int get_system_stat(struct rcc_module *rcc, bool end)
 {
-	int ret = 0, value;
+	unsigned int ret = 0;
+	int value;
 	if (!is_cpu_idle(rcc))
 		ret |= WF_CPU_BUSY;
 
@@ -283,11 +287,11 @@ static int get_system_stat(struct rcc_module *rcc, bool end)
 	if (is_memory_free_enough(value))
 		ret |= WF_MEM_FREE_ENOUGH;
 
-	if (!rcc->full_clean_flag)
+	if (!rcc->full_clean_flag) {
 		value = end ? rcc->anon_pages_min : rcc->anon_pages_max;
-	else
+	} else {
 		value = end ? RCC_ANON_PAGE_MIN_ON_BOOT : RCC_ANON_PAGE_MAX_ON_BOOT;
-
+	}
 	if (!is_anon_page_enough(value))
 		ret |= WF_NO_ANON_PAGE;
 
@@ -363,7 +367,8 @@ static int rcc_thread_wait(struct rcc_module *rcc, long timeout)
  */
 static int rcc_thread(void *unused)
 {
-	int ret, nr_pages, nr_total_pages, busy_count = 0, anon_count = 0;
+	unsigned int ret;
+	int nr_pages, nr_total_pages, busy_count = 0, anon_count = 0;
 	unsigned long one_loop_time;
 	unsigned long one_compress_time;
 	struct task_struct *tsk = current;
@@ -378,7 +383,7 @@ static int rcc_thread(void *unused)
 		if (rcc->passive_mode)
 			timeout = RCC_WAIT_INFINITE;
 		/* wait wakeup_event or timeout. */
-		ret = rcc_thread_wait(rcc, timeout);
+		rcc_thread_wait(rcc, timeout);
 		if (kthread_should_stop())
 			goto out;
 		/* force update cpu load stat. */
@@ -388,16 +393,16 @@ static int rcc_thread(void *unused)
 		one_compress_time = 0;
 		ret = get_system_stat(rcc, false);
 		if (rcc->pause_flag) {
-			pr_info("rcc pause\n");
-			rcc_thread_wait(rcc, RCC_PAUSE_TIME);
+			pr_info("rcc pause.\n");
+			rcc_thread_wait(rcc,RCC_PAUSE_TIME);
 			rcc->pause_flag = 0;
-			pr_info("rcc continue\n");
+			pr_info("rcc continue.\n");
 		}
-		pr_info("rcc try to run ,stat %d\n", ret);
+		pr_info("rcc try to run ,stat %u\n", ret);
 		if (rcc->full_clean_flag) {
 			ssleep(RCC_SLEEP_TIME);
 			rcc->wakeup_count++;
-			pr_info("rcc wakeup: full\n");
+			pr_info("rcc wakeup: full.\n");
 
 			/* full fill swap area. */
 			busy_count = 0;
@@ -412,15 +417,15 @@ static int rcc_thread(void *unused)
 			rcc_set_full_clean(rcc, 0);
 			rcc->nr_full_clean_pages += nr_total_pages;
 			rcc->total_spent_times += one_compress_time;
-			pr_info("full cc: mem=%d MB, time=%d ms, out stat=%d, anon_count = %d\n",
+			pr_info("full cc: mem=%d MB, time=%d ms, out stat=%u, anon_count = %d\n",
 				M(nr_total_pages), jiffies_to_msecs(one_compress_time),
 				ret, anon_count);
 		} else if (ret == WS_NEED_WAKEUP || rcc->force_compress_flag) {
 			rcc->wakeup_count++;
 			if (rcc->force_compress_flag)
-				pr_info("rcc wakeup: force compress\n");
+				pr_info("rcc wakeup: force compress.\n");
 			else
-				pr_info("rcc wakeup: normal\n");
+				pr_info("rcc wakeup: normal.\n");
 
 			/* swap out pages. */
 			busy_count = 0;
@@ -429,13 +434,12 @@ static int rcc_thread(void *unused)
 				_UPDATE_STATE();
 				if (rcc->full_clean_flag || busy_count > 1000)
 					break;
-				if (rcc->force_compress_flag
-					 && nr_total_pages > rcc->force_once_pages)
+				if (rcc->force_compress_flag && nr_total_pages > rcc->force_once_pages)
 					break;
 				if (rcc->pause_flag) {
-					pr_info("rcc pause\n");
+					pr_info("rcc pause.\n");
 					rcc_thread_wait(rcc,RCC_PAUSE_TIME);
-					pr_info("rcc continue\n");
+					pr_info("rcc continue.\n");
 					rcc->pause_flag = 0;
 				}
 			} while (!(ret & WF_MEM_FREE_ENOUGH)
@@ -447,11 +451,11 @@ static int rcc_thread(void *unused)
 			rcc->total_spent_times += one_compress_time;
 
 			if (rcc->force_compress_flag) {
-				pr_info("force cc: mem=%d MB, time=%d, out_stat=%d\n",
+				pr_info("force cc: mem=%d MB, time=%d, out_stat=%u\n",
 					M(nr_total_pages), jiffies_to_msecs(one_compress_time), ret);
 				rcc->force_compress_flag = 0;
 			} else {
-				pr_info("normal cc: mem=%d MB, time=%d, out_stat=%d, busy=%d\n",
+				pr_info("normal cc: mem=%d MB, time=%d, out_stat=%u, busy=%d\n",
 					M(nr_total_pages), jiffies_to_msecs(one_compress_time),
 					ret, busy_count);
 			}
@@ -473,7 +477,6 @@ out:
  */
 static void rcc_setup(struct rcc_module *rcc)
 {
-	/* memset(rcc,0,sizeof(struct rcc_module)); */
 	init_rwsem(&rcc->lock);
 	sema_init(&rcc->wait, 0);
 
@@ -483,12 +486,13 @@ static void rcc_setup(struct rcc_module *rcc)
 	rcc->free_pages_min = RCC_FREE_PAGE_MIN;
 	rcc->full_clean_file_pages = RCC_FULL_CLEAN_FILE_PAGE;
 
-	if (totalram_pages > 3 * TOTAL_RAM_PAGES_1G) /* >3g */
+	if (totalram_pages > 3 * TOTAL_RAM_PAGES_1G) { /* >3g */
 		rcc->anon_pages_min = RCC_ANON_PAGE_MIN + 2 * RCC_ANON_PAGE_RAM_GAP;
-	else if (totalram_pages > 2 * TOTAL_RAM_PAGES_1G) /* 3g */
+	} else if (totalram_pages > 2 * TOTAL_RAM_PAGES_1G) { /* 3g */
 		rcc->anon_pages_min = RCC_ANON_PAGE_MIN + RCC_ANON_PAGE_RAM_GAP;
-	else /*1g 2g*/
+	} else { /*1g 2g*/
 		rcc->anon_pages_min = RCC_ANON_PAGE_MIN;
+	}
 
 	rcc->anon_pages_max = rcc->anon_pages_min + RCC_ANON_PAGE_START_GAP;
 	rcc->full_clean_anon_pages = RCC_MAX_RECLAIM_ON_BOOT;
@@ -695,8 +699,8 @@ static ssize_t full_clean_size_store(struct kobject *kobj,
 	if (!size)
 		return -EINVAL;
 #if(LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0))
-	nr_file_pages = global_zone_page_state(NR_INACTIVE_FILE);
-	nr_file_pages += global_zone_page_state(NR_ACTIVE_FILE);
+	nr_file_pages = global_node_page_state(NR_INACTIVE_FILE);
+	nr_file_pages += global_node_page_state(NR_ACTIVE_FILE);
 #else
 	nr_file_pages = global_page_state(NR_INACTIVE_FILE);
 	nr_file_pages += global_page_state(NR_ACTIVE_FILE);
@@ -777,7 +781,7 @@ static ssize_t max_anon_clean_size_store(struct kobject *kobj,
 
 /* purpose: target avail mem to compress  */
 static ssize_t avail_target_show(struct kobject *kobj,
-			struct kobj_attribute *attr, char *buf)
+				struct kobj_attribute *attr, char *buf)
 {
 	struct rcc_module *rcc = &rcc_module;
 	int size = M(rcc->avail_target_pages);
@@ -786,8 +790,8 @@ static ssize_t avail_target_show(struct kobject *kobj,
 }
 
 static ssize_t avail_target_store(struct kobject *kobj,
-			struct kobj_attribute *attr,
-			const char *buf, size_t len)
+				struct kobj_attribute *attr,
+				const char *buf, size_t len)
 {
 	u64 size;
 	struct rcc_module *rcc = &rcc_module;
@@ -796,7 +800,7 @@ static ssize_t avail_target_store(struct kobject *kobj,
 	if (!size)
 		return -EINVAL;
 
-	size = size << (20 - PAGE_SHIFT); /* mb to page */
+	size = size << (20 - PAGE_SHIFT);
 	if (size > totalram_pages * 4)
 		return -EINVAL;
 	rcc->avail_target_pages = size;
@@ -804,7 +808,7 @@ static ssize_t avail_target_store(struct kobject *kobj,
 }
 
 static ssize_t anon_target_show(struct kobject *kobj,
-			struct kobj_attribute *attr, char *buf)
+				struct kobj_attribute *attr, char *buf)
 {
 	struct rcc_module *rcc = &rcc_module;
 
@@ -813,8 +817,8 @@ static ssize_t anon_target_show(struct kobject *kobj,
 }
 
 static ssize_t anon_target_store(struct kobject *kobj,
-			struct kobj_attribute *attr,
-			const char *buf, size_t len)
+				struct kobj_attribute *attr,
+				const char *buf, size_t len)
 {
 	u64 size;
 	struct rcc_module *rcc = &rcc_module;
@@ -823,7 +827,7 @@ static ssize_t anon_target_store(struct kobject *kobj,
 	if (!size)
 		return -EINVAL;
 
-	size = size << (20 - PAGE_SHIFT); /* mb to page */
+	size = size << (20 - PAGE_SHIFT);
 	if (size > totalram_pages * 4)
 		return -EINVAL;
 	rcc->anon_pages_min = size;
@@ -832,7 +836,7 @@ static ssize_t anon_target_store(struct kobject *kobj,
 }
 
 static ssize_t force_once_show(struct kobject *kobj,
-			struct kobj_attribute *attr, char *buf)
+				struct kobj_attribute *attr, char *buf)
 {
 	struct rcc_module *rcc = &rcc_module;
 	int size = M(rcc->force_once_pages);
@@ -842,8 +846,8 @@ static ssize_t force_once_show(struct kobject *kobj,
 
 /* purpose: wake compress ignoring cpu */
 static ssize_t force_once_store(struct kobject *kobj,
-			struct kobj_attribute *attr,
-			const char *buf, size_t len)
+				struct kobj_attribute *attr,
+				const char *buf, size_t len)
 {
 	u64 size;
 	struct rcc_module *rcc = &rcc_module;
@@ -855,7 +859,7 @@ static ssize_t force_once_store(struct kobject *kobj,
 	if (rcc->full_clean_flag)
 		return -EINVAL;
 
-	size = size << (20 - PAGE_SHIFT); /* mb to page */
+	size = size << (20 - PAGE_SHIFT);
 	if (size > totalram_pages * 4)
 		return -EINVAL;
 	rcc->force_once_pages = size;

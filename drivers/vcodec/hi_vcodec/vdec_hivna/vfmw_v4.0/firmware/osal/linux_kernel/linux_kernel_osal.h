@@ -1,3 +1,10 @@
+/*
+  * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+  * Description: This software is licensed under the terms of the GNU General
+  * Public License version 2, as published by the Free Software Foundation
+  * Author: gaoyajun<gaoyajun@hisilicon.com>
+  * Create: 2017-03-16
+  */
 
 #ifndef __VFMW_LINUX_KERNEL_OSAL_HEADER__
 #define  __VFMW_LINUX_KERNEL_OSAL_HEADER__
@@ -36,48 +43,35 @@
 
 #include "vfmw_osal_ext.h"
 
-/*======================================================================*/
-/*                            struct define                             */
-/*======================================================================*/
-typedef struct hiKERN_EVENT_S {
+#define UM_COUNT_OF_A_MM        1000000
+#define MM_COUNT_OF_A_S         1000
+
+
+typedef struct hi_kern_event_s {
 	wait_queue_head_t queue_head;
 	SINT32 flag;
-} OSAL_EVENT;
+} osal_event;
 
-typedef struct hiKERN_IRQ_LOCK_S {
+typedef struct hi_kern_irq_lock_s {
 	spinlock_t    irq_lock;
 	unsigned long irq_lockflags;
-	int           isInit;
-} OSAL_IRQ_SPIN_LOCK;
+	int           is_init;
+} osal_irq_spin_lock;
 
-/*======================================================================*/
-/*                              define                                  */
-/*======================================================================*/
-typedef  struct task_struct*    OSAL_TASK;
-typedef  struct file            OSAL_FILE;
-typedef  struct semaphore       OSAL_SEMA;
-typedef  OSAL_EVENT             OSAL_TASK_MUTEX;
+typedef  struct task_struct    *osal_task;
+typedef  struct file            osal_file;
+typedef  struct semaphore       osal_sema;
+typedef  osal_event             osal_task_mutex;
 
-
-/*======================================================================*/
-/*                          function declare                            */
-/*======================================================================*/
-
-/************************************************************************/
 /* time: get in ms/us */
-/************************************************************************/
-UINT32     OSAL_GetTimeInMs(VOID);
-UINT32     OSAL_GetTimeInUs(VOID);
+UINT32     oasl_get_time_in_ms(void);
+UINT32     osal_get_time_in_us(void);
 
-/************************************************************************/
 /* file: open/close/read/write */
-/************************************************************************/
-SINT32     OSAL_FileWrite(char *buf, int len, struct file *filp);
+SINT32     osal_file_write(const char *buf, int len, struct file *filp);
 
-/************************************************************************/
 /* linux kernel osal function pointer initialize */
-/************************************************************************/
-VOID       OSAL_InitInterface(VOID);
+VOID       osal_init_interface(void);
 
 #endif
 

@@ -10,36 +10,38 @@ menuconfig ION
 	  If you're not using Android its probably safe to
 	  say N here.
 
-config ION_TEST
-	tristate "Ion Test Device"
+config ION_SYSTEM_HEAP
+	bool "Ion system heap"
 	depends on ION
 	help
-	  Choose this option to create a device that can be used to test the
-	  kernel and device side ION functions.
+	  Choose this option to enable the Ion system heap. The system heap
+	  is backed by pages from the buddy allocator. If in doubt, say Y.
 
-config ION_DUMMY
-	bool "Dummy Ion driver"
+config ION_CARVEOUT_HEAP
+	bool "Ion carveout heap support"
 	depends on ION
 	help
-	  Provides a dummy ION driver that registers the
-	  /dev/ion device and some basic heaps. This can
-	  be used for testing the ION infrastructure if
-	  one doesn't have access to hardware drivers that
-	  use ION.
+	  Choose this option to enable carveout heaps with Ion. Carveout heaps
+	  are backed by memory reserved from the system. Allocation times are
+	  typically faster at the cost of memory not being used. Unless you
+	  know your system has these regions, you should say N here.
 
-config ION_TEGRA
-	tristate "Ion for Tegra"
-	depends on ARCH_TEGRA && ION
-	help
-	  Choose this option if you wish to use ion on an nVidia Tegra.
-
-config ION_POOL_CACHE_POLICY
-	bool "Ion set page pool cache policy"
+config ION_CHUNK_HEAP
+	bool "Ion chunk heap support"
 	depends on ION
-	default y if X86
 	help
-	  Choose this option if need to explicity set cache policy of the
-	  pages in the page pool.
+          Choose this option to enable chunk heaps with Ion. This heap is
+	  similar in function the carveout heap but memory is broken down
+	  into smaller chunk sizes, typically corresponding to a TLB size.
+	  Unless you know your system has these regions, you should say N here.
+
+config ION_CMA_HEAP
+	bool "Ion CMA heap support"
+	depends on ION && DMA_CMA
+	help
+	  Choose this option to enable CMA heaps with Ion. This heap is backed
+	  by the Contiguous Memory Allocator (CMA). If your system has these
+	  regions, you should say Y here.
 
 config ION_HISI
 	tristate "Ion for Hisilicon"
@@ -48,19 +50,8 @@ config ION_HISI
 	help
 	  Choose this option if you wish to use ion on Hisilicon Platform.
 
-config ION_OF
-	bool "Devicetree support for Ion"
-	depends on ION && OF_ADDRESS
-	help
-	  Provides base support for defining Ion heaps in devicetree
-	  and setting them up. Also includes functions for platforms
-	  to parse the devicetree and expand for their own custom
-	  extensions
-
-	  If using Ion and devicetree, you should say Y here
-
 config HISI_ION_SECSG_DEBUG
-	bool "Hisilicon ION secsg heap support"
+	bool "Hisilicon ION secsg heap debug support"
 	depends on ION_HISI_SECSG
 	default n
 	help
@@ -72,6 +63,32 @@ config ION_HISI_SECSG
 	help
 	 if you want to use secsg heap, you should select this.
 
+config ION_HISI_SUPPORT_SUBBIT
+	bool "Hisilicon ION secsg heap support subbit region"
+	depends on ION_HISI_SECSG
+	help
+	 if you want to use subbit region, you should select this.
+
+config NEED_CHANGE_MAPPING
+	bool "Need change secure memory's mapping prot"
+	depends on ION_HISI_SECSG
+	help
+	  This config exists for secure memory. If you need to change the mapping
+	  prot of the memory to ensure that it will not be speculatively accessed
+	  by the CPU, you need make it to be Y.
+
+config SECMEM_TEST
+	bool "sec memory alloc test"
+	depends on ION_HISI_SECSG
+	help
+	  Only for sec memory alloc test in develop version.
+
+config ION_HISI_CPA
+	bool "Hisilicon ION cpa heap support"
+	depends on ION_HISI
+	default n
+	help
+	  if you want to use cpa heap, you should select this.
 
 config ION_HISI_DMA_POOL
 	bool "Hisilicon ION DMA pool heap support"
@@ -85,19 +102,7 @@ config ION_HISI_SECCM
 	help
 	 if you want to use seccm heap, you should select this.
 
-config ALLOC_MEM_SUPPORT_4GPLUS
+config ION_HISI_SUPPORT_4GPLUS
 	bool "Hisilicon ION can support allocation above 4G"
 	depends on ION
 	default n
-
-config HISI_SMARTPOOL_OPT
-	bool "Support Hisilicon Smartpool"
-	default n
-	help
-	  This driver supports Hisilicon Smartpool.
-
-config HISI_SPECIAL_SCENE_POOL
-	bool "Support Hisilicon Special Scenes Pool"
-	default n
-	help
-	  This driver supports Hisilicon Special Scenes Pool.

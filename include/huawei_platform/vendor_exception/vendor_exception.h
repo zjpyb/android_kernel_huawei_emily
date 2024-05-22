@@ -16,7 +16,7 @@ enum {
 
 #define VENDOR_EXCEPTION(modid, arg1, arg2) \
 	do { \
-		set_exception_info((u64)__builtin_return_address(0)); \
+		set_exception_info((unsigned long)__builtin_return_address(0)); \
 		rdr_system_error(modid, arg1, arg2); \
 		msleep(-1U); \
 	} while (0)

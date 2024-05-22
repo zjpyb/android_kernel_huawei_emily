@@ -2,7 +2,7 @@
 #define BOOTDEVICE_H
 #include <linux/device.h>
 
-enum bootdevice_type { BOOT_DEVICE_EMMC = 0, BOOT_DEVICE_UFS = 1 };
+enum bootdevice_type { BOOT_DEVICE_EMMC = 0, BOOT_DEVICE_UFS = 1, BOOT_DEVICE_MAX };
 #define UFS_VENDOR_HYNIX       0x1AD
 
 #define MAX_PARTITION_NAME_LENGTH       36

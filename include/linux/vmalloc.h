@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_VMALLOC_H
 #define _LINUX_VMALLOC_H
 
@@ -8,9 +9,6 @@
 #include <asm/page.h>		/* pgprot_t */
 #include <linux/rbtree.h>
 
-#ifdef CONFIG_DEBUG_VMALLOC
-#include <linux/sched.h>
-#endif
 struct vm_area_struct;		/* vma defining user mapping in mm_types.h */
 struct notifier_block;		/* in notifier.h */
 
@@ -42,10 +40,6 @@ struct vm_struct {
 	unsigned int		nr_pages;
 	phys_addr_t		phys_addr;
 	const void		*caller;
-#ifdef CONFIG_DEBUG_VMALLOC
-	unsigned int		pid;
-	unsigned char		task_name[TASK_COMM_LEN];
-#endif
 };
 
 struct vmap_area {
@@ -88,12 +82,29 @@ extern void *__vmalloc_node_range(unsigned long size, unsigned long align,
 			unsigned long start, unsigned long end, gfp_t gfp_mask,
 			pgprot_t prot, unsigned long vm_flags, int node,
 			const void *caller);
+#ifndef CONFIG_MMU
+extern void *__vmalloc_node_flags(unsigned long size, int node, gfp_t flags);
+static inline void *__vmalloc_node_flags_caller(unsigned long size, int node,
+						gfp_t flags, void *caller)
+{
+	return __vmalloc_node_flags(size, node, flags);
+}
+#else
+extern void *__vmalloc_node_flags_caller(unsigned long size,
+					 int node, gfp_t flags, void *caller);
+#endif
 
 extern void vfree(const void *addr);
+extern void vfree_atomic(const void *addr);
 
 extern void *vmap(struct page **pages, unsigned int count,
 			unsigned long flags, pgprot_t prot);
 extern void vunmap(const void *addr);
+
+#ifdef CONFIG_HISI_LB
+extern void *lb_vmap(struct page **pages, unsigned int count,
+      unsigned int offset, unsigned long flags, pgprot_t prot);
+#endif
 
 extern int remap_vmalloc_range_partial(struct vm_area_struct *vma,
 				       unsigned long uaddr, void *kaddr,

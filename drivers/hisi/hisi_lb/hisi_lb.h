@@ -8,15 +8,16 @@ struct scatterlist;
 enum lb_pid {
 	PID_BY_PASS = 0,
 
-	PID_OPENCL  = 1,
+	PID_CAMAIP = 1,
 	PID_GPUFBO  = 2,
 	PID_GPUTXT  = 3,
 	PID_IDISPLAY= 4,
-	PID_JPEG    = 5,
+	PID_NPU     = 5,
 	PID_VIDEO   = 6,
-	PID_DMAP    = 7,
+	PID_CAMTOF = 7,
 	PID_TINY    = 8,
 	PID_AUDIO   = 9,
+	PID_VOICE   = 10,
 
 	PID_MAX,
 };
@@ -36,6 +37,8 @@ extern int lb_prot_build(struct page* pages, pgprot_t *pageprot);
 extern int lb_pid_prot_build(unsigned int pid, pgprot_t *pageprot);
 extern int lb_sg_attach(unsigned int pid, struct scatterlist *sgl, unsigned int nents);
 extern int lb_sg_detach(unsigned int pid, struct scatterlist *sgl, unsigned int nents);
+extern int lb_pages_attach(unsigned int pid, struct page *pg, size_t count);
+extern int lb_pages_detach(unsigned int pid, struct page *pg, size_t count);
 extern u64 lb_pid_to_gidphys(u32 pid);
 #else
 static inline void __lb_assert_page(struct page *pg){}
@@ -52,6 +55,8 @@ static inline int lb_prot_build(struct page* pages, pgprot_t *pageprot){return 0
 static inline int lb_pid_prot_build(struct page* pages, pgprot_t *pageprot){return 0;}
 static inline int lb_sg_attach(unsigned int pid, struct scatterlist *sgl, unsigned int nents){return 0;}
 static inline int lb_sg_detach(unsigned int pid, struct scatterlist *sgl, unsigned int nents){return 0;}
+static inline int lb_pages_attach(unsigned int pid, struct page *pg, size_t count){return 0;}
+static inline int lb_pages_detach(unsigned int pid, struct page *pg, size_t count){return 0;}
 static inline u64 lb_pid_to_gidphys(u32 pid){return 0;}
 #endif
 #endif

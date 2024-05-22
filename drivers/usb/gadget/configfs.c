@@ -30,7 +30,7 @@ static struct class *android_class;
 static struct device *android_device;
 static int index;
 
-struct device *create_function_device(const char *name)
+struct device *create_function_device(char *name)
 {
 	if (android_device && !IS_ERR(android_device))
 		return device_create(android_class, android_device,
@@ -480,7 +480,7 @@ out:
 	return ret;
 }
 
-static int config_usb_cfg_unlink(
+static void config_usb_cfg_unlink(
 	struct config_item *usb_cfg_ci,
 	struct config_item *usb_func_ci)
 {
@@ -514,12 +514,11 @@ static int config_usb_cfg_unlink(
 #endif
 
 			mutex_unlock(&gi->lock);
-			return 0;
+			return;
 		}
 	}
 	mutex_unlock(&gi->lock);
 	WARN(1, "Unable to locate function to unbind\n");
-	return 0;
 }
 
 static struct configfs_item_operations gadget_config_item_ops = {
@@ -815,7 +814,7 @@ static inline struct gadget_info *os_desc_item_to_gadget_info(
 
 static ssize_t os_desc_use_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d",
+	return sprintf(page, "%d\n",
 			os_desc_item_to_gadget_info(item)->use_os_desc);
 }
 
@@ -839,7 +838,7 @@ static ssize_t os_desc_use_store(struct config_item *item, const char *page,
 
 static ssize_t os_desc_b_vendor_code_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d",
+	return sprintf(page, "0x%02x\n",
 			os_desc_item_to_gadget_info(item)->b_vendor_code);
 }
 
@@ -864,9 +863,13 @@ static ssize_t os_desc_b_vendor_code_store(struct config_item *item,
 static ssize_t os_desc_qw_sign_show(struct config_item *item, char *page)
 {
 	struct gadget_info *gi = os_desc_item_to_gadget_info(item);
+	int res;
 
-	memcpy(page, gi->qw_sign, OS_STRING_QW_SIGN_LEN);
-	return OS_STRING_QW_SIGN_LEN;
+	res = utf16s_to_utf8s((wchar_t *) gi->qw_sign, OS_STRING_QW_SIGN_LEN,
+			      UTF16_LITTLE_ENDIAN, page, PAGE_SIZE - 1);
+	page[res++] = '\n';
+
+	return res;
 }
 
 static ssize_t os_desc_qw_sign_store(struct config_item *item, const char *page,
@@ -942,7 +945,7 @@ out:
 	return ret;
 }
 
-static int os_desc_unlink(struct config_item *os_desc_ci,
+static void os_desc_unlink(struct config_item *os_desc_ci,
 			  struct config_item *usb_cfg_ci)
 {
 	struct gadget_info *gi = container_of(to_config_group(os_desc_ci),
@@ -955,7 +958,6 @@ static int os_desc_unlink(struct config_item *os_desc_ci,
 	cdev->os_desc_config = NULL;
 	WARN_ON(gi->composite.gadget_driver.udc_name);
 	mutex_unlock(&gi->lock);
-	return 0;
 }
 
 static struct configfs_item_operations os_desc_ops = {
@@ -978,7 +980,7 @@ static inline struct usb_os_desc_ext_prop
 
 static ssize_t ext_prop_type_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%d", to_usb_os_desc_ext_prop(item)->type);
+	return sprintf(page, "%d\n", to_usb_os_desc_ext_prop(item)->type);
 }
 
 static ssize_t ext_prop_type_store(struct config_item *item,
@@ -1025,7 +1027,7 @@ end:
 static ssize_t ext_prop_data_show(struct config_item *item, char *page)
 {
 	struct usb_os_desc_ext_prop *ext_prop = to_usb_os_desc_ext_prop(item);
-	unsigned int len = (unsigned)ext_prop->data_len;
+	int len = ext_prop->data_len;
 
 	if (ext_prop->type == USB_EXT_PROP_UNICODE ||
 	    ext_prop->type == USB_EXT_PROP_UNICODE_ENV ||
@@ -1295,7 +1297,7 @@ static void purge_configs_funcs(struct gadget_info *gi)
 			list_move(&f->list, &cfg->func_list);
 			if (f->unbind) {
 				dev_dbg(&gi->cdev.gadget->dev,
-						"unbind function '%s'/%pK\n",
+					 "unbind function '%s'/%pK\n",
 				         f->name, f);
 				f->unbind(c, f);
 			}
@@ -1679,7 +1681,7 @@ static void android_disconnect(struct usb_gadget *gadget)
 	 * is called before the gadget driver is set to NULL and the udc driver
 	 * calls disconnect fn which results in cdev being a null ptr.
 	 */
-	if (!cdev) {
+	if (cdev == NULL) {
 		WARN(1, "%s: gadget driver already disconnected\n", __func__);
 		return;
 	}
@@ -1769,7 +1771,7 @@ static int cable_disconnect_fn(struct notifier_block *nb,
 	struct gadget_info *gi = container_of(nb, struct gadget_info,
 			cable_disconnect_nb);
 
-	if (CHARGER_TYPE_NONE == action && (gi->connected != gi->sw_connected)) 
+	if (CHARGER_TYPE_NONE == action && (gi->connected != gi->sw_connected))
 		schedule_work(&gi->work);
 
 	return 0;

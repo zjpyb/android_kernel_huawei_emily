@@ -125,10 +125,10 @@ static int mvsd_setup_data(struct mvsd_host *host, struct mmc_data *data)
 		return 1;
 	} else {
 		dma_addr_t phys_addr;
-		int dma_dir = (data->flags & MMC_DATA_READ) ?
-			DMA_FROM_DEVICE : DMA_TO_DEVICE;
-		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg,
-					    data->sg_len, dma_dir);
+
+		host->sg_frags = dma_map_sg(mmc_dev(host->mmc),
+					    data->sg, data->sg_len,
+					    mmc_get_dma_dir(data));
 		phys_addr = sg_dma_address(data->sg);
 		mvsd_write(MVSD_SYS_ADDR_LOW, (u32)phys_addr & 0xffff);
 		mvsd_write(MVSD_SYS_ADDR_HI,  (u32)phys_addr >> 16);
@@ -294,8 +294,7 @@ static u32 mvsd_finish_data(struct mvsd_host *host, struct mmc_data *data,
 		host->pio_size = 0;
 	} else {
 		dma_unmap_sg(mmc_dev(host->mmc), data->sg, host->sg_frags,
-			     (data->flags & MMC_DATA_READ) ?
-				DMA_FROM_DEVICE : DMA_TO_DEVICE);
+			     mmc_get_dma_dir(data));
 	}
 
 	if (err_status & MVSD_ERR_DATA_TIMEOUT)
@@ -643,6 +642,11 @@ static void mvsd_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	 * and revisit this issue if problems for not enabling this bit
 	 * are ever reported.
 	 */
+#ifndef CONFIG_HISI_MMC
+	if (ios->timing == MMC_TIMING_MMC_HS ||
+	    ios->timing == MMC_TIMING_SD_HS)
+		ctrl_reg |= MVSD_HOST_CTRL_HI_SPEED_EN;
+#endif
 
 	host->ctrl = ctrl_reg;
 	mvsd_write(MVSD_HOST_CTRL, ctrl_reg);

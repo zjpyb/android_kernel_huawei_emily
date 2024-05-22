@@ -5,6 +5,7 @@
 #include <linux/fs.h>
 #include <linux/fscrypt_common.h>
 #include <linux/rwsem.h>
+#include <linux/cred.h>
 #include <uapi/linux/stat.h>
 #include "huawei_platform/hwaa/hwaa_limits.h"
 
@@ -45,9 +46,9 @@ hwaa_result_t hwaa_create_fek(struct inode *inode, struct dentry *dentry,
 	pid_t pid;
 	uid_t uid;
 	gid_t gid;
-	const s8 *fsname;
 	umode_t mode;
 	const struct cred *cred;
+	const s8 *fsname = NULL;
 
 	if (!inode || !dentry || !encoded_wfek || !encoded_len ||
 	    !fek || !fek_len)

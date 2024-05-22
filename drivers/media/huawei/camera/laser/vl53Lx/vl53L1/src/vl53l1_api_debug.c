@@ -2544,7 +2544,7 @@ void VL53L1_print_xtalk_range_results(
 	char *ppre_text = &(pre_text[0]);
 	uint8_t  i = 0;
 
-	VL53L1_histogram_bin_data_t *pbin_data;
+	VL53L1_histogram_bin_data_t *pbin_data = NULL;
 
 	trace_print(
 		VL53L1_TRACE_LEVEL_INFO,

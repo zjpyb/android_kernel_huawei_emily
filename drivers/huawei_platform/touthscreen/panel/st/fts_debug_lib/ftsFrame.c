@@ -141,7 +141,8 @@ int getMSFrame(u16 type, short **frame, int keep_first_row)
 			break;
 
 		default:
-			TS_LOG_ERR("%s getMSFrame: ERROR % 02X\n", __func__, ERROR_OP_NOT_ALLOW);
+			TS_LOG_ERR("%s: ERROR %02X\n",
+				__func__, ERROR_OP_NOT_ALLOW);
 			return ERROR_OP_NOT_ALLOW;
 	}
 	
@@ -200,7 +201,8 @@ int getSSFrame(u16 type, short **frame)
 		break;
 
 	default:
-		TS_LOG_ERR("%s getSSFrame: ERROR % 02X\n", __func__, ERROR_OP_NOT_ALLOW);
+		TS_LOG_ERR("%s: ERROR %02X\n",
+			__func__, ERROR_OP_NOT_ALLOW);
 		return ERROR_OP_NOT_ALLOW;
 
 	}

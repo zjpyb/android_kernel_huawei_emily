@@ -47,8 +47,14 @@ static const struct nvt_ts_trim_id_table_entry trim_id_table[] = {
 	{.id = {0xFF, 0xFF, 0xFF, 0x70, 0x67, 0x03}, .mask = {0, 0, 0, 1, 1, 1} },
 	{.id = {0xFF, 0xFF, 0xFF, 0x72, 0x66, 0x03}, .mask = {0, 0, 0, 1, 1, 1} },
 	{.id = {0xFF, 0xFF, 0xFF, 0x25, 0x65, 0x03}, .mask = {0, 0, 0, 1, 1, 1} },
-	{.id = {0xFF, 0xFF, 0xFF, 0x70, 0x68, 0x03}, .mask = {0, 0, 0, 1, 1, 1} }
+	{.id = {0xFF, 0xFF, 0xFF, 0x70, 0x68, 0x03}, .mask = {0, 0, 0, 1, 1, 1} },
+	{.id = {0xFF, 0xFF, 0xFF, 0x26, 0x65, 0x03}, .mask = {0, 0, 0, 1, 1, 1} }
 };
+
+struct nvt_ts_spi_buf {
+	uint8_t *w_buf;
+	uint8_t *r_buf;
+} g_nvt_ts_spi_buf;
 
 static inline int thp_nvt_spi_read_write(struct spi_device *client,
 			void *tx_buf, void *rx_buf, size_t len)
@@ -88,11 +94,15 @@ static int thp_nvt_check_spi_master_capacity(struct spi_device *sdev)
 
 void thp_nvt_sw_reset_idle(struct spi_device *sdev)
 {
-	uint8_t w_buf[NVT_SW_RESET_RW_LEN] = {0};
+	uint8_t *w_buf = g_nvt_ts_spi_buf.w_buf;
 	/*This register addr is for NT36870 */
 	uint32_t addr = NVT_SW_RESET_REG_ADDR;
 	unsigned int rw_len;
 
+	if (!w_buf) {
+		THP_LOG_ERR("%s: w_buf is null\n", __func__);
+		return;
+	}
 	/* write 0xAA @0x3F0FE */
 	w_buf[0] = SPI_WRITE_MASK(0x7F);
 	w_buf[1] = NVT_HI_WORD_BIT_MASK(addr);
@@ -111,12 +121,16 @@ void thp_nvt_sw_reset_idle(struct spi_device *sdev)
 
 void thp_nvt_bootloader_reset(struct spi_device *sdev)
 {
-	uint8_t w_buf[NVT_SW_RESET_RW_LEN] = {0};
+	uint8_t *w_buf = g_nvt_ts_spi_buf.w_buf;
 	/*This register addr is for NT36870 */
 	uint32_t addr = NVT_SW_RESET_REG_ADDR;
 	unsigned int rw_len;
 
 	THP_LOG_INFO("%s: called\n", __func__);
+	if (!w_buf) {
+		THP_LOG_ERR("%s: w_buf is null\n", __func__);
+		return;
+	}
 	/* write 0xAA @0x3F0FE */
 	w_buf[0] = SPI_WRITE_MASK(0x7F);
 	w_buf[1] = NVT_HI_WORD_BIT_MASK(addr);
@@ -174,12 +188,20 @@ static void thp_nvt_timing_work(struct thp_device *tdev)
 
 static int8_t thp_nvt_ts_check_chip_ver_trim(struct spi_device *sdev)
 {
-	uint8_t w_buf[NVT_CHIP_VER_TRIM_RW_LEN] = {0};
-	uint8_t r_buf[NVT_CHIP_VER_TRIM_RW_LEN] = {0};
+	uint8_t *w_buf = g_nvt_ts_spi_buf.w_buf;
+	uint8_t *r_buf = g_nvt_ts_spi_buf.r_buf;
 	uint32_t addr = NVT_CHIP_VER_TRIM_REG_ADDR;
 	int rw_len;
 	int32_t retry;
 
+	if (!w_buf) {
+		THP_LOG_ERR("%s: w_buf is null\n", __func__);
+		return -EINVAL;
+	}
+	if (!r_buf) {
+		THP_LOG_ERR("%s: r_buf is null\n", __func__);
+		return -EINVAL;
+	}
 	/* Check for 5 times */
 	for (retry = NVT_CHIP_VER_TRIM_RETRY_TIME; retry > 0; retry--) {
 		thp_nvt_bootloader_reset(sdev);
@@ -241,21 +263,44 @@ static int thp_novatech_chip_detect(struct thp_device *tdev)
 
 	int rc;
 
+	g_nvt_ts_spi_buf.w_buf = kzalloc(NVT_CHIP_VER_TRIM_RW_LEN, GFP_KERNEL);
+	if (!g_nvt_ts_spi_buf.w_buf) {
+		THP_LOG_ERR("%s:w_buf request memory fail\n", __func__);
+		rc = -ENOMEM;
+		goto exit;
+	}
+
+	g_nvt_ts_spi_buf.r_buf = kzalloc(NVT_CHIP_VER_TRIM_RW_LEN, GFP_KERNEL);
+	if (!g_nvt_ts_spi_buf.r_buf) {
+		THP_LOG_ERR("%s:r_buf request memory fail\n", __func__);
+		rc = -ENOMEM;
+		goto exit;
+	}
+
 	thp_nvt_timing_work(tdev);
 
 	rc =  thp_nvt_ts_check_chip_ver_trim(tdev->thp_core->sdev);
 	if (rc) {
 		THP_LOG_INFO("%s:chip is not identified\n", __func__);
-		return -ENODEV;
+		rc = -ENODEV;
+		goto exit;
 	}
 
 	return 0;
+
+exit:
+	kfree(g_nvt_ts_spi_buf.w_buf);
+	g_nvt_ts_spi_buf.w_buf = NULL;
+	kfree(g_nvt_ts_spi_buf.r_buf);
+	g_nvt_ts_spi_buf.r_buf = NULL;
+
+	return rc;
 }
 static int thp_novatech_get_frame(struct thp_device *tdev,
 			char *buf, unsigned int len)
 {
 	unsigned char get_frame_cmd = 0x20; /* read frame data command */
-	uint8_t *w_buf;
+	uint8_t *w_buf = NULL;
 
 	if (!tdev) {
 		THP_LOG_INFO("%s: input dev null\n", __func__);
@@ -312,6 +357,10 @@ static int thp_novatech_suspend(struct thp_device *tdev)
 static void thp_novatech_exit(struct thp_device *tdev)
 {
 	THP_LOG_INFO("%s: called\n", __func__);
+	kfree(g_nvt_ts_spi_buf.w_buf);
+	g_nvt_ts_spi_buf.w_buf = NULL;
+	kfree(g_nvt_ts_spi_buf.r_buf);
+	g_nvt_ts_spi_buf.r_buf = NULL;
 	kfree(tdev->tx_buff);
 	kfree(tdev->rx_buff);
 	kfree(tdev);
@@ -329,6 +378,7 @@ struct thp_device_ops nova_dev_ops = {
 static int __init thp_novatech_module_init(void)
 {
 	int rc;
+	struct thp_core_data *cd = thp_get_core_data();
 
 	struct thp_device *dev = kzalloc(sizeof(struct thp_device), GFP_KERNEL);
 	if (!dev) {
@@ -346,7 +396,10 @@ static int __init thp_novatech_module_init(void)
 
 	dev->ic_name = NOVATECH_IC_NAME;
 	dev->ops = &nova_dev_ops;
-
+	if (cd && cd->fast_booting_solution) {
+		THP_LOG_ERR("%s: don't support this solution\n", __func__);
+		goto  err;
+	}
 	rc = thp_register_dev(dev);
 	if (rc) {
 		THP_LOG_ERR("%s: register fail\n", __func__);

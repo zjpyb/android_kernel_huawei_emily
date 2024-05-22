@@ -22,7 +22,7 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/time.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 #include <linux/syscalls.h>
 
@@ -915,7 +915,7 @@ static int32_t nvt_read_open(void)
 {
 	int32_t i = 0;
 	int32_t x = 0;
-	int32_t y = 0;
+	uint32_t y = 0;
 	int32_t ret = 0;
 	uint8_t buf[128] = {0};
 	uint8_t *rawdata_buf = NULL;
@@ -1455,7 +1455,7 @@ static int32_t nvt_tddi_read_fw_open(void)
 {
 	uint32_t raw_pipe_addr = NO_ERR;
 	int32_t x = NO_ERR;
-	int32_t y = NO_ERR;
+	uint32_t y;
 	int32_t ret = 0;
 	uint8_t buf[128] = {0};
 	uint8_t *rawdata_buf = NULL;
@@ -1675,6 +1675,7 @@ static int32_t nvt_rawdata_delta(int32_t rawdata[], uint8_t x_len, uint8_t y_len
 	uint64_t rawdata_size = x_len*y_len;
 	struct get_csv_data *rawdata_up = NULL;
 	struct get_csv_data *rawdata_low = NULL;
+	uint64_t len;
 
 	TS_LOG_INFO("%s:++\n", __func__);
 
@@ -1701,8 +1702,23 @@ static int32_t nvt_rawdata_delta(int32_t rawdata[], uint8_t x_len, uint8_t y_len
 			retval = -1;
 			goto exit;
 		} else {
-			memcpy(PS_Config_Lmt_FW_Rawdata_X_Delta, rawdata_up->csv_data, rawdata_size*sizeof(int32_t));
-			memcpy(PS_Config_Lmt_FW_Rawdata_Y_Delta, rawdata_low->csv_data, rawdata_size*sizeof(int32_t));
+			len = rawdata_size * sizeof(int32_t);
+			if (len >= sizeof(PS_Config_Lmt_FW_Rawdata_X_Delta)) {
+				TS_LOG_ERR("%s: len is too large, len = %lu\n",
+					__func__, len);
+				len = sizeof(PS_Config_Lmt_FW_Rawdata_X_Delta);
+			}
+			memcpy(PS_Config_Lmt_FW_Rawdata_X_Delta,
+				rawdata_up->csv_data, len);
+
+			len = rawdata_size * sizeof(int32_t);
+			if (len >= sizeof(PS_Config_Lmt_FW_Rawdata_Y_Delta)) {
+				TS_LOG_ERR("%s: len is too large, len = %lu\n",
+					__func__, len);
+				len = sizeof(PS_Config_Lmt_FW_Rawdata_Y_Delta);
+			}
+			memcpy(PS_Config_Lmt_FW_Rawdata_Y_Delta,
+				rawdata_low->csv_data, len);
 		}
 	}
 
@@ -2028,8 +2044,8 @@ static int set_parse_target_name(const char *up, const char* low)
 	}
 	memset(parse_target_name_up, '\0', TARGET_NAME_SIZE);
 	memset(parse_target_name_low, '\0', TARGET_NAME_SIZE);
-	strncpy(parse_target_name_up, up, strlen(up));
-	strncpy(parse_target_name_low, low, strlen(low));
+	strncpy(parse_target_name_up, up, len_up);
+	strncpy(parse_target_name_low, low, len_low);
 
 	TS_LOG_INFO("%s: parse_target_name_up=%s ,parse_target_name_low=%s \n", __func__, parse_target_name_up, parse_target_name_low);
 
@@ -2188,7 +2204,8 @@ return:
 	Executive outcomes. 0---succeed. negative---failed.
 *******************************************************/
 #define TP_TEST_FAILED_REASON_LEN 20
-static char selftest_failed_reason[TP_TEST_FAILED_REASON_LEN] = { "-software_reason" };
+static char selftest_failed_reason[TP_TEST_FAILED_REASON_LEN + 1] =
+	"-software_reason";
 int32_t nvt_kit_selftest(struct ts_rawdata_info *info)
 {
 	uint8_t buf[8] = {0};

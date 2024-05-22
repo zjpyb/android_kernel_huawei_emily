@@ -7,6 +7,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+#include <linux/types.h>
 #include <hi64xx_hifi_interface.h>
 #include "hi64xx_hifi_debug.h"
 #include "hi64xx_hifi_om.h"
@@ -80,8 +81,8 @@ int anc_beta_start_hook(void)
 {
 	struct krn_param_io_buf krn_param;
 	struct om_start_hook_msg msg;
-	struct om_hook_para *anc_hook_para;
-	unsigned char *buf_in;
+	struct om_hook_para *anc_hook_para = NULL;
+	unsigned char *buf_in = NULL;
 	unsigned int buf_size_in;
 	int ret = 0;
 
@@ -121,8 +122,8 @@ int anc_beta_stop_hook(void)
 {
 	struct krn_param_io_buf krn_param;
 	struct om_start_hook_msg msg;
-	struct om_hook_para *anc_hook_para;
-	unsigned char *buf_in;
+	struct om_hook_para *anc_hook_para = NULL;
+	unsigned char *buf_in = NULL;
 	unsigned int buf_size_in;
 	int ret = 0;
 
@@ -188,9 +189,9 @@ int anc_beta_log_upload(void* data)
 
 	imonitor_set_param(obj, EVENTLEVEL, info->err_level);
 	if (voice_record_permission) {
-		imonitor_set_param(obj, EVENTMODULE, (long)"ANC_inc_voice");
+		imonitor_set_param(obj, EVENTMODULE, (long)(uintptr_t)"ANC_inc_voice");
 	} else {
-		imonitor_set_param(obj, EVENTMODULE, (long)"ANC_no_voice");
+		imonitor_set_param(obj, EVENTMODULE, (long)(uintptr_t)"ANC_no_voice");
 	}
 	if (LOW_ACTTIME_RATE == info->err_class) {
 		imonitor_set_param(obj, E916000004_PROBABILITY_TINYINT, *(unsigned int *)(info->details + 24));
@@ -198,7 +199,7 @@ int anc_beta_log_upload(void* data)
 	if (PROCESS_PATH_ERR == info->err_class) {
 		char   rsn[8] = {0};
 		snprintf(rsn, 7, "%d", *(unsigned int *)(info->details + 28));
-		imonitor_set_param(obj, E916000005_CAUSECASE_VARCHAR, (long)rsn);
+		imonitor_set_param(obj, E916000005_CAUSECASE_VARCHAR, (long)(uintptr_t)rsn);
 	}
 	ret = imonitor_send_event(obj);
 	imonitor_destroy_eventobj(obj);
@@ -229,15 +230,15 @@ int dsm_beta_dump_file(void* data, bool create_dir)
 int dsm_beta_log_upload(void* data)
 {
 	MLIB_DSM_DFT_INFO *info = (MLIB_DSM_DFT_INFO *)data;
-	struct imonitor_eventobj *obj;
+	struct imonitor_eventobj *obj = NULL;
 	unsigned int event_id;
-	Dsm_adp_statistics *dsm_info;
+	Dsm_adp_statistics *dsm_info = NULL;
 	int ret;
 
 	event_id = CODEC_DSP_SMARTPA_ERR_BASE_ID + info->errClass;
 	obj = imonitor_create_eventobj(event_id);
 	imonitor_set_param(obj, E916000101_EVENTLEVEL_INT, info->errLevel);
-	imonitor_set_param(obj, E916000101_EVENTMODULE_VARCHAR, (long)"SmartPa");
+	imonitor_set_param(obj, E916000101_EVENTMODULE_VARCHAR, (long)(uintptr_t)"SmartPa");
 	if (DSM_OM_ERR_TYPE_PROC == info->errClass) {
 		dsm_info = (Dsm_adp_statistics *)info->errInfo;
 		imonitor_set_param(obj, E916000101_ERRCODE_INT, info->errCode);
@@ -250,7 +251,7 @@ int dsm_beta_log_upload(void* data)
 	} else {
 		char   numStr[8] = {0};
 		snprintf(numStr, 7, "%d", info->errLineNum);
-		imonitor_set_param(obj, E916000102_ERRPOSTAG_VARCHAR, (long)numStr);
+		imonitor_set_param(obj, E916000102_ERRPOSTAG_VARCHAR, (long)(uintptr_t)numStr);
 	}
 	ret = imonitor_send_event(obj);
 	imonitor_destroy_eventobj(obj);

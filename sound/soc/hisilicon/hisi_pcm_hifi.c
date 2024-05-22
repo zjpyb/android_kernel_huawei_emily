@@ -24,16 +24,16 @@
 #include <linux/semaphore.h>
 #include <linux/sched/rt.h>
 #include <linux/ion.h>
+#include <linux/dma-buf.h>
 #include <linux/version.h>
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 #include <linux/hisi/hisi_ion.h>
-#endif
+#include <linux/types.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <sound/hwdep.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <uapi/linux/sched/types.h>
 #endif
 #include "drv_mailbox_cfg.h"
@@ -45,14 +45,12 @@
 #include "hifi_lpp.h"
 #include "hisi_pcm_hifi.h"
 #include "hisi_snd_log.h"
-#include "hisi_pcm_ion.h"
 
 /*lint -e750 -e785 -e838 -e749 -e747 -e611 -e570 -e647 -e574*/
 
 #define UNUSED_PARAMETER(x) (void)(x)
 
 #define HISI_PCM_HIFI "hi6210-hifi"
-#define HISI_PCM_ION_CLIENT_NAME    "hisi_pcm_ion"
 
 /*
  * PLAYBACK SUPPORT FORMATS
@@ -85,7 +83,7 @@
 		SNDRV_PCM_RATE_384000)
 
 #define HISI_PCM_PB_MIN_CHANNELS  ( 1 )
-#define HISI_PCM_PB_MAX_CHANNELS  ( 2 )
+#define HISI_PCM_PB_MAX_CHANNELS  ( 4 )
 /* Assume the FIFO size */
 #define HISI_PCM_PB_FIFO_SIZE     ( 16 )
 
@@ -96,7 +94,7 @@
 #define HISI_PCM_CP_RATES    ( SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000 )
 
 #define HISI_PCM_CP_MIN_CHANNELS  ( 1 )
-#define HISI_PCM_CP_MAX_CHANNELS  ( 6 )
+#define HISI_PCM_CP_MAX_CHANNELS 8
 /* Assume the FIFO size */
 #define HISI_PCM_CP_FIFO_SIZE     ( 32 )
 #define HISI_PCM_MODEM_RATES      ( SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000)
@@ -441,11 +439,11 @@ struct pcm_thread_info {
 
 struct hisi_pcm_data {
 	struct pcm_thread_info thread_info;	/* currently only lowlatency use */
+	int mmap_shared_fd; /* only for mmap use */
 };
 
 extern int mailbox_get_timestamp(void);
 static int hisi_pcm_notify_set_buf(struct snd_pcm_substream *substream);
-static irq_rt_t hisi_pcm_notify_recv_isr(const void *usr_para, void *mail_handle, unsigned int mail_len);
 static irq_rt_t hisi_pcm_isr_handle(struct snd_pcm_substream *substream);
 
 static bool _is_valid_pcm_device(int pcm_device)
@@ -711,187 +709,205 @@ static int pcm_set_share_data(
 	return 0;
 }
 
-static int hisi_pcm_alloc_mmap_share_buf(struct snd_pcm_substream *substream,
+static int hisi_pcm_get_mmap_buf_phys(struct device *dev, int shared_fd,
+	dma_addr_t *addr)
+{
+	struct sg_table *table = NULL;
+	struct dma_buf *buf = NULL;
+	struct dma_buf_attachment *attach = NULL;
+
+	if (shared_fd < 0) {
+		loge("share fd is invalid: %d\n", shared_fd);
+		return -EFAULT;
+	}
+
+	buf = dma_buf_get(shared_fd);
+	if (IS_ERR(buf)) {
+		loge("buf can not be get from fd: %d\n", shared_fd);
+		return -EFAULT;
+	}
+
+	attach = dma_buf_attach(buf, dev);
+	if (IS_ERR(attach)) {
+		loge("dmabuf attach failed\n");
+		dma_buf_put(buf);
+		return -EFAULT;
+	}
+
+	table = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
+	if (IS_ERR_OR_NULL(table)) {
+		loge("dmabuf map attachment failed\n");
+		dma_buf_detach(buf, attach);
+		dma_buf_put(buf);
+		return -EFAULT;
+	}
+
+	*addr = sg_phys(table->sgl);
+
+	dma_buf_unmap_attachment(attach, table, DMA_BIDIRECTIONAL);
+	dma_buf_detach(buf, attach);
+	dma_buf_put(buf);
+
+	return 0;
+}
+
+static int hisi_pcm_get_mmap_share_buf(struct snd_pcm_substream *substream,
 	uint32_t buf_size)
 {
 	int ret = -EINVAL;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	struct hisi_pcm_runtime_data *prtd = substream->runtime->private_data;
 	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
 	struct device *dev = soc_prtd->platform->dev;
-	struct hisi_pcm_ion_buf *ion_buf = NULL;
+	struct hisi_pcm_data *pdata = dev_get_drvdata(soc_prtd->platform->dev);
+	int shared_fd = pdata->mmap_shared_fd;
+	struct hisi_pcm_mmap_buf *mmap_buf = NULL;
 	int pcm_device = substream->pcm->device;
 	int pcm_mode = substream->stream;
 
-	if (buf_size > PCM_DMA_BUF_MMAP_MAX_SIZE) {
-		loge("buf_size %d error\n", buf_size);
+	if (buf_size == 0 || buf_size > PCM_DMA_BUF_MMAP_MAX_SIZE) {
+		loge("buf size %d error\n", buf_size);
 		return ret;
 	}
 
-	ion_buf = kzalloc(sizeof(*ion_buf), GFP_KERNEL);
-	if (!ion_buf) {
-		loge("ion_buf malloc fail\n");
-		ret = -ENOMEM;
-		goto err_ret;
+	if (shared_fd < 0) {
+		loge("mmap share fd is invalid: %d\n", shared_fd);
+		return -EBADFD;
 	}
 
-
-	/* create ion mem client for mmap pcm device */
-	ion_buf->client = hisi_ion_client_create(HISI_PCM_ION_CLIENT_NAME);
-	if (IS_ERR_OR_NULL(ion_buf->client)) {
-		loge("failed to create ion client\n");
-		goto err_ion_client;
+	mmap_buf = kzalloc(sizeof(*mmap_buf), GFP_KERNEL);
+	if (mmap_buf == NULL) {
+		loge("mmap buf malloc fail\n");
+		return -ENOMEM;
 	}
 
-	ion_buf->buf_size = buf_size;
-	ion_buf->handle = ion_alloc(ion_buf->client, ion_buf->buf_size,
-		PAGE_SIZE, ION_HEAP(ION_MISC_HEAP_ID), 0);
-	if (IS_ERR_OR_NULL(ion_buf->handle)) {
-		loge("failed to alloc ion memory(size:%d)\n", ion_buf->buf_size);
-		goto err_ion_alloc;
-	}
+	mmap_buf->buf_size = buf_size;
 
 	/* get share buffer phy address */
-	ret = hisi_pcm_ion_phys(ion_buf->client, ion_buf->handle, dev,
-		(ion_phys_addr_t *)&ion_buf->phy_addr);
+	ret = hisi_pcm_get_mmap_buf_phys(dev, shared_fd, &mmap_buf->phy_addr);
 	if (ret) {
-		loge("failed to get ion phys\n");
-		goto err_ion_addr;
+		loge("failed to get buf phys\n");
+		goto err_buf_addr;
 	}
 
+	mmap_buf->dmabuf = dma_buf_get(shared_fd);
+	if (mmap_buf->dmabuf == NULL) {
+		loge("dmabuf get failed\n");
+		ret = - ENOMEM;
+		goto err_buf_addr;
+	}
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
+	ret = dma_buf_begin_cpu_access(mmap_buf->dmabuf, DMA_BIDIRECTIONAL);
+	if (ret) {
+		loge("dma buf begin cpu access failed !\n");
+		goto err_access_dmabuf;
+	}
+#endif
 	/* get buffer virt address */
-	ion_buf->buf_addr = ion_map_kernel(ion_buf->client, ion_buf->handle);
-	if (!ion_buf->buf_addr) {
-		loge("device:%d mode:%d failed to map ion memory\n",
+	mmap_buf->buf_addr = dma_buf_kmap(mmap_buf->dmabuf, 0);
+	if (mmap_buf->buf_addr == NULL) {
+		loge("device:%d mode:%d failed to map dma buf\n",
 			pcm_device, pcm_mode);
-		goto err_ion_addr;
+		ret = - ENOMEM;
+		goto err_buf_map;
 	}
 
-	memset((void *)ion_buf->buf_addr, 0, ion_buf->buf_size);/* unsafe_function_ignore: memset */
-
-	prtd->ion_buf = ion_buf;
+	memset((void *)mmap_buf->buf_addr, 0, mmap_buf->buf_size);/* unsafe_function_ignore: memset */
+	prtd->mmap_buf = mmap_buf;
 
 	return ret;
 
-err_ion_addr:
-	ion_free(ion_buf->client, ion_buf->handle);
-err_ion_alloc:
-	ion_client_destroy(ion_buf->client);
-	ion_buf->handle = NULL;
-	ion_buf->client = NULL;
-err_ion_client:
-	kfree(ion_buf);
-	ion_buf = NULL;
-err_ret:
+err_buf_map:
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
+	dma_buf_end_cpu_access(mmap_buf->dmabuf, DMA_BIDIRECTIONAL);
+err_access_dmabuf:
 #endif
+	dma_buf_put(mmap_buf->dmabuf);
+	mmap_buf->dmabuf = NULL;
+err_buf_addr:
+	kfree(mmap_buf);
+	mmap_buf = NULL;
+
 	return ret;
 }
 
-static void hisi_pcm_free_mmap_share_buf(struct snd_pcm_substream *substream)
+static int hisi_pcm_free_mmap_share_buf(struct snd_pcm_substream *substream)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	struct hisi_pcm_runtime_data *prtd = substream->runtime->private_data;
-	struct hisi_pcm_ion_buf *ion_buf = prtd->ion_buf;
+	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
+	struct hisi_pcm_data *pdata = dev_get_drvdata(soc_prtd->platform->dev);
+	struct hisi_pcm_mmap_buf *mmap_buf = prtd->mmap_buf;
+	int ret = 0;
 
-	if (ion_buf && ion_buf->buf_addr) {
-		if (!ion_buf->client || !ion_buf->handle) {
-			loge("ion buf client or handle is invalid\n");
-			return;
-		}
-
-		ion_unmap_kernel(ion_buf->client, ion_buf->handle);
-		ion_free(ion_buf->client, ion_buf->handle);
-
-		ion_client_destroy(ion_buf->client);
-		ion_buf->handle = NULL;
-		ion_buf->buf_addr = NULL;
-
-		kfree(prtd->ion_buf);
-		prtd->ion_buf = NULL;
-	}
-#endif
-}
-
-/* get shared fd info for mmap device's ion share buffer */
-static int hisi_pcm_mmap_shared_fd(struct snd_pcm_substream *substream,
-			   struct hisi_pcm_mmap_fd *mmap_fd)
-{
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
-	struct hisi_pcm_runtime_data *prtd = NULL;
-	struct hisi_pcm_ion_buf *ion_buf = NULL;
-
-	if (!substream->runtime) {
-		loge("substream runtime is null\n");
-		return -EFAULT;
-	}
-
-	if (!mmap_fd) {
-		loge("mmap fd is null\n");
-		return -EFAULT;
-	}
-
-	prtd = substream->runtime->private_data;
-	if (!prtd) {
-		loge("prtd is null\n");
+	if (mmap_buf == NULL) {
+		loge("mmap buf is invalid\n");
 		return -EINVAL;
 	}
 
-	ion_buf = prtd->ion_buf;
-	if (!ion_buf) {
-		loge("ion_buf is null\n");
+	if (mmap_buf->buf_addr == NULL) {
+		loge("mmap buf addr is invalid\n");
 		return -EINVAL;
 	}
 
-	mmap_fd->shared_fd = ion_share_dma_buf_fd(ion_buf->client, ion_buf->handle);
-	if (mmap_fd->shared_fd >= 0) {
-		mmap_fd->buf_size = ion_buf->buf_size;
-		mmap_fd->stream_dir = substream->stream;
-	} else {
-		loge("get shared fd %d error\n", mmap_fd->shared_fd);
-		return -EFAULT;
+	if (mmap_buf->dmabuf == NULL) {
+		loge("dma buf is invalid\n");
+		return -EINVAL;
 	}
+
+	dma_buf_kunmap(mmap_buf->dmabuf, 0, mmap_buf->buf_addr);
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
+	ret = dma_buf_end_cpu_access(mmap_buf->dmabuf, DMA_BIDIRECTIONAL);
+	if (ret < 0)
+		loge("dma buf end cpu access failed\n");
 #endif
-	return 0;
+	dma_buf_put(mmap_buf->dmabuf);
+
+	mmap_buf->dmabuf = NULL;
+	mmap_buf->buf_addr = NULL;
+
+	kfree(prtd->mmap_buf);
+	prtd->mmap_buf = NULL;
+	pdata->mmap_shared_fd = -1;
+
+	return ret;
 }
 
 static int hisi_pcm_hwdep_ioctl_shared_fd(struct snd_pcm *pcm,
 	unsigned long arg)
 {
-	struct hisi_pcm_mmap_fd __user *_mmap_fd = NULL;
-	struct hisi_pcm_mmap_fd mmap_fd = {0};
-	struct snd_pcm_substream *substream = NULL;
-	int32_t pcm_mode = -1;
+	struct hisi_pcm_mmap_fd mmap_fd;
+	struct snd_soc_pcm_runtime *rtd = pcm->private_data;
+	struct hisi_pcm_data *pdata = snd_soc_platform_get_drvdata(rtd->platform);
+	unsigned int buffer_size = 0;
+	int pcm_mode = -1;
 
-	_mmap_fd = (struct hisi_pcm_mmap_fd __user *)arg;
-	if (get_user(pcm_mode, (int32_t __user *)&(_mmap_fd->stream_dir))) {
+	memset(&mmap_fd, 0, sizeof(mmap_fd));/* unsafe_function_ignore: memset */
+	if (copy_from_user(&mmap_fd, (void __user *)arg,
+			   sizeof(mmap_fd))) {
 		loge("copying mmap_fd from user fail\n");
 		return -EFAULT;
 	}
 
-	if (pcm_mode != SNDRV_PCM_STREAM_PLAYBACK && pcm_mode != SNDRV_PCM_STREAM_CAPTURE) {
-		loge("stream invalid mode: %d\n", pcm_mode);
+	pcm_mode = mmap_fd.stream_direction;
+	if (pcm_mode != SNDRV_PCM_STREAM_PLAYBACK &&
+		pcm_mode != SNDRV_PCM_STREAM_CAPTURE) {
+		loge("pcm mode is invalid: %d\n", pcm_mode);
 		return -EINVAL;
 	}
 
-	substream = pcm->streams[pcm_mode].substream;
-	if (!substream) {
-		loge("substream is invalid\n");
-		return -ENODEV;
-	}
-
-	if (hisi_pcm_mmap_shared_fd(substream, &mmap_fd) < 0) {
-		loge("get mmap buffer fd fail\n");
+	pdata->mmap_shared_fd = mmap_fd.shared_fd;
+	if (pdata->mmap_shared_fd < 0) {
+		loge("mmap share fd is invalid\n");
 		return -EFAULT;
 	}
 
-	logd("device: %d mode: %d - [shared_fd: %d, buf_size: %d]\n",
-		pcm->device, pcm_mode, mmap_fd.shared_fd, mmap_fd.buf_size);
-
-	if (put_user(mmap_fd.shared_fd, &_mmap_fd->shared_fd) || /*lint !e1058*/
-		put_user(mmap_fd.buf_size, &_mmap_fd->buf_size)) {   /*lint !e1058*/
-		loge("copying shared fd info fail\n");
+	buffer_size = mmap_fd.buf_size;
+	if (buffer_size == 0 || buffer_size > PCM_DMA_BUF_MMAP_MAX_SIZE) {
+		loge("buffer_size is invalid\n");
 		return -EFAULT;
 	}
+
+	logd("device: %d mode: %d share fd: %d, buf size: %d\n",
+		pcm->device, pcm_mode, pdata->mmap_shared_fd, buffer_size);
 
 	return 0;
 }
@@ -902,6 +918,11 @@ static int hisi_pcm_hwdep_ioctl(struct snd_hwdep *hw, struct file *file,
 {
 	int ret = 0;
 	struct snd_pcm *pcm = hw->private_data;
+
+	if (!(void __user *)(uintptr_t)arg) {
+		loge("input buff is NULL\n");
+		return -EINVAL;
+	}
 
 	switch (cmd) {
 	case HISI_PCM_IOCTL_MMAP_SHARED_FD:
@@ -1092,7 +1113,7 @@ static int hisi_pcm_notify_set_buf(struct snd_pcm_substream *substream)
 	unsigned short pcm_mode = (unsigned short)substream->stream;
 	int pcm_device = substream->pcm->device;
 	struct hisi_pcm_runtime_data *prtd = (struct hisi_pcm_runtime_data *)substream->runtime->private_data;
-	struct hisi_pcm_ion_buf *ion_buf = NULL;
+	struct hisi_pcm_mmap_buf *mmap_buf = NULL;
 	uint32_t data_phy_addr = 0;
 	uint32_t data_offset_addr = 0;
 
@@ -1108,13 +1129,19 @@ static int hisi_pcm_notify_set_buf(struct snd_pcm_substream *substream)
 		return -EINVAL;
 	}
 
-	/* transfer frame data between ion buffer and hifi buffer */
-	ion_buf = prtd->ion_buf;
+	/* transfer frame data between dma buffer and hifi buffer */
+	mmap_buf = prtd->mmap_buf;
 	if (pcm_device == PCM_DEVICE_MMAP) {
+		if (prtd->hifi_buf.bytes < mmap_buf->buf_size) {
+			loge("mmap buf size %d is larger than hifi buf %zu\n",
+				mmap_buf->buf_size, prtd->hifi_buf.bytes);
+			return -EINVAL;
+		}
+
 		if (pcm_mode == SNDRV_PCM_STREAM_PLAYBACK)
-			memcpy(prtd->hifi_buf.area, ion_buf->buf_addr, ion_buf->buf_size);
+			memcpy(prtd->hifi_buf.area, mmap_buf->buf_addr, mmap_buf->buf_size);
 		else
-			memcpy(ion_buf->buf_addr, prtd->hifi_buf.area, ion_buf->buf_size);
+			memcpy(mmap_buf->buf_addr, prtd->hifi_buf.area, mmap_buf->buf_size);
 	}
 
 	period_size = prtd->period_size;
@@ -1231,7 +1258,8 @@ void snd_pcm_reset_pre_time(struct snd_pcm_substream *substream)
 }
 EXPORT_SYMBOL(snd_pcm_reset_pre_time);
 
-static irq_rt_t hisi_pcm_notify_recv_isr(const void *usr_para, void *mail_handle, unsigned int mail_len)
+static void hisi_pcm_notify_recv_proc(const void *usr_para,
+	struct mb_queue *mail_handle, unsigned int mail_len)
 {
 	struct snd_pcm_substream * substream    = NULL;
 	struct hisi_pcm_runtime_data *prtd        = NULL;
@@ -1247,29 +1275,28 @@ static irq_rt_t hisi_pcm_notify_recv_isr(const void *usr_para, void *mail_handle
 	start_time = (unsigned int)mailbox_get_timestamp();
 	memset(&mail_buf, 0, sizeof(struct hifi_chn_pcm_period_elapsed));/* unsafe_function_ignore: memset */
 
-	/*get the data from mailbox*/
-
+	/* get the data from mailbox */
 	ret_mail = DRV_MAILBOX_READMAILDATA(mail_handle, (unsigned char*)&mail_buf, &mail_size);
-	if ((ret_mail != MAILBOX_OK)
-		|| (mail_size == 0)
-			|| (mail_size > sizeof(struct hifi_chn_pcm_period_elapsed)))
-	{
-		loge("Empty point or data length error! size: %d  ret_mail:%d sizeof(struct hifi_chn_pcm_period_elapsed):%lu\n", mail_size, ret_mail, sizeof(struct hifi_chn_pcm_period_elapsed));
-		return IRQ_NH_MB;
+	if ((ret_mail != MAILBOX_OK) ||
+		(mail_size == 0) ||
+		(mail_size > sizeof(struct hifi_chn_pcm_period_elapsed))) {
+		loge("mailbox read error, read result:%u, read mail size:%u\n",
+			ret_mail, mail_size);
+		return;
 	}
 
 	substream = INT_TO_ADDR(mail_buf.substream_l32,mail_buf.substream_h32);
 	if (!_is_valid_substream(substream))
-		return IRQ_NH_OTHERS;
+		return;
 
 	prtd = (struct hisi_pcm_runtime_data *)substream->runtime->private_data;
 	if (NULL == prtd) {
 		loge("prtd is NULL\n");
-		return IRQ_NH_OTHERS;
+		return;
 	}
 	if (STATUS_STOP == prtd->status) {
 		logi("process has stopped\n");
-		return IRQ_NH_OTHERS;
+		return;
 	}
 
 	switch(mail_buf.msg_type) {
@@ -1277,7 +1304,7 @@ static irq_rt_t hisi_pcm_notify_recv_isr(const void *usr_para, void *mail_handle
 			/* check if elapsed msg is timeout */
 			print_pcm_timeout(mail_buf.msg_timestamp, print_type[0], 10);
 			ret = hisi_pcm_isr_handle(substream);
-			if (ret == IRQ_NH)
+			if (ret != 0)
 				loge("mb msg handle err, ret : %d\n", ret);
 			break;
 		case HI_CHN_MSG_PCM_PERIOD_STOP:
@@ -1292,27 +1319,26 @@ static irq_rt_t hisi_pcm_notify_recv_isr(const void *usr_para, void *mail_handle
 	}
 	/* check if isr proc is timeout */
 	print_pcm_timeout(start_time, print_type[1], 20);
-
-	return ret;
 }
 
-static int hisi_pcm_notify_isr_register(irq_hdl_t pisr)
+static int hisi_pcm_notify_isr_register(mb_msg_cb receive_func)
 {
-	int ret                     = 0;
-	unsigned int mailbox_ret    = MAILBOX_OK;
+	unsigned int ret = MAILBOX_OK;
 
-	if (NULL == pisr) {
-		loge("pisr==NULL!\n");
-		ret = ERROR;
-	} else {
-		mailbox_ret = DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_AUDIO, (void *)pisr, NULL);
-		if (MAILBOX_OK != mailbox_ret) {
-			ret = ERROR;
-			loge("ret : %d,0x%x\n", ret, MAILBOX_MAILCODE_HIFI_TO_ACPU_AUDIO);
-		}
+	if (receive_func == NULL) {
+		loge("receive func is null\n");
+		return ERROR;
 	}
 
-	return ret;
+	ret = DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_AUDIO,
+		receive_func, NULL);
+	if (ret != MAILBOX_OK) {
+		loge("register receive func error, ret:%u, mailcode:0x%x\n",
+			ret, MAILBOX_MAILCODE_HIFI_TO_ACPU_AUDIO);
+		return ERROR;
+	}
+
+	return 0;
 }
 
 static int hisi_pcm_notify_hw_params(struct snd_pcm_substream *substream,
@@ -1411,7 +1437,7 @@ static int hisi_pcm_notify_trigger(int cmd, struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
 	struct hisi_pcm_data *pdata = dev_get_drvdata(soc_prtd->platform->dev);
 	struct pcm_thread_info *thread_info = &pdata->thread_info;
-	struct hisi_pcm_ion_buf *ion_buf = NULL;
+	struct hisi_pcm_mmap_buf *mmap_buf = NULL;
 	int pcm_mode = substream->stream;
 	int pcm_device = substream->pcm->device;
 	uint32_t data_phy_addr = 0;
@@ -1428,20 +1454,20 @@ static int hisi_pcm_notify_trigger(int cmd, struct snd_pcm_substream *substream)
 	msg_body.pcm_mode   	= (unsigned short)pcm_mode;
 	msg_body.pcm_device   	= (unsigned short)pcm_device;
 	msg_body.tg_cmd     	= (unsigned short)cmd;
-	msg_body.substream_l32  = GET_LOW32(substream);
-	msg_body.substream_h32  = GET_HIG32(substream);
+	msg_body.substream_l32  = GET_LOW32((uintptr_t)substream);
+	msg_body.substream_h32  = GET_HIG32((uintptr_t)substream);
 
 	if ((SNDRV_PCM_TRIGGER_START == cmd)
 		|| (SNDRV_PCM_TRIGGER_RESUME == cmd)
 		|| (SNDRV_PCM_TRIGGER_PAUSE_RELEASE == cmd)) {
 
-		/* transfer frame data between ion buffer and hifi buffer */
-		ion_buf = prtd->ion_buf;
+		/* transfer frame data between dma buffer and hifi buffer */
+		mmap_buf = prtd->mmap_buf;
 		if (pcm_device == PCM_DEVICE_MMAP) {
 			if (pcm_mode == SNDRV_PCM_STREAM_PLAYBACK)
-				memcpy(prtd->hifi_buf.area, ion_buf->buf_addr, ion_buf->buf_size);
+				memcpy(prtd->hifi_buf.area, mmap_buf->buf_addr, mmap_buf->buf_size);
 			else
-				memcpy(ion_buf->buf_addr, prtd->hifi_buf.area, ion_buf->buf_size);
+				memcpy(mmap_buf->buf_addr, prtd->hifi_buf.area, mmap_buf->buf_size);
 		}
 
 		period_size = prtd->period_size;
@@ -1509,7 +1535,7 @@ static int hisi_pcm_hw_params(struct snd_pcm_substream *substream,
 	size_t bytes = params_buffer_bytes(params);
 	int device = substream->pcm->device;
 	struct snd_dma_buffer *dma_buf = &substream->dma_buffer;
-	struct hisi_pcm_ion_buf *ion_buf;
+	struct hisi_pcm_mmap_buf *mmap_buf = NULL;
 
 	if (!_is_valid_pcm_device(device)) {
 		return ret;
@@ -1527,20 +1553,20 @@ static int hisi_pcm_hw_params(struct snd_pcm_substream *substream,
 			return ret;
 		}
 
-		ret = hisi_pcm_alloc_mmap_share_buf(substream, bytes);
+		ret = hisi_pcm_get_mmap_share_buf(substream, bytes);
 		if (ret) {
 			loge("alloc mmap share buffer size %zd fail, ret %d\n", bytes, ret);
 			unmap_hifi_share_buffer(substream);
 			return ret;
 		}
 
-		ion_buf = prtd->ion_buf;
+		mmap_buf = prtd->mmap_buf;
 		dma_buf->dev.type = SNDRV_DMA_TYPE_DEV;
 		dma_buf->dev.dev = substream->pcm->card->dev;
 		dma_buf->private_data = NULL;
-		dma_buf->area = ion_buf->buf_addr;
-		dma_buf->addr = ion_buf->phy_addr;
-		dma_buf->bytes = ion_buf->buf_size;
+		dma_buf->area = mmap_buf->buf_addr;
+		dma_buf->addr = mmap_buf->phy_addr;
+		dma_buf->bytes = mmap_buf->buf_size;
 		snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
 	} else {
 		ret = snd_pcm_lib_malloc_pages(substream, bytes);
@@ -1641,7 +1667,7 @@ static int hisi_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	struct hisi_pcm_runtime_data *prtd = (struct hisi_pcm_runtime_data *)substream->runtime->private_data;
 	unsigned int num_periods = runtime->periods;
 	int device = substream->pcm->device;
-	struct hisi_pcm_ion_buf *ion_buf = NULL;
+	struct hisi_pcm_mmap_buf *mmap_buf = NULL;
 
 	if (!_is_valid_pcm_device(device)) {
 		return ret;
@@ -1681,9 +1707,9 @@ static int hisi_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 		}
 
 		if (device == PCM_DEVICE_MMAP) {
-			ion_buf = prtd->ion_buf;
-			if (ion_buf && ion_buf->buf_addr)
-				memset(ion_buf->buf_addr, 0, ion_buf->buf_size);/* unsafe_function_ignore: memset */
+			mmap_buf = prtd->mmap_buf;
+			if (mmap_buf && mmap_buf->buf_addr)
+				memset(mmap_buf->buf_addr, 0, mmap_buf->buf_size);/* unsafe_function_ignore: memset */
 		}
 		break;
 	default:
@@ -1816,7 +1842,9 @@ static int hisi_pcm_close(struct snd_pcm_substream *substream)
 		loge("pcm notify hifi close fail, ret %d\n", ret);
 
 	if (device == PCM_DEVICE_MMAP) {
-		hisi_pcm_free_mmap_share_buf(substream);
+		ret = hisi_pcm_free_mmap_share_buf(substream);
+		if (ret)
+			loge("free mmap share buf fail\n");
 		unmap_hifi_share_buffer(substream);
 	}
 
@@ -1834,15 +1862,15 @@ static int hisi_pcm_ioctl(struct snd_pcm_substream *substream,
 	unsigned int cmd, void *arg)
 {
 	struct hisi_pcm_runtime_data *prtd = substream->runtime->private_data;
-	struct hisi_pcm_ion_buf *ion_buf = NULL;
+	struct hisi_pcm_mmap_buf *mmap_buf = NULL;
 	int pcm_device = substream->pcm->device;
 
 	switch (cmd) {
 	case SNDRV_PCM_IOCTL1_RESET:
 		if (pcm_device == PCM_DEVICE_MMAP) {
-			ion_buf = prtd->ion_buf;
-			if (ion_buf && ion_buf->buf_addr)
-				memset(ion_buf->buf_addr, 0, ion_buf->buf_size);/* unsafe_function_ignore: memset */
+			mmap_buf = prtd->mmap_buf;
+			if (mmap_buf && mmap_buf->buf_addr)
+				memset(mmap_buf->buf_addr, 0, mmap_buf->buf_size);/* unsafe_function_ignore: memset */
 		}
 		break;
 	default:
@@ -1894,8 +1922,8 @@ static int preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 
 static void free_dma_buffers(struct snd_pcm *pcm)
 {
-	struct snd_pcm_substream *substream;
-	struct snd_dma_buffer *buf;
+	struct snd_pcm_substream *substream = NULL;
+	struct snd_dma_buffer *buf = NULL;
 	int stream;
 
 	IN_FUNCTION;
@@ -1943,7 +1971,7 @@ static int hisi_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	}
 
 	/* register callback */
-	ret = hisi_pcm_notify_isr_register((void*)hisi_pcm_notify_recv_isr);
+	ret = hisi_pcm_notify_isr_register(hisi_pcm_notify_recv_proc);
 	if (ret) {
 		loge("notify isr register error : %d\n", ret);
 		return ret;
@@ -2032,6 +2060,7 @@ static int  hisi_pcm_platform_probe(struct platform_device *pdev)
 
 	pcm_thread_para = &pdata->thread_info;
 	atomic_set(&pcm_thread_para->using_thread_cnt, 0);
+	pdata->mmap_shared_fd = -1;
 
 	platform_set_drvdata(pdev, pdata);
 

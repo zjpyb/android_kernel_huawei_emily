@@ -179,8 +179,6 @@ void lcdkit_info_init(void* pdata)
         /* IFBC Setting end */
     }
     if (pinfo->ifbc_type == IFBC_TYPE_VESA3_75X_DUAL) {
-        //pinfo->bpp = LCD_RGB101010;
-        //pinfo->mipi.color_mode = DSI_30BITS_1;
         pinfo->vesa_dsc.bits_per_component = 10;
         pinfo->vesa_dsc.linebuf_depth = 11;
         pinfo->vesa_dsc.bits_per_pixel = 8;
@@ -870,7 +868,6 @@ void lcdkit_effect_switch_ctrl(void* pdata, bool ctrl)
 
 int adc_get_value(int channel)
 {
-    // hisi_adc_get_value(channel);
     return 0;
 }
 
@@ -886,10 +883,6 @@ int lcdkit_fake_update_bl(void *pdata, uint32_t bl_level)
 	platform_set_drvdata(&lcdkit_pdev, hisifd);
 
     if (bl_level > 0) {
-        /*enable bl gpio*/
-//        if (bl_enable_flag) {
-//            gpio_direction_output(gpio_lcd_bl_enable, 1);
-//        }
         mdelay(2);
         /* backlight on */
         hisi_lcd_backlight_on(&lcdkit_pdev);
@@ -900,10 +893,6 @@ int lcdkit_fake_update_bl(void *pdata, uint32_t bl_level)
         ret = hisi_blpwm_set_backlight(hisifd, 0);
         /* backlight off */
         hisi_lcd_backlight_off(&lcdkit_pdev);
-        /*disable bl gpio*/
-//        if (bl_enable_flag) {
-//            gpio_direction_output(gpio_lcd_bl_enable, 0);
-//        }
     }
 	return ret;
 }
@@ -1603,6 +1592,128 @@ int lcdkit_rgbw_set_handle(struct hisi_fb_data_type* hisifd)
 	return ret;
 }
 
+static int lcdkit_check_if_fp_using_hbm(void)
+{
+	int ret = LCDKIT_OK;
+
+	if (lcdkit_info.panel_infos.fp_hbm_support) {
+		if (lcdkit_info.panel_infos.hbm_if_fp_is_using)
+			ret = LCDKIT_FAIL;
+	}
+
+	return ret;
+}
+
+static void lcdkit_hbm_print_count(int last_hbm_level, int hbm_level)
+{
+	static int count = 0;
+
+	if (abs(hbm_level - last_hbm_level) > LCDKIT_BACKLIGHT_BETA) {
+		if (count == 0)
+			LCDKIT_INFO("last hbm_level=%d!\n", last_hbm_level);
+		count = LCDKIT_PRINT_COUNT;
+	}
+	if (count > 0) {
+		count--;
+		LCDKIT_INFO("hbm_level=%d!\n", hbm_level);
+	} else {
+		LCDKIT_DEBUG("hbm_level=%d!\n", hbm_level);
+	}
+}
+
+static int lcdkit_hbm_set_level(struct hisi_fb_data_type *hisifd, int level)
+{
+	int ret = LCDKIT_OK;
+
+	if (hisifd == NULL) {
+		LCDKIT_ERR("param is NULL!\n");
+		return LCDKIT_FAIL;
+	}
+
+	/* prepare */
+	if (lcdkit_info.panel_infos.hbm_prepare_cmds.cmds != NULL) {
+		if (lcdkit_check_mipi_fifo_empty(hisifd->mipi_dsi0_base) == 0) {
+				lcdkit_dsi_tx(hisifd,
+					&lcdkit_info.panel_infos.hbm_prepare_cmds);
+				ret = LCDKIT_OK;
+		} else {
+			LCDKIT_ERR("enable hbm_prepare_cmds failed\n");
+			ret = LCDKIT_FAIL;
+		}
+	}
+	/* set hbm level */
+	if (lcdkit_info.panel_infos.hbm_cmds.cmds != NULL) {
+		lcdkit_info.panel_infos.hbm_cmds.cmds[0].payload[1] = (level >> 8) & 0xf;
+		lcdkit_info.panel_infos.hbm_cmds.cmds[0].payload[2] = level & 0xff;
+		if (lcdkit_check_mipi_fifo_empty(hisifd->mipi_dsi0_base) == 0) {
+				lcdkit_dsi_tx(hisifd,
+					&lcdkit_info.panel_infos.hbm_cmds);
+				ret = LCDKIT_OK;
+		} else {
+			LCDKIT_ERR("enable hbm_cmds failed\n");
+			ret = LCDKIT_FAIL;
+		}
+	}
+	/* post */
+	if (lcdkit_info.panel_infos.hbm_post_cmds.cmds != NULL) {
+		if (lcdkit_check_mipi_fifo_empty(hisifd->mipi_dsi0_base) == 0) {
+				lcdkit_dsi_tx(hisifd,
+					&lcdkit_info.panel_infos.hbm_post_cmds);
+				ret = LCDKIT_OK;
+		} else {
+			LCDKIT_ERR("enable hbm_post_cmds failed\n");
+			ret = LCDKIT_FAIL;
+		}
+	}
+	return ret;
+}
+
+static int lcdkit_new_hbm_set_handle(struct hisi_fb_data_type *hisifd)
+{
+	int ret = LCDKIT_OK;
+
+	if (hisifd == NULL) {
+		LCDKIT_ERR("input param is NULL\n");
+		return LCDKIT_FAIL;
+	}
+
+	mutex_lock(&lcdkit_info.panel_infos.hbm_lock);
+	lcdkit_info.panel_infos.hbm_level_current = hisifd->de_info.hbm_level;
+	if (lcdkit_check_if_fp_using_hbm() < 0) {
+		LCDKIT_INFO("fp is using, exit\n");
+		mutex_unlock(&lcdkit_info.panel_infos.hbm_lock);
+		return ret;
+	}
+
+	if (hisifd->de_info.hbm_level > 0) {
+		if (hisifd->de_info.last_hbm_level == 0) {
+			/*enable hbm*/
+			lcdkit_hbm_enable(hisifd);
+			if (!hisifd->de_info.hbm_dimming)
+				lcdkit_hbm_enable_no_dimming(hisifd);
+		} else {
+			lcdkit_hbm_print_count(hisifd->de_info.last_hbm_level,
+				hisifd->de_info.hbm_level);
+		}
+		/*set hbm level*/
+		lcdkit_hbm_set_level(hisifd, hisifd->de_info.hbm_level);
+	} else {
+		if (hisifd->de_info.last_hbm_level == 0) {
+			/*disable dimming*/
+			lcdkit_hbm_dim_disable(hisifd);
+		} else {
+			/*exit hbm*/
+			if (hisifd->de_info.hbm_dimming)
+				lcdkit_hbm_dim_enable(hisifd);
+			else
+				lcdkit_hbm_dim_disable(hisifd);
+			lcdkit_hbm_disable(hisifd);
+		}
+	}
+	mutex_unlock(&lcdkit_info.panel_infos.hbm_lock);
+
+	return ret;
+}
 
 int lcdkit_hbm_set_handle(struct hisi_fb_data_type* hisifd)
 {
@@ -1612,6 +1723,12 @@ int lcdkit_hbm_set_handle(struct hisi_fb_data_type* hisifd)
 	BUG_ON(hisifd == NULL);
 
 	LCDKIT_PANEL_CMD_REQUEST();
+
+	if (lcdkit_info.panel_infos.fp_hbm_support) {
+		ret = lcdkit_new_hbm_set_handle(hisifd);
+		LCDKIT_PANEL_CMD_RELEASE();
+		return ret;
+	}
 
 	if(hisifd->de_info.hbm_level != 0)
 	{
@@ -2363,7 +2480,6 @@ static void hostprocessing_read_brightness_colorpoint_td4336(uint8_t color_point
 static void lcd_get_brightness_colorpoint_id(char *oem_data ,struct hisi_fb_data_type *hisifd)
 {
 	uint8_t read_color_value[LCDKIT_COLOR_INFO_SIZE] = {0};
-	//uint8_t read_panelid_value[LCDKIT_SERIAL_INFO_SIZE] = {0};
     uint32_t value_temp = 0;
 
 	if ((NULL == hisifd) || (NULL == oem_data)) {
@@ -2412,13 +2528,6 @@ static void lcd_get_brightness_colorpoint_id(char *oem_data ,struct hisi_fb_data
     oem_data[11] = 0x00;
     oem_data[12] = read_color_value[4];
     oem_data[13] = read_color_value[5];
-
-	/* get panelid value*/
-	#if 0
-	lcdkit_dsi_tx(hisifd, &lcdkit_info.panel_infos.panel_info_consistency_enter_cmds);
-	hostprocessing_read_ddic(read_panelid_value, &lcdkit_info.panel_infos.panel_info_consistency_cmds, hisifd, LCDKIT_SERIAL_INFO_SIZE);
-	lcdkit_dsi_tx(hisifd, &lcdkit_info.panel_infos.panel_info_consistency_exit_cmds);
-	#endif
 
 	/* modulesn:Serial number of inspection system(4Bytes) */
 	value_temp = lcdkit_info.panel_infos.lcd_color_oeminfo.panel_id.modulesn;

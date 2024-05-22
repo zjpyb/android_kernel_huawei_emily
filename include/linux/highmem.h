@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_HIGHMEM_H
 #define _LINUX_HIGHMEM_H
 
@@ -76,8 +77,8 @@ static inline void *kmap_atomic(struct page *page)
 	pagefault_disable();
 
 #ifdef CONFIG_HISI_LB
-        if (PageLB(page))
-                return lb_page_to_virt(page);
+	if (PageLB(page))
+		return lb_page_to_virt(page);
 #endif
 
 	return page_address(page);

@@ -33,6 +33,7 @@
 #include <linux/hisi/kirin_partition.h>
 #include <linux/clk.h>
 #include <linux/mm.h>
+#include <securec.h>
 #include "soc_acpu_baseaddr_interface.h"
 #include "soc_sctrl_interface.h"
 #include "hisi_hisee.h"
@@ -140,8 +141,9 @@ int check_new_cosimage(unsigned int cos_id, int *is_new_cosimage)
 		pr_err("%s buf paramters is null\n", __func__);
 		set_errno_and_return(HISEE_INVALID_PARAMS);
 	}
-	memset((void *)(unsigned long)&local_img_header, 0, sizeof(hisee_img_header));
-	ret = hisee_parse_img_header((char *)(unsigned long)&local_img_header);
+	(void)memset_s((void *)&local_img_header,
+					sizeof(hisee_img_header), 0, sizeof(hisee_img_header));
+	ret = hisee_parse_img_header((char *)&local_img_header);
 	if (HISEE_OK != ret) {
 		pr_err("%s():hisee_parse_img_header failed, ret=%d\n", __func__, ret);
 		set_errno_and_return(ret);
@@ -168,9 +170,9 @@ int check_new_cosimage(unsigned int cos_id, int *is_new_cosimage)
 
 int misc_image_upgrade_func(void *buf, unsigned int cos_id)
 {
-	char *buff_virt;
+	char *buff_virt = NULL;
 	phys_addr_t buff_phy = 0;
-	atf_message_header *p_message_header;
+	atf_message_header *p_message_header = NULL;
 	int ret = HISEE_OK;
 	unsigned int image_size;
 	hisee_img_file_type type;
@@ -193,7 +195,7 @@ int misc_image_upgrade_func(void *buf, unsigned int cos_id)
 	misc_image_cnt = g_hisee_data.hisee_img_head.misc_image_cnt[misc_id];
 	pr_err("%s(): cos_id=%d,misc_image_cnt=%d\n", __func__, cos_id, misc_image_cnt);
 do_loop:
-	memset(buff_virt, 0, HISEE_SHARE_BUFF_SIZE);
+	(void)memset_s(buff_virt, HISEE_SHARE_BUFF_SIZE, 0, HISEE_SHARE_BUFF_SIZE);
 	p_message_header = (atf_message_header *)buff_virt;
 	set_message_header(p_message_header, CMD_UPGRADE_MISC);
 	ret = filesys_hisee_read_image(type, (buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN));
@@ -227,15 +229,16 @@ exit:
 	set_errno_and_return(ret);
 }/*lint !e715*/
 
-static int cos_upgrade_prepare(void *buf, hisee_img_file_type *img_type, unsigned int *cos_id)
+static int cos_upgrade_prepare(const void *buf, hisee_img_file_type *img_type, unsigned int *cos_id)
 {
 	int ret;
 	unsigned int process_id = 0;
 
-	if (NULL == img_type || NULL == cos_id) {
+	if (!img_type || !cos_id) {
 		pr_err("%s(): input params invalid", __func__);
 		set_errno_and_return(HISEE_INVALID_PARAMS);
 	}
+
 	if (!get_rpmb_key_status()) {
 		pr_err("%s(): rpmb key not ready. cos upgrade bypassed", __func__);
 		set_errno_and_return(HISEE_RPMB_KEY_UNREADY_ERROR);
@@ -246,7 +249,7 @@ static int cos_upgrade_prepare(void *buf, hisee_img_file_type *img_type, unsigne
 		set_errno_and_return(ret);
 	}
 
-	*img_type = (*cos_id - COS_IMG_ID_0) + COS_IMG_TYPE; 
+	*img_type = (*cos_id - COS_IMG_ID_0) + COS_IMG_TYPE;
 	if (OTP_IMG_TYPE <= *img_type) {
 		pr_err("%s(): input cos_id error(%d)", __func__, *cos_id);
 		ret = HISEE_COS_IMG_ID_ERROR;
@@ -284,17 +287,18 @@ static int cos_upgrade_check_version(int para, unsigned int cos_id)
 	return ret;
 }
 
+#ifdef CONFIG_HICOS_MISCIMG_PATCH
 atomic_t g_is_patch_free = ATOMIC_INIT(0);
 char *g_patch_buff_virt;
 phys_addr_t g_patch_buff_phy;
 int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 {
 	int ret = HISEE_OK;
-	char *buff_virt;
+	char *buff_virt = NULL;
 	phys_addr_t buff_phy = 0;
 	unsigned int image_size;
 	unsigned int timeout;
-	atf_message_header *p_message_header;
+	atf_message_header *p_message_header = NULL;
 	unsigned int is_smx_0 = 0;
 
 	hisee_get_smx_cfg(&is_smx_0);
@@ -307,7 +311,7 @@ int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 			set_errno_and_return(ret); /*lint !e1058*/
 		}
 
-		if (!g_patch_buff_virt) {
+		if (g_patch_buff_virt == NULL) {
 			pr_err("%s(): alloc HISEE_SHARE_BUFF_SIZE\n", __func__);
 			buff_virt = (void *)dma_alloc_coherent(g_hisee_data.cma_device, HISEE_SHARE_BUFF_SIZE,
 												&buff_phy, GFP_KERNEL);
@@ -317,7 +321,6 @@ int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 			buff_virt = g_patch_buff_virt;
 			buff_phy = g_patch_buff_phy;
 		}
-
 		if (buff_virt == NULL) {
 			pr_err("%s(): dma_alloc_coherent failed\n", __func__);
 			atomic_dec(&g_is_patch_free);
@@ -325,7 +328,7 @@ int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 			set_errno_and_return(ret); /*lint !e1058*/
 		}
 
-		memset(buff_virt, 0, HISEE_SHARE_BUFF_SIZE);
+		(void)memset_s(buff_virt, HISEE_SHARE_BUFF_SIZE, 0, HISEE_SHARE_BUFF_SIZE);
 		p_message_header = (atf_message_header *)buff_virt;
 		set_message_header(p_message_header, CMD_UPGRADE_COS_PATCH);
 		ret = filesys_hisee_read_image(img_type, (buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN));
@@ -353,7 +356,7 @@ int hisee_cos_patch_read(hisee_img_file_type img_type) //MISC4_IMG_TYPE
 	return ret;
 }
 
-void cos_patch_upgrade(void *buf)
+void cos_patch_upgrade(const void *buf)
 {
 	int ret = HISEE_OK;
 	unsigned int cos_id = COS_IMG_ID_0;
@@ -398,58 +401,88 @@ void cos_patch_upgrade(void *buf)
 	}
 	check_and_print_result_with_cosid();
 }/*lint !e715 !e838*/
+#endif
 
-/*************************************************************
-函数原型：int cos_upgrade_image_read(unsigned int cos_id, hisee_img_file_type img_type)
-函数功能：根据cos_id和img_type读取hisee_img分区的cos镜像，并完成cos镜像升级操作。如果cos_id为0,1,2，
-		  把cos镜像数据保存在HISEE RPMB分区，如果是普通cos镜像，保存在普通的hisee分区
-参数：
-输入：cos_id:当前cos镜像id；img_type:当前cos镜像的image type。
-输出：无。
-返回值：HISEE_OK:cos镜像升级成功；非HISEE_OK:cos镜像升级失败
-前置条件：执行cos镜像升级启动命令成功
-后置条件： 无
-*************************************************************/
-int cos_upgrade_image_read(unsigned int cos_id, hisee_img_file_type img_type)
+/*
+ * @brief      : read the upgrade hisee iamge from hisee_img partition and
+ *               send to atf.
+ * @param[in]  : cos_id, the cos index correspond to the image.
+ * @param[in]  : img_type, the image type, like cos, otp, misc, uloader...
+ * @param[in]  : smc_cmd, the smc command type, like COS_UPGRADE,
+ *               ULOADER_UPGRADE...
+ * @return     : int
+ * @note       :
+ */
+int hisee_upgrade_image_read(unsigned int cos_id, hisee_img_file_type img_type,
+			     se_smc_cmd smc_cmd)
 {
 	int ret;
-	char *buff_virt;
+	char *buff_virt = NULL;
 	phys_addr_t buff_phy = 0;
 	unsigned int image_size;
-	atf_message_header *p_message_header;
+	atf_message_header *p_message_header = NULL;
 
-	buff_virt = (void *)dma_alloc_coherent(g_hisee_data.cma_device, HISEE_SHARE_BUFF_SIZE,
-											&buff_phy, GFP_KERNEL);
-	if (buff_virt == NULL) {
+	buff_virt = (void *)dma_alloc_coherent(g_hisee_data.cma_device,
+					       HISEE_SHARE_BUFF_SIZE,
+					       &buff_phy, GFP_KERNEL);
+	if (!buff_virt) {
 		pr_err("%s(): dma_alloc_coherent failed\n", __func__);
 		ret = HISEE_NO_RESOURCES;
 		set_errno_and_return(ret);
 	}
 
-	memset(buff_virt, 0, HISEE_SHARE_BUFF_SIZE);
+	(void)memset_s(buff_virt, HISEE_SHARE_BUFF_SIZE, 0,
+		       HISEE_SHARE_BUFF_SIZE);
 	p_message_header = (atf_message_header *)buff_virt;
-	set_message_header(p_message_header, CMD_UPGRADE_COS);
+	set_message_header(p_message_header, smc_cmd);
 	{
-		ret = filesys_hisee_read_image(img_type, (buff_virt + HISEE_ATF_MESSAGE_HEADER_LEN));
+		ret = filesys_hisee_read_image(img_type, (buff_virt +
+					       HISEE_ATF_MESSAGE_HEADER_LEN));
 		if (ret < HISEE_OK) {
-			pr_err("%s(): filesys_hisee_read_image failed, ret=%d\n", __func__, ret);
-			dma_free_coherent(g_hisee_data.cma_device, (unsigned long)HISEE_SHARE_BUFF_SIZE, buff_virt, buff_phy);
-			set_errno_and_return(ret);
+			pr_err("%s(): hisee_read_image failed, ret=%d\n",
+				__func__, ret);
+			goto exit;
 		}
 		image_size = (unsigned int)(ret + HISEE_ATF_MESSAGE_HEADER_LEN);
 	}
 	p_message_header->ack = cos_id;
 
 	ret = send_smc_process(p_message_header, buff_phy, image_size,
-							g_hisee_cos_upgrade_time, CMD_UPGRADE_COS);
-	dma_free_coherent(g_hisee_data.cma_device, (unsigned long)HISEE_SHARE_BUFF_SIZE, buff_virt, buff_phy);
+			       g_hisee_cos_upgrade_time, smc_cmd);
+exit:
+	dma_free_coherent(g_hisee_data.cma_device,
+			  (unsigned long)HISEE_SHARE_BUFF_SIZE,
+			  buff_virt, buff_phy);
+	check_and_print_result();
+	return ret;
+}
+
+/*
+ * @brief      : cos_upgrade_image_read
+ * @param[in]  : cos_id , the cos index
+ * @param[in]  : img_type , the image file type, like cos0,cos1...
+ * @return     : int
+ * @note       :
+ */
+int cos_upgrade_image_read(unsigned int cos_id, hisee_img_file_type img_type)
+{
+	int ret;
+	se_smc_cmd smc_cmd;
+
+	pr_err("%s: cos_id=%x, img_type=%x\n", __func__, cos_id, img_type);
+	/* Do the cos image upgrade. */
+	smc_cmd = CMD_UPGRADE_COS;
+	ret = hisee_upgrade_image_read(cos_id, img_type, smc_cmd);
+	check_result_and_goto(ret, out);
+
+out:
 	check_and_print_result();
 	return ret;
 }
 
 static int cos_upgrade_basic_check_param(unsigned int cos_id, hisee_img_file_type img_type)
 {
-	if (OTP_IMG_TYPE <= img_type || MAX_COS_IMG_ID <= cos_id) {
+	if (img_type > OTP_IMG_TYPE || cos_id >= MAX_COS_IMG_ID) {
 		pr_err("hisee:%s(): params is invalid\n", __func__);
 		return HISEE_COS_IMG_ID_ERROR;
 	}
@@ -470,7 +503,7 @@ static int cos_upgrade_basic_check_param(unsigned int cos_id, hisee_img_file_typ
 前置条件：执行cos镜像升级启动命令成功,并且hisee_img分区有更新的hisee.img文件
 后置条件：需要执行hisee下电操作。
 *************************************************************/
-static int cos_image_upgrade_basic_process(void *buf, int para,
+static int cos_image_upgrade_basic_process(const void *buf, int para,
 						unsigned int cos_id, hisee_img_file_type img_type)
 {
 	int ret, ret1, ret2;
@@ -508,16 +541,20 @@ upgrade_retry:
 		hisee_mntn_update_local_ver_info();
 		pr_err("hisee:%s(): upgrade_exit,cos_id=%d\n", __func__, cos_id);
 
+		#ifdef CONFIG_HICOS_MISCIMG_PATCH
 		if ((COS_IMG_ID_0 == cos_id) && ((int)HISEE_FACTORY_TEST_VERSION != para)) {
 			cos_patch_upgrade(buf);
 		}
+		#endif
 	} else {
 		g_hisee_data.hisee_img_head.sw_version_cnt[cos_id] = 0;
 		ret1 = hisee_exception_to_reset_rpmb();
 		if (HISEE_OK != ret1) {
 			pr_err("%s ERROR:fail to reset rpmb,cos_id=%d,ret=%d\n", __func__, cos_id, ret1);
 			ret1 = atomic_read(&g_hisee_errno);
+#ifdef CONFIG_HISI_HISEE_MNTN
 			rdr_hisee_call_to_record_exc(ret1);
+#endif
 			return ret1;
 		}
 		while (0 < retry) {
@@ -538,7 +575,7 @@ upgrade_retry:
 	set_errno_and_return(ret);
 }/*lint !e715*/
 
-int handle_cos_image_upgrade(void *buf, int para)
+int handle_cos_image_upgrade(const void *buf, int para)
 {
 	int ret;
 	unsigned int cos_id = COS_IMG_ID_0;
@@ -576,7 +613,7 @@ upgrade_bypass:
 	set_errno_and_return(ret);
 }/*lint !e715*/
 
-int cos_image_upgrade_func(void *buf, int para)
+int cos_image_upgrade_func(const void *buf, int para)
 {
 	int ret;
 	char buf_para[MAX_CMD_BUFF_PARAM_LEN] = {0};
@@ -608,8 +645,9 @@ ssize_t hisee_has_new_cos_show(struct device *dev, struct device_attribute *attr
 		set_errno_and_return(HISEE_INVALID_PARAMS);
 	}
 
-	memset((void *)(unsigned long)&local_img_header, 0, sizeof(hisee_img_header));
-	ret = hisee_parse_img_header((char *)(unsigned long)(&local_img_header));
+	(void)memset_s((void *)&local_img_header, sizeof(hisee_img_header),
+					0, sizeof(hisee_img_header));
+	ret = hisee_parse_img_header((char *)(&local_img_header));
 	if (HISEE_OK != ret) {
 		pr_err("%s():hisee_parse_img_header failed, ret=%d\n", __func__, ret);
 		set_errno_and_return(ret);
@@ -620,15 +658,41 @@ ssize_t hisee_has_new_cos_show(struct device *dev, struct device_attribute *attr
 		ret = check_new_cosimage(i, &new_cos_exist);
 		if (HISEE_OK == ret) {
 			if (1 == new_cos_exist) {/*lint !e774*/
-				snprintf(buf, (u64)10, "cos-%d %d,", i, 0);
-				strncat(buf, "exsited new cosimage", (unsigned long)strlen("exsited new cosimage"));
+				ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (u64)10, "cos-%d %d,", i, 0);
+				if (ret == HISEE_SECLIB_ERROR) {
+					pr_err("%s(): snprintf1 err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
+				ret = strncat_s(buf, HISEE_BUF_SHOW_LEN, "exsited new cosimage",
+								(unsigned long)strlen("exsited new cosimage"));
+				if (ret != EOK) {
+					pr_err("%s(): strncat err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
 			} else {
-				snprintf(buf, (u64)10, "cos-%d %d,", i, 1);
-				strncat(buf, "no exsited new cosimage", (unsigned long)strlen("no exsited new cosimage"));
+				ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (u64)10, "cos-%d %d,", i, 1);
+				if (ret == HISEE_SECLIB_ERROR) {
+					pr_err("%s(): snprintf1 err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
+				ret = strncat_s(buf, HISEE_BUF_SHOW_LEN, "no exsited new cosimage",
+								(unsigned long)strlen("no exsited new cosimage"));
+				if (ret != EOK) {
+					pr_err("%s(): strncat err.\n", __func__);
+					set_errno_and_return(HISEE_SECUREC_ERR);
+				}
 			}
 		} else {
-			snprintf(buf, (u64)10, "cos-%d %d,", i, -1);
-			strncat(buf, "failed", (unsigned long)strlen("failed"));
+			ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (u64)10, "cos-%d %d,", i, -1);
+			if (ret == HISEE_SECLIB_ERROR) {
+				pr_err("%s(): snprintf1 err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
+			ret = strncat_s(buf, HISEE_BUF_SHOW_LEN, "failed", (unsigned long)strlen("failed"));
+			if (ret != EOK) {
+				pr_err("%s(): strncat err.\n", __func__);
+				set_errno_and_return(HISEE_SECUREC_ERR);
+			}
 		}
 	}
 	pr_err("%s(): %s\n", __func__, buf);
@@ -647,11 +711,23 @@ ssize_t hisee_check_upgrade_show(struct device *dev, struct device_attribute *at
 
 	access_hisee_image_partition((char *)&upgrade_run_flg, COS_UPGRADE_RUN_READ_TYPE);
 	if (0 == upgrade_run_flg) {
-		snprintf(buf, (size_t)HISEE_BUF_SHOW_LEN, "0,cos upgrade success");
+		ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (size_t)HISEE_BUF_SHOW_LEN, "0,cos upgrade success");
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s(): snprintf1 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 	} else if (HISEE_COS_UPGRADE_RUNNING_FLG == upgrade_run_flg) {
-		snprintf(buf, (size_t)HISEE_BUF_SHOW_LEN, "1,cos upgrade failed last time");
+		ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (size_t)HISEE_BUF_SHOW_LEN, "1,cos upgrade failed last time");
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s(): snprintf2 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 	} else {
-		snprintf(buf, (size_t)HISEE_BUF_SHOW_LEN, "-1,failed");
+		ret = snprintf_s(buf, HISEE_BUF_SHOW_LEN, (size_t)HISEE_BUF_SHOW_LEN, "-1,failed");
+		if (ret == HISEE_SECLIB_ERROR) {
+			pr_err("%s(): snprintf3 err.\n", __func__);
+			set_errno_and_return(HISEE_SECUREC_ERR);
+		}
 	}
 
 	pr_err("%s(): %s\n", __func__, buf);

@@ -76,6 +76,7 @@
 
 #define FIXED_READ_LENGTH 256
 #define MESSAGE_HEADER_SIZE 4
+#define MSG_STATUS_SIZE 2
 #define MESSAGE_MARKER 0xa5
 #define MESSAGE_PADDING 0x5a
 
@@ -160,6 +161,8 @@ static struct device_attribute dev_attr_##a_name = \
 #define SYNAPTICS_BUILD_ID_NO 3
 #define SYNAPTICS_IC_NAME_NO 2
 
+#define SYNA_CHECKSUM_SEED (~0)
+
 enum module_type {
 	TCM_TOUCH = 0,
 	TCM_DEVICE = 1,
@@ -220,6 +223,23 @@ enum dynamic_config_id {
 	DC_SCENE_SWITCH = 0xCB,
 };
 
+enum dynamic_ap_config_id {
+	DC_AP_ENABLE_KNUCKLE = 0,
+	DC_AP_SET_ENABLE_LOZE = 3,
+	DC_AP_GET_DEBUG_INFO = 4,
+	DC_AP_GET_ROI_DATA = 5,
+	DC_AP_GET_KNUCKLE_STATUS = 6,
+	DC_AP_SET_ENABLE_GLOVE = 7,
+	DC_AP_GET_GLOVE_STATUS = 8,
+	DC_AP_SET_CHARGER = 9,
+	DC_AP_GET_CHARGER_STATUS = 10,
+	DC_AP_SET_COVER = 11,
+	DC_AP_GET_COVER_STATUS = 12,
+	DC_AP_SET_SCENE = 13,
+	DC_AP_GET_SCENE_STATUS = 14,
+	DC_AP_GET_TP_STATUS = 15,
+};
+
 enum command {
 	CMD_NONE = 0x00,
 	CMD_CONTINUE_WRITE = 0x01,
@@ -252,6 +272,7 @@ enum command {
 	CMD_GET_TOUCH_INFO = 0x2e,
 	CMD_GET_DATA_LOCATION = 0x2f,
 	CMD_DOWNLOAD_CONFIG = 0x30,
+	CMD_AP_SET_DYNAMIC_CMD = 0x85,
 	CMD_GET_TP_ABNORMAL_STATE = 0xc5,
 };
 
@@ -501,6 +522,7 @@ struct syna_tcm_hcd {
 	bool ud_sleep_status;
 	bool irq_enabled;
 	bool host_download_mode;
+	bool htd;
 	u16 roi_enable_status;
 	unsigned char syna_tcm_roi_data[ROI_DATA_LENGTH];
 	unsigned char fb_ready;
@@ -652,43 +674,9 @@ static inline ssize_t syna_tcm_store_error(struct device *dev,
 	return -EPERM;
 }
 
-static inline int secure_memcpy(unsigned char *dest, unsigned int dest_size,
-		const unsigned char *src, unsigned int src_size,
-		unsigned int count)
-{
-	if (dest == NULL || src == NULL)
-		return -EINVAL;
-
-	if (count > dest_size || count > src_size) {
-		pr_err("%s: src_size = %d, dest_size = %d, count = %d\n",
-				__func__, src_size, dest_size, count);
-		return -EINVAL;
-	}
-
-	memcpy((void *)dest, (const void *)src, count);
-
-	return 0;
-}
-
-static inline char *syna_tcm_strncat(char *dest, char *src, size_t dest_size)
-{
-	size_t dest_len = 0;
-	size_t len = 0;
-
-	dest_len = strnlen(dest, dest_size);
-	if (dest_size > dest_len) {
-		len = dest_size - dest_len - 1;
-	} else {
-		len = 0;
-	}
-
-	return strncat(&dest[dest_len], src, len);
-}
-
 static inline int syna_tcm_realloc_mem(struct syna_tcm_hcd *tcm_hcd,
 		struct syna_tcm_buffer *buffer, unsigned int size)
 {
-	int retval;
 	unsigned char *temp;
 
 	if (size > buffer->buf_size) {
@@ -704,20 +692,7 @@ static inline int syna_tcm_realloc_mem(struct syna_tcm_hcd *tcm_hcd,
 			return -ENOMEM;
 		}
 
-		retval = secure_memcpy(buffer->buf,
-				size,
-				temp,
-				buffer->buf_size,
-				buffer->buf_size);
-		if (retval < 0) {
-			dev_err(tcm_hcd->pdev->dev.parent,
-					"%s: Failed to copy data\n",
-					__func__);
-			kfree(temp);
-			kfree(buffer->buf);
-			buffer->buf_size = 0;
-			return retval;
-		}
+		memcpy(buffer->buf, temp, buffer->buf_size);
 
 		kfree(temp);
 		buffer->buf_size = size;
@@ -768,6 +743,10 @@ static inline unsigned int le4_to_uint(const unsigned char *src)
 
 static inline unsigned int ceil_div(unsigned int dividend, unsigned divisor)
 {
+	if (!divisor) {
+		TS_LOG_ERR("divisor is ZERO\n");
+		return -EINVAL;
+	}
 	return (dividend + divisor - 1) / divisor;
 }
 
@@ -789,4 +768,7 @@ extern int syna_tcm_cap_test(struct ts_rawdata_info_new *info,
 extern int syna_tcm_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en);
 extern int reflash_init(struct syna_tcm_hcd *tcm_hcd);
 extern int reflash_do_reflash(char *fw_name);
+unsigned int syna_checksum_cal(unsigned int checksum,
+		unsigned char const *buffer,
+		unsigned int size);
 #endif

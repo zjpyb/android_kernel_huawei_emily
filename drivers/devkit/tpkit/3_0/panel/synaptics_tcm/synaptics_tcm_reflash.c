@@ -30,7 +30,6 @@
  * DOLLARS.
  */
 
-#include <linux/crc32.h>
 #include <linux/firmware.h>
 #include "synaptics_tcm_core.h"
 
@@ -208,27 +207,6 @@ exit: \
 	return retval; \
 }
 
-#define reflash_show_data() \
-{ \
-	LOCK_BUFFER(reflash_hcd->read); \
-\
-	readlen = MIN(count, reflash_hcd->read.data_length - pos); \
-\
-	retval = secure_memcpy(buf, \
-			count, \
-			&reflash_hcd->read.buf[pos], \
-			reflash_hcd->read.buf_size - pos, \
-			readlen); \
-	if (retval < 0) { \
-		TS_LOG_ERR( \
-			"Failed to copy read data\n"); \
-	} else { \
-		retval = readlen; \
-	} \
-\
-	UNLOCK_BUFFER(reflash_hcd->read); \
-}
-
 enum update_area {
 	NONE = 0,
 	FIRMWARE_CONFIG,
@@ -329,6 +307,7 @@ static int reflash_set_up_flash_access(void)
 	unsigned int temp;
 	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
 	unsigned int max_write_size;
+	unsigned long count;
 
 	retval = reflash_raw_write(tcm_hcd,	CMD_IDENTIFY,NULL, 0);
 	if (retval < 0) {
@@ -346,16 +325,15 @@ static int reflash_set_up_flash_access(void)
 		return -EINVAL;
 	}
 
-	retval = secure_memcpy((unsigned char *)&tcm_hcd->id_info,
-			sizeof(tcm_hcd->id_info),
-			&tmp_response[4],
-			sizeof(tmp_response),
-			MIN(sizeof(tcm_hcd->id_info), sizeof(tmp_response)));
-	if (retval < 0) {
-	TS_LOG_ERR(
-				"Failed to copy identification info\n");
+	count = MIN(sizeof(tcm_hcd->id_info), sizeof(tmp_response));
+	if ((count > sizeof(tmp_response)) ||
+		(count > sizeof(tcm_hcd->id_info))) {
+		TS_LOG_ERR("Failed to copy identification info\n");
 		return -EINVAL;
 	}
+	memcpy((unsigned char *)&tcm_hcd->id_info,
+		&tmp_response[MESSAGE_HEADER_SIZE],
+		MIN(sizeof(tcm_hcd->id_info), sizeof(tmp_response)));
 
 	tcm_hcd->packrat_number = le4_to_uint(tcm_hcd->id_info.build_id);
 
@@ -391,10 +369,8 @@ static int reflash_set_up_flash_access(void)
 		if (tmp_response[1] == REPORT_IDENTIFY) {
 				TS_LOG_ERR(
 						"receive identify report\n");
-			retval = secure_memcpy((unsigned char *)&tcm_hcd->id_info,
-				sizeof(tcm_hcd->id_info),
-				&tmp_response[4],
-				sizeof(tmp_response),
+			memcpy((unsigned char *)&tcm_hcd->id_info,
+				&tmp_response[MESSAGE_HEADER_SIZE],
 				MIN(sizeof(tcm_hcd->id_info), sizeof(tmp_response)));
 			TS_LOG_ERR("mode :%d\n", tcm_hcd->id_info.mode);
 		}
@@ -418,17 +394,9 @@ static int reflash_set_up_flash_access(void)
 		return -EINVAL;
 	}
 	if (tmp_response[1] == STATUS_OK) {
-
-		retval = secure_memcpy((unsigned char *)&tcm_hcd->boot_info,
-				sizeof(tcm_hcd->boot_info),
-				&tmp_response[4],
-				sizeof(tmp_response),
-				MIN(sizeof(tcm_hcd->boot_info), sizeof(tmp_response)));
-		if (retval < 0) {
-		TS_LOG_ERR(
-					"Failed to copy boot info\n");
-			return -EINVAL;
-		}
+		memcpy((unsigned char *)&tcm_hcd->boot_info,
+			&tmp_response[MESSAGE_HEADER_SIZE],
+			MIN(sizeof(tcm_hcd->boot_info), sizeof(tmp_response)));
 	} else {
 		TS_LOG_ERR( "set up reflash 4\n");
 		return -EINVAL;
@@ -470,7 +438,7 @@ static int reflash_parse_fw_image(void)
 	unsigned int offset;
 	unsigned int length;
 	unsigned int checksum;
-	unsigned int flash_addr;
+	unsigned int flash_offset;
 	unsigned int magic_value;
 	unsigned int num_of_areas;
 	struct image_header *header;
@@ -506,77 +474,72 @@ static int reflash_parse_fw_image(void)
 
 		length = le4_to_uint(descriptor->length);
 		content = (unsigned char *)descriptor + sizeof(*descriptor);
-		flash_addr = le4_to_uint(descriptor->flash_addr_words) * 2;
+		/* 1 word contains 2 bytes */
+		flash_offset = le4_to_uint(descriptor->flash_addr_words) * 2;
 		checksum = le4_to_uint(descriptor->checksum);
 
 		if (0 == strncmp((char *)descriptor->id_string,
 				BOOT_CONFIG_ID,
 				strlen(BOOT_CONFIG_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR(
 						"Boot config checksum error\n");
 				return -EINVAL;
 			}
 			image_info->boot_config.size = length;
 			image_info->boot_config.data = content;
-			image_info->boot_config.flash_addr = flash_addr;
-			TS_LOG_ERR(
-					"Boot config size = %d\n",
-					length);
-			TS_LOG_ERR(
-					"Boot config flash address = 0x%08x\n",
-					flash_addr);
+			image_info->boot_config.flash_addr = flash_offset;
+			TS_LOG_INFO("Boot config size = %u\n", length);
+			TS_LOG_INFO("Boot config flash offset: 0x%08x\n",
+				flash_offset);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				APP_CODE_ID,
 				strlen(APP_CODE_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
+
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR(
 						"Application firmware checksum error\n");
 				return -EINVAL;
 			}
 			image_info->app_firmware.size = length;
 			image_info->app_firmware.data = content;
-			image_info->app_firmware.flash_addr = flash_addr;
-			TS_LOG_ERR(
-					"Application firmware size = %d\n",
-					length);
-			TS_LOG_ERR(
-					"Application firmware flash address = 0x%08x\n",
-					flash_addr);
+			image_info->app_firmware.flash_addr = flash_offset;
+			TS_LOG_INFO("Application FW size = %u\n", length);
+			TS_LOG_INFO("Application FW flash offset: 0x%08x\n",
+				flash_offset);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				APP_CONFIG_ID,
 				strlen(APP_CONFIG_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
+
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR(
 						"Application config checksum error\n");
 				return -EINVAL;
 			}
 			image_info->app_config.size = length;
 			image_info->app_config.data = content;
-			image_info->app_config.flash_addr = flash_addr;
-			TS_LOG_ERR(
-					"Application config size = %d\n",
-					length);
-			TS_LOG_ERR(
-					"Application config flash address = 0x%08x\n",
-					flash_addr);
+			image_info->app_config.flash_addr = flash_offset;
+			TS_LOG_INFO("Application config size = %u\n", length);
+			TS_LOG_INFO("Application config flash offset: 0x%08x\n",
+				flash_offset);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				DISP_CONFIG_ID,
 				strlen(DISP_CONFIG_ID))) {
-			if (checksum != (crc32(~0, content, length) ^ ~0)) {
-				TS_LOG_ERR(
-						"Display config checksum error\n");
+
+			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+				content, length) ^ SYNA_CHECKSUM_SEED)) {
+				TS_LOG_ERR("Display config checksum error\n");
 				return -EINVAL;
 			}
 			image_info->disp_config.size = length;
 			image_info->disp_config.data = content;
-			image_info->disp_config.flash_addr = flash_addr;
-			TS_LOG_ERR(
-					"Display config size = %d\n",
-					length);
-			TS_LOG_ERR(
-					"Display config flash address = 0x%08x\n",
-					flash_addr);
+			image_info->disp_config.flash_addr = flash_offset;
+			TS_LOG_ERR("Display config size = %u\n", length);
+			TS_LOG_ERR("Display config flash offset: 0x%08x\n",
+				flash_offset);
 		}
 	}
 
@@ -793,8 +756,8 @@ static int reflash_write_flash(unsigned int address, const unsigned char *data,
 	unsigned int w_length;
 	unsigned int xfer_length;
 	unsigned int remaining_length;
-	unsigned int flash_address;
-	unsigned int block_address;
+	unsigned int flash_offset;
+	unsigned int block_address = 0;
 	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
 	unsigned char response[10] = {0};
 
@@ -828,23 +791,23 @@ static int reflash_write_flash(unsigned int address, const unsigned char *data,
 			return retval;
 		}
 		TS_LOG_DEBUG("xfer_length:%d, remaining_length:%d, w_length:%d, wr_chunk_size:%d\n", xfer_length, remaining_length, w_length, tcm_hcd->wr_chunk_size);
-		flash_address = address + offset;
-		block_address = flash_address / reflash_hcd->write_block_size;
+		flash_offset = address + offset;
+		if (reflash_hcd->write_block_size != 0)
+			block_address = flash_offset /
+				reflash_hcd->write_block_size;
 		reflash_hcd->out.buf[0] = (unsigned char)block_address;
 		reflash_hcd->out.buf[1] = (unsigned char)(block_address >> 8);
 
-		retval = secure_memcpy(&reflash_hcd->out.buf[2],
-				reflash_hcd->out.buf_size - 2,
-				&data[offset],
-				datalen - offset,
-				xfer_length);
-		if (retval < 0) {
-			TS_LOG_ERR(
-					"Failed to copy write data\n");
+		if ((xfer_length > reflash_hcd->out.buf_size - 2) ||
+			(xfer_length > datalen - offset)) {
+			TS_LOG_ERR("%s: length is too large\n", __func__);
 			UNLOCK_BUFFER(reflash_hcd->resp);
 			UNLOCK_BUFFER(reflash_hcd->out);
-			return retval;
+			return -EINVAL;
 		}
+		memcpy(&reflash_hcd->out.buf[2],
+				&data[offset],
+				xfer_length);
 
 		retval = reflash_raw_write(tcm_hcd,
 				CMD_WRITE_FLASH,
@@ -852,15 +815,10 @@ static int reflash_write_flash(unsigned int address, const unsigned char *data,
 				xfer_length + 2);
 
 		if (retval < 0) {
-			TS_LOG_ERR(
-					"Failed to write command %s\n",
-					STR(CMD_WRITE_FLASH));
-			TS_LOG_ERR(
-					"Flash address = 0x%08x\n",
-					flash_address);
-			TS_LOG_ERR(
-					"Data length = %d\n",
-					xfer_length);
+			TS_LOG_ERR("Failed to write command %s\n",
+				STR(CMD_WRITE_FLASH));
+			TS_LOG_ERR("Flash offset = 0x%08x\n", flash_offset);
+			TS_LOG_ERR("Data length = %u\n", xfer_length);
 			UNLOCK_BUFFER(reflash_hcd->resp);
 			UNLOCK_BUFFER(reflash_hcd->out);
 			return retval;
@@ -947,30 +905,32 @@ static int reflash_raw_write(struct syna_tcm_hcd *tcm_hcd,
 			tcm_hcd->out.buf[2] = (unsigned char)(length >> 8);
 
 			if (xfer_length > 2) {
-				retval = secure_memcpy(&tcm_hcd->out.buf[3],
-						tcm_hcd->out.buf_size - 3,
-						payload,
-						remaining_length - 2,
-						xfer_length - 2);
-				if (retval < 0) {
-					TS_LOG_ERR("Failed to copy payload\n");
+				if ((xfer_length - MSG_STATUS_SIZE >
+					tcm_hcd->out.buf_size - 3) ||
+					(xfer_length - MSG_STATUS_SIZE >
+					remaining_length - MSG_STATUS_SIZE)) {
+					TS_LOG_ERR("xfer len is too large\n");
 					UNLOCK_BUFFER(tcm_hcd->out);
+					retval = -EINVAL;
 					goto exit;
 				}
+				memcpy(&tcm_hcd->out.buf[3],
+					payload,
+					xfer_length - MSG_STATUS_SIZE);
 			}
 		} else {
 			tcm_hcd->out.buf[0] = CMD_CONTINUE_WRITE;
 
-			retval = secure_memcpy(&tcm_hcd->out.buf[1],
-					tcm_hcd->out.buf_size - 1,
-					&payload[idx * chunk_space - 2],
-					remaining_length,
-					xfer_length);
-			if (retval < 0) {
-				TS_LOG_ERR("Failed to copy payload\n");
+			if ((xfer_length > tcm_hcd->out.buf_size - 1) ||
+				(xfer_length > remaining_length)) {
+				TS_LOG_ERR("xfer len is too large\n");
 				UNLOCK_BUFFER(tcm_hcd->out);
+				retval = -EINVAL;
 				goto exit;
 			}
+			memcpy(&tcm_hcd->out.buf[1],
+					&payload[idx * chunk_space - 2],
+					xfer_length);
 		}
 
 		retval = syna_tcm_write(tcm_hcd,
@@ -1024,9 +984,11 @@ static int reflash_erase_flash(unsigned int page_start, unsigned int page_count)
 		return retval;
 	}
 	if (page_start == 2) {
-		msleep(4000);
+		/* sequential */
+		mdelay(4000);
 	} else {
-		msleep(200);
+		/* sequential */
+		mdelay(600);
 	}
 
 	retval = syna_tcm_read(tcm_hcd,
@@ -1156,16 +1118,15 @@ int reflash_after_fw_update_do_reset(void)
 		TS_LOG_ERR("in set up reflash 1\n");
 		return -EINVAL;
 	}
-	msleep(60);
+	/* sequential */
+	msleep(120);
 	retval = syna_tcm_read(tcm_hcd, tmp_response, sizeof(tmp_response));
 
 	if (tmp_response[1] == REPORT_IDENTIFY) {
 		TS_LOG_ERR("receive identify report\n");
-		retval = secure_memcpy((unsigned char *)&tcm_hcd->id_info,
-				sizeof(tcm_hcd->id_info),
-				&tmp_response[4],
-				sizeof(tmp_response),
-				MIN(sizeof(tcm_hcd->id_info), sizeof(tmp_response)));
+		memcpy((unsigned char *)&tcm_hcd->id_info,
+			&tmp_response[MESSAGE_HEADER_SIZE],
+			MIN(sizeof(tcm_hcd->id_info), sizeof(tmp_response)));
 		TS_LOG_ERR("mode :%d\n", tcm_hcd->id_info.mode);
 	}
 	if (tcm_hcd->id_info.mode != MODE_APPLICATION) {
@@ -1188,20 +1149,17 @@ int reflash_after_fw_update_do_reset(void)
 				tmp_response[4], tmp_response[5], tmp_response[6]);
 		if (tmp_response[1] == REPORT_IDENTIFY) {
 			TS_LOG_ERR("receive identify report\n");
-			retval = secure_memcpy((unsigned char *)&tcm_hcd->id_info,
-					sizeof(tcm_hcd->id_info),
-					&tmp_response[4],
-					sizeof(tmp_response),
-					MIN(sizeof(tcm_hcd->id_info), sizeof(tmp_response)));
+			memcpy((unsigned char *)&tcm_hcd->id_info,
+				&tmp_response[MESSAGE_HEADER_SIZE],
+				MIN(sizeof(tcm_hcd->id_info),
+				sizeof(tmp_response)));
 			TS_LOG_ERR("mode :%d\n", tcm_hcd->id_info.mode);
 		}
 	}
-
-	if (TS_BUS_I2C == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
+	if (tcm_hcd->htd == false) {
 		retval = touch_init(tcm_hcd);
-		if (retval < 0) {
-			TS_LOG_ERR("failed to do touch init after reflash.\n");
-		}
+		if (retval < 0)
+			TS_LOG_ERR("failed to do touch init after reflash\n");
 	}
 
 	return retval;
@@ -1257,16 +1215,17 @@ static int reflash_read_flash(unsigned int address, unsigned char *data,
 		return -EIO;
 	}
 
-	retval = secure_memcpy(data,
-			datalen,
-			&flash_read_data[4],
-			sizeof(flash_read_data) - 4,
-			datalen);
-	if (retval < 0) {
-		TS_LOG_ERR("Failed to copy read data\n");
-
-		return retval;
+	if (datalen > sizeof(flash_read_data) - MESSAGE_HEADER_SIZE) {
+		TS_LOG_ERR("datalen is too large\n");
+		return -EINVAL;
 	}
+	if (datalen > sizeof(flash_read_data) - MESSAGE_HEADER_SIZE) {
+		TS_LOG_ERR("Failed to copy read data\n");
+		return -EINVAL;
+	}
+	memcpy(data,
+		&flash_read_data[MESSAGE_HEADER_SIZE],
+		datalen);
 
 	return 0;
 }
@@ -1309,12 +1268,8 @@ exit:
 int reflash_parse_boot_config(unsigned char *boot_config_data, int data_length, unsigned char *out_info, int length)
 {
 	int i = 0;
-	int retval = NO_ERR;
-	retval = secure_memcpy(out_info, length, &boot_config_data[8], length, length);
-	if(retval < 0) {
-		TS_LOG_ERR("%s: Failed to copy force parameter data\n",__func__);
-		return retval;
-	}
+
+	memcpy(out_info, &boot_config_data[BOOT_CONFIG_SIZE], length);
 	for (i = 0; i < strlen(out_info) && i < length; i++) {
 		out_info[i] = tolower(out_info[i]);
 	}
@@ -1352,7 +1307,7 @@ int reflash_init(struct syna_tcm_hcd *tcm_hcd)
 
 //	tcm_hcd->read_flash_data = reflash_read_data;
 
-	if (TS_BUS_I2C == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
+	if (tcm_hcd->htd == false) {
 		memset(tcm_hcd->tcm_mod_info.project_id_string, 0,
 				sizeof(tcm_hcd->tcm_mod_info.project_id_string));
 		reflash_read_boot_config(boot_config_data, sizeof(boot_config_data));

@@ -3,7 +3,7 @@
  *
  * fpf2283_aux driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -56,15 +56,15 @@ static struct fpf2283_device_info *g_fpf2283_dev;
 static int fpf2283_init_finish_flag = FPF2283_NOT_INIT;
 static int fpf2283_int_notify_enable_flag = FPF2283_DISABLE_INT_NOTIFY;
 
-#define MSG_LEN                      (2)
+#define MSG_LEN                      2
 
 static int fpf2283_write_block(struct fpf2283_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[1];
-	int ret = 0;
+	int ret;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
@@ -99,10 +99,10 @@ static int fpf2283_read_block(struct fpf2283_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[MSG_LEN];
-	u8 buf = 0;
-	int ret = 0;
+	u8 buf;
+	int ret;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
@@ -158,7 +158,7 @@ static int fpf2283_read_byte(u8 reg, u8 *value)
 
 static int fpf2283_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = fpf2283_read_byte(reg, &val);
@@ -168,15 +168,13 @@ static int fpf2283_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 	val &= ~mask;
 	val |= ((value << shift) & mask);
 
-	ret = fpf2283_write_byte(reg, val);
-
-	return ret;
+	return fpf2283_write_byte(reg, val);
 }
 
 static void fpf2283_dump_register(void)
 {
-	int ret = 0;
-	u8 i = 0;
+	int ret;
+	u8 i;
 	u8 val = 0;
 
 	for (i = 0; i < FPF2283_MAX_REGS; ++i) {
@@ -235,10 +233,10 @@ static int fpf2283_charge_enable(int enable)
 
 static int fpf2283_charge_init(void)
 {
-	int ret = 0;
+	int ret;
 	struct fpf2283_device_info *di = g_fpf2283_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -255,10 +253,10 @@ static int fpf2283_charge_init(void)
 
 static int fpf2283_charge_exit(void)
 {
-	int ret = 0;
+	int ret;
 	struct fpf2283_device_info *di = g_fpf2283_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -287,7 +285,7 @@ static int fpf2283_config_watchdog_ms(int time)
 static int fpf2283_is_ls_close(void)
 {
 	u8 reg = 0;
-	int ret = 0;
+	int ret;
 
 	ret = fpf2283_read_byte(FPF2283_OVP_REG, &reg);
 	if (ret)
@@ -303,7 +301,7 @@ static int fpf2283_ls_status(void)
 {
 	struct fpf2283_device_info *di = g_fpf2283_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -319,21 +317,36 @@ static int fpf2283_ls_status(void)
 #ifdef POWER_MODULE_DEBUG_FUNCTION
 static void fpf2283_irq_work(struct work_struct *work)
 {
-	struct fpf2283_device_info *di;
-	struct nty_data *data;
-	struct atomic_notifier_head *fpf2283_fault_notifier_list;
-	u8 detection_status;
-	u8 power_switch_flag;
-	u8 interrupt_mask;
+	struct fpf2283_device_info *di = NULL;
+	struct nty_data *data = NULL;
+	struct atomic_notifier_head *fault_notifier_list = NULL;
+	u8 detection_status = 0;
+	u8 power_switch_flag = 0;
+	u8 interrupt_mask = 0;
+	int ret;
+
+	if (!work) {
+		hwlog_err("work is null\n");
+		return;
+	}
 
 	di = container_of(work, struct fpf2283_device_info, irq_work);
+	if (!di || !di->client) {
+		hwlog_err("di is null\n");
+		return;
+	}
+
 	data = &(di->nty_data);
+	lvc_get_fault_notifier(&fault_notifier_list);
 
-	direct_charge_lvc_get_fault_notifier(&fpf2283_fault_notifier_list);
-
-	fpf2283_read_byte(FPF2283_DETECTION_STATUS_REG, &detection_status);
-	fpf2283_read_byte(FPF2283_POWER_SWITCH_FLAG_REG, &power_switch_flag);
-	fpf2283_read_byte(FPF2283_INTERRUPT_MASK_REG, &interrupt_mask);
+	ret = fpf2283_read_byte(FPF2283_DETECTION_STATUS_REG,
+		&detection_status);
+	ret |= fpf2283_read_byte(FPF2283_POWER_SWITCH_FLAG_REG,
+		&power_switch_flag);
+	ret |= fpf2283_read_byte(FPF2283_INTERRUPT_MASK_REG,
+		&interrupt_mask);
+	if (ret)
+		hwlog_err("irq_work read fail\n");
 
 	data->event1 = detection_status;
 	data->event2 = power_switch_flag;
@@ -343,25 +356,20 @@ static void fpf2283_irq_work(struct work_struct *work)
 		if (power_switch_flag & FPF2283_POWER_SWITCH_FLAG_OV_FLG_MASK) {
 			hwlog_info("ovp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_VBUS_OVP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_VBUS_OVP, data);
 		} else if (power_switch_flag &
 					FPF2283_POWER_SWITCH_FLAG_OC_FLG_MASK) {
 			hwlog_info("ocp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_INPUT_OCP, data);
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_INPUT_OCP, data);
 		} else if (power_switch_flag &
 					FPF2283_POWER_SWITCH_FLAG_OT_FLG_MASK) {
 			hwlog_info("otp happened\n");
 
-			atomic_notifier_call_chain(
-				direct_charge_fault_notifier_list,
-				DIRECT_CHARGE_FAULT_OTP, data);
-		} else {
-			/*do nothing*/
+			atomic_notifier_call_chain(fault_notifier_list,
+				DC_FAULT_OTP, data);
 		}
 
 		fpf2283_dump_register();
@@ -382,7 +390,7 @@ static irqreturn_t fpf2283_interrupt(int irq, void *_di)
 {
 	struct fpf2283_device_info *di = _di;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -393,14 +401,14 @@ static irqreturn_t fpf2283_interrupt(int irq, void *_di)
 	if (fpf2283_init_finish_flag == FPF2283_INIT_FINISH)
 		fpf2283_int_notify_enable_flag = FPF2283_ENABLE_INT_NOTIFY;
 
-	hwlog_info("fpf2283 int happened(%d)\n", fpf2283_init_finish_flag);
+	hwlog_info("fpf2283 int happened\n");
 
 	disable_irq_nosync(di->irq_int);
 	schedule_work(&di->irq_work);
 
 	return IRQ_HANDLED;
 }
-#endif
+#endif /* POWER_MODULE_DEBUG_FUNCTION */
 
 static struct loadswitch_ops fpf2283_sysinfo_ops = {
 	.ls_init = fpf2283_charge_init,
@@ -415,29 +423,20 @@ static struct loadswitch_ops fpf2283_sysinfo_ops = {
 static int fpf2283_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret = 0;
+	int ret;
 	struct fpf2283_device_info *di = NULL;
 	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
-	if (client == NULL || id == NULL) {
-		hwlog_err("client or id is null\n");
-		return -ENOMEM;
-	}
-
-	if (!i2c_check_functionality(client->adapter,
-		I2C_FUNC_SMBUS_WORD_DATA)) {
-		hwlog_err("i2c_check failed\n");
+	if (!client || !client->dev.of_node || !id)
 		return -ENODEV;
-	}
 
 	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_fpf2283_dev = di;
-
 	di->dev = &client->dev;
 	np = di->dev->of_node;
 	di->client = client;
@@ -450,26 +449,26 @@ static int fpf2283_probe(struct i2c_client *client,
 	hwlog_info("gpio_int=%d\n", di->gpio_int);
 
 	if (!gpio_is_valid(di->gpio_int)) {
-		hwlog_err("gpio(gpio_int) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto fpf2283_fail_1;
 	}
 
 	ret = gpio_request(di->gpio_int, "fpf2283_gpio_int");
 	if (ret) {
-		hwlog_err("gpio(gpio_int) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto fpf2283_fail_1;
 	}
 
 	ret = gpio_direction_input(di->gpio_int);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) set input fail\n");
+		hwlog_err("gpio set input fail\n");
 		goto fpf2283_fail_2;
 	}
 
 	di->irq_int = gpio_to_irq(di->gpio_int);
 	if (di->irq_int < 0) {
-		hwlog_err("gpio(gpio_int) map to irq fail\n");
+		hwlog_err("gpio map to irq fail\n");
 		ret = -EINVAL;
 		goto fpf2283_fail_2;
 	}
@@ -477,11 +476,11 @@ static int fpf2283_probe(struct i2c_client *client,
 	ret = request_irq(di->irq_int, fpf2283_interrupt, IRQF_TRIGGER_FALLING,
 		"fpf2283_int_irq", di);
 	if (ret) {
-		hwlog_err("gpio(gpio_int) irq request fail\n");
+		hwlog_err("gpio irq request fail\n");
 		di->irq_int = -1;
 		goto fpf2283_fail_2;
 	}
-#endif
+#endif /* POWER_MODULE_DEBUG_FUNCTION */
 
 	ret = loadswitch_aux_ops_register(&fpf2283_sysinfo_ops);
 	if (ret) {
@@ -498,7 +497,7 @@ fpf2283_fail_3:
 fpf2283_fail_2:
 	gpio_free(di->gpio_int);
 fpf2283_fail_1:
-#endif
+#endif /* POWER_MODULE_DEBUG_FUNCTION */
 	devm_kfree(&client->dev, di);
 	g_fpf2283_dev = NULL;
 
@@ -510,6 +509,9 @@ static int fpf2283_remove(struct i2c_client *client)
 	struct fpf2283_device_info *di = i2c_get_clientdata(client);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	if (di->irq_int)
 		free_irq(di->irq_int, di);
@@ -531,7 +533,7 @@ static const struct of_device_id fpf2283_of_match[] = {
 };
 
 static const struct i2c_device_id fpf2283_i2c_id[] = {
-	{"fpf2283_aux", 0}, {}
+	{ "fpf2283_aux", 0 }, {}
 };
 
 static struct i2c_driver fpf2283_driver = {
@@ -547,13 +549,7 @@ static struct i2c_driver fpf2283_driver = {
 
 static int __init fpf2283_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&fpf2283_driver);
-	if (ret)
-		hwlog_err("i2c_add_driver error\n");
-
-	return ret;
+	return i2c_add_driver(&fpf2283_driver);
 }
 
 static void __exit fpf2283_exit(void)

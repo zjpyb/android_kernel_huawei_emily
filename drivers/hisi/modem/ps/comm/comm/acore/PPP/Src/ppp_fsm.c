@@ -52,6 +52,7 @@
 *****************************************************************************/
 #define    THIS_FILE_ID        PS_FILE_ID_PPP_FSM_C
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 void FsmSendConfigReq(struct fsm *);
 void FsmSendTerminateReq(struct fsm *);
@@ -530,11 +531,15 @@ void FsmRecvConfigReq(struct fsm *fp, struct fsmheader *lhp, struct ppp_mbuf *bp
               PSACORE_MEM_CPY((SendBuffer + sizeof(struct fsmheader)),
                             (sizeof(SendBuffer) - sizeof(struct fsmheader)),cp,flen); /*lint !e668 !e613*/
 
+              #if (PPP_FEATURE == PPP_FEATURE_PPP)
               /* 可维可测信息上报*/
               Ppp_RcvConfigInfoReqMntnInfo((VOS_UINT16)PPP_LINK_TO_ID(fp->link), &PppReqConfigInfo);
 
               /*PDP激活请求，发送用户名、密码还有IPCP数据包*/
               PPP_ProcTeConfigInfo((VOS_UINT16)PPP_LINK_TO_ID(fp->link),&PppReqConfigInfo);
+              #else
+              PPPoE_PPPSendAuthToGGSN((PPP_ID)(PPP_LINK_TO_ID(fp->link)),&PppReqConfigInfo);
+              #endif
           }
           break;
 
@@ -863,8 +868,10 @@ FsmRecvTermReq(struct fsm *fp, struct fsmheader *lhp, struct ppp_mbuf *bp)
         fp->link->phase = PHASE_TERMINATE;
     }
 
+    #if (PPP_FEATURE == PPP_FEATURE_PPP)
     /*通知AT进行PDP去激活*/
     PPP_ProcPppRelEvent((VOS_UINT16)PPP_LINK_TO_ID(fp->link));
+    #endif
 
     break;
   }
@@ -1345,4 +1352,5 @@ fsm_opt_normalise(struct fsm_decode *dec)
     dec->ackend = dec->ack;
 }
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

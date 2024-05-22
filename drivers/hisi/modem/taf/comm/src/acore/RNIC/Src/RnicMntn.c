@@ -135,9 +135,11 @@ VOS_VOID RNIC_MNTN_ReportULPktStats(VOS_UINT8 ucRmNetId)
 VOS_VOID RNIC_MNTN_ReportDLPktStats(VOS_UINT8 ucRmNetId)
 {
     RNIC_MNTN_DL_PKT_STATS_STRU         stStats;
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     RNIC_NETCARD_DEV_INFO_STRU         *pstPriv;
 
     pstPriv = RNIC_GET_SPEC_NET_PRIV_PTR(ucRmNetId);
+#endif
     stStats.stCommHeader.ucVer          = 101;
     stStats.stCommHeader.ucReserved     = 0;
 
@@ -159,6 +161,7 @@ VOS_VOID RNIC_MNTN_ReportDLPktStats(VOS_UINT8 ucRmNetId)
     stStats.ulDlNetCardDiscardNum       = g_astRnicStats[ucRmNetId].ulDlNetCardDiscardNum;
     stStats.ulDlRecvErrPktNum           = g_astRnicStats[ucRmNetId].ulDlRecvErrPktNum;
     stStats.ulDlNetIdDiscardNum         = g_astRnicStats[ucRmNetId].ulDlNetIdDiscardNum;
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     if (VOS_NULL_PTR != pstPriv)
     {
         stStats.ulDlNapiWeight          = (VOS_UINT32)pstPriv->stNapi.weight;
@@ -169,6 +172,7 @@ VOS_VOID RNIC_MNTN_ReportDLPktStats(VOS_UINT8 ucRmNetId)
     }
     stStats.ulDlNapiRecvPktNum          = RNIC_GET_NAPI_RECV_PKT_NUM(ucRmNetId);
     stStats.ulDlNapiPollQueDiscardPktNum = g_astRnicStats[ucRmNetId].ulDlNapiPollQueDiscardPktNum;
+#endif
 
     RNIC_MNTN_TransReport(ID_DIAG_RNIC_DL_PKT_STATS_IND,
                           (VOS_VOID *)&stStats,

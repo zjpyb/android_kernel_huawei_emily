@@ -12,7 +12,7 @@ static ssize_t device_show(struct device *_d,
 			   struct device_attribute *attr, char *buf)
 {
 	struct virtio_device *dev = dev_to_virtio(_d);
-	return sprintf(buf, "0x%04x\n", dev->id.device);
+	return sprintf(buf, "0x%04x\n", dev->id.device); /*lint !e421*/
 }
 static DEVICE_ATTR_RO(device);
 
@@ -20,7 +20,7 @@ static ssize_t vendor_show(struct device *_d,
 			   struct device_attribute *attr, char *buf)
 {
 	struct virtio_device *dev = dev_to_virtio(_d);
-	return sprintf(buf, "0x%04x\n", dev->id.vendor);
+	return sprintf(buf, "0x%04x\n", dev->id.vendor); /*lint !e421*/
 }
 static DEVICE_ATTR_RO(vendor);
 
@@ -28,7 +28,7 @@ static ssize_t status_show(struct device *_d,
 			   struct device_attribute *attr, char *buf)
 {
 	struct virtio_device *dev = dev_to_virtio(_d);
-	return sprintf(buf, "0x%08x\n", dev->config->get_status(dev));
+	return sprintf(buf, "0x%08x\n", dev->config->get_status(dev)); /*lint !e421*/
 }
 static DEVICE_ATTR_RO(status);
 
@@ -37,7 +37,7 @@ static ssize_t modalias_show(struct device *_d,
 {
 	struct virtio_device *dev = dev_to_virtio(_d);
 	return sprintf(buf, "virtio:d%08Xv%08X\n",
-		       dev->id.device, dev->id.vendor);
+		       dev->id.device, dev->id.vendor); /*lint !e421*/
 }
 static DEVICE_ATTR_RO(modalias);
 
@@ -52,8 +52,8 @@ static ssize_t features_show(struct device *_d,
 	 * arbitrary length in future. */
 	for (i = 0; i < sizeof(dev->features)*8; i++)
 		len += sprintf(buf+len, "%c",
-			       __virtio_test_bit(dev, i) ? '1' : '0');
-	len += sprintf(buf+len, "\n");
+			       __virtio_test_bit(dev, i) ? '1' : '0'); /*lint !e421*/
+	len += sprintf(buf+len, "\n"); /*lint !e421*/
 	return len;
 }
 static DEVICE_ATTR_RO(features);
@@ -100,11 +100,6 @@ static int virtio_uevent(struct device *_dv, struct kobj_uevent_env *env)
 			      dev->id.device, dev->id.vendor);
 }
 
-static void add_status(struct virtio_device *dev, unsigned status)
-{
-	dev->config->set_status(dev, dev->config->get_status(dev) | status);
-}
-
 void virtio_check_driver_offered_feature(const struct virtio_device *vdev,
 					 unsigned int fbit)
 {
@@ -121,7 +116,7 @@ void virtio_check_driver_offered_feature(const struct virtio_device *vdev,
 				return;
 	}
 
-	BUG();
+	BUG(); /*lint !e146*/
 }
 EXPORT_SYMBOL_GPL(virtio_check_driver_offered_feature);
 
@@ -145,14 +140,15 @@ void virtio_config_changed(struct virtio_device *dev)
 }
 EXPORT_SYMBOL_GPL(virtio_config_changed);
 
-static void virtio_config_disable(struct virtio_device *dev)
+void virtio_config_disable(struct virtio_device *dev)
 {
 	spin_lock_irq(&dev->config_lock);
 	dev->config_enabled = false;
 	spin_unlock_irq(&dev->config_lock);
 }
+EXPORT_SYMBOL_GPL(virtio_config_disable);
 
-static void virtio_config_enable(struct virtio_device *dev)
+void virtio_config_enable(struct virtio_device *dev)
 {
 	spin_lock_irq(&dev->config_lock);
 	dev->config_enabled = true;
@@ -161,8 +157,15 @@ static void virtio_config_enable(struct virtio_device *dev)
 	dev->config_change_pending = false;
 	spin_unlock_irq(&dev->config_lock);
 }
+EXPORT_SYMBOL_GPL(virtio_config_enable);
 
-static int virtio_finalize_features(struct virtio_device *dev)
+void virtio_add_status(struct virtio_device *dev, unsigned int status)
+{
+	dev->config->set_status(dev, dev->config->get_status(dev) | status);
+}
+EXPORT_SYMBOL_GPL(virtio_add_status);
+
+int virtio_finalize_features(struct virtio_device *dev)
 {
 	int ret = dev->config->finalize_features(dev);
 	unsigned status;
@@ -173,7 +176,7 @@ static int virtio_finalize_features(struct virtio_device *dev)
 	if (!virtio_has_feature(dev, VIRTIO_F_VERSION_1))
 		return 0;
 
-	add_status(dev, VIRTIO_CONFIG_S_FEATURES_OK);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_FEATURES_OK);
 	status = dev->config->get_status(dev);
 	if (!(status & VIRTIO_CONFIG_S_FEATURES_OK)) {
 		dev_err(&dev->dev, "virtio: device refuses features: %x\n",
@@ -182,6 +185,7 @@ static int virtio_finalize_features(struct virtio_device *dev)
 	}
 	return 0;
 }
+EXPORT_SYMBOL_GPL(virtio_finalize_features);
 
 static int virtio_dev_probe(struct device *_d)
 {
@@ -193,14 +197,14 @@ static int virtio_dev_probe(struct device *_d)
 	u64 driver_features_legacy;
 
 	/* We have a driver! */
-	add_status(dev, VIRTIO_CONFIG_S_DRIVER);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_DRIVER);
 
 	/* Figure out what features the device supports. */
 	device_features = dev->config->get_features(dev);
 
 	/* Figure out what features the driver supports. */
 	driver_features = 0;
-	for (i = 0; i < drv->feature_table_size; i++) {
+	for (i = 0; i < drv->feature_table_size; i++) { /*lint !e574*/
 		unsigned int f = drv->feature_table[i];
 		BUG_ON(f >= 64);
 		driver_features |= (1ULL << f);
@@ -209,7 +213,7 @@ static int virtio_dev_probe(struct device *_d)
 	/* Some drivers have a separate feature table for virtio v1.0 */
 	if (drv->feature_table_legacy) {
 		driver_features_legacy = 0;
-		for (i = 0; i < drv->feature_table_size_legacy; i++) {
+		for (i = 0; i < drv->feature_table_size_legacy; i++) {  /*lint !e574*/
 			unsigned int f = drv->feature_table_legacy[i];
 			BUG_ON(f >= 64);
 			driver_features_legacy |= (1ULL << f);
@@ -227,6 +231,12 @@ static int virtio_dev_probe(struct device *_d)
 	for (i = VIRTIO_TRANSPORT_F_START; i < VIRTIO_TRANSPORT_F_END; i++)
 		if (device_features & (1ULL << i))
 			__virtio_set_bit(dev, i);
+
+	if (drv->validate) {
+		err = drv->validate(dev);
+		if (err)
+			goto err;
+	}
 
 	err = virtio_finalize_features(dev);
 	if (err)
@@ -247,7 +257,7 @@ static int virtio_dev_probe(struct device *_d)
 
 	return 0;
 err:
-	add_status(dev, VIRTIO_CONFIG_S_FAILED);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_FAILED);
 	return err;
 
 }
@@ -265,7 +275,7 @@ static int virtio_dev_remove(struct device *_d)
 	WARN_ON_ONCE(dev->config->get_status(dev));
 #endif
 	/* Acknowledge the device's existence again. */
-	add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
 	return 0;
 }
 
@@ -316,7 +326,7 @@ int register_virtio_device(struct virtio_device *dev)
 	dev->config->reset(dev);
 
 	/* Acknowledge that we've seen the device. */
-	add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
 
 	INIT_LIST_HEAD(&dev->vqs);
 
@@ -327,7 +337,7 @@ int register_virtio_device(struct virtio_device *dev)
 		ida_simple_remove(&virtio_index_ida, dev->index);
 out:
 	if (err)
-		add_status(dev, VIRTIO_CONFIG_S_FAILED);
+		virtio_add_status(dev, VIRTIO_CONFIG_S_FAILED);
 	return err;
 }
 EXPORT_SYMBOL_GPL(register_virtio_device);
@@ -367,18 +377,18 @@ int virtio_device_restore(struct virtio_device *dev)
 	dev->config->reset(dev);
 
 	/* Acknowledge that we've seen the device. */
-	add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
 
 	/* Maybe driver failed before freeze.
 	 * Restore the failed status, for debugging. */
 	if (dev->failed)
-		add_status(dev, VIRTIO_CONFIG_S_FAILED);
+		virtio_add_status(dev, VIRTIO_CONFIG_S_FAILED);
 
 	if (!drv)
 		return 0;
 
 	/* We have a driver! */
-	add_status(dev, VIRTIO_CONFIG_S_DRIVER);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_DRIVER);
 
 	ret = virtio_finalize_features(dev);
 	if (ret)
@@ -391,14 +401,14 @@ int virtio_device_restore(struct virtio_device *dev)
 	}
 
 	/* Finally, tell the device we're all set */
-	add_status(dev, VIRTIO_CONFIG_S_DRIVER_OK);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_DRIVER_OK);
 
 	virtio_config_enable(dev);
 
 	return 0;
 
 err:
-	add_status(dev, VIRTIO_CONFIG_S_FAILED);
+	virtio_add_status(dev, VIRTIO_CONFIG_S_FAILED);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(virtio_device_restore);

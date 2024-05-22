@@ -64,19 +64,23 @@ int mipi_dsi_swrite(struct dsi_cmd_desc *cm, char __iomem *dsi_base)
 	hdr |= DSI_HDR_DTYPE(cm->dtype);
 	hdr |= DSI_HDR_VC(cm->vc);
 	if (len == 1) {
-		hdr |= DSI_HDR_DATA1(cm->payload[0]);
+		hdr |= DSI_HDR_DATA1((uint32_t)(cm->payload[0])); //lint !e571
 		hdr |= DSI_HDR_DATA2(0);
 	} else if (len == 2) {
-		hdr |= DSI_HDR_DATA1(cm->payload[0]);
-		hdr |= DSI_HDR_DATA2(cm->payload[1]);
+		hdr |= DSI_HDR_DATA1((uint32_t)(cm->payload[0])); //lint !e571
+		hdr |= DSI_HDR_DATA2((uint32_t)(cm->payload[1])); //lint !e571
 	} else {
 		hdr |= DSI_HDR_DATA1(0);
 		hdr |= DSI_HDR_DATA2(0);
 	}
 
+#if defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501)  || defined (CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 	/*used for low power cmds trans under video mode*/
 	hdr |= cm->dtype & GEN_VID_LP_CMD;
 	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 25, 0);
+#else
+	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 24, 0);
+#endif
 
 	HISI_FB_DEBUG("hdr=0x%x!\n", hdr);
 	return len;  /* 4 bytes */
@@ -95,8 +99,8 @@ int mipi_dsi_swrite(struct dsi_cmd_desc *cm, char __iomem *dsi_base)
 int mipi_dsi_lwrite(struct dsi_cmd_desc *cm, char __iomem *dsi_base)
 {
 	uint32_t hdr = 0;
-	int i = 0;
-	int j = 0;
+	uint32_t i = 0;
+	uint32_t j = 0;
 	uint32_t pld = 0;
 
 	if (cm->dlen && cm->payload == 0) {
@@ -110,7 +114,7 @@ int mipi_dsi_lwrite(struct dsi_cmd_desc *cm, char __iomem *dsi_base)
 			pld = *((uint32_t *)(cm->payload + i));
 		} else {
 			for (j = i; j < cm->dlen; j++) {
-				pld |= ((uint32_t)(cm->payload[j] & 0x0ff) << ((j - i) * 8));
+				pld |= (((uint32_t)cm->payload[j] & 0x0ff) << ((j - i) * 8)); //lint !e571
 			}
 			HISI_FB_DEBUG("pld=0x%x!\n", pld);
 		}
@@ -124,9 +128,13 @@ int mipi_dsi_lwrite(struct dsi_cmd_desc *cm, char __iomem *dsi_base)
 	hdr |= DSI_HDR_VC(cm->vc);
 	hdr |= DSI_HDR_WC(cm->dlen);
 
+#if defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V510) || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 	/*used for low power cmds trans under video mode*/
 	hdr |= cm->dtype & GEN_VID_LP_CMD;
 	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 25, 0);
+#else
+	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 24, 0);
+#endif
 
 	HISI_FB_DEBUG("hdr=0x%x!\n", hdr);
 	return cm->dlen;
@@ -214,7 +222,7 @@ int mipi_dsi_cmd_is_read(struct dsi_cmd_desc *cm)
 int mipi_dsi_lread_reg(uint32_t *out, struct dsi_cmd_desc *cm, uint32_t len, char *dsi_base)
 {
 	int ret = 0;
-	int i = 0;
+	uint32_t i = 0;
 	struct dsi_cmd_desc packet_size_cmd_set;
 
 	if (cm == NULL) {
@@ -273,6 +281,7 @@ int mipi_dsi_cmd_add(struct dsi_cmd_desc *cm, char __iomem *dsi_base)
 
 	case DTYPE_DCS_WRITE:
 	case DTYPE_DCS_WRITE1:
+	case DTYPE_DCS_WRITE2:
 		len = mipi_dsi_swrite(cm, dsi_base);
 		break;
 	case DTYPE_GEN_LWRITE:
@@ -354,11 +363,15 @@ static void mipi_dsi_sread_request(struct dsi_cmd_desc *cm, char __iomem *dsi_ba
 	/* fill up header */
 	hdr |= DSI_HDR_DTYPE(cm->dtype);
 	hdr |= DSI_HDR_VC(cm->vc);
-	hdr |= DSI_HDR_DATA1(cm->payload[0]);
+	hdr |= DSI_HDR_DATA1((uint32_t)(cm->payload[0])); //lint !e571
 	hdr |= DSI_HDR_DATA2(0);
+#if defined CONFIG_HISI_FB_970 || defined CONFIG_HISI_FB_V501 || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V510)
 	/*used for low power cmds trans under video mode*/
 	hdr |= cm->dtype & GEN_VID_LP_CMD;
 	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 25, 0);
+#else
+	set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, hdr, 24, 0);
+#endif
 }
 
 static int mipi_dsi_read_add(uint32_t *out, struct dsi_cmd_desc *cm, char __iomem *dsi_base)
@@ -418,8 +431,12 @@ static int mipi_dsi_read_add(uint32_t *out, struct dsi_cmd_desc *cm, char __iome
 
 		_mipi_dsi_cmd_send_lock();
 		/*send read cmd to fifo*/
+#if defined CONFIG_HISI_FB_970 || defined CONFIG_HISI_FB_V501 || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V510)
 		/*used for low power cmds trans under video mode*/
-		set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, ((cm->payload[0] << 8) | (cm->dtype & GEN_VID_LP_CMD)), 25, 0);
+		set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, (((uint32_t)cm->payload[0] << 8) | (cm->dtype & GEN_VID_LP_CMD)), 25, 0); //lint !e571
+#else
+		set_reg(dsi_base + MIPIDSI_GEN_HDR_OFFSET, (((uint32_t)cm->payload[0] << 8) | cm->dtype), 24, 0); //lint !e571
+#endif
 
 		is_timeout = 1;
 		/*wait dsi read data*/
@@ -723,7 +740,7 @@ static uint32_t _calc_next_wait_time(uint32_t wait, uint32_t waittype)
 	return 0;
 }
 
-static int _mipi_dual_dsi_read(uint32_t *ValueOut_0, uint32_t *ValueOut_1, const char __iomem * dsi_base_0, char __iomem * dsi_base_1)
+static int _mipi_dual_dsi_read(uint32_t *ValueOut_0, uint32_t *ValueOut_1, const char __iomem * dsi_base_0, const char __iomem * dsi_base_1)
 {
 	uint32_t pkg_status_0, pkg_status_1;
 	uint32_t try_times = 700;
@@ -793,8 +810,13 @@ static inline int _mipi_dual_dsi_read_add_send(struct dsi_cmd_desc *pCmd, char _
 			if ((pkg_status_0 & 0x1) == 0x1 && !(phy_status_0 & 0x2)){
 				*is_timeout_0 = 0;
 				/*send read cmd to fifo*/
+/*lint -e571*/
+#if defined CONFIG_HISI_FB_970 || defined CONFIG_HISI_FB_V501 || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V510)
 				/*used for low power cmds trans under video mode*/
-				set_reg(dsi_base_0 + MIPIDSI_GEN_HDR_OFFSET, ((pCmd->payload[0] << 8) | (pCmd->dtype & GEN_VID_LP_CMD)), 25, 0);
+				set_reg(dsi_base_0 + MIPIDSI_GEN_HDR_OFFSET, (((uint32_t)pCmd->payload[0] << 8) | (pCmd->dtype & GEN_VID_LP_CMD)), 25, 0);
+#else
+				set_reg(dsi_base_0 + MIPIDSI_GEN_HDR_OFFSET, (((uint32_t)pCmd->payload[0] << 8) | pCmd->dtype), 24, 0);
+#endif
 			}
 		}
 
@@ -804,8 +826,12 @@ static inline int _mipi_dual_dsi_read_add_send(struct dsi_cmd_desc *pCmd, char _
 			if ((pkg_status_1 & 0x1) == 0x1 && !(phy_status_1 & 0x2)){
 				*is_timeout_1 = 0;
 				/*send read cmd to fifo*/
+#if defined CONFIG_HISI_FB_970 || defined CONFIG_HISI_FB_V501 || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V510)
 				/*used for low power cmds trans under video mode*/
-				set_reg(dsi_base_1 + MIPIDSI_GEN_HDR_OFFSET, ((pCmd->payload[0] << 8) | (pCmd->dtype & GEN_VID_LP_CMD)), 25, 0);
+				set_reg(dsi_base_1 + MIPIDSI_GEN_HDR_OFFSET, (((uint32_t)pCmd->payload[0] << 8) | (pCmd->dtype & GEN_VID_LP_CMD)), 25, 0);
+#else
+				set_reg(dsi_base_1 + MIPIDSI_GEN_HDR_OFFSET, (((uint32_t)pCmd->payload[0] << 8) | pCmd->dtype), 24, 0);
+#endif
 			}
 		}
 
@@ -839,7 +865,7 @@ static inline int _mipi_dual_dsi_read_add_send(struct dsi_cmd_desc *pCmd, char _
 
 	return ret;
 }
-
+/*lint +e571*/
 //just for Cyclomatic Complexity, no need to check input param
 static inline int _mipi_dsi_read_add_receive(uint32_t *ValueOut, struct dsi_cmd_desc *pCmd, const char __iomem * dsi_base)
 {
@@ -871,7 +897,7 @@ static inline int _mipi_dsi_read_add_receive(uint32_t *ValueOut, struct dsi_cmd_
 	return 1;
 }
 static inline int _mipi_dual_dsi_read_add_receive(uint32_t *ValueOut_0, uint32_t *ValueOut_1, struct dsi_cmd_desc *pCmd,
-													  char __iomem * dsi_base_0, char __iomem * dsi_base_1, int is_timeout_0, int is_timeout_1)
+													  const char __iomem * dsi_base_0, const char __iomem * dsi_base_1, int is_timeout_0, int is_timeout_1)
 {
 	unsigned long dw_jiffies = 0;
 	uint32_t pkg_status_0 = 0, pkg_status_1 = 0;
@@ -1378,19 +1404,18 @@ int mipi_dual_dsi_lread_reg( uint32_t *ValueOut_0, uint32_t *ValueOut_1, struct 
 
 static int _mipi_dsi_delayed_cmd_queue_write(struct dsi_cmd_desc *pCmdset, int Cmdset_cnt, bool isLowPriority)
 {
-	spinlock_t *pSpinlock;
-	uint32_t *w_ptr;
-	uint32_t *r_ptr;
-	struct dsi_cmd_desc* CmdQueue;
-	bool *isQueueFull;
-	bool *isQueueWorking;
+	spinlock_t *pSpinlock = NULL;
+	uint32_t *w_ptr = NULL;
+	uint32_t *r_ptr = NULL;
+	struct dsi_cmd_desc* CmdQueue = NULL;
+	bool *isQueueFull = NULL;
+	bool *isQueueWorking = NULL;
 	uint32_t QueueLen;
 	int i;
 	u32 j;
 
 	struct dsi_cmd_desc *Cmd = pCmdset;
-
-	if (!pCmdset) {
+	if (pCmdset == NULL) {
 		HISI_FB_ERR("Cmd is NULL!\n");
 		return 0;
 	}
@@ -1441,6 +1466,7 @@ static int _mipi_dsi_delayed_cmd_queue_write(struct dsi_cmd_desc *pCmdset, int C
 		if (Cmd->dlen > 0) {
 			CmdQueue[(*w_ptr)].payload =(char*)kmalloc(Cmd->dlen * sizeof(char), GFP_ATOMIC);
 			if (CmdQueue[(*w_ptr)].payload) {
+				memset(CmdQueue[(*w_ptr)].payload, 0, Cmd->dlen * sizeof(char));
 				for (j= 0; j < Cmd->dlen; j++) {
 					CmdQueue[(*w_ptr)].payload[j] = Cmd->payload[j];
 				}
@@ -1475,15 +1501,15 @@ static int _mipi_dsi_delayed_cmd_queue_write(struct dsi_cmd_desc *pCmdset, int C
 
 static int _mipi_dsi_delayed_cmd_queue_read(struct dsi_cmd_desc* Cmd, bool isLowPriority)
 {
-	spinlock_t *pSpinlock;
-	uint32_t *w_ptr;
-	uint32_t *r_ptr;
-	struct dsi_cmd_desc* CmdQueue;
-	bool *isQueueFull;
-	bool *isQueueWorking;
+	spinlock_t *pSpinlock = NULL;
+	uint32_t *w_ptr = NULL;
+	uint32_t *r_ptr = NULL;
+	struct dsi_cmd_desc* CmdQueue = NULL;
+	bool *isQueueFull = NULL;
+	bool *isQueueWorking = NULL;
 	uint32_t QueueLen;
 
-	if (!Cmd) {
+	if (Cmd == NULL) {
 		HISI_FB_ERR("Cmd is NULL!\n");
 		return -1;
 	}
@@ -1553,12 +1579,13 @@ static int _mipi_dsi_delayed_cmd_queue_read(struct dsi_cmd_desc* Cmd, bool isLow
 
 static uint32_t _mipi_dsi_get_delayed_cmd_queue_send_count(bool isLowPriority)
 {
-	spinlock_t *pSpinlock;
+	spinlock_t *pSpinlock = NULL;
 	uint32_t w_ptr;
 	uint32_t r_ptr;
-	bool isQueueFull;
+	bool isQueueFull = false;
 	uint32_t QueueLen;
 	uint32_t send_count = 0;
+
 
 	if (!g_delayed_cmd_queue_inited) {
 		HISI_FB_ERR("delayed cmd queue is not inited yet!\n");
@@ -1653,7 +1680,7 @@ void mipi_dsi_delayed_cmd_queue_handle_func(struct work_struct *work)
 		if (_mipi_dsi_delayed_cmd_queue_read(&Cmd, false)) {	//get the next cmd in high priority queue
 			//send the cmd with normal mode
 			_mipi_dual_dsi_tx_normal_same_delay(&Cmd, &Cmd, 1, hisifd->mipi_dsi0_base, hisifd->mipi_dsi1_base);
-			if ( Cmd.payload ) {
+			if ( Cmd.payload != NULL) {
 				kfree(Cmd.payload);
 				Cmd.payload = NULL;
 			}
@@ -1665,7 +1692,7 @@ void mipi_dsi_delayed_cmd_queue_handle_func(struct work_struct *work)
 		if (_mipi_dsi_delayed_cmd_queue_read(&Cmd, true)) {	//get the next cmd in low priority queue
 			//send the cmd with normal mode
 			_mipi_dual_dsi_tx_normal_same_delay(&Cmd, &Cmd, 1, hisifd->mipi_dsi0_base, hisifd->mipi_dsi1_base);
-			if ( Cmd.payload ) {
+			if ( Cmd.payload != NULL ) {
 				kfree(Cmd.payload);
 				Cmd.payload = NULL;
 			}

@@ -57,7 +57,7 @@ static const struct partition partition_table_emmc[] =
     {PART_CUST,              4128*1024, 192*1024, EMMC_USER_PART}, /* cust             192M  p44*/
     {PART_VERSION,           4320*1024, 32*1024,  EMMC_USER_PART}, /* version          32M    p45*/
     {PART_VENDOR,            4352*1024, 608*1024, EMMC_USER_PART}, /* vendor           608M  p46*/
-    {PART_PRODUCT,           4960*1024, 192*1024, EMMC_USER_PART}, /* product          192M   p47*/
+    {PART_HW_PRODUCT,        4960*1024, 192*1024, EMMC_USER_PART}, /* hw_product       192M   p47*/
     {PART_HISITEST2,         5152*1024, 4*1024,   EMMC_USER_PART}, /* hisitest2        4M    p48*/
     {PART_USERDATA,          5156*1024, 4096*1024,EMMC_USER_PART}, /* userdata         4096M p49*/
 #elif defined CONFIG_MARKET_INTERNAL
@@ -65,7 +65,7 @@ static const struct partition partition_table_emmc[] =
     {PART_CUST,              3808*1024, 192*1024, EMMC_USER_PART}, /* cust             192M  p44*/
     {PART_VERSION,           4000*1024, 32*1024,  EMMC_USER_PART}, /* version          32M    p45*/
     {PART_VENDOR,            4032*1024, 608*1024, EMMC_USER_PART}, /* vendor           608M  p46*/
-    {PART_PRODUCT,           4640*1024, 192*1024, EMMC_USER_PART}, /* product          192M   p47*/
+    {PART_HW_PRODUCT,        4640*1024, 192*1024, EMMC_USER_PART}, /* hw_product       192M   p47*/
     {PART_HISITEST2,         4832*1024, 4*1024,   EMMC_USER_PART}, /* hisitest2        4M    p48*/
     {PART_USERDATA,          4836*1024, 4096*1024,EMMC_USER_PART}, /* userdata         4096M p49*/
 #else
@@ -73,7 +73,7 @@ static const struct partition partition_table_emmc[] =
     {PART_CUST,              3104*1024, 192*1024, EMMC_USER_PART}, /* cust             192M  p44*/
     {PART_VERSION,           3296*1024, 32*1024,   EMMC_USER_PART}, /* version         32M    p45*/
     {PART_VENDOR,            3328*1024, 608*1024, EMMC_USER_PART}, /* vendor           608M  p46*/
-    {PART_PRODUCT,           3936*1024, 192*1024,  EMMC_USER_PART}, /* product         192M   p47*/
+    {PART_HW_PRODUCT,        3936*1024, 192*1024,  EMMC_USER_PART}, /* hw_product      192M   p47*/
     {PART_HISITEST2,         4128*1024, 4*1024,   EMMC_USER_PART}, /* hisitest2        4M    p48*/
     {PART_USERDATA,          4132*1024, 4096*1024,EMMC_USER_PART}, /* userdata         4096M p49*/
 #endif

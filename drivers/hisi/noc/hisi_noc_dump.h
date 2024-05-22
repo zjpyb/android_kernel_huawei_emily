@@ -1,12 +1,12 @@
 /*
-* NoC. (NoC Mntn Module.)
-*
-* Copyright (c) 2016 Huawei Technologies CO., Ltd.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*/
+ * NoC. (NoC Mntn Module.)
+ *
+ * Copyright (c) 2016 Huawei Technologies CO., Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #ifndef __HISI_NOC_DUMP_H
 #define __HISI_NOC_DUMP_H
@@ -64,11 +64,11 @@ struct noc_dump_data {
 };
 
 /*
-Function: noc_dump_init
-Description: noc dump function registers to black-box module,
-			so noc dump can be processed before reset
-input: none
-output: 0->success
-*/
+ * Function: noc_dump_init
+ * Description: noc dump function registers to black-box module,
+ * so noc dump can be processed before reset
+ * input: none
+ * output: 0->success
+ */
 extern int noc_dump_init(void);
 #endif

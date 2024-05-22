@@ -20,11 +20,13 @@
 #include <linux/mmc/host.h>
 
 #include "core.h"
+#include "card.h"
+#include "host.h"
 #include "mmc_ops.h"
+
 #ifdef CONFIG_EMMC_FAULT_INJECT
 #include <linux/mmc/emmc_fault_inject.h>
 #endif
-
 
 #ifdef CONFIG_FAIL_MMC_REQUEST
 
@@ -33,7 +35,6 @@ static char *fail_request;
 module_param(fail_request, charp, 0);
 
 #endif /* CONFIG_FAIL_MMC_REQUEST */
-
 /* Enum of power state */
 enum sd_type {
     SDHC = 0,
@@ -261,6 +262,41 @@ static int mmc_sdxc_opt_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(mmc_sdxc_fops, mmc_sdxc_opt_get,
 			NULL, "%llu\n");
 
+#ifdef CONFIG_HISI_DEBUG_FS
+static int mmc_sim_remove_sd_get(void *data, u64 *val)
+{
+	struct mmc_host *host = data;
+
+	pr_err("%s %d sim_remove_sd: %lu\n",
+			__func__, __LINE__, host->sim_remove_sd);
+	*val = host->sim_remove_sd;
+
+	return 0;
+}
+
+extern int mmc_schedule_delayed_work(struct delayed_work *work,
+						 unsigned long delay);
+static int mmc_sim_remove_sd_set(void *data, u64 val)
+{
+	struct mmc_host *host = data;
+
+	if (val == host->sim_remove_sd) {
+		pr_err("%s %d Nothing changed!\n", __func__, __LINE__);
+		return 0;
+	}
+
+	if (!host->card || mmc_card_sd(host->card)) {
+		host->sim_remove_sd = val;
+		mmc_schedule_delayed_work(&host->detect, 0);
+	}
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(sim_remove_sd_fops, mmc_sim_remove_sd_get,
+			mmc_sim_remove_sd_set, "%llu\n");
+#endif /* CONFIG_HISI_DEBUG_FS */
+
 void mmc_add_host_debugfs(struct mmc_host *host)
 {
 	struct dentry *root;
@@ -282,6 +318,12 @@ void mmc_add_host_debugfs(struct mmc_host *host)
 	if (!debugfs_create_file("clock", S_IRUSR | S_IWUSR, root, host,
 			&mmc_clock_fops))
 		goto err_node;
+
+#ifdef CONFIG_HISI_DEBUG_FS
+	if (!debugfs_create_file("sim_remove_sd", S_IRUSR | S_IWUSR, root, host,
+			&sim_remove_sd_fops))
+		goto err_node;
+#endif
 
 #ifdef CONFIG_FAIL_MMC_REQUEST
 	if (fail_request)
@@ -310,87 +352,6 @@ void mmc_remove_host_debugfs(struct mmc_host *host)
 {
 	debugfs_remove_recursive(host->debugfs_root);
 }
-
-static int mmc_dbg_card_status_get(void *data, u64 *val)
-{
-	struct mmc_card	*card = data;
-	u32		status = 0;
-	int		ret;
-
-	mmc_get_card(card);
-
-	ret = mmc_send_status(data, &status);
-	if (!ret)
-		*val = status;
-
-	mmc_put_card(card);
-
-	return ret;
-}
-DEFINE_SIMPLE_ATTRIBUTE(mmc_dbg_card_status_fops, mmc_dbg_card_status_get,
-		NULL, "%08llx\n");
-
-#define EXT_CSD_STR_LEN 1025
-
-static int mmc_ext_csd_open(struct inode *inode, struct file *filp)
-{
-	struct mmc_card *card = inode->i_private;
-	char *buf;
-	ssize_t n = 0;
-	u8 *ext_csd;
-	int err, i;
-
-	buf = kmalloc(EXT_CSD_STR_LEN + 1, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
-	mmc_get_card(card);
-	err = mmc_get_ext_csd(card, &ext_csd);
-	mmc_put_card(card);
-	if (err)
-		goto out_free;
-
-	for (i = 0; i < 512; i++)
-		/*cppcheck-suppress * */
-		n += sprintf(buf + n, "%02x", ext_csd[i]);/*lint !e421*/
-	/*cppcheck-suppress * */
-	n += sprintf(buf + n, "\n");/*lint !e421*/
-	
-	if(n != EXT_CSD_STR_LEN) {
-		err = -EINVAL;
-		goto out_free;
-	}
-
-	filp->private_data = buf;
-	kfree(ext_csd);
-	return 0;
-
-out_free:
-	kfree(buf);
-	return err;
-}
-
-static ssize_t mmc_ext_csd_read(struct file *filp, char __user *ubuf,
-				size_t cnt, loff_t *ppos)
-{
-	char *buf = filp->private_data;
-
-	return simple_read_from_buffer(ubuf, cnt, ppos,
-				       buf, EXT_CSD_STR_LEN);
-}
-
-static int mmc_ext_csd_release(struct inode *inode, struct file *file)
-{
-	kfree(file->private_data);
-	return 0;
-}
-
-static const struct file_operations mmc_dbg_ext_csd_fops = {
-	.open		= mmc_ext_csd_open,
-	.read		= mmc_ext_csd_read,
-	.release	= mmc_ext_csd_release,
-	.llseek		= default_llseek,
-};
 
 
 #ifdef CONFIG_HW_MMC_TEST
@@ -469,10 +430,8 @@ static const struct file_operations mmc_dbg_test_st_fops = {
 	.read		= mmc_test_st_read,
 	.write		= mmc_test_st_write,
 };
-#endif /* CONFIG_HW_MMC_TEST */
-#ifdef CONFIG_HISI_DEBUG_FS
-extern int hisi_mmc_add_card_debugfs(struct mmc_card *card, struct dentry *root);
 #endif
+
 void mmc_add_card_debugfs(struct mmc_card *card)
 {
 	struct mmc_host	*host = card->host;
@@ -482,11 +441,11 @@ void mmc_add_card_debugfs(struct mmc_card *card)
 	if (!host->debugfs_root)
 		return;
 
-    sdxc_root = debugfs_create_dir("sdxc_root", host->debugfs_root);
-    if (IS_ERR(sdxc_root))
+	sdxc_root = debugfs_create_dir("sdxc_root", host->debugfs_root);
+	if (IS_ERR(sdxc_root))
 		return;
-    if (!sdxc_root)
-        goto err;
+	if (!sdxc_root)
+		goto err;
 
 	root = debugfs_create_dir(mmc_card_id(card), host->debugfs_root);
 	if (IS_ERR(root))
@@ -503,15 +462,11 @@ void mmc_add_card_debugfs(struct mmc_card *card)
 	if (!debugfs_create_x32("state", S_IRUSR, root, &card->state))
 		goto err;
 
-	if (mmc_card_mmc(card) || mmc_card_sd(card))
-		if (!debugfs_create_file("status", S_IRUSR, root, card,
-					&mmc_dbg_card_status_fops))
-			goto err;
-
-	if (mmc_card_mmc(card))
-		if (!debugfs_create_file("ext_csd", S_IRUSR, root, card,
-					&mmc_dbg_ext_csd_fops))
-			goto err;
+#ifdef CONFIG_HISI_MMC_FLUSH_REDUCE
+	if (!debugfs_create_u8("flush_reduce_en", S_IRUSR, root,
+			       &(card->host->mmc_flush_reduce_enable)))
+		goto err;
+#endif
 
 	if (mmc_card_sd(card))
 		if (!debugfs_create_file("sdxc", S_IRUSR, sdxc_root, card,
@@ -519,21 +474,17 @@ void mmc_add_card_debugfs(struct mmc_card *card)
 			goto err;
 
 #ifdef CONFIG_HW_MMC_TEST
-    if (mmc_card_mmc(card))
-        if (!debugfs_create_file("card_addr", S_IRUSR, root, card,
-                    &mmc_dbg_card_addr_fops))
-            goto err;
+	if (mmc_card_mmc(card))
+		if (!debugfs_create_file("card_addr", S_IRUSR, root, card,
+					 &mmc_dbg_card_addr_fops))
+			goto err;
 
-    if (mmc_card_mmc(card))
-        if (!debugfs_create_file("test_st", S_IRUSR, root, card,
-                    &mmc_dbg_test_st_fops))
-            goto err;
+	if (mmc_card_mmc(card))
+		if (!debugfs_create_file("test_st", S_IRUSR, root, card,
+					 &mmc_dbg_test_st_fops))
+			goto err;
 #endif
 
-#ifdef CONFIG_HISI_DEBUG_FS
-	if (hisi_mmc_add_card_debugfs(card, root))
-		goto err;
-#endif
 	return;
 
 err:
@@ -548,4 +499,6 @@ void mmc_remove_card_debugfs(struct mmc_card *card)
 {
 	debugfs_remove_recursive(card->debugfs_root);
 	debugfs_remove_recursive(card->debugfs_sdxc);
+	card->debugfs_root = NULL;
+	card->debugfs_sdxc = NULL;
 }

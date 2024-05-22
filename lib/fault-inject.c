@@ -31,8 +31,8 @@ int setup_fault_attr(struct fault_attr *attr, char *str)
 
 	attr->probability = probability;
 	attr->interval = interval;
-	atomic_set(&attr->times, times); /*lint !e1058*/
-	atomic_set(&attr->space, space); /*lint !e1058*/
+	atomic_set(&attr->times, times);
+	atomic_set(&attr->space, space);
 
 	return 1;
 }
@@ -56,7 +56,7 @@ static void fail_dump(struct fault_attr *attr)
 
 static bool fail_task(struct fault_attr *attr, struct task_struct *task)
 {
-	return !in_interrupt() && task->make_it_fail;
+	return in_task() && task->make_it_fail;
 }
 
 #define MAX_STACK_TRACE_DEPTH 32
@@ -107,6 +107,17 @@ static inline bool fail_stacktrace(struct fault_attr *attr)
 
 bool should_fail(struct fault_attr *attr, ssize_t size)
 {
+	if (in_task()) {
+		unsigned int fail_nth = READ_ONCE(current->fail_nth);
+
+		if (fail_nth) {
+			if (!WRITE_ONCE(current->fail_nth, fail_nth - 1))
+				goto fail;
+
+			return false;
+		}
+	}
+
 	/* No need to check any other properties if the probability is 0 */
 	if (attr->probability == 0)
 		return false;
@@ -134,6 +145,7 @@ bool should_fail(struct fault_attr *attr, ssize_t size)
 	if (!fail_stacktrace(attr))
 		return false;
 
+fail:
 	fail_dump(attr);
 
 	if (atomic_read(&attr->times) != -1)
@@ -209,10 +221,10 @@ struct dentry *fault_create_debugfs_attr(const char *name,
 	if (!debugfs_create_ul("verbose", mode, dir, &attr->verbose))
 		goto fail;
 	if (!debugfs_create_u32("verbose_ratelimit_interval_ms", mode, dir,
-				&attr->ratelimit_state.interval)) /*lint !e64*/
+				&attr->ratelimit_state.interval))
 		goto fail;
 	if (!debugfs_create_u32("verbose_ratelimit_burst", mode, dir,
-				&attr->ratelimit_state.burst)) /*lint !e64*/
+				&attr->ratelimit_state.burst))
 		goto fail;
 	if (!debugfs_create_bool("task-filter", mode, dir, &attr->task_filter))
 		goto fail;

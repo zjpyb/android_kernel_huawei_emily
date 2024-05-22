@@ -158,9 +158,9 @@ static int clk_ip_avs_poll(struct peri_dvfs_clk * dfclk, bool flag)
 	}
 	val = readl(dfclk->reg_base + SC_SCBAKDATA24_ADDR);
 	if(AVS_ENABLE_PLL == flag)
-		val = val | BIT(dfclk->avs_poll_id);
+		val = val | BIT((unsigned int)dfclk->avs_poll_id);
 	else
-		val = val & (~BIT(dfclk->avs_poll_id));
+		val = val & (~BIT((unsigned int)dfclk->avs_poll_id));
 
 	writel(val, dfclk->reg_base + SC_SCBAKDATA24_ADDR);
 
@@ -291,9 +291,9 @@ static void updata_freq_volt_up_fn(struct work_struct *work)
 	unsigned long target_freq = 0;
 	unsigned int target_volt = 0;
 	unsigned long divider_rate = 0;
-	const char *enable_pll_name;
-	struct peri_volt_poll *pvp;
-	struct clk *friend_clk;
+	const char *enable_pll_name = NULL;
+	struct peri_volt_poll *pvp = NULL;
+	struct clk *friend_clk = NULL;
 	struct clk *ppll_ap = NULL;
 	mutex_lock(&dvfs_lock);
 	pvp = sw->pvp;
@@ -428,8 +428,8 @@ static unsigned long peri_dvfs_clk_recalc_rate(struct clk_hw *hw,
 					       unsigned long parent_rate)
 {
 	struct peri_dvfs_clk *dfclk = container_of(hw, struct peri_dvfs_clk, hw);
-	struct clk *clk_friend;
-	const char *clk_name;
+	struct clk *clk_friend = NULL;
+	const char *clk_name = NULL;
 	u32 rate = 0;
 
 	clk_friend = __clk_lookup(dfclk->link);
@@ -453,8 +453,8 @@ static int peri_dvfs_set(struct peri_dvfs_clk *dfclk, unsigned long rate, unsign
 	int ret = 0;
 	unsigned long divider_rate = rate;
 	unsigned long freq_old = 0;
-	struct clk *friend_clk;
-	const char *enable_pll_name;
+	struct clk *friend_clk = NULL;
+	const char *enable_pll_name = NULL;
 
 	friend_clk = __clk_lookup(dfclk->link);
 	if (IS_ERR_OR_NULL(friend_clk)) {
@@ -568,7 +568,7 @@ static int peri_dvfs_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 			return -ELOW_TEMPERATURE;
 		}
 	}
-	if (__clk_is_enabled(friend_clk) == false) {
+	if (friend_clk->core->enable_count == 0) {
 		ret = clk_set_rate_nolock(friend_clk, rate);
 		if (ret < 0)
 			pr_err("[%s] fail to set rate, ret = %d, %d!\n",
@@ -820,11 +820,11 @@ static struct clk_ops peri_dvfs_clk_ops = {
 
 static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 {
-	struct clk *clk;
-	const char *clk_name, *clk_friend, *enable_pll_name;
+	struct clk *clk = NULL;
+	const char *clk_name = NULL, *clk_friend = NULL, *enable_pll_name = NULL;
 	const char		**parent_names;
-	struct clk_init_data *init;
-	struct peri_dvfs_clk *devfreq_clk;
+	struct clk_init_data *init = NULL;
+	struct peri_dvfs_clk *devfreq_clk = NULL;
 	int i = 0;
 	u32 device_id = 0;
 	int avs_poll_id = -1;
@@ -877,12 +877,9 @@ static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 		pr_err("[%s] fail to alloc devfreq_clk!\n", __func__);
 		goto err_prop;
 	}
-	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
-	if (!init) {
-		pr_err("[%s] fail to alloc init!\n", __func__);
+	init = hisi_clk_init_data_alloc(clk_name);
+	if (!init)
 		goto err_init;
-	}
-	init->name = kstrdup(clk_name, GFP_KERNEL);
 	init->ops = &peri_dvfs_clk_ops;
 	init->parent_names = NULL;
 	init->num_parents = 0;
@@ -961,13 +958,12 @@ static void __init hisi_peri_dvfs_clk_setup(struct device_node *np)
 
 err_parent_name:
 	kfree(parent_names);
-	parent_names = NULL;
 err_clk:
+	kfree(init->name);
+	init->name = NULL;
 	kfree(init);
-	init = NULL;
 err_init:
 	kfree(devfreq_clk);
-	devfreq_clk = NULL;
 err_prop:
 	return;
 }

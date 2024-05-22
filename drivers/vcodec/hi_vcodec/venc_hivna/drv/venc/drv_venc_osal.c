@@ -1,263 +1,234 @@
+
+#include "drv_venc_osal.h"
 #include <linux/kthread.h>
 #include <linux/delay.h>
 #include <linux/version.h>
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
-#include <linux/sched/clock.h>
-#endif
-#include "drv_venc_osal.h"
 #include "hi_drv_mem.h"
-
-#define TIME_PERIOD(begin, end) ((end >= begin) ? (end - begin) : (0xffffffff - begin + end))
+#include <linux/sched/clock.h>
 
 /*lint -e747 -e712 -e732 -e715 -e774 -e845 -e438 -e838*/
-HI_U32  g_VencPrintEnable = 0xf;
+HI_U32 g_venc_print_enable = 0xf;
 
-char   *pszMsg[((HI_U8)VENC_ALW) + 1] = {"FATAL","ERR","WARN","IFO","DBG"}; /*lint !e785 */
-HI_CHAR g_VencPrintMsg[1024];
+static char *psz_msg[((HI_U8)VENC_ALW) + 1] = {
+	"VENC_FATAL",
+	"VENC_ERR",
+	"VENC_WARN",
+	"VENC_IFO",
+	"VENC_DBG"
+}; /*lint !e785*/
 
-static HI_VOID (*ptrVencCallBack)(HI_VOID);
+static HI_CHAR g_venc_print_msg[1024];
 
-static irqreturn_t VENC_DRV_OsalVencISR(HI_S32 Irq, HI_VOID *DevID)
-{
-	(*ptrVencCallBack)();
-	return IRQ_HANDLED;
-}
-
-HI_S32 VENC_DRV_OsalIrqInit( HI_U32 Irq, HI_VOID (*ptrCallBack)(HI_VOID))
+HI_S32 venc_drv_osal_irq_init(HI_U32 irq, irqreturn_t (*callback)(HI_S32, HI_VOID *))
 {
 	HI_S32 ret = 0;
 
-	if (Irq != 0) {
-		ptrVencCallBack = ptrCallBack;
-		ret = request_irq(Irq, VENC_DRV_OsalVencISR, 0, "DT_device", NULL);
-	} else {
+	if (irq == 0) {
 		HI_FATAL_VENC("params is invaild\n");
-		ret = HI_FAILURE;
+		return HI_FAILURE;
 	}
 
-	if (ret == 0) {
-		return HI_SUCCESS;
-	} else {
+	ret = request_irq(irq, callback, 0, "DT_device", NULL);
+	if (ret) {
 		HI_FATAL_VENC("request irq failed\n");
 		return HI_FAILURE;
 	}
+
+	return HI_SUCCESS;
 }
 
-HI_VOID VENC_DRV_OsalIrqFree(HI_U32 Irq)
+HI_VOID venc_drv_osal_irq_free(HI_U32 irq)
 {
-	free_irq(Irq, NULL);
+	free_irq(irq, NULL);
 }
 
-HI_S32 VENC_DRV_OsalLockCreate(HI_VOID **phLock)
+HI_S32 venc_drv_osal_lock_create(spinlock_t **phlock)
 {
-	spinlock_t *pLock = NULL;
+	spinlock_t *plock = NULL;
 
-	pLock = (spinlock_t *)vmalloc(sizeof(spinlock_t));
-
-	if (!pLock) {
+	plock = vmalloc(sizeof(spinlock_t));
+	if (!plock) {
 		HI_FATAL_VENC("vmalloc failed\n");
 		return HI_FAILURE;
 	}
 
-	spin_lock_init( pLock );
-	*phLock = pLock;
+	spin_lock_init(plock);
+	*phlock = plock;
 
 	return HI_SUCCESS;
 }
 
-HI_VOID VENC_DRV_OsalLockDestroy( HI_VOID* hLock )
+HI_VOID venc_drv_osal_lock_destroy(spinlock_t *hlock)
 {
-	if (hLock) {
-		vfree((HI_VOID *)hLock);
-		//hLock = NULL;
-	}
+	if (hlock)
+		vfree((HI_VOID *)hlock);
 }
 
-/************************************************************************/
-/* 初始化事件                                                           */
-/************************************************************************/
-HI_S32 VENC_DRV_OsalInitEvent(VEDU_OSAL_EVENT *pEvent, HI_S32 InitVal)
+HI_S32 venc_drv_osal_init_event(vedu_osal_event_t *event, HI_S32 initval)
 {
-	pEvent->flag = InitVal;
-	init_waitqueue_head(&(pEvent->queue_head));
+	event->flag = initval;
+	init_waitqueue_head(&(event->queue_head));
 	return HI_SUCCESS;
 }
 
-/************************************************************************/
-/* 发出事件唤醒                                                             */
-/************************************************************************/
-HI_S32 VENC_DRV_OsalGiveEvent(VEDU_OSAL_EVENT *pEvent)
+HI_S32 venc_drv_osal_give_event(vedu_osal_event_t *event)
 {
-	pEvent->flag = 1;
-	wake_up(&(pEvent->queue_head));
+	event->flag = 1;
+	wake_up_all(&(event->queue_head));
 	return HI_SUCCESS;
 }
 
-HI_U64 get_sys_time(HI_VOID)
+HI_U64 osal_get_sys_time_in_ms(void)
 {
-        HI_U64 sys_time;
+	HI_U64 sys_time;
 
-        sys_time = sched_clock();
-        do_div(sys_time, 1000000);
+	sys_time = sched_clock();
+	do_div(sys_time, 1000000);
 
-        return sys_time;
+	return sys_time;
 }
 
-/************************************************************************/
-/* 等待事件                                                             */
-/* 事件发生返回OSAL_OK，超时返回OSAL_ERR 若condition不满足就阻塞等待    */
-/* 被唤醒返回 0 ，超时返回非-1                                          */
-/************************************************************************/
-HI_S32 VENC_DRV_OsalWaitEvent(VEDU_OSAL_EVENT *pEvent, HI_U32 msWaitTime)
+HI_VOID hi_sleep_ms(HI_U32 millisec)
 {
-	HI_S32 l_ret = 0;
-	HI_U32 cnt   = 0;
-
-	HI_U64 start_time, cur_time;
-	start_time = get_sys_time();
-
-	do {
-		l_ret = wait_event_interruptible_timeout((pEvent->queue_head), (pEvent->flag != 0), (msecs_to_jiffies(msWaitTime))); /*lint !e665 !e666 !e40 !e713 !e578*/
-		if (l_ret < 0) {
-			cur_time = get_sys_time();
-			if (TIME_PERIOD(start_time, cur_time) > (HI_U64)msWaitTime) {
-				HI_FATAL_VENC("wait event time out, time : %lld, cnt: %d\n", TIME_PERIOD(start_time, cur_time), cnt);
-				l_ret = 0;
-				break;
-			}
-		}
-		cnt++;
-	} while ((pEvent->flag == 0) && (l_ret < 0));
-
-	if (cnt > 100) {
-		HI_FATAL_VENC("the max cnt of wait_event interrupts by singal is %d\n", cnt);
-	}
-
-	if (l_ret  == 0) {
-		HI_FATAL_VENC("wait pEvent signal timeout\n");
-	}
-
-	pEvent->flag = 0;//(pEvent->flag>0)? (pEvent->flag-1): 0;
-	return (l_ret != 0) ? HI_SUCCESS : HI_FAILURE;
+	msleep(millisec);
 }
 
-HI_S32 HiMemCpy(HI_VOID *a_pHiDstMem, HI_VOID *a_pHiSrcMem, size_t a_Size)
-{
-	if ((!a_pHiDstMem) || (!a_pHiSrcMem)) {
-		HI_FATAL_VENC("params is invaild\n");
-		return HI_FAILURE;
-	}
-
-	memcpy((HI_VOID *)a_pHiDstMem, (HI_VOID *)a_pHiSrcMem, a_Size); /* unsafe_function_ignore: memcpy */
-	return HI_SUCCESS;
-}
-
-HI_S32 HiMemSet(HI_VOID *a_pHiDstMem, HI_S32 a_Value, size_t a_Size)
-{
-	if (!a_pHiDstMem) {
-		HI_FATAL_VENC("params is invaild\n");
-		return HI_FAILURE;
-	}
-
-	memset((HI_VOID *)a_pHiDstMem, a_Value, a_Size); /* unsafe_function_ignore: memset */
-
-	return HI_SUCCESS;
-}
-
-HI_VOID HiSleepMs(HI_U32 a_MilliSec)
-{
-	msleep(a_MilliSec);
-}
-
-HI_U32*  HiMmap(HI_U32 Addr ,HI_U32 Range)
+HI_U32 *hi_mmap(HI_U32 addr, HI_U32 range)
 {
 	HI_U32 *res_addr = NULL;
-	res_addr = (HI_U32 *)ioremap(Addr, Range);
+
+	res_addr = (HI_U32 *)ioremap(addr, range);
 	return res_addr;
 }
 
-HI_VOID HiMunmap(HI_U32 * pMemAddr)
+HI_VOID hi_munmap(HI_U32 *mem_addr)
 {
-	if (!pMemAddr) {
+	if (!mem_addr) {
 		HI_FATAL_VENC("params is invaild\n");
 		return;
 	}
 
-	iounmap(pMemAddr);
-	//pMemAddr = HI_NULL;
+	iounmap(mem_addr);
 }
 
-HI_S32 HiStrNCmp(const HI_PCHAR pStrName,const HI_PCHAR pDstName,HI_S32 nSize)
+HI_S32 hi_strncmp(const HI_PCHAR str_name, const HI_PCHAR dst_name, HI_S32 size)
 {
 	HI_S32 ret = 0;
-	if (pStrName && pDstName) {
-		ret = strncmp(pStrName,pDstName,nSize);
+
+	if (str_name && dst_name) {
+		ret = strncmp(str_name, dst_name, size);
 		return ret;
 	}
 
 	return HI_FAILURE;
 }
 
-HI_VOID *HiMemVAlloc(HI_U32 nMemSize)
+HI_VOID *hi_mem_valloc(HI_U32 mem_size)
 {
-	HI_VOID * memaddr = NULL;
-	if (nMemSize) {
-		memaddr = vmalloc(nMemSize);
-	}
-	return memaddr;
- }
+	HI_VOID *mem_addr = NULL;
 
-HI_VOID HiMemVFree(HI_VOID *pMemAddr)
-{
-	if (pMemAddr) {
-		vfree((HI_VOID *)pMemAddr);
-	}
+	if (mem_size)
+		mem_addr = vmalloc(mem_size);
+
+	return mem_addr;
 }
 
-HI_VOID HiVENC_INIT_MUTEX(HI_VOID *pSem)
+HI_VOID hi_mem_vfree(HI_VOID *mem_addr)
 {
-	if (pSem) {
-		sema_init((struct semaphore *)pSem, 1);
-	}
+	if (mem_addr)
+		vfree((HI_VOID *)mem_addr);
 }
 
-HI_S32 HiVENC_DOWN_INTERRUPTIBLE(HI_VOID *pSem)
+HI_VOID hi_venc_init_mutex(HI_VOID *sem)
 {
-	HI_S32 Ret = -1;
-	if (pSem) {
-		Ret = down_interruptible((struct semaphore *)pSem);
-	}
-	return  Ret;
+	if (sem)
+		sema_init((struct semaphore *)sem, 1);
 }
 
-HI_VOID  HiVENC_UP_INTERRUPTIBLE(HI_VOID *pSem)
+HI_S32 hi_venc_down_interruptible(HI_VOID *sem)
 {
-	if (pSem) {
-		up((struct semaphore *)pSem);
-	}
+	HI_S32 ret = -1;
+
+	if (sem)
+		ret = down_interruptible((struct semaphore *)sem);
+
+	if (ret)
+		HI_FATAL_VENC("down interruptible fail\n", ret);
+
+	return  ret;
 }
 
-HI_VOID HI_PRINT(HI_U32 type,char *file, int line , char *function, HI_CHAR *msg, ... )
+HI_VOID  hi_venc_up_interruptible(HI_VOID *sem)
+{
+	if (sem)
+		up((struct semaphore *)sem);
+}
+
+HI_VOID hi_print(HI_U32 type, const char *file, int line,
+	const char *function, HI_CHAR *msg, ...)
 {
 	va_list args;
-	HI_U32 uTotalChar;
+	HI_U32 total_char;
 
-	if ( ((1 << type) & g_VencPrintEnable) == 0 && (type != VENC_ALW) )  /*lint !e701 */
+	if (((1 << type) & g_venc_print_enable) == 0 && (type != VENC_ALW)) /*lint !e701*/
 		return ;
 
 	va_start(args, msg);
 
-	uTotalChar = vsnprintf(g_VencPrintMsg, sizeof(g_VencPrintMsg), msg, args);  /* unsafe_function_ignore: vsnprintf */
-	g_VencPrintMsg[sizeof(g_VencPrintMsg) - 1] = '\0';
+	total_char = vsnprintf(g_venc_print_msg, sizeof(g_venc_print_msg), msg, args);    /* unsafe_function_ignore: vsnprintf */
+	g_venc_print_msg[sizeof(g_venc_print_msg) - 1] = '\0';
 
 	va_end(args);
 
-	if (uTotalChar <= 0 || uTotalChar >= 1023) /*lint !e775 */
+	if (total_char <= 0 || total_char >= 1023) /*lint !e775*/
 		return;
 
-	printk(KERN_ALERT "%s:<%d:%s>%s \n", pszMsg[type], line, function, g_VencPrintMsg);
-	return;
+	printk(KERN_ALERT "%s:<%d:%s>%s\n", psz_msg[type], line, function, g_venc_print_msg);
 }
 
+HI_S32 osal_init_timer(struct timer_list *timer,
+		void (*function)(unsigned long),
+		unsigned long data)
+{
+	if (timer == NULL) {
+		HI_FATAL_VENC("input timer is availed\n");
+		return HI_FAILURE;
+	}
 
+	if (function == NULL) {
+		HI_FATAL_VENC("input callback function is availed\n");
+		return HI_FAILURE;
+	}
+
+	setup_timer(timer, function, data);
+
+	return HI_SUCCESS;
+}
+
+HI_VOID osal_add_timer(struct timer_list *timer, HI_U32 time_in_ms)
+{
+	if (timer == NULL) {
+		HI_FATAL_VENC("input timer is availed\n");
+		return;
+	}
+
+	mod_timer(timer, jiffies + msecs_to_jiffies(time_in_ms));
+}
+
+HI_S32 osal_del_timer(struct timer_list *timer, HI_BOOL is_sync)
+{
+	if (timer == NULL) {
+		HI_FATAL_VENC("input timer is availed\n");
+		return HI_FAILURE;
+	}
+
+	if (!timer_pending(timer))
+		return HI_FAILURE;
+
+	if (is_sync)
+		del_timer_sync(timer);
+	else
+		del_timer(timer);
+
+	return HI_SUCCESS;
+}

@@ -1,33 +1,5 @@
-ifeq ($(CONFIG_HISI_FB_3650),y)
-obj-$(CONFIG_HISI_FB_3650) := hisifb.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_6250),y)
-obj-$(CONFIG_HISI_FB_6250) := hisifb.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_3660),y)
-obj-$(CONFIG_HISI_FB_3660) := hisifb.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_970),y)
-obj-$(CONFIG_HISI_FB_970) := hisifb.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_V501),y)
-obj-$(CONFIG_HISI_FB_V501) := hisifb.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_V510),y)
-obj-$(CONFIG_HISI_FB_V510) := hisifb.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_V320),y)
-obj-$(CONFIG_HISI_FB_V320) := hisifb.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_V330),y)
-obj-$(CONFIG_HISI_FB_V330) := hisifb.o
+ifeq ($(CONFIG_FB),y)
+obj-$(CONFIG_FB) := hisifb.o
 endif
 
 ifeq ($(CONFIG_SYNC_FILE),y)
@@ -59,111 +31,12 @@ hisifb-objs := \
 	hisi_overlay_cmdlist_utils.o \
 	hisi_offlinecomposer_panel.o \
 	panel/mipi_lcd_utils.o \
-	hisi_display_effect.o
+	hisi_display_effect.o \
+	hisi_mmbuf_manager.o
 
 hisifb-objs += \
 	hisi_dss_ion.o \
 	hisi_dss_iommu.o
-
-ifeq ($(CONFIG_HISI_FB_3650),y)
-hisifb-objs += \
-	hisi_dpe_utils_hi3650.o \
-	hisi_display_effect_hi3650.o \
-	hisi_overlay_utils_hi3650.o \
-	hisi_mipi_dsi_v3xx.o \
-	hisi_rgb2mipi.o \
-	hisi_fb_spi.o \
-	panel/mipi_tianma_OTM9608A.o \
-	panel/mipi_jdi_OTM1902B.o \
-	panel/mipi_jdi_NT35695.o \
-	panel/mipi_qunchuang_ER63419.o \
-	panel/mipi_auo_NT35597.o \
-	panel/mipi_jdi_OTM1906A.o \
-	panel/mipi_lg_eR69006A.o \
-	panel/mipi_lg_ER69006_5p7.o \
-	panel/mipi_boe_ER69006_5p7.o \
-	panel/mipi_jdi_NT35695_cut2_5.o \
-	panel/mipi_jdi_NT36850.o \
-	panel/mipi_sharp_NT35597.o \
-	panel/mipi_lg_R69006_5p2.o \
-	panel/mipi_lg_R69006_5p5.o \
-	panel/mipi_sharp_NT35695_5p2.o \
-	panel/mipi_sharp_NT35695_5p5.o \
-	panel/mipi_lg_ER69007_5p7.o \
-	panel/mipi_sharp_NT35597_5p7.o\
-	panel/mipi_jdi_R63450_5p7.o \
-	panel/mipi_jdi_R63452_5p2.o \
-	panel/mipi_jdi_R63452_5p5.o \
-	panel/mipi_jdi_R63452_5p7.o \
-	panel/mipi_sharp_NT35695_5p7.o\
-	panel/mipi_samsung_S6E3HA3X01.o \
-	panel/mipi_samsung_S6E3HA3X02.o \
-	panel/mipi_lcd_external_panel.o \
-	panel/mipi_tianma_R63319_8p4.o \
-	panel/mipi_samsung_S6E3HF4.o \
-	panel/mipi_sharp_TD4322_6p0.o \
-	panel/mipi_lg_TD4322_6p0.o \
-	panel/mipi_jdi_R63452_6p0.o \
-	backlight/lm36274.o \
-	backlight/lm36923.o \
-	backlight/lp8556.o \
-	backlight/rt8555.o
-
-hisifb-objs += voltage/tps65132.o
-hisifb-objs += voltage/rt4801h.o
-hisifb-objs += voltage/ina231.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_6250),y)
-hisifb-objs += \
-	hisi_dpe_utils_hi3650.o \
-	hisi_display_effect_hi6250.o \
-	hisi_overlay_utils_hi6250.o \
-	hisi_mipi_dsi_v3xx.o \
-	hisi_rgb2mipi.o \
-	hisi_fb_spi.o \
-	panel/mipi_lcd_external_panel.o \
-	backlight/lm36274.o\
-	backlight/lm36923.o\
-	backlight/lp8556.o\
-	backlight/rt8555.o\
-	panel/mipi_auo_OTM1901A.o
-
-hisifb-objs += voltage/tps65132.o
-hisifb-objs += voltage/rt4801h.o
-hisifb-objs += voltage/ina231.o
-endif
-
-ifeq ($(CONFIG_HISI_FB_3660),y)
-hisifb-objs += \
-	hisi_dpe_utils_hi3660.o \
-	hisi_display_effect_hi3660.o \
-	hisi_overlay_utils_hi3660.o \
-	hisi_mipi_dsi_v3xx.o \
-	hisi_overlay_copybit.o \
-	backlight/lm36274.o \
-	backlight/lp8556.o\
-	backlight/rt8555.o\
-	backlight/lm36923.o\
-	panel/mipi_cmi_NT35521.o\
-	panel/mipi_sharp_TD4322_6p0.o\
-	panel/mipi_sharp_TD4322_5p5.o\
-	panel/mipi_lg_TD4322_6p0.o\
-	panel/mipi_lgd_NT36772_5p5.o\
-	panel/mipi_jdi_R63452_6p0.o \
-	panel/mipi_samsung_S6E3HF4_5p5.o \
-	panel/mipi_lg_S6E3HF4_5p5.o \
-	panel/mipi_samsung_S6E3HA3X02_5p5.o \
-	panel/mipi_samsung_D53G6EA8064T_5p5.o \
-	panel/mipi_jdi_duke_R63450_5p7.o \
-	panel/mipi_tianma_duke_TD4302_5p7.o \
-	panel/mipi_sharp_duke_NT35597_5p7.o \
-	panel/lcd_common.o
-
-hisifb-objs += voltage/tps65132.o
-hisifb-objs += voltage/rt4801h.o
-hisifb-objs += voltage/ina231.o
-endif
 
 ifeq ($(CONFIG_HISI_FB_970),y)
 hisifb-objs += \
@@ -258,7 +131,7 @@ hisifb-objs += \
 	hisi_dp.o \
 	hisi_dp_hpd.o \
 	hisi_dpe_utils_dssv510.o \
-	hisi_display_effect_dssv501.o \
+	hisi_display_effect_dssv510.o \
 	hisi_overlay_utils_dssv510.o \
 	hisi_dpe_pipe_clk_utils.o \
 	hisi_mipi_dsi_v510.o \
@@ -266,6 +139,7 @@ hisifb-objs += \
 	hisi_overlay_mediacommon.o \
 	hisi_mediacommon_panel.o \
 	hisi_fb_video_idle.o \
+	hisi_sensorhub_aod.o \
 	backlight/lm36923.o \
 	panel/dssv501/mipi_cmi_NT35521.o \
 	panel/dssv501/mipi_jdi_R63452.o \
@@ -317,6 +191,7 @@ hisifb-objs += \
 	hisi_dpe_utils_dssv330.o \
 	hisi_overlay_utils_dssv330.o \
 	hisi_mipi_dsi_v330.o \
+	hisi_sensorhub_aod.o \
 	backlight/lm36274.o \
 	backlight/lm36923.o \
 	backlight/lp8556.o \
@@ -324,14 +199,62 @@ hisifb-objs += \
 	panel/dssv330/mipi_lg_TD4322.o \
 	panel/dssv330/mipi_boe_TD4320.o
 
-
-
 hisifb-objs += \
 	panel/dp_fake_panel.o
 hisifb-objs += voltage/tps65132.o
 hisifb-objs += voltage/rt4801h.o
 hisifb-objs += voltage/ina231.o
 endif
+
+ifeq ($(CONFIG_HISI_FB_V350),y)
+hisifb-objs += \
+	hisi_display_effect_dssv330.o \
+	hisi_dpe_utils_dssv350.o \
+	hisi_overlay_utils_dssv350.o \
+	hisi_dpe_pipe_clk_utils.o \
+	hisi_mipi_dsi_v350.o \
+	hisi_fb_video_idle.o \
+	backlight/lm36274.o \
+	backlight/lm36923.o \
+	backlight/lp8556.o \
+	panel/dssv330/mipi_lg_TD4322.o
+endif
+
+ifeq ($(CONFIG_HISI_FB_V600),y)
+hisifb-objs += \
+	hisi_dp.o \
+	hisi_dp_hpd.o \
+	hisi_fb_video_idle.o \
+	hisi_dpe_utils_dssv510.o \
+	hisi_display_effect_dssv510.o \
+	hisi_overlay_utils_dssv510.o \
+	hisi_dpe_pipe_clk_utils.o \
+	hisi_mipi_dsi_v510.o \
+	hisi_ovl_online_wb.o \
+	hisi_overlay_copybit.o \
+	hisi_overlay_mediacommon.o \
+	hisi_mediacommon_panel.o \
+	backlight/lm36923.o \
+	panel/dssv330/mipi_lg_TD4322.o \
+	panel/kirin970/mipi_lcd_external_panel.o
+
+hisifb-objs += \
+	dp/dp_aux.o \
+	dp/avgen.o \
+	dp/core.o \
+	dp/intr.o \
+	dp/edid.o \
+	dp/link.o \
+	dp/drm_dp_helper.o \
+	panel/dp_fake_panel.o
+
+hisifb-objs += \
+	hdcp22/host_lib_driver_linux_kernel.o \
+	hdcp22/hdcp13.o
+
+EXTRA_CFLAGS += -DCONFIG_HISI_FB_V510
+endif
+
 hisifb-objs += \
 	panel/lcdc_fake_panel.o \
 	panel/mipi_fake_panel.o \
@@ -363,6 +286,8 @@ hisifb-objs += voltage/tps65132.o
 hisifb-objs += backlight/lm36274.o
 hisifb-objs += voltage/rt4801h.o
 hisifb-objs += backlight/ktz8864.o
+hisifb-objs += backlight/rt4831.o
+hisifb-objs += backlight/nt50356.o
 endif
 
 ifeq ($(CONFIG_HUAWEI_DEVKIT_HISI),y)

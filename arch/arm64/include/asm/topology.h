@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_TOPOLOGY_H
 #define __ASM_TOPOLOGY_H
 
@@ -31,14 +32,36 @@ int pcibus_to_node(struct pci_bus *bus);
 				 cpumask_of_node(pcibus_to_node(bus)))
 
 #endif /* CONFIG_NUMA */
-struct sched_domain;
-#ifdef CONFIG_CPU_FREQ
-#define arch_scale_freq_capacity cpufreq_scale_freq_capacity
-extern unsigned long cpufreq_scale_freq_capacity(struct sched_domain *sd, int cpu);
-extern unsigned long cpufreq_scale_max_freq_capacity(int cpu);
-#endif
-#define arch_scale_cpu_capacity scale_cpu_capacity
-extern unsigned long scale_cpu_capacity(struct sched_domain *sd, int cpu);
+
+#include <linux/arch_topology.h>
+
+#ifdef CONFIG_HISI_EAS_SCHED
+
+#define arch_scale_cpu_capacity(sd, cpu)		\
+	((topology_get_cpu_scale(sd, cpu) *		\
+	  topology_get_max_freq_scale(sd, cpu)) >>	\
+	 SCHED_CAPACITY_SHIFT)
+
+#define arch_scale_freq_capacity(sd, cpu)		\
+	((topology_get_freq_scale(sd, cpu) <<		\
+	  SCHED_CAPACITY_SHIFT) /			\
+	 topology_get_max_freq_scale(sd, cpu))
+
+#else /* CONFIG_HISI_EAS_SCHED */
+
+/* Replace task scheduler's default frequency-invariant accounting */
+#define arch_scale_freq_capacity topology_get_freq_scale
+
+/* Replace task scheduler's default max-frequency-invariant accounting */
+#define arch_scale_max_freq_capacity topology_get_max_freq_scale
+
+/* Replace task scheduler's default cpu-invariant accounting */
+#define arch_scale_cpu_capacity topology_get_cpu_scale
+
+#endif /* CONFIG_HISI_EAS_SCHED */
+
+/* Enable topology flag updates */
+#define arch_update_cpu_topology topology_update_cpu_topology
 
 #include <asm-generic/topology.h>
 

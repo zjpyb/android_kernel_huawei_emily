@@ -88,19 +88,20 @@ struct spidev_data {
 };
 
 static LIST_HEAD(device_list);
-static DEFINE_MUTEX(device_list_lock);/*lint !e651 !e708 !e570 !e64 !e785 */
-
+static DEFINE_MUTEX(device_list_lock);
+#ifdef CONFIG_HISI_SPI
 static unsigned bufsiz = 256*1024;
+#else
+static unsigned bufsiz = 4096;
+#endif
 module_param(bufsiz, uint, S_IRUGO);
-/*lint -e753 -esym(753,*) */
 MODULE_PARM_DESC(bufsiz, "data bytes in biggest supported SPI message");
-/*lint -e753 +esym(753,*) */
+
 /*-------------------------------------------------------------------------*/
 
 static ssize_t
 spidev_sync(struct spidev_data *spidev, struct spi_message *message)
 {
-	DECLARE_COMPLETION_ONSTACK(done);
 	int status;
 	struct spi_device *spi;
 
@@ -114,7 +115,7 @@ spidev_sync(struct spidev_data *spidev, struct spi_message *message)
 		status = spi_sync(spi, message);
 
 	if (status == 0)
-			status = (int)message->actual_length;
+		status = message->actual_length;
 
 	return status;
 }
@@ -124,9 +125,9 @@ spidev_sync_write(struct spidev_data *spidev, size_t len)
 {
 	struct spi_transfer	t = {
 			.tx_buf		= spidev->tx_buffer,
-			.len		= (unsigned)len,
+			.len		= len,
 			.speed_hz	= spidev->speed_hz,
-		};/*lint !e785 */
+		};
 	struct spi_message	m;
 
 	spi_message_init(&m);
@@ -139,9 +140,9 @@ spidev_sync_read(struct spidev_data *spidev, size_t len)
 {
 	struct spi_transfer	t = {
 			.rx_buf		= spidev->rx_buffer,
-			.len		= (unsigned)len,
+			.len		= len,
 			.speed_hz	= spidev->speed_hz,
-		};/*lint !e785 */
+		};
 	struct spi_message	m;
 
 	spi_message_init(&m);
@@ -165,20 +166,20 @@ spidev_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 	spidev = filp->private_data;
 
 	mutex_lock(&spidev->buf_lock);
-	status = spidev_sync_read(spidev, count);/*lint !e838 */
+	status = spidev_sync_read(spidev, count);
 	if (status > 0) {
 		unsigned long	missing;
 
-		missing = copy_to_user(buf, spidev->rx_buffer, (unsigned long)status);
-		if (missing == (unsigned long)status)
+		missing = copy_to_user(buf, spidev->rx_buffer, status);
+		if (missing == status)
 			status = -EFAULT;
 		else
-			status = (unsigned long)status - missing;/*lint !e713 */
+			status = status - missing;
 	}
 	mutex_unlock(&spidev->buf_lock);
 
 	return status;
-}/*lint !e715 */
+}
 
 /* Write-only message with current device setup */
 static ssize_t
@@ -204,7 +205,7 @@ spidev_write(struct file *filp, const char __user *buf,
 	mutex_unlock(&spidev->buf_lock);
 
 	return status;
-}/*lint !e715 */
+}
 
 static int spidev_message(struct spidev_data *spidev,
 		struct spi_ioc_transfer *u_xfers, unsigned n_xfers)
@@ -218,7 +219,7 @@ static int spidev_message(struct spidev_data *spidev,
 	int			status = -EFAULT;
 
 	spi_message_init(&msg);
-	k_xfers = kcalloc((size_t)n_xfers, sizeof(*k_tmp), GFP_KERNEL);
+	k_xfers = kcalloc(n_xfers, sizeof(*k_tmp), GFP_KERNEL);
 	if (k_xfers == NULL)
 		return -ENOMEM;
 
@@ -232,7 +233,7 @@ static int spidev_message(struct spidev_data *spidev,
 	tx_total = 0;
 	rx_total = 0;
 	dev_dbg(&spidev->spi->dev,
-		"spidev_message: n_xfers: %d\n", n_xfers);/*lint !e774 */
+		"spidev_message: n_xfers: %d\n", n_xfers);
 	for (n = n_xfers, k_tmp = k_xfers, u_tmp = u_xfers;
 			n;
 			n--, k_tmp++, u_tmp++) {
@@ -247,12 +248,12 @@ static int spidev_message(struct spidev_data *spidev,
 		if (total > INT_MAX || k_tmp->len > INT_MAX) {
 			status = -EMSGSIZE;
 			dev_dbg(&spidev->spi->dev,
-				"spidev_message: total is more: %d\n", total);/*lint !e774 */
+				"spidev_message: total is more: %d\n", total);
 			goto done;
 		}
 		dev_dbg(&spidev->spi->dev,
 			"spidev_message: rx_buf: %08x, tx_buf: %08x\n",
-			(u32)u_tmp->rx_buf, (u32)u_tmp->tx_buf);/*lint !e774 */
+			(u32)u_tmp->rx_buf, (u32)u_tmp->tx_buf);
 
 		if (u_tmp->rx_buf) {
 			/* this transfer needs space in RX bounce buffer */
@@ -262,13 +263,6 @@ static int spidev_message(struct spidev_data *spidev,
 				goto done;
 			}
 			k_tmp->rx_buf = rx_buf;
-			if (!access_ok(VERIFY_WRITE, (u8 __user *)
-						(uintptr_t) u_tmp->rx_buf,
-						u_tmp->len)) {/*lint !e530 !e529 */
-				dev_dbg(&spidev->spi->dev,
-					"spidev_message: access_ok error\n");/*lint !e774 */
-				goto done;
-			}
 			rx_buf += k_tmp->len;
 		}
 		if (u_tmp->tx_buf) {
@@ -281,9 +275,9 @@ static int spidev_message(struct spidev_data *spidev,
 			k_tmp->tx_buf = tx_buf;
 			if (copy_from_user(tx_buf, (const u8 __user *)
 						(uintptr_t) u_tmp->tx_buf,
-					(unsigned long)u_tmp->len)) {
+					u_tmp->len)) {
 				dev_dbg(&spidev->spi->dev,
-					"spidev_message: copy_from_user error\n");/*lint !e774 */
+					"spidev_message: copy_from_user error\n");
 				goto done;
 			}
 			tx_buf += k_tmp->len;
@@ -312,9 +306,9 @@ static int spidev_message(struct spidev_data *spidev,
 		spi_message_add_tail(k_tmp, &msg);
 	}
 
-	status = (int)spidev_sync(spidev, &msg);
+	status = spidev_sync(spidev, &msg);
 	if (status < 0) {
-		dev_dbg(&spidev->spi->dev, "spidev_sync error with status: %d\n", status);/*lint !e774 */
+		dev_dbg(&spidev->spi->dev, "spidev_sync error with status: %d\n", status);
 		goto done;
 	}
 
@@ -322,17 +316,17 @@ static int spidev_message(struct spidev_data *spidev,
 	rx_buf = spidev->rx_buffer;
 	for (n = n_xfers, u_tmp = u_xfers; n; n--, u_tmp++) {
 		if (u_tmp->rx_buf) {
-			if (__copy_to_user((u8 __user *)
+			if (copy_to_user((u8 __user *)
 					(uintptr_t) u_tmp->rx_buf, rx_buf,
-					(unsigned long)u_tmp->len)) {
-				dev_dbg(&spidev->spi->dev, "__copy_to_user error\n");/*lint !e774 */
+					u_tmp->len)) {
+				dev_dbg(&spidev->spi->dev, "__copy_to_user error\n");
 				status = -EFAULT;
 				goto done;
 			}
 			rx_buf += u_tmp->len;
 		}
 	}
-	status = (int)total;
+	status = total;
 
 done:
 	kfree(k_xfers);
@@ -343,37 +337,28 @@ static struct spi_ioc_transfer *
 spidev_get_ioc_message(unsigned int cmd, struct spi_ioc_transfer __user *u_ioc,
 		unsigned *n_ioc)
 {
-	struct spi_ioc_transfer	*ioc;
 	u32	tmp;
 
 	/* Check type, command number and direction */
 	if (_IOC_TYPE(cmd) != SPI_IOC_MAGIC
-			|| _IOC_NR(cmd) != _IOC_NR(SPI_IOC_MESSAGE(0))/*lint !e84 */
-			|| _IOC_DIR(cmd) != _IOC_WRITE)/*lint !e845 */
-		return ERR_PTR((long)-ENOTTY);
+			|| _IOC_NR(cmd) != _IOC_NR(SPI_IOC_MESSAGE(0))
+			|| _IOC_DIR(cmd) != _IOC_WRITE)
+		return ERR_PTR(-ENOTTY);
 
 	tmp = _IOC_SIZE(cmd);
 	if ((tmp % sizeof(struct spi_ioc_transfer)) != 0)
-		return ERR_PTR((long)-EINVAL);
+		return ERR_PTR(-EINVAL);
 	*n_ioc = tmp / sizeof(struct spi_ioc_transfer);
 	if (*n_ioc == 0)
 		return NULL;
 
 	/* copy into scratch area */
-	ioc = kmalloc((size_t)tmp, GFP_KERNEL);
-	if (!ioc)
-		return ERR_PTR((long)-ENOMEM);
-	if (__copy_from_user(ioc, u_ioc, tmp)) {/*lint !e747 */
-		kfree(ioc);
-		return ERR_PTR((long)-EFAULT);
-	}
-	return ioc;
+	return memdup_user(u_ioc, tmp);
 }
 
 static long
 spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	int			err = 0;
 	int			retval = 0;
 	struct spidev_data	*spidev;
 	struct spi_device	*spi;
@@ -384,19 +369,6 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	/* Check type and command number */
 	if (_IOC_TYPE(cmd) != SPI_IOC_MAGIC)
 		return -ENOTTY;
-
-	/* Check access direction once here; don't repeat below.
-	 * IOC_DIR is from the user perspective, while access_ok is
-	 * from the kernel perspective; so they look reversed.
-	 */
-	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE,
-				(void __user *)arg, _IOC_SIZE(cmd));/*lint !e530 !e529 */
-	if (err == 0 && _IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ,
-				(void __user *)arg, _IOC_SIZE(cmd));/*lint !e530 !e529 */
-	if (err)
-		return -EFAULT;
 
 	/* guard against device removal before, or while,
 	 * we issue this ioctl.
@@ -420,32 +392,32 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	/* read requests */
 	case SPI_IOC_RD_MODE:/*lint !e30 !e142 */
-		retval = __put_user(spi->mode & SPI_MODE_MASK,
+		retval = put_user(spi->mode & SPI_MODE_MASK,
 					(__u8 __user *)arg);/*lint !e1058 !e1514 !e866 !e1564  !e774 !e529 !e734 */
 		break;
 	case SPI_IOC_RD_MODE32:/*lint !e30 !e142 */
-		retval = __put_user(spi->mode & SPI_MODE_MASK,
+		retval = put_user(spi->mode & SPI_MODE_MASK,
 					(__u32 __user *)arg);/*lint !e1058 !e1514 !e866 !e1564  !e774 !e529 */
 		break;
 	case SPI_IOC_RD_LSB_FIRST:/*lint !e30 !e142 */
-		retval = __put_user((spi->mode & SPI_LSB_FIRST) ?  1 : 0,
+		retval = put_user((spi->mode & SPI_LSB_FIRST) ?  1 : 0,
 					(__u8 __user *)arg);/*lint !e1058 !e1514 !e866 !e1564  !e774 !e529 */
 		break;
 	case SPI_IOC_RD_BITS_PER_WORD:/*lint !e30 !e142 */
-		retval = __put_user(spi->bits_per_word, (__u8 __user *)arg);/*lint !e1058 !e1514 !e866 !e1564  !e774 !e529 */
+		retval = put_user(spi->bits_per_word, (__u8 __user *)arg);/*lint !e1058 !e1514 !e866 !e1564  !e774 !e529 */
 		break;
 	case SPI_IOC_RD_MAX_SPEED_HZ:/*lint !e30 !e142 */
-		retval = __put_user(spidev->speed_hz, (__u32 __user *)arg);/*lint !e1058 !e1514 !e866 !e1564  !e774 !e529 */
+		retval = put_user(spidev->speed_hz, (__u32 __user *)arg);/*lint !e1058 !e1514 !e866 !e1564  !e774 !e529 */
 		break;
 
 	/* write requests */
-	case SPI_IOC_WR_MODE:/*lint !e30 !e142 */
-	case SPI_IOC_WR_MODE32:/*lint !e30 !e142 */
+	case SPI_IOC_WR_MODE:
+	case SPI_IOC_WR_MODE32:
 		if (cmd == SPI_IOC_WR_MODE)
-			retval = __get_user(tmp, (u8 __user *)arg);/*lint !e866 !e1564 !e774 !e50 !e530 */
+			retval = get_user(tmp, (u8 __user *)arg);
 		else
-			retval = __get_user(tmp, (u32 __user *)arg);/*lint !e866 !e1564 !e774 !e50 !e530 */
-		if (retval == 0) {/*lint !e774 */
+			retval = get_user(tmp, (u32 __user *)arg);
+		if (retval == 0) {
 			u32	save = spi->mode;
 
 			if (tmp & ~SPI_MODE_MASK) {
@@ -454,17 +426,17 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			}
 
 			tmp |= spi->mode & ~SPI_MODE_MASK;
-			spi->mode = (u16)tmp;/*lint !e734 */
+			spi->mode = (u16)tmp;
 			retval = spi_setup(spi);
-			if (retval < 0)/*lint !e774 */
-				spi->mode = save;/*lint !e734 */
+			if (retval < 0)
+				spi->mode = save;
 			else
-				dev_dbg(&spi->dev, "spi mode %x\n", tmp);/*lint !e774 */
+				dev_dbg(&spi->dev, "spi mode %x\n", tmp);
 		}
 		break;
-	case SPI_IOC_WR_LSB_FIRST:/*lint !e30 !e142 */
-		retval = __get_user(tmp, (__u8 __user *)arg);/*lint !e866 !e1564 !e774 !e50 !e530 */
-		if (retval == 0) {/*lint !e774 */
+	case SPI_IOC_WR_LSB_FIRST:
+		retval = get_user(tmp, (__u8 __user *)arg);
+		if (retval == 0) {
 			u32	save = spi->mode;
 
 			if (tmp)
@@ -473,28 +445,28 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				spi->mode &= ~SPI_LSB_FIRST;
 			retval = spi_setup(spi);
 			if (retval < 0)
-				spi->mode = save;/*lint !e734 */
+				spi->mode = save;
 			else
 				dev_dbg(&spi->dev, "%csb first\n",
-						tmp ? 'l' : 'm');/*lint !e774 */
+						tmp ? 'l' : 'm');
 		}
 		break;
-	case SPI_IOC_WR_BITS_PER_WORD:/*lint !e30 !e142 */
-		retval = __get_user(tmp, (__u8 __user *)arg);/*lint !e866 !e1564 !e774 !e50 !e530 */
-		if (retval == 0) {/*lint !e774 */
+	case SPI_IOC_WR_BITS_PER_WORD:
+		retval = get_user(tmp, (__u8 __user *)arg);
+		if (retval == 0) {
 			u8	save = spi->bits_per_word;
 
-			spi->bits_per_word = tmp;/*lint !e734 */
+			spi->bits_per_word = tmp;
 			retval = spi_setup(spi);
 			if (retval < 0)
 				spi->bits_per_word = save;
 			else
-				dev_dbg(&spi->dev, "%d bits per word\n", tmp);/*lint !e774 */
+				dev_dbg(&spi->dev, "%d bits per word\n", tmp);
 		}
 		break;
-	case SPI_IOC_WR_MAX_SPEED_HZ:/*lint !e30 !e142 */
-		retval = __get_user(tmp, (__u32 __user *)arg);/*lint !e866 !e1564 !e774 !e50 !e530 */
-		if (retval == 0) {/*lint !e774 */
+	case SPI_IOC_WR_MAX_SPEED_HZ:
+		retval = get_user(tmp, (__u32 __user *)arg);
+		if (retval == 0) {
 			u32	save = spi->max_speed_hz;
 
 			spi->max_speed_hz = tmp;
@@ -502,7 +474,7 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			if (retval >= 0)
 				spidev->speed_hz = tmp;
 			else
-				dev_dbg(&spi->dev, "%d Hz (max)\n", tmp);/*lint !e774 */
+				dev_dbg(&spi->dev, "%d Hz (max)\n", tmp);
 			spi->max_speed_hz = save;
 		}
 		break;
@@ -513,7 +485,7 @@ spidev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		ioc = spidev_get_ioc_message(cmd,
 				(struct spi_ioc_transfer __user *)arg, &n_ioc);
 		if (IS_ERR(ioc)) {
-			retval = PTR_ERR(ioc);/*lint !e712 */
+			retval = PTR_ERR(ioc);
 			break;
 		}
 		if (!ioc)
@@ -542,9 +514,7 @@ spidev_compat_ioc_message(struct file *filp, unsigned int cmd,
 	unsigned			n_ioc, n;
 	struct spi_ioc_transfer		*ioc;
 
-	u_ioc = (struct spi_ioc_transfer __user *) compat_ptr(arg);/*lint !e712 !e747 */
-	if (!access_ok(VERIFY_READ, u_ioc, _IOC_SIZE(cmd)))/*lint !e530 !e529 */
-		return -EFAULT;
+	u_ioc = (struct spi_ioc_transfer __user *) compat_ptr(arg);
 
 	/* guard against device removal before, or while,
 	 * we issue this ioctl.
@@ -563,7 +533,7 @@ spidev_compat_ioc_message(struct file *filp, unsigned int cmd,
 	/* Check message and copy into scratch area */
 	ioc = spidev_get_ioc_message(cmd, u_ioc, &n_ioc);
 	if (IS_ERR(ioc)) {
-		retval = PTR_ERR(ioc);/*lint !e712 */
+		retval = PTR_ERR(ioc);
 		goto done;
 	}
 	if (!ioc)
@@ -571,8 +541,8 @@ spidev_compat_ioc_message(struct file *filp, unsigned int cmd,
 
 	/* Convert buffer pointers */
 	for (n = 0; n < n_ioc; n++) {
-		ioc[n].rx_buf = (uintptr_t) compat_ptr(ioc[n].rx_buf);/*lint !e712 !e747 */
-		ioc[n].tx_buf = (uintptr_t) compat_ptr(ioc[n].tx_buf);/*lint !e712 !e747 */
+		ioc[n].rx_buf = (uintptr_t) compat_ptr(ioc[n].rx_buf);
+		ioc[n].tx_buf = (uintptr_t) compat_ptr(ioc[n].tx_buf);
 	}
 
 	/* translate to spi_message, execute */
@@ -582,7 +552,7 @@ spidev_compat_ioc_message(struct file *filp, unsigned int cmd,
 done:
 	mutex_unlock(&spidev->buf_lock);
 	spi_dev_put(spi);
-	dev_dbg(&spi->dev, "spidev_ioctl: retval:%d\n", retval);/*lint !e774 */
+	dev_dbg(&spi->dev, "spidev_ioctl: retval:%d\n", retval);
 
 	return retval;
 }
@@ -591,11 +561,11 @@ static long
 spidev_compat_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	if (_IOC_TYPE(cmd) == SPI_IOC_MAGIC
-			&& _IOC_NR(cmd) == _IOC_NR(SPI_IOC_MESSAGE(0))/*lint !e84 */
-			&& _IOC_DIR(cmd) == _IOC_WRITE)/*lint !e845 */
+			&& _IOC_NR(cmd) == _IOC_NR(SPI_IOC_MESSAGE(0))
+			&& _IOC_DIR(cmd) == _IOC_WRITE)
 		return spidev_compat_ioc_message(filp, cmd, arg);
 
-	return spidev_ioctl(filp, cmd, (uintptr_t)compat_ptr(arg));/*lint !e712 !e747 */
+	return spidev_ioctl(filp, cmd, (unsigned long)compat_ptr(arg));
 }
 #else
 #define spidev_compat_ioctl NULL
@@ -608,7 +578,7 @@ static int spidev_open(struct inode *inode, struct file *filp)
 
 	mutex_lock(&device_list_lock);
 
-	list_for_each_entry(spidev, &device_list, device_entry) {/*lint !e64 !e826 */
+	list_for_each_entry(spidev, &device_list, device_entry) {
 		if (spidev->devt == inode->i_rdev) {
 			status = 0;
 			break;
@@ -621,18 +591,18 @@ static int spidev_open(struct inode *inode, struct file *filp)
 	}
 
 	if (!spidev->tx_buffer) {
-		spidev->tx_buffer = kmalloc(bufsiz, GFP_KERNEL);/*lint !e747 */
+		spidev->tx_buffer = kmalloc(bufsiz, GFP_KERNEL);
 		if (!spidev->tx_buffer) {
-				dev_dbg(&spidev->spi->dev, "open/ENOMEM\n");/*lint !e774 */
-				status = -ENOMEM;
+			dev_dbg(&spidev->spi->dev, "open/ENOMEM\n");
+			status = -ENOMEM;
 			goto err_find_dev;
-			}
 		}
+	}
 
 	if (!spidev->rx_buffer) {
-		spidev->rx_buffer = kmalloc(bufsiz, GFP_KERNEL);/*lint !e747 */
+		spidev->rx_buffer = kmalloc(bufsiz, GFP_KERNEL);
 		if (!spidev->rx_buffer) {
-			dev_dbg(&spidev->spi->dev, "open/ENOMEM\n");/*lint !e774 */
+			dev_dbg(&spidev->spi->dev, "open/ENOMEM\n");
 			status = -ENOMEM;
 			goto err_alloc_rx_buf;
 		}
@@ -686,10 +656,10 @@ static int spidev_release(struct inode *inode, struct file *filp)
 	mutex_unlock(&device_list_lock);
 
 	return 0;
-}/*lint !e715 */
+}
 
 static const struct file_operations spidev_fops = {
-	.owner =	THIS_MODULE,/*lint !e64 */
+	.owner =	THIS_MODULE,
 	/* REVISIT switch to aio primitives, so that userspace
 	 * gets more complete API coverage.  It'll simplify things
 	 * too, except for the locking.
@@ -701,7 +671,7 @@ static const struct file_operations spidev_fops = {
 	.open =		spidev_open,
 	.release =	spidev_release,
 	.llseek =	no_llseek,
-};/*lint !e785 */
+};
 
 /*-------------------------------------------------------------------------*/
 
@@ -713,16 +683,16 @@ static const struct file_operations spidev_fops = {
 static struct class *spidev_class;
 
 #ifdef CONFIG_OF
-/*lint -e528 -esym(528,*) */
 static const struct of_device_id spidev_dt_ids[] = {
-/*lint -e528 +esym(528,*) */
 #ifndef CONFIG_HISI_SPI
 	{ .compatible = "rohm,dh2228fv" },
 	{ .compatible = "lineartechnology,ltc2488" },
+	{ .compatible = "ge,achc" },
+	{ .compatible = "semtech,sx1301" },
 #else
-	{ .compatible = "arm,pl022" },/*lint !e785 */
+	{ .compatible = "arm,pl022" },
 #endif
-	{},/*lint !e785 */
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);
 #endif
@@ -803,21 +773,21 @@ static int spidev_probe(struct spi_device *spi)
 	 * Reusing minors is fine so long as udev or mdev is working.
 	 */
 	mutex_lock(&device_list_lock);
-	minor = find_first_zero_bit(minors, N_SPI_MINORS);/*lint !e747 */
+	minor = find_first_zero_bit(minors, N_SPI_MINORS);
 	if (minor < N_SPI_MINORS) {
 		struct device *dev;
 
-		spidev->devt = MKDEV(SPIDEV_MAJOR, minor);/*lint !e712 !e72 */
+		spidev->devt = MKDEV(SPIDEV_MAJOR, minor);
 		dev = device_create(spidev_class, &spi->dev, spidev->devt,
 				    spidev, "spidev%d.%d",
 				    spi->master->bus_num, spi->chip_select);
 		status = PTR_ERR_OR_ZERO(dev);
 	} else {
-		dev_dbg(&spi->dev, "no minor number available!\n");/*lint !e774 */
+		dev_dbg(&spi->dev, "no minor number available!\n");
 		status = -ENODEV;
 	}
 	if (status == 0) {
-		set_bit(minor, minors);/*lint !e712 !e747 */
+		set_bit(minor, minors);
 		list_add(&spidev->device_entry, &device_list);
 	}
 	mutex_unlock(&device_list_lock);
@@ -829,7 +799,7 @@ static int spidev_probe(struct spi_device *spi)
 	else
 		kfree(spidev);
 
-	return status;
+	return status;//lint !e593
 }
 
 static int spidev_remove(struct spi_device *spi)
@@ -855,8 +825,8 @@ static int spidev_remove(struct spi_device *spi)
 
 #ifdef CONFIG_HISI_SPI
 static const struct of_device_id spidev1_dt_ids[] = {
-	{ .compatible = "spi_dev1"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev1"},
+	{},
 };
 
 MODULE_DEVICE_TABLE(of, spidev1_dt_ids);
@@ -864,9 +834,9 @@ MODULE_DEVICE_TABLE(of, spidev1_dt_ids);
 static struct spi_driver spidev_spi_driver1 = {
 	.driver = {
 		.name =		"spi_dev1",
-		.owner =	THIS_MODULE,/*lint !e84  !e64*/
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev1_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -878,8 +848,8 @@ static struct spi_driver spidev_spi_driver1 = {
 };
 
 static const struct of_device_id spidev2_dt_ids[] = {
-	{ .compatible = "spi_dev2"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev2"},
+	{},
 };
 
 MODULE_DEVICE_TABLE(of, spidev2_dt_ids);
@@ -887,9 +857,9 @@ MODULE_DEVICE_TABLE(of, spidev2_dt_ids);
 static struct spi_driver spidev_spi_driver2 = {
 	.driver = {
 		.name =		"spi_dev2",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev2_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -901,8 +871,8 @@ static struct spi_driver spidev_spi_driver2 = {
 };
 
 static const struct of_device_id spidev3_dt_ids[] = {
-	{ .compatible = "spi_dev3"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev3"},
+	{},
 };
 
 MODULE_DEVICE_TABLE(of, spidev3_dt_ids);
@@ -910,9 +880,9 @@ MODULE_DEVICE_TABLE(of, spidev3_dt_ids);
 static struct spi_driver spidev_spi_driver3 = {
 	.driver = {
 		.name =		"spi_dev3",
-		.owner =	THIS_MODULE,/*lint !e785 !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev3_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -924,8 +894,8 @@ static struct spi_driver spidev_spi_driver3 = {
 };
 
 static const struct of_device_id spidev10_dt_ids[] = {
-	{ .compatible = "spi_dev10"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev10"},
+	{},
 };
 
 MODULE_DEVICE_TABLE(of, spidev10_dt_ids);
@@ -933,9 +903,9 @@ MODULE_DEVICE_TABLE(of, spidev10_dt_ids);
 static struct spi_driver spidev_spi_driver10 = {
 	.driver = {
 		.name =		"spi_dev10",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev10_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1015,8 +985,8 @@ static struct spi_driver spidev_spi_driver13 = {
 	 */
 };
 static const struct of_device_id spidev21_dt_ids[] = {
-	{ .compatible = "spi_dev21"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev21"},
+	{},
 };
 
 MODULE_DEVICE_TABLE(of, spidev21_dt_ids);
@@ -1024,9 +994,9 @@ MODULE_DEVICE_TABLE(of, spidev21_dt_ids);
 static struct spi_driver spidev_spi_driver21 = {
 	.driver = {
 		.name =		"spi_dev21",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev21_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1038,16 +1008,16 @@ static struct spi_driver spidev_spi_driver21 = {
 };
 
 static const struct of_device_id spidev30_dt_ids[] = {
-	{ .compatible = "spi_dev30"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev30"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev30_dt_ids);
 static struct spi_driver spidev_spi_driver30 = {
 	.driver = {
 		.name =		"spi_dev30",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev30_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1059,16 +1029,16 @@ static struct spi_driver spidev_spi_driver30 = {
 };
 
 static const struct of_device_id spidev31_dt_ids[] = {
-	{ .compatible = "spi_dev31"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev31"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev31_dt_ids);
 static struct spi_driver spidev_spi_driver31 = {
 	.driver = {
 		.name =		"spi_dev31",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev31_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1080,16 +1050,16 @@ static struct spi_driver spidev_spi_driver31 = {
 };
 
 static const struct of_device_id spidev32_dt_ids[] = {
-	{ .compatible = "spi_dev32"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev32"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev32_dt_ids);
 static struct spi_driver spidev_spi_driver32 = {
 	.driver = {
 		.name =		"spi_dev32",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev32_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1101,16 +1071,16 @@ static struct spi_driver spidev_spi_driver32 = {
 };
 
 static const struct of_device_id spidev33_dt_ids[] = {
-	{ .compatible = "spi_dev33"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev33"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev33_dt_ids);
 static struct spi_driver spidev_spi_driver33 = {
 	.driver = {
 		.name =		"spi_dev33",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev33_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1122,16 +1092,16 @@ static struct spi_driver spidev_spi_driver33 = {
 };
 
 static const struct of_device_id spidev40_dt_ids[] = {
-	{ .compatible = "spi_dev40"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev40"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev40_dt_ids);
 static struct spi_driver spidev_spi_driver40 = {
 	.driver = {
 		.name =		"spi_dev40",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev40_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1143,16 +1113,16 @@ static struct spi_driver spidev_spi_driver40 = {
 };
 
 static const struct of_device_id spidev41_dt_ids[] = {
-	{ .compatible = "spi_dev41"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev41"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev41_dt_ids);
 static struct spi_driver spidev_spi_driver41 = {
 	.driver = {
 		.name =		"spi_dev41",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev41_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1164,16 +1134,16 @@ static struct spi_driver spidev_spi_driver41 = {
 };
 
 static const struct of_device_id spidev42_dt_ids[] = {
-	{ .compatible = "spi_dev42"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev42"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev42_dt_ids);
 static struct spi_driver spidev_spi_driver42 = {
 	.driver = {
 		.name =		"spi_dev42",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev42_dt_ids),
-	},/*lint !e785 */
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1185,16 +1155,100 @@ static struct spi_driver spidev_spi_driver42 = {
 };
 
 static const struct of_device_id spidev43_dt_ids[] = {
-	{ .compatible = "spi_dev43"},/*lint !e785 */
-	{},/*lint !e785 */
+	{ .compatible = "spi_dev43"},
+	{},
 };
 MODULE_DEVICE_TABLE(of, spidev43_dt_ids);
 static struct spi_driver spidev_spi_driver43 = {
 	.driver = {
 		.name =		"spi_dev43",
-		.owner =	THIS_MODULE,/*lint !e64 */
+		.owner =	THIS_MODULE,
 		.of_match_table = of_match_ptr(spidev43_dt_ids),
-	},/*lint !e785 */
+	},
+	.probe =	spidev_probe,
+	.remove =	spidev_remove,
+
+	/* NOTE:  suspend/resume methods are not necessary here.
+	 * We don't do anything except pass the requests to/from
+	 * the underlying controller.  The refrigerator handles
+	 * most issues; the controller driver handles the rest.
+	 */
+};
+
+static const struct of_device_id spidev50_dt_ids[] = {
+	{ .compatible = "spi_dev50"},
+	{},
+};
+MODULE_DEVICE_TABLE(of, spidev50_dt_ids);
+static struct spi_driver spidev_spi_driver50 = {
+	.driver = {
+		.name =		"spi_dev50",
+		.owner =	THIS_MODULE,
+		.of_match_table = of_match_ptr(spidev50_dt_ids),
+	},
+	.probe =	spidev_probe,
+	.remove =	spidev_remove,
+
+	/* NOTE:  suspend/resume methods are not necessary here.
+	 * We don't do anything except pass the requests to/from
+	 * the underlying controller.  The refrigerator handles
+	 * most issues; the controller driver handles the rest.
+	 */
+};
+
+static const struct of_device_id spidev51_dt_ids[] = {
+	{ .compatible = "spi_dev51"},
+	{},
+};
+MODULE_DEVICE_TABLE(of, spidev51_dt_ids);
+static struct spi_driver spidev_spi_driver51 = {
+	.driver = {
+		.name =		"spi_dev51",
+		.owner =	THIS_MODULE,
+		.of_match_table = of_match_ptr(spidev51_dt_ids),
+	},
+	.probe =	spidev_probe,
+	.remove =	spidev_remove,
+
+	/* NOTE:  suspend/resume methods are not necessary here.
+	 * We don't do anything except pass the requests to/from
+	 * the underlying controller.  The refrigerator handles
+	 * most issues; the controller driver handles the rest.
+	 */
+};
+
+static const struct of_device_id spidev52_dt_ids[] = {
+	{ .compatible = "spi_dev52"},
+	{},
+};
+MODULE_DEVICE_TABLE(of, spidev52_dt_ids);
+static struct spi_driver spidev_spi_driver52 = {
+	.driver = {
+		.name =		"spi_dev52",
+		.owner =	THIS_MODULE,
+		.of_match_table = of_match_ptr(spidev52_dt_ids),
+	},
+	.probe =	spidev_probe,
+	.remove =	spidev_remove,
+
+	/* NOTE:  suspend/resume methods are not necessary here.
+	 * We don't do anything except pass the requests to/from
+	 * the underlying controller.  The refrigerator handles
+	 * most issues; the controller driver handles the rest.
+	 */
+};
+
+static const struct of_device_id spidev53_dt_ids[] = {
+	{ .compatible = "spi_dev53"},
+	{},
+};
+MODULE_DEVICE_TABLE(of, spidev53_dt_ids);
+static struct spi_driver spidev_spi_driver53 = {
+	.driver = {
+		.name =		"spi_dev53",
+		.owner =	THIS_MODULE,
+		.of_match_table = of_match_ptr(spidev53_dt_ids),
+	},
 	.probe =	spidev_probe,
 	.remove =	spidev_remove,
 
@@ -1232,17 +1286,17 @@ static int __init spidev_init(void)
 	 * that will key udev/mdev to add/remove /dev nodes.  Last, register
 	 * the driver which manages those device numbers.
 	 */
-	BUILD_BUG_ON(N_SPI_MINORS > 256);/*lint !e514 */
+	BUILD_BUG_ON(N_SPI_MINORS > 256);
 	status = register_chrdev(SPIDEV_MAJOR, "spi", &spidev_fops);
 	if (status < 0)
 		return status;
 
-	spidev_class = class_create(THIS_MODULE, "spidev");/*lint !e64 */
+	spidev_class = class_create(THIS_MODULE, "spidev");
 	if (IS_ERR(spidev_class)) {
 #ifndef CONFIG_HISI_SPI
 		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver.driver.name);
 #endif
-		return PTR_ERR(spidev_class);/*lint !e712 */
+		return PTR_ERR(spidev_class);
 	}
 
 #ifdef CONFIG_HISI_SPI
@@ -1342,6 +1396,30 @@ static int __init spidev_init(void)
 		class_destroy(spidev_class);
 		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver43.driver.name);
 	}
+
+	status = spi_register_driver(&spidev_spi_driver50);
+	if (status < 0) {
+		class_destroy(spidev_class);
+		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver50.driver.name);
+	}
+
+	status = spi_register_driver(&spidev_spi_driver51);
+	if (status < 0) {
+		class_destroy(spidev_class);
+		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver51.driver.name);
+	}
+
+	status = spi_register_driver(&spidev_spi_driver52);
+	if (status < 0) {
+		class_destroy(spidev_class);
+		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver52.driver.name);
+	}
+
+	status = spi_register_driver(&spidev_spi_driver53);
+	if (status < 0) {
+		class_destroy(spidev_class);
+		unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver53.driver.name);
+	}
 #else
 	status = spi_register_driver(&spidev_spi_driver);
 	if (status < 0) {
@@ -1352,9 +1430,8 @@ static int __init spidev_init(void)
 
 	return status;
 }
-/*lint -e528 -esym(528,*) */
-module_init(spidev_init);/*lint !e528 */
-/*lint -e528 +esym(528,*) */
+module_init(spidev_init);
+
 static void __exit spidev_exit(void)
 {
 #ifdef CONFIG_HISI_SPI
@@ -1374,6 +1451,10 @@ static void __exit spidev_exit(void)
 	spi_unregister_driver(&spidev_spi_driver41);
 	spi_unregister_driver(&spidev_spi_driver42);
 	spi_unregister_driver(&spidev_spi_driver43);
+	spi_unregister_driver(&spidev_spi_driver50);
+	spi_unregister_driver(&spidev_spi_driver51);
+	spi_unregister_driver(&spidev_spi_driver52);
+	spi_unregister_driver(&spidev_spi_driver53);
 
 	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver1.driver.name);
 	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver2.driver.name);
@@ -1391,19 +1472,19 @@ static void __exit spidev_exit(void)
 	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver41.driver.name);
 	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver42.driver.name);
 	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver43.driver.name);
+	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver50.driver.name);
+	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver51.driver.name);
+	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver52.driver.name);
+	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver53.driver.name);
 #else
 	spi_unregister_driver(&spidev_spi_driver);
 	class_destroy(spidev_class);
 	unregister_chrdev(SPIDEV_MAJOR, spidev_spi_driver.driver.name);
 #endif
 }
-/*lint -e528 -esym(528,*) */
 module_exit(spidev_exit);
-/*lint -e528 +esym(528,*) */
 
-/*lint -e753 -esym(753,*) */
-MODULE_AUTHOR("Andrea Paterniani, <a.paterniani@swapp!eng.it>");
+MODULE_AUTHOR("Andrea Paterniani, <a.paterniani@swapp-eng.it>");
 MODULE_DESCRIPTION("User mode SPI device interface");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("spi:spidev");
-/*lint -e753 +esym(753,*) */

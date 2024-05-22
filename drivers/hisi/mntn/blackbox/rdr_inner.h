@@ -53,6 +53,8 @@
 #define BBOX_CALLBACK_MASK 0x3ull
 
 #define BBOX_RT_PRIORITY    98
+#define HISTORY_LOG_SIZE    256
+#define HISTORY_LOG_MAX  0x400000	/*64*16*1024*4 = 4M */
 
 struct cmdword {
 	unsigned char name[24];
@@ -98,7 +100,7 @@ extern u32 dfx_size_tbl[DFX_MAX_MODULE];
 extern u32 dfx_addr_tbl[DFX_MAX_MODULE];
 
 void rdr_callback(struct rdr_exception_info_s *p_exce_info, u32 mod_id,
-		  char *logpath);
+		  char *logpath, u32 logpathLen);
 struct rdr_exception_info_s *rdr_get_exception_info(u32 modid);
 void rdr_print_one_exc(struct rdr_exception_info_s *e);
 
@@ -109,16 +111,17 @@ u64 rdr_notify_onemodule_dump(u32 modid, u64 core, u32 type,
 u64 rdr_get_cur_regcore(void);
 
 u64 rdr_get_dump_result(u32 modid);
-int rdr_save_history_log(struct rdr_exception_info_s *p, char *date,
+int rdr_save_history_log(struct rdr_exception_info_s *p, char *date, u32 datelen,
 			 bool is_save_done, u32 bootup_keypoint);
+void rdr_save_pstore_log(const struct rdr_exception_info_s *p_exce_info, const char *path);
 int rdr_save_history_log_for_undef_exception(struct rdr_syserr_param_s *p);
 
 void rdr_notify_module_reset(u32 modid, struct rdr_exception_info_s *e_info);
 
 int rdr_create_exception_path(struct rdr_exception_info_s *e,
-			      char *path, char *date);
-int bbox_create_dfxlog_path(char *path, char *date);
-int rdr_create_epath_bc(char *path);
+			      char *path, char *date, u32 datelen);
+int bbox_create_dfxlog_path(char *path, char *date, u32 dataLen);
+int rdr_create_epath_bc(char *path, u32 pathLen);
 
 void rdr_count_size(void);
 bool rdr_check_log_rights(void);
@@ -143,7 +146,7 @@ extern int inquiry_rtc_init_ok(void);
  *	>=len fail
  *	==len success
  */
-int rdr_savebuf2fs(char *path, char *name, void *buf, u32 len, u32 is_append);
+int rdr_savebuf2fs(const char *path, char *name, void *buf, u32 len, u32 is_append);
 
 /*
  * func name: rdr_get_exception_core
@@ -181,7 +184,7 @@ char *rdr_get_exception_type(u64 coreid);
 bool rdr_syserr_list_empty(void);
 
 int rdr_wait_partition(char *path, int timeouts);
-void rdr_get_builddatetime(u8 *out);
+void rdr_get_builddatetime(u8 *out, u32 outLen);
 u64 rdr_get_tick(void);
 int rdr_get_suspend_state(void);
 int rdr_get_reboot_state(void);
@@ -194,8 +197,8 @@ u64 rdr_reserved_phymem_size(void);
 int rdr_get_dumplog_timeout(void);
 RDR_NVE rdr_get_nve(void);
 
-void rdr_save_last_baseinfo(char *logpath);
-void rdr_save_cur_baseinfo(char *logpath);
+void rdr_save_last_baseinfo(const char *logpath);
+void rdr_save_cur_baseinfo(const char *logpath);
 
 char *rdr_field_get_datetime(void);
 void rdr_cleartext_dumplog_done(void);
@@ -214,7 +217,7 @@ u32 rdr_get_reboot_type(void);
 
 char *blackbox_get_modid_str(u32 modid);
 int bbox_chown(const char *path, uid_t user, gid_t group, bool recursion);
-void bbox_save_done(char *logpath, u32 step);
+void bbox_save_done(const char *logpath, u32 step);
 void rdr_record_reboot_times2mem(void);
 void rdr_reset_reboot_times(void);
 void rdr_record_erecovery_reason(void);
@@ -228,15 +231,15 @@ int rdr_create_dir(const char *path);
 void bbox_cleartext_proc(const char *path, const char *base_addr);
 void rdr_exceptionboot_save_cleartext(void);
 int rdr_cleartext_body(void *arg);
-int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **npp);
+int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **npp, u32 datalen);
 void rdr_cleartext_print_ops(void);
 void rdr_hisiap_dump_root_head(u32 modid, u32 etype, u64 coreid);
 void save_hisiap_log(char *log_path, u32 modid);
 int rdr_exception_trace_init(void);
-int rdr_exception_trace_record(u64 e_reset_core_mask, u64 e_from_core, 
+int rdr_exception_trace_record(u64 e_reset_core_mask, u64 e_from_core,
 	u32 e_exce_type, u32 e_exce_subtype);
 int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_len);
-int get_every_core_exception_info(u32 *num, u32 *size);
+int get_every_core_exception_info(u32 *num, u32 *size, u32 sizelen);
 int ap_awdt_analysis(struct rdr_exception_info_s *exception);
 void incorrect_reboot_reason_analysis(char *dir_path, struct rdr_exception_info_s *exception);
 int exception_trace_buffer_init(u8 *addr, unsigned int size);

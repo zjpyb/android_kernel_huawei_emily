@@ -35,6 +35,7 @@
 #include <soc_pmctrl_interface.h>
 #include <linux/regulator/consumer.h>
 #include <linux/i2c.h>
+#include <linux/hisi/rpmb.h>
 #include "sdhci-dwc-mshc.h"
 
 #define DRIVER_NAME "sdhci-mshc"
@@ -433,8 +434,6 @@ static void sdhci_combo_phy_zq_cal(struct sdhci_host *host)
 	u32 count;
 	u32 reg_val;
 
-	//sdhci_mshc_pinctrl_init(host);
-
 	reg_val = sdhci_phy_readl(host, COMBO_PHY_IMPCTRL);
 	/*zcom_rsp_dly set as d'60*/
 	reg_val &= ~(IMPCTRL_ZCOM_RSP_DLY_MASK);
@@ -773,9 +772,9 @@ static void sdhci_mshc_save_tuning_phase(struct sdhci_host *host)
 	struct sdhci_mshc_data *sdhci_mshc = pltfm_host->priv;
 
 	if (sdhci_mshc->tuning_count < TUNING_LOOP_64)
-		sdhci_mshc->tuning_phase_record_low |= (u64)0x1 << (sdhci_mshc->tuning_count);
+		sdhci_mshc->tuning_phase_record_low |= (u64)0x1 << (unsigned int)(sdhci_mshc->tuning_count);
 	else
-		sdhci_mshc->tuning_phase_record_high |= (u64)0x1 << (sdhci_mshc->tuning_count - TUNING_LOOP_64);
+		sdhci_mshc->tuning_phase_record_high |= (u64)0x1 << (unsigned int)(sdhci_mshc->tuning_count - TUNING_LOOP_64);
 }
 
 static void sdhci_mshc_add_tuning_phase(struct sdhci_host *host)
@@ -1006,7 +1005,7 @@ int sdhci_mshc_soft_tuning(struct sdhci_host *host, u32 opcode, bool set)
 	sdhci_mshc_init_tuning_para(sdhci_mshc);
 	tuning_loop_counter = sdhci_mshc->tuning_loop_max;
 
-	host->flags |= SDHCI_EXE_SOFT_TUNING;
+	host->flags |= (unsigned int)SDHCI_EXE_SOFT_TUNING;
 	pr_err("%s: now, start tuning soft...\n", __func__);
 
 	if (opcode == MMC_SEND_TUNING_BLOCK_HS200) {
@@ -1099,7 +1098,7 @@ err:
 	/* restore block size after tuning */
 	sdhci_writew(host, SDHCI_MAKE_BLKSZ(SDHCI_DEFAULT_BOUNDARY_ARG,512), SDHCI_BLOCK_SIZE);
 
-	host->flags &= ~SDHCI_EXE_SOFT_TUNING;
+	host->flags &= ~(unsigned int)SDHCI_EXE_SOFT_TUNING;
 	return ret;
 }
 
@@ -1598,6 +1597,10 @@ static int sdhci_mshc_probe(struct platform_device *pdev)
 	ret = sdhci_rename(pdev);
 	if (ret)
 		goto clk_disable_all;
+
+#ifdef CONFIG_HISI_RPMB_MMC
+	(void)rpmb_mmc_init();
+#endif
 
 	ret = sdhci_add_host(host);
 	if (ret)

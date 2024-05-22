@@ -76,8 +76,10 @@ EXPORT_SYMBOL(hi64xx_compat_init);
 
 void hi64xx_compat_deinit(void)
 {
-	if(hi64xx_compat != NULL)
+	if(hi64xx_compat != NULL) {
 		kfree(hi64xx_compat);
+		hi64xx_compat = NULL;
+	}
 }
 EXPORT_SYMBOL(hi64xx_compat_deinit);
 

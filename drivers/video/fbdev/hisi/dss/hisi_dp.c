@@ -26,8 +26,11 @@
 #include "hdcp22/host_lib_driver_linux_if.h"
 #include "hdcp22/hdcp13.h"
 #include <linux/printk.h>
-#include "peri_volt_poll.h"
 #include "hisi_dpe_utils.h"
+
+#if defined (CONFIG_HISI_PERIDVFS)
+#include "peri_volt_poll.h"
+#endif
 
 #define DTS_COMP_SWING_VALUE "hisilicon,hisi_dp_swing"
 #define DTS_DP_AUX_SWITCH "huawei,dp_aux_switch"
@@ -316,7 +319,7 @@ int dp_pxl_ppll7_init(struct hisi_fb_data_type *hisifd, uint64_t pixel_clock)
 
 static int dp_clk_enable(struct platform_device *pdev)
 {
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 	struct clk *clk_tmp = NULL;
 	int ret = 0;
 
@@ -334,7 +337,7 @@ static int dp_clk_enable(struct platform_device *pdev)
 	HISI_FB_INFO("[DP] fb%d, +.\n", hisifd->index);
 
 	clk_tmp = hisifd->dss_auxclk_dpctrl_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("[DP] fb%d dss_auxclk_dpctrl_clk clk_prepare failed, error=%d!\n",
@@ -351,7 +354,7 @@ static int dp_clk_enable(struct platform_device *pdev)
 	}
 
 	clk_tmp = hisifd->dss_pclk_dpctrl_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("[DP] fb%d dss_pclk_dpctrl_clk clk_prepare failed, error=%d!\n",
@@ -368,7 +371,7 @@ static int dp_clk_enable(struct platform_device *pdev)
 	}
 
 	clk_tmp = hisifd->dss_aclk_dpctrl_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		ret = clk_prepare(clk_tmp);
 		if (ret) {
 			HISI_FB_ERR("[DP] fb%d dss_aclk_dpctrl_clk clk_prepare failed, error=%d!\n",
@@ -391,7 +394,7 @@ static int dp_clk_enable(struct platform_device *pdev)
 
 static int dp_clk_disable(struct platform_device *pdev)
 {
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 	struct clk *clk_tmp = NULL;
 
 	if (pdev == NULL) {
@@ -406,19 +409,19 @@ static int dp_clk_disable(struct platform_device *pdev)
 	}
 
 	clk_tmp = hisifd->dss_auxclk_dpctrl_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
 
 	clk_tmp = hisifd->dss_pclk_dpctrl_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
 
 	clk_tmp = hisifd->dss_aclk_dpctrl_clk;
-	if (clk_tmp) {
+	if (clk_tmp != NULL) {
 		clk_disable(clk_tmp);
 		clk_unprepare(clk_tmp);
 	}
@@ -428,7 +431,7 @@ static int dp_clk_disable(struct platform_device *pdev)
 
 static int dp_clock_setup(struct platform_device *pdev)
 {
-	struct hisi_fb_data_type *hisifd;
+	struct hisi_fb_data_type *hisifd = NULL;
 	int ret;
 	uint32_t default_aclk_dpctrl_rate;
 
@@ -513,8 +516,8 @@ static int dp_dis_reset(struct hisi_fb_data_type *hisifd, bool benable)
 static int dp_on(struct platform_device *pdev)
 {
 	int ret = 0;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 
 	if (pdev == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -526,7 +529,6 @@ static int dp_on(struct platform_device *pdev)
 		HISI_FB_ERR("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
-
 	HISI_FB_INFO("[DP] fb%d, +.\n", hisifd->index);
 
 	dptx = &(hisifd->dp);
@@ -578,10 +580,12 @@ static int dp_on(struct platform_device *pdev)
 	/* Enable all top-level interrupts */
 	dptx_global_intr_en(dptx);
 
+#ifdef CONFIG_DP_HDCP_ENABLE
 	if(hisifd->secure_ctrl.hdcp_dpc_sec_en) {
 		esm_driver_enable(1);
 	}
 	HDCP_DP_on(dptx, 1);
+#endif
 
 	dptx->dptx_enable = true;
 	dptx->detect_times = 0;
@@ -606,10 +610,12 @@ err_out:
 static int dp_off(struct platform_device *pdev)
 {
 	int ret = 0;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
+#ifdef CONFIG_DP_HDCP_ENABLE
 	uint32_t hdcp_state = 0;
 	int i = 0;
+#endif
 
 	if (pdev == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -634,6 +640,7 @@ static int dp_off(struct platform_device *pdev)
 		return 0;
 	}
 
+#ifdef CONFIG_DP_HDCP_ENABLE
 	if(hisifd->secure_ctrl.hdcp_dpc_sec_en) {
 		esm_driver_enable(0);
 	}
@@ -652,6 +659,7 @@ static int dp_off(struct platform_device *pdev)
 		HISI_FB_ERR("[DP] wait 1s,and go on\n");
 	}
 	HISI_FB_INFO("[DP] wait count = %d\n", i);
+#endif
 
 	/* FIXME: */
 	if (dptx->video_transfer_enable) {
@@ -694,8 +702,8 @@ static int dp_off(struct platform_device *pdev)
 
 static int dp_resume(struct platform_device *pdev)
 {
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 
 	if (pdev == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -731,10 +739,10 @@ static int dp_resume(struct platform_device *pdev)
 void dp_send_cable_notification(struct dp_ctrl *dptx, int val)
 {
 	int state = 0;
-	struct dtd *mdtd;
-	struct video_params *vparams;
+	struct dtd *mdtd = NULL;
+	struct video_params *vparams = NULL;
 
-	if (!dptx) {
+	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] dptx is NULL!\n");
 		return;
 	}
@@ -764,8 +772,9 @@ void dp_send_cable_notification(struct dp_ctrl *dptx, int val)
 
 int dp_device_srs(struct hisi_fb_data_type *hisifd, bool ublank)
 {
-	struct dp_ctrl *dptx;
-	struct hisi_panel_info *pinfo;
+	struct dp_ctrl *dptx = NULL;
+	struct hisi_panel_info *pinfo = NULL;
+	int retval = 0;
 
 	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -786,8 +795,13 @@ int dp_device_srs(struct hisi_fb_data_type *hisifd, bool ublank)
 	if (dptx->dptx_enable && dptx->video_transfer_enable) {
 		if (ublank) {
 			if (bpress_powerkey) {
-				int retval = 0;
-				dptx_write_dpcd(dptx, DP_SET_POWER, DP_SET_POWER_D0);
+				retval = dptx_write_dpcd(dptx, DP_SET_POWER, DP_SET_POWER_D0);
+				if (retval) {
+					HISI_FB_ERR("dptx_write_dpcd return value: %d.\n", retval);
+					mutex_unlock(&dptx->dptx_mutex);
+					return retval; //lint !e454
+				}
+
 				mdelay(10);
 				retval = dptx_link_retraining(dptx, dptx->current_link_rate, dptx->current_link_lanes);
 				if (retval < 0) {
@@ -798,7 +812,13 @@ int dp_device_srs(struct hisi_fb_data_type *hisifd, bool ublank)
 				HISI_FB_INFO("[DP] Retraining when blank on. \n");
 			}
 		} else {
-			dptx_write_dpcd(dptx, DP_SET_POWER, DP_SET_POWER_D3);
+			retval = dptx_write_dpcd(dptx, DP_SET_POWER, DP_SET_POWER_D3);
+			if (retval) {
+					HISI_FB_ERR("dptx_write_dpcd return value: %d.\n", retval);
+					mutex_unlock(&dptx->dptx_mutex);
+					return retval; //lint !e454
+			}
+
 			dptx_disable_default_video_stream(dptx, 0);
 			bpress_powerkey = true;
 			HISI_FB_INFO("[DP] Disable stream when blank off. \n");
@@ -817,7 +837,7 @@ int dp_device_srs(struct hisi_fb_data_type *hisifd, bool ublank)
 
 int dp_get_color_bit_mode(struct hisi_fb_data_type *hisifd, void __user *argp)
 {
-	struct dp_ctrl *dptx;
+	struct dp_ctrl *dptx = NULL;
 	int ret;
 
 	if (argp == NULL) {
@@ -847,7 +867,7 @@ int dp_get_color_bit_mode(struct hisi_fb_data_type *hisifd, void __user *argp)
 
 int dp_get_source_mode(struct hisi_fb_data_type *hisifd, void __user *argp)
 {
-	struct dp_ctrl *dptx;
+	struct dp_ctrl *dptx = NULL;
 	int ret;
 
 	if (argp == NULL) {
@@ -879,7 +899,7 @@ int dp_get_source_mode(struct hisi_fb_data_type *hisifd, void __user *argp)
 
 int dp_wakeup(struct hisi_fb_data_type *hisifd)
 {
-	struct dp_ctrl *dptx;
+	struct dp_ctrl *dptx = NULL;
 
 	if (hisifd == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -888,7 +908,7 @@ int dp_wakeup(struct hisi_fb_data_type *hisifd)
 
 	dptx = &(hisifd->dp);
 
-	if (!dptx) {
+	if (dptx == NULL) {
 		HISI_FB_ERR("[DP] dptx is NULL!\n");
 		return -EINVAL;
 	}
@@ -905,8 +925,8 @@ int dp_wakeup(struct hisi_fb_data_type *hisifd)
 int hisi_dptx_main_panel_blank(bool bblank)
 {
 	int ret;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 
 	if (g_dp_pdev == NULL) {
 		HISI_FB_ERR("[DP] g_dp_pdev is NULL!\n");
@@ -968,9 +988,9 @@ EXPORT_SYMBOL_GPL(hisi_dptx_main_panel_blank);
 int hisi_dptx_switch_source(uint32_t user_mode, uint32_t user_format)
 {
 	int ret;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
-	struct hisi_panel_info *pinfo;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
+	struct hisi_panel_info *pinfo = NULL;
 
 	if (g_dp_pdev == NULL) {
 		HISI_FB_ERR("[DP] g_dp_pdev is NULL!\n");
@@ -1044,8 +1064,8 @@ EXPORT_SYMBOL_GPL(hisi_dptx_switch_source);
 int hisi_dptx_hpd_trigger(TCA_IRQ_TYPE_E irq_type, TCPC_MUX_CTRL_TYPE mode, TYPEC_PLUG_ORIEN_E typec_orien)
 {
 	int ret;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 	uint8_t dp_lanes = 0;
 
 	if (g_dp_pdev == NULL) {
@@ -1126,8 +1146,8 @@ EXPORT_SYMBOL_GPL(hisi_dptx_hpd_trigger);
 
 int hisi_dptx_triger(bool enable)
 {
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 	int ret;
 
 	if (g_dp_pdev == NULL) {
@@ -1167,8 +1187,8 @@ EXPORT_SYMBOL_GPL(hisi_dptx_triger);
 int hisi_dptx_notify_switch(void)
 {
 	int ret;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 	bool lanes_status_change = false;
 
 	if (g_dp_pdev == NULL) {
@@ -1222,8 +1242,8 @@ EXPORT_SYMBOL_GPL(hisi_dptx_ready);
 */
 static int dp_device_init(struct platform_device *pdev)
 {
-	struct dp_ctrl *dptx;
-	struct hisi_fb_data_type *hisifd;
+	struct dp_ctrl *dptx = NULL;
+	struct hisi_fb_data_type *hisifd = NULL;
 	struct device_node *np = NULL;
 	int i, ret;
 
@@ -1272,17 +1292,23 @@ static int dp_device_init(struct platform_device *pdev)
 	if (g_fpga_flag == 1) {
 		dptx->max_rate = DPTX_PHYIF_CTRL_RATE_HBR;
 	} else {
+	#ifdef CONFIG_HISI_FB_970
 		dptx->max_rate = DPTX_PHYIF_CTRL_RATE_HBR2;
+	#else
+		dptx->max_rate = DPTX_PHYIF_CTRL_RATE_HBR2;
+	#endif
 	}
+	dptx->dsc_decoders = DSC_DEFAULT_DECODER;
 
 	dptx->cr_fail = false; // harutk ---ntr
 	dptx->mst = false;
 	dptx->ssc_en = true;
+	dptx->fec = false;
+	dptx->dsc = false;
 	dptx->streams = 1;
 	dptx->multipixel = DPTX_MP_DUAL_PIXEL;
 	dptx->dummy_dtds_present = false;
 	dptx->selected_est_timing = NONE;
-
 	dptx->max_lanes = DPTX_DEFAULT_LINK_LANES;
 	dptx->dptx_vr = false;
 	dptx->dptx_gate = false;
@@ -1299,10 +1325,11 @@ static int dp_device_init(struct platform_device *pdev)
 	dptx->max_edid_timing_hactive = 0;
 
 	dptx->edid_second = kzalloc(DPTX_DEFAULT_EDID_BUFLEN, GFP_KERNEL);
-	if (!dptx->edid_second) {
+	if (dptx->edid_second == NULL) {
 		HISI_FB_ERR("[DP] dptx base is NULL!\n");
 		return -ENOMEM;
 	}
+
 	dptx->bstatus = 0;
 
 	memset(&(dptx->edid_info), 0, sizeof(struct edid_information));
@@ -1311,7 +1338,7 @@ static int dp_device_init(struct platform_device *pdev)
 	dptx_audio_params_reset(&dptx->aparams);
 
 	dptx->edid = kzalloc(DPTX_DEFAULT_EDID_BUFLEN, GFP_KERNEL);
-	if (!dptx->edid) {
+	if (dptx->edid == NULL) {
 		HISI_FB_ERR("[DP] dptx base is NULL!\n");
 		return -ENOMEM;
 	}
@@ -1333,7 +1360,7 @@ static int dp_device_init(struct platform_device *pdev)
 	}
 
 	np = of_find_compatible_node(NULL, NULL, DTS_COMP_SWING_VALUE);
-	if (!np) {
+	if (np == NULL) {
 		HISI_FB_ERR("[DP] NOT FOUND device node %s!\n", DTS_COMP_SWING_VALUE);
 		return -ENOMEM;
 	}
@@ -1348,7 +1375,7 @@ static int dp_device_init(struct platform_device *pdev)
 #endif
 
 	np = of_find_compatible_node(NULL, NULL, DTS_DP_AUX_SWITCH);
-	if (!np) {
+	if (np == NULL) {
 		dptx->edid_try_count = MAX_AUX_RETRY_COUNT;
 		dptx->edid_try_delay = AUX_RETRY_DELAY_TIME;
 	} else {
@@ -1379,6 +1406,7 @@ static int dp_device_init(struct platform_device *pdev)
 	hisifd->dp_device_srs = dp_device_srs;
 	hisifd->dp_get_color_bit_mode = dp_get_color_bit_mode;
 	hisifd->dp_get_source_mode = dp_get_source_mode;
+	hisifd->dptx_hdr_infoframe_sdp_send = dptx_hdr_infoframe_sdp_send;
 	hisifd->dp_pxl_ppll7_init = dp_pxl_ppll7_init;
 	hisifd->dp_wakeup = dp_wakeup;
 	HISI_FB_INFO("[DP] fb%d -.\n", hisifd->index);
@@ -1400,7 +1428,7 @@ err_edid_alloc: /*lint !e563 */
 		dptx->edid = NULL;
 	}
 
-	if (dptx->edid_second) {
+	if (dptx->edid_second != NULL) {
 		kfree(dptx->edid_second);
 		dptx->edid_second = NULL;
 	}
@@ -1410,8 +1438,8 @@ err_edid_alloc: /*lint !e563 */
 static int dp_remove(struct platform_device *pdev)
 {
 	int ret;
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 
 	if (pdev == NULL) {
 		HISI_FB_ERR("[DP] NULL Pointer\n");
@@ -1436,7 +1464,7 @@ static int dp_remove(struct platform_device *pdev)
 		dptx->edid = NULL;
 	}
 
-	if (dptx->edid_second) {
+	if (dptx->edid_second != NULL) {
 		kfree(dptx->edid_second);
 		dptx->edid_second = NULL;
 	}
@@ -1460,9 +1488,9 @@ static int dp_remove(struct platform_device *pdev)
 
 static int dp_probe(struct platform_device *pdev)
 {
-	struct hisi_fb_data_type *hisifd;
-	struct platform_device *dpp_dev;
-	struct hisi_fb_panel_data *pdata;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct platform_device *dpp_dev = NULL;
+	struct hisi_fb_panel_data *pdata = NULL;
 	int ret;
 
 	if (pdev == NULL) {
@@ -1472,7 +1500,7 @@ static int dp_probe(struct platform_device *pdev)
 
 	hisifd = platform_get_drvdata(pdev);
 	if (hisifd == NULL) {
-		dev_err(&pdev->dev, "NULL Pointer\n");
+		HISI_FB_INFO("[DP] NULL Pointer\n");
 		return -EINVAL;
 	}
 
@@ -1480,14 +1508,15 @@ static int dp_probe(struct platform_device *pdev)
 
 	ret = dp_device_init(pdev);
 	if (ret) {
-		dev_err(&pdev->dev, "fb%d mipi_dsi_irq_clk_setup failed, error=%d!\n", hisifd->index, ret);
+		HISI_FB_INFO("[DP] fb%d mipi_dsi_irq_clk_setup failed, error=%d!\n", hisifd->index, ret);
 		return -EINVAL;
 	}
 
 	/* alloc device */
 	dpp_dev = platform_device_alloc(DEV_NAME_DSS_DPE, pdev->id);
-	if (!dpp_dev) {
-		dev_err(&pdev->dev, "fb%d platform_device_alloc failed, error=%d!\n", hisifd->index, ret);
+
+	if (dpp_dev == NULL) {
+		HISI_FB_INFO("[DP] fb%d platform_device_alloc failed, error=%d!\n", hisifd->index, ret);
 		ret = -ENOMEM;
 		goto err_device_alloc;
 	}
@@ -1499,7 +1528,7 @@ static int dp_probe(struct platform_device *pdev)
 	ret = platform_device_add_data(dpp_dev, dev_get_platdata(&pdev->dev),
 		sizeof(struct hisi_fb_panel_data));
 	if (ret) {
-		dev_err(&pdev->dev, "fb%d platform_device_add_data failed error=%d!\n", hisifd->index, ret);
+		HISI_FB_INFO("[DP] fb%d platform_device_add_data failed error=%d!\n", hisifd->index, ret);
 		ret = -EINVAL;
 		goto err_device_put;
 	}

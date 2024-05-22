@@ -142,6 +142,18 @@ enum voice_proxy_voice_msg_id {
 	ID_PROXY_VOICE_DATA_MSGID_BUT
 };
 
+enum virtual_voice_proxy_voice_msg_id {
+	ID_VIRTUAL_VOICE_PROXY_RX_NTF = 0xFD20,
+	ID_VIRTUAL_VOICE_PROXY_RX_CNF = 0xFD21,
+	ID_VIRTUAL_VOICE_PROXY_TX_NTF = 0xFD22,
+	ID_VIRTUAL_VOICE_PROXY_TX_CNF = 0xFD23,
+	ID_VIRTUAL_VOICE_PROXY_STATUS_IND = 0xFD24,
+	ID_VIRTUAL_VOICE_PROXY_STATUS_NTF = 0xFD25,
+	ID_VIRTUAL_VOICE_PROXY_SET_MODE = 0xFD26,
+	ID_VIRTUAL_VOICE_PROXY_REQUEST_MIC_DATA = 0xFD27,
+	ID_VIRTUAL_VOICE_PROXY_SET_PROXY_STATUS = 0xFD28,
+};
+
 /*
  * 6 STRUCT define
  */
@@ -342,12 +354,8 @@ struct voice_bsd_param_hsm {
 #define HIFI_MISC_IOCTL_KCOV_FAKE_MSG   _IOWR('A', 0x81, struct misc_io_dump_buf_param)
 #define HIFI_MISC_IOCTL_KCOV_FAKE_WTD   _IOW('A', 0x82, unsigned int)
 
-#ifdef CLT_VOICE
-#define CLT_HIFI_MISC_IOCTL_SEND_VOICE _IOWR('A', 0x90, struct misc_io_async_param)
-#endif
-
 #define HIFI_MISC_IOCTL_GET_VOICE_BSD_PARAM	_IOWR('A', 0x7c, struct voice_bsd_param_hsm)    //获取Voice BSD参数
-#define INT_TO_ADDR(low,high) (void*) (unsigned long)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
+#define INT_TO_ADDR(low,high) (void*) (uintptr_t)((unsigned long long)(low) | ((unsigned long long)(high)<<32))
 #define GET_LOW32(x) (unsigned int)(((unsigned long long)(unsigned long)(x))&0xffffffffULL)
 #define GET_HIG32(x) (unsigned int)((((unsigned long long)(unsigned long)(x))>>32)&0xffffffffULL)
 

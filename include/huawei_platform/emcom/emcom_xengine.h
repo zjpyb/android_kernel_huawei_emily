@@ -1,45 +1,59 @@
-
+/*
+ * emcom_xengine.h
+ *
+ * xengine module implemention
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #ifndef __EMCOM_XENGINE_H__
 #define __EMCOM_XENGINE_H__
-/*****************************************************************************
-  1 其他头文件包含
-*****************************************************************************/
-#include <linux/if.h>
+
+#include <net/sock.h>
 #include <linux/socket.h>
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/netdevice.h>
 
-/*****************************************************************************
-  2 宏定义
-*****************************************************************************/
-
-
-#define UID_APP                 (10000)
-#define UID_INVALID_APP         (0)
-#define INDEX_INVALID -1
-
+#define UID_APP 10000
+#define UID_INVALID_APP 0
+#define INDEX_INVALID (-1)
 #define EMCOM_MAX_MPIP_APP 5
+#define EMCOM_MAX_CCALG_APP 5
+#define EMCOM_CONGESTION_CONTROL_ALG_BBR "bbr"
+
 #define EMCOM_MPFLOW_MAX_APP  10
 
-#define EMCOM_MPFLOW_DEV_NUM 2
-#define EMCOM_MPFLOW_PORT_RANGE_MAX_LEN 100
+#define EMCOM_MPFLOW_DEV_NUM  2
+#define EMCOM_MPFLOW_MAX_LIST_NUM (EMCOM_MPFLOW_DEV_NUM * EMCOM_MPFLOW_MAX_APP)
+#define EMCOM_MPFLOW_PORT_RANGE_MAX_LEN  100
 #define EMCOM_MPFLOW_PORT_RANGE_NUM_MAX  5
-#define EMCOM_MPFLOW_DELIMITER_COMMA ","
+#define EMCOM_MPFLOW_DELIMITER_COMMA  ","
 #define EMCOM_MPFLOW_DELIMITER_COLON  ':'
 
-#define EMCOM_MPFLOW_ENABLEFLAG_PROTOCOL 0x00000001
-#define EMCOM_MPFLOW_ENABLEFLAG_DPORT 0x00000002
+#define EMCOM_MPFLOW_ENABLEFLAG_PROTOCOL  0x00000001
+#define EMCOM_MPFLOW_ENABLEFLAG_DPORT     0x00000002
 
+#define EMCOM_MPFLOW_ENABLETYPE_NONE 0x00000000
 #define EMCOM_MPFLOW_ENABLETYPE_NET_DISK 0x00000001
 #define EMCOM_MPFLOW_ENABLETYPE_MARKET 0x00000002
 #define EMCOM_MPFLOW_ENABLETYPE_WEIBO 0x00000003
+#define EMCOM_MPFLOW_ENABLETYPE_WIFI_PRI 0x00000004
 
 #define EMCOM_MPFLOW_ENABLEFLAG_LTE_FIRST 0x00000001
 
-#define EMCOM_MPFLOW_PROTOCOL_TCP 0x0001
-#define EMCOM_MPFLOW_PROTOCOL_UDP 0x0002
+#define EMCOM_MPFLOW_PROTOCOL_TCP    0x0001
+#define EMCOM_MPFLOW_PROTOCOL_UDP    0x0002
 
 #define EMCOM_WLAN_IFNAME   "wlan0"
 #define EMCOM_LTE_IFNAME    "rmnet0"
@@ -63,7 +77,6 @@
 #define EMCOM_MPFLOW_FLOW_SLOW_THREH (20*1024u)
 #define EMCOM_MPFLOW_RST_RCV_BYTES_THREH (30*1024u)
 #define EMCOM_MPFLOW_RATE_VALID_THREH (30*1024u)
-#define EMCOM_MPFLOW_MICROSECOND_OF_MILLISECOND 1000
 
 #define EMCOM_MPFLOW_WIFI_FIRST_LTE_THREH 2
 #define EMCOM_MPFLOW_WIFI_FIRST_LTE_THREH_MIN 0
@@ -103,35 +116,34 @@
 #define EMCOM_MPFLOW_HASH_SIZE 64
 #define EMCOM_MPFLOW_IP_AGING_THREH msecs_to_jiffies(5*1000)
 
-#define EMCOM_XENGINE_IsUidValid(uid)	((uid) > 10000)
-
-#define EMCOM_XENGINE_SetAccState(sk, value) \
-	{ \
+#define EMCOM_XENGINE_IS_UID_VALID(uid) ((uid) > 10000)
+#define EMCOM_XENGINE_SET_ACCSTATE(sk, value) \
+	do { \
 		(sk)->acc_state = (value); \
-	}
+	} while (0)
 
-#define EMCOM_XENGINE_SetSpeedCtrl(speedCtrlInfo, uid, size) \
-	{ \
-		spin_lock_bh(&(speedCtrlInfo.stLocker)); \
-		(speedCtrlInfo).lUid = uid; \
-		(speedCtrlInfo).ulSize = size; \
-		spin_unlock_bh(&(speedCtrlInfo.stLocker)); \
-	}
+#define EMCOM_XENGINE_SET_SPEEDCTRL(speedctrl_info, uid_value, size_value) \
+	do { \
+		spin_lock_bh(&((speedctrl_info).stlocker)); \
+		(speedctrl_info).uid = (uid_value); \
+		(speedctrl_info).size = (size_value); \
+		spin_unlock_bh(&((speedctrl_info).stlocker)); \
+	} while (0)
 
-#define EMCOM_XENGINE_GetSpeedCtrlUid(speedCtrlInfo, uid) \
-	{ \
-		uid = (speedCtrlInfo).lUid; \
-	}
+#define EMCOM_XENGINE_GET_SPEEDCTRL_UID(speedctrl_info, uid_value) \
+	do { \
+		uid = (speedctrl_info).uid_value; \
+	} while (0)
 
-#define EMCOM_XENGINE_GetSpeedCtrlInfo(speedCtrlInfo, uid, size) \
-	{ \
-		spin_lock_bh(&(speedCtrlInfo.stLocker)); \
-		uid = (speedCtrlInfo).lUid; \
-		size = (speedCtrlInfo).ulSize; \
-		spin_unlock_bh(&(speedCtrlInfo.stLocker)); \
-	}
+#define EMCOM_XENGINE_GET_SPEEDCTRL_INFO(speedctrl_info, uid_value, size_value) \
+	do { \
+		spin_lock_bh(&((speedctrl_info).stlocker)); \
+		(uid_value) = (speedctrl_info).uid; \
+		(size_value) = (speedctrl_info).size; \
+		spin_unlock_bh(&((speedctrl_info).stlocker)); \
+	} while (0)
 
-#define HICOM_SOCK_FLAG_FINTORST  0x00000001
+#define HICOM_SOCK_FLAG_FINTORST 0x00000001
 
 #define EMCOM_MPFLOW_FALLBACK_LTE_OFFSET 300
 #define EMCOM_MPFLOW_FALLBACK_WLAN_OFFSET 400
@@ -154,48 +166,56 @@
 
 #define EMCOM_MPFLOW_SND_BYTE_THRESHOLD 8
 
-/*****************************************************************************
-  3 枚举定义
-*****************************************************************************/
-
 typedef enum {
 	EMCOM_XENGINE_ACC_NORMAL = 0,
 	EMCOM_XENGINE_ACC_HIGH,
-} Emcom_Xengine_acc_state;
+} emcom_xengine_acc_state;
 
 typedef enum {
 	EMCOM_XENGINE_MPIP_TYPE_BIND_NEW = 0,
 	EMCOM_XENGINE_MPIP_TYPE_BIND_RANDOM,
-} Emcom_Xengine_mpip_type;
+} emcom_xengine_mpip_type;
 
 typedef enum {
-    EMCOM_XENGINE_MPFLOW_BINDMODE_NONE = 0,
-    EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI,
-    EMCOM_XENGINE_MPFLOW_BINDMODE_LTE,
-    EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM,
+	EMCOM_XENGINE_CONG_ALG_INVALID = 0,
+	EMCOM_XENGINE_CONG_ALG_BBR,
+} emcom_xengine_ccalg_type;
+
+typedef enum {
+	EMCOM_XENGINE_MPFLOW_BINDMODE_NONE = 0,
+	EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI,
+	EMCOM_XENGINE_MPFLOW_BINDMODE_LTE,
+	EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM,
 } emcom_xengine_mpflow_bindmode;
 
-/*****************************************************************************
-  4 结构定义
-*****************************************************************************/
-
-struct Emcom_Xengine_acc_app_info {
-	uid_t     lUid; /* The uid of accelerate Application */
-	uint16_t  ulAge;
+struct emcom_xengine_acc_app_info {
+	uid_t     uid; /* The uid of accelerate Application */
+	uint16_t  age;
 	uint16_t  reverse;
 };
-struct Emcom_Xengine_speed_ctrl_info {
-	uid_t     lUid; /* The uid of foreground Application */
-	uint32_t  ulSize; /* The grade of speed control */
-	spinlock_t stLocker; /* The Guard Lock of this unit */
+struct emcom_xengine_speed_ctrl_info {
+	uid_t     uid; /* The uid of foreground Application */
+	uint32_t  size; /* The grade of speed control */
+	spinlock_t stlocker; /* The Guard Lock of this unit */
 };
-struct Emcom_Xengine_speed_ctrl_data {
-	uid_t     lUid; /* The uid of foreground Application */
-	uint32_t  ulSize; /* The grade of speed control */
+struct emcom_xengine_speed_ctrl_data {
+	uid_t     uid; /* The uid of foreground Application */
+	uint32_t  size; /* The grade of speed control */
 };
-struct Emcom_Xengine_mpip_config{
-	uid_t     lUid; /* The uid of foreground Application */
-	uint32_t  ulType; /* The type of mpip speed up*/
+struct emcom_xengine_mpip_config {
+	uid_t     uid; /* The uid of foreground Application */
+	uint32_t  type; /* The type of mpip speed up */
+};
+
+struct emcom_xengine_ccalg_config {
+	uid_t uid; /* The uid of foreground Application */
+	uint32_t alg; /* The alg name of congestion control speed up */
+	bool has_log; /* whether this app uid had printed log */
+};
+
+struct emcom_xengine_ccalg_config_data {
+	uid_t uid; /* The uid of foreground Application */
+	uint32_t alg; /* The alg name of congestion control speed up */
 };
 
 struct emcom_xengine_mpflow_dport_range {
@@ -216,8 +236,8 @@ struct emcom_xengine_mpflow_parse_start_info {
 };
 
 struct emcom_xengine_mpflow_parse_stop_info {
-	uid_t uid; /* The uid of Acc Application */
-	int32_t stop_reason; /* The reason of mpflow_stop */
+	uid_t uid;              /* The uid of Acc Application */
+	int32_t stop_reason;    /* The reason of mpflow_stop */
 };
 
 struct emcom_xengine_mpflow_node {
@@ -232,7 +252,8 @@ struct emcom_xengine_mpflow_iface {
 	struct list_head flows;
 	uint16_t flow_cnt;
 	uint16_t is_wifi:1,
-			 is_slow:1;
+			 is_slow:1,
+			 is_sure_no_slow:1;
 	uint32_t bytes_received;
 	uint32_t max_rate_received;
 	uint32_t max_rate_received_flow;
@@ -275,7 +296,7 @@ struct emcom_xengine_mpflow_info {
 	uint16_t bindmode;     /* Bind device mode */
 	uint32_t algorithm_type;
 	uint32_t reserve_field;
-	struct emcom_xengine_mpflow_dport_range dport_range[EMCOM_MPFLOW_PORT_RANGE_NUM_MAX]; /* port range */
+	struct emcom_xengine_mpflow_dport_range dport_range[EMCOM_MPFLOW_PORT_RANGE_NUM_MAX];  /* port range */
 	struct emcom_xengine_mpflow_iface wifi;
 	struct emcom_xengine_mpflow_iface lte;
 	uint16_t is_downloading:1,
@@ -294,7 +315,7 @@ struct emcom_xengine_mpflow_stat {
 	int32_t uid;
 	int ifindex;
 	char name[IFNAMSIZ];
-	int16_t mpflow_estlink;         /* ESTABLISHED link */
+	int16_t mpflow_estlink;          /* ESTABLISHED link */
 	uint8_t mpflow_fallback;         /* fallback flag */
 	uint8_t mpflow_fail_nopayload;   /* failure count from app server no payload */
 	uint8_t mpflow_fail_syn_rst;     /* failure count from syn rst */
@@ -308,35 +329,18 @@ struct emcom_xengine_mpflow_fallback {
 	int32_t reason;
 };
 
-/*****************************************************************************
-  5 类定义
-*****************************************************************************/
-
-/*****************************************************************************
-  6 UNION定义
-*****************************************************************************/
-
-/*****************************************************************************
-  7 全局变量声明
-*****************************************************************************/
-
-/*****************************************************************************
-  8 函数声明
-*****************************************************************************/
-void Emcom_Xengine_Init(void);
-int Emcom_Xengine_clear(void);
-bool Emcom_Xengine_Hook_Ul_Stub(struct sock *pstSock);
-void Emcom_Xengine_SpeedCtrl_WinSize(struct sock *pstSock, uint32_t* win);
-void Emcom_Xengine_UdpEnqueue(struct sk_buff *skb);
-void Emcom_Xengine_FastSyn(struct sock *pstSock);
-
-
-void Emcom_Xengine_EvtProc(int32_t event, uint8_t *pdata, uint16_t len);
-
-void Emcom_Xengine_Mpip_Bind2Device(struct sock *pstSock);
-int Emcom_Xengine_SetProxyUid(struct sock *sk, char __user *optval, int optlen);
-int Emcom_Xengine_SetSockFlag(struct sock *sk, char __user *optval, int optlen);
-void Emcom_Xengine_NotifySockError(struct sock *sk);
+void emcom_xengine_init(void);
+int emcom_xengine_clear(void);
+bool emcom_xengine_hook_ul_stub(struct sock *pstSock);
+void emcom_xengine_speedctrl_winsize(struct sock *pstSock, uint32_t *win);
+void emcom_xengine_udpenqueue(const struct sk_buff *skb);
+void emcom_xengine_fastsyn(struct sock *pstSock);
+void emcom_xengine_evt_proc(int32_t event, const uint8_t *data, uint16_t len);
+void emcom_xengine_mpip_bind2device(struct sock *pstSock);
+void emcom_xengine_change_default_ca(struct sock *sk, struct list_head tcp_cong_list);
+int emcom_xengine_setproxyuid(struct sock *sk, const char __user *optval, int optlen);
+int emcom_xengine_setsockflag(struct sock *sk, const char __user *optval, int optlen);
+void emcom_xengine_notify_sock_error(struct sock *sk);
 
 bool emcom_xengine_check_ip_addrss(struct sockaddr *addr);
 bool emcom_xengine_check_ip_is_private(struct sockaddr *addr);
@@ -365,13 +369,10 @@ int8_t emcom_xengine_mpflow_checkstatus(struct sock *sk, int reason, int state, 
 void emcom_xengine_mpflow_fallback(struct sock *sk, int reason, int state);
 
 #ifdef CONFIG_MPTCP
-void Emcom_Xengine_MptcpSocketClosed(void *data, int len);
-void Emcom_Xengine_MptcpSocketSwitch(void *data, int len);
-void Emcom_Xengine_MptcpProxyFallback(void *data, int len);
-void Emcom_Xengine_MptcpFallback(void *data, int len);
+void emcom_xengine_mptcp_socket_closed(const void *data, int len);
+void emcom_xengine_mptcp_socket_switch(const void *data, int len);
+void emcom_xengine_mptcp_proxy_fallback(const void *data, int len);
+void emcom_xengine_mptcp_fallback(const void *data, int len);
 #endif
 
-/*****************************************************************************
-  9 OTHERS定义
-*****************************************************************************/
 #endif

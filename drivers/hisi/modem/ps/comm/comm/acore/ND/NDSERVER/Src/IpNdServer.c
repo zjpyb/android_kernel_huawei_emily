@@ -3221,8 +3221,10 @@ VOS_VOID IP_NDSERVER_ProcTimerMsgRaExp
     IP_NDSERVER_ADDR_INFO_STRU         *pstInfoAddr  = IP_NULL_PTR;
     VOS_UINT8                           aucDstIPAddr[IP_IPV6_ADDR_LEN] = {IP_NULL};
     IMM_ZC_STRU                        *pstImmZc    = VOS_NULL_PTR;
+#if (VOS_OS_VER != VOS_WIN32)
     VOS_UINT8                          *pucData;
     VOS_INT32                           lLockKey;
+#endif
     /* 打印进入该函数 */
     IPND_INFO_LOG(NDIS_NDSERVER_PID, "IP_NDSERVER_ProcTimerMsgRaExp is entered.");
 
@@ -3250,6 +3252,7 @@ VOS_VOID IP_NDSERVER_ProcTimerMsgRaExp
     /* 启动路由公告定时器 */
     IP_NDSERVER_TimerStart(ulIndex, IP_ND_SERVER_TIMER_RA);
 
+#if (VOS_OS_VER != VOS_WIN32)
     /************ 下行IP包的目的地址作为NS包的目标地址，进行地址解析 **********/
     /* send NS for Address Resolution */
     lLockKey = VOS_SplIMP();
@@ -3274,6 +3277,7 @@ VOS_VOID IP_NDSERVER_ProcTimerMsgRaExp
         IPND_ERROR_LOG(NDIS_NDSERVER_PID, "IP_NDSERVER_ProcTimerMsgRaExp, IP_NDSERVER_SendNsMsg return NULL");
         return;
     }
+#endif
 
     return;
 }

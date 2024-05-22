@@ -8,7 +8,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/usb/otg.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
@@ -24,6 +24,8 @@
 #include <linux/hisi/usb/hisi_usb.h>
 #include <linux/power/hisi/hisi_bci_battery.h>
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
+#include <linux/power/hisi/charger/hisi_charger_scp.h>
+#include <linux/power/hisi/charger/hisi_charger_fcp.h>
 #include <hisi_scharger_v600.h>
 #include <linux/raid/pq.h>
 #include <huawei_platform/power/wired_channel_switch.h>
@@ -35,47 +37,172 @@
 #include <linux/mfd/hisi_pmic.h>
 #include <pmic_interface.h>
 #include <linux/hisi/usb/hisi_tcpc_ops.h>
-#include "securec.h"
+#include <securec.h>
 
-#define ILIMIT_RBOOST_CNT        (10)
+#define ILIMIT_RBOOST_CNT        10
 struct hi6526_device_info *g_hi6526_dev = NULL;
 static int hi6526_force_set_term_flag = CHG_STAT_DISABLE;
 static int I_bias_all = 0;
 static u32 scp_error_flag = 0;
 static int iin_set = CHG_ILIMIT_85;
+static bool g_get_adc_value_enable;
+
+static char* buck_irq_str[] =
+{
+        /* IRQ_FLAG_0 bit7 - bit0
+        bit[7]:irq_chg_chgstate
+        1：表示充电流程终止；
+        0：充电流程没有终止；
+        bit[6]:irq_vbus_ovp，BUCK 充电vbus过压保护
+        bit[5]:irq_vbus_uvp，BUCK 充电vbus欠压保护
+        bit[4]:irq_vbat_ovp，buck 模式下 charger IC电池过压保护
+        bit[3]:irq_otg_ovp，boost状态指示，OTG ovp保护
+        bit[2]:irq_otg_uvp,OTG uvp保护
+        bit[1]:irq_buck_ocp，buck过流保护
+        bit[0]:irq_otg_scp，OTG scp中断保护
+        */
+
+        "irq_otg_scp ",
+        "irq_buck_ocp ",
+        "irq_otg_uvp ",
+        "irq_otg_ovp ",
+        "irq_vbat_ovp ",
+        "irq_vbus_uvp ",
+        "irq_vbus_ovp ",
+        "irq_chg_chgstate ",
+
+
+        /* IRQ_FLAG_3 bit0 - bit7
+        bit[7]:irq_otg_ocp，OTG ocp保护
+        bit[6]:irq_buck_scp，BUCK 短路保护
+        bit[5]:irq_trickle_chg_fault，涓流充电fault状态记录
+        bit[4]:irq_pre_chg_fault，预充电fault状态记录
+        bit[3]:irq_fast_chg_fault，快充电fault状态记录
+        bit[2]:irq_otmp_jreg，1:温度超过热调整设置温度告警
+        bit[1]:irq_chg_rechg_state，复充状态指示
+        bit[0]:irq_sleep_mod，sleep点进出中断信号
+        */
+        "irq_sleep_mod ",
+        "irq_chg_rechg_state ",
+        "irq_otmp_jreg ",
+        "irq_fast_chg_fault ",
+        "irq_pre_chg_fault ",
+        "irq_trickle_chg_fault ",
+        "irq_buck_scp ",
+        "irq_otg_ocp ",
+
+
+        /* IRQ_FLAG_4 bit7 - bit5
+        bit[7]:irq_reversbst，reversbst上报中断
+        bit[6]:irq_vusb_buck_ovp，buck模式下ovp中断信号
+        bit[5]:irq_vusb_otg_ovp，otg模式下ovp中断信号
+        */
+
+        "none ",
+        "none ",
+        "none ",
+        "none ",
+        "none ",
+        "irq_vusb_otg_ovp ",
+        "irq_vusb_buck_ovp ",
+        "irq_reversbst ",
+};
 
 static char* lvc_sc_irq_str[] =
 {
-        /* IRQ_FLAG_2 bit4 - bit0 */
-        "irq_ibus_dc_ucp",
-        "irq_ibus_dc_ocp",
-        "irq_vbus_lvc_uv",
-        "irq_vbus_lvc_ov",
-        "irq_vusb_lvc_ovp",
-        "none",
-        "none",
-        "none",
+        /* IRQ_FLAG_2 bit0 - bit4 */
+        "irq_ibus_dc_ucp ",
+        "irq_ibus_dc_ocp ",
+        "irq_vbus_lvc_uv ",
+        "irq_vbus_lvc_ov ",
+        "irq_vusb_lvc_ovp ",
+        "none ",
+        "none ",
+        "none ",
 
         /* IRQ_FLAG_3 bit0 - bit7 */
-        "irq_ibat_clamp",
-        "irq_ibus_clamp",
-        "irq_vout_ov_clamp",
-        "irq_bat_ov_clamp",
-        "irq_vusb_scauto_ovp",
-        "irq_vbat_dc_ovp",
-        "irq_vdrop_lvc_ov",
-        "irq_ibus_dc_rcp",
+        "irq_ibat_clamp ",
+        "irq_ibus_clamp ",
+        "irq_vout_ov_clamp ",
+        "irq_bat_ov_clamp ",
+        "irq_vusb_scauto_ovp ",
+        "irq_vbat_dc_ovp ",
+        "irq_vdrop_lvc_ov ",
+        "irq_ibus_dc_rcp ",
 
-        /* IRQ_FLAG_3 bit0 - bit7 */
-        "irq_ilim_bus_sc_ocp",
-        "irq_ilim_sc_ocp",
-        "irq_ibat_dcucp_alm",
-        "irq_ibat_dc_ocp",
-        "irq_vbat_sc_uvp",
-        "irq_vin2vout_sc",
-        "irq_vbus_sc_uv",
-        "irq_vbus_sc_ov",
+        /* IRQ_FLAG_4 bit0 - bit7 */
+        "irq_ilim_bus_sc_ocp ",
+        "irq_ilim_sc_ocp ",
+        "irq_ibat_dcucp_alm ",
+        "irq_ibat_dc_ocp ",
+        "irq_vbat_sc_uvp ",
+        "irq_vin2vout_sc ",
+        "irq_vbus_sc_uv ",
+        "irq_vbus_sc_ov ",
 };
+
+static char* others_irq_str[] =
+{
+        /* IRQ_FLAG_5 bit4 - bit0
+        bit[4]:irq_acr_scp，ACR scp保护，由于无外置放电通路，不需此中断，模拟内部接为地，该中断实际无效
+        bit[3]:soh_ovh，SOH OVP检测高阈值告警中断
+        bit[2]:soh_ovl，SOH OVP检测低阈值告警中断
+        bit[1]:acr_flag，ACR采样完成中断
+        bit[0]:irq_wdt，看门狗中断
+        */
+
+        "irq_wdt ",
+        "acr_flag ",
+        "soh_ovl ",
+        "soh_ovh ",
+        "irq_acr_scp ",
+        "none ",
+        "none ",
+        "none ",
+
+        /* IRQ_FLAG_6 bit7 - bit0
+        bit[7]:irq_regn_ocp，ldo5的过流信号
+        bit[6]:irq_chg_batfet_ocp，batfet 12A 过流保护状态指示寄存器
+        bit[5]:irq_otmp_140，过温保护
+        bit[4]:irq_wl_otg_usbok，无线OTG模式下，USB插入中断
+        bit[3]:irq_vusb_ovp_alm，vusb报警上报
+        bit[2]:irq_vusb_uv，vusb uvlo中断
+        bit[1]:irq_tdie_ot_alm，过温预警
+        bit[0]:irq_vbat_lv，VBAT LV
+        */
+
+
+        "irq_vbat_lv ",
+        "irq_tdie_ot_alm ",
+        "irq_vusb_uv ",
+        "irq_vusb_ovp_alm ",
+        "irq_wl_otg_usbok ",
+        "irq_otmp_140 ",
+        "irq_chg_batfet_ocp ",
+        "irq_regn_ocp ",
+
+
+        /* IRQ_FLAG_7 bit7 - bit0
+        bit[7]:irq_reserved[7]
+        bit[6]:irq_reserved[6]
+        bit[5]:irq_vdrop_min中断标记位
+        bit[4]:irq_vdrop_ovp中断标记位
+        bit[3]:irq_reserved[3]，irq_vout_dc_ovp vout过压保护，dc模式下使能
+        bit[2]:irq_reserved[2]，预留中断寄存器
+        bit[1]:irq_reserved[1]，irq_vdrop_usb_ovp ovp管 drop保护中断；dc模式才使能；
+        bit[0]:irq_reserved[0]，irq_cfly_scp,fly电容短路中断；dc模式才使能
+        */
+        "irq_cfly_scp ",
+        "irq_vdrop_usb_ovp ",
+        "none ",
+        "irq_vout_dc_ovp ",
+        "irq_vdrop_ovp ",
+        "irq_vdrop_min ",
+        "none ",
+        "none ",
+};
+
+
 static int _hi6526_get_chip_temp(int *temp);
 
 static int hi6526_set_charge_enable(int enable);
@@ -118,7 +245,6 @@ struct opt_regs buck_common_opt_regs[] = {
         REG_CFG(0xae  , 0xff,   0, 0x10, 0,    0), /* SOH reg reset */
         REG_CFG(0xf1  , 0x02,   1, 0x00, 0,    0), /* sc_pulse_mode_en reg reset */
         REG_CFG(0x281 , 0xc0,   6, 0x02, 0,    0), /* da_chg_cap3_sel reg reset 0x02*/
-        REG_CFG(0xec  , 0x10,   4, 0x00, 0,    0), /* sc_wdt_test_sel reg reset 0x00*/
         REG_CFG(0x2e9 , 0xff,   0, 0x1B, 0,    0),
         REG_CFG(0x2e0 , 0xff,   0, 0x3F, 0,    0),
         REG_CFG(0x2f2 , 0xff,   0, 0xA6, 0,    0),
@@ -163,7 +289,7 @@ struct opt_regs lvc_opt_regs[] = {
         REG_CFG(0x2b6 , 0xff,   0, 0x14, 0,    0),
         REG_CFG(0x2c6 , 0xff,   0, 0x13, 0,    0),
         REG_CFG(0x2b5 , 0xff,   0, 0x78, 0,    0),
-        REG_CFG(0x2bb , 0xff,   0, 0xE3, 0,    0),
+        REG_CFG(0x2bb , 0xff,   0, 0xF3, 0,    0),
         REG_CFG(0x2c4 , 0xff,   0, 0x4E, 0,    0),
         REG_CFG(0x2c5 , 0xff,   0, 0x65, 0,    0),
         REG_CFG(0x2bc , 0xff,   0, 0x57, 0,    0),
@@ -172,11 +298,12 @@ struct opt_regs lvc_opt_regs[] = {
 };
 
 struct opt_regs lvc_opt_regs_after_enabled[] = {
-        REG_CFG(0x2bb,  0xff,   0, 0xE7, 20,   0),
+        REG_CFG(0x2bb,  0xff,   0, 0xF7, 20,   0),
 };
 
 struct opt_regs sc_opt_regs[] = {
         /*reg,  mask, shift, val, before,after*/
+	REG_CFG(0x2a6, 0x07, 0, 0x07, 0, 0),
         REG_CFG(0x2d3 , 0xff,   0, 0x15, 0,    0),
         REG_CFG(0x2d4 , 0xff,   0, 0x97, 0,    0),
         REG_CFG(0x2e1 , 0xff,   0, 0x7D, 0,    0),
@@ -355,7 +482,7 @@ static int hi6526_read_block(u16 reg, u8 * value,  unsigned num_bytes)
         }
 
         if (ret < 0) {
-                SCHARGER_ERR("i2c_write failed to transfer all messages\n");
+                SCHARGER_ERR("i2c_read failed to transfer all messages\n");
                 scharger_i2c_err_monitor();
         } else {
                 ret = 0;
@@ -612,8 +739,8 @@ static struct hi6526_sysfs_field_info *hi6526_sysfs_field_lookup(const char
 static ssize_t hi6526_sysfs_show(struct device *dev,
                                  struct device_attribute *attr, char *buf)
 {
-        struct hi6526_sysfs_field_info *info;
-        struct hi6526_sysfs_field_info *info2;
+        struct hi6526_sysfs_field_info *info = NULL;
+        struct hi6526_sysfs_field_info *info2 = NULL;
 #ifdef CONFIG_HISI_DEBUG_FS
         int ret = 0;
 #endif
@@ -674,8 +801,8 @@ static ssize_t hi6526_sysfs_store(struct device *dev,
                                   struct device_attribute *attr,
                                   const char *buf, size_t count)
 {
-        struct hi6526_sysfs_field_info *info;
-        struct hi6526_sysfs_field_info *info2;
+        struct hi6526_sysfs_field_info *info = NULL;
+        struct hi6526_sysfs_field_info *info2 = NULL;
         int ret;
         u16 v;
         struct hi6526_device_info *di = g_hi6526_dev;
@@ -726,7 +853,7 @@ static ssize_t hi6526_sysfs_store(struct device *dev,
         }
 
 #ifdef CONFIG_HISI_DEBUG_FS
-        ret = hi6526_write_mask(info->reg, info->mask, info->shift, v);
+        ret = hi6526_write_mask(info->reg, info->mask, info->shift, (u8)v);
         if (ret)
                 return ret;
 #endif
@@ -852,7 +979,7 @@ static int hi6526_get_vbus_uvp_state(void)
         u8 val = 0;
         int ret = 0;
         ret = hi6526_read(CHG_IRQ_STATUS0, &val);
-        SCHARGER_DBG("%s  :%d\n", __func__, val);
+        SCHARGER_DBG("%s  :0x%x\n", __func__, val);
         if(ret) {
                 SCHARGER_ERR("%s read failed :%d\n", __func__, ret);
                 return ret;
@@ -1088,11 +1215,13 @@ static int hi6526_get_adc_value(u32 chan, u32 * data)
 		mutex_unlock(&di->adc_conv_lock);
 		return 0;
 	}
-	if (CHARGER_REMOVED == charge_get_charger_type() && (!wireless_tx_get_tx_open_flag())) {
+	if (!g_get_adc_value_enable &&
+		(charge_get_charger_type() == CHARGER_REMOVED) &&
+		(!wireless_tx_get_tx_open_flag())) {
 		mutex_unlock(&di->adc_conv_lock);
 		return 0;
 	}
-	wake_lock(&di->hi6526_wake_lock);
+	__pm_stay_awake(&di->hi6526_wake_lock);
         hi6526_read_mask(LVC_CHG_MODE_REG, LVC_CHG_MODE_MASK,LVC_CHG_MODE_SHIFT, &lvc_mode);
         hi6526_read_mask(SC_CHG_MODE_REG, SC_CHG_MODE_MASK,SC_CHG_MODE_SHIFT, &sc_mode);
 
@@ -1111,7 +1240,7 @@ static int hi6526_get_adc_value(u32 chan, u32 * data)
                 if((chan == CHG_ADC_CH_VBUS || chan == CHG_ADC_CH_VUSB) && lvc_mode) {
                         *data = *data * 4 /10 + 1500;
                 }
-		wake_unlock(&di->hi6526_wake_lock);
+		__pm_relax(&di->hi6526_wake_lock);
 		mutex_unlock(&di->adc_conv_lock);
                 return 0;
         }
@@ -1127,7 +1256,7 @@ static int hi6526_get_adc_value(u32 chan, u32 * data)
         if (ret) {
                 SCHARGER_ERR("set covn fail! ret =%d \n", ret);
                 hi6526_adc_enable(CHG_ADC_DIS);
-		wake_unlock(&di->hi6526_wake_lock);
+		__pm_relax(&di->hi6526_wake_lock);
 		mutex_unlock(&di->adc_conv_lock);
                 return -1;
         }
@@ -1148,7 +1277,7 @@ static int hi6526_get_adc_value(u32 chan, u32 * data)
         if (10 == i) {
                 SCHARGER_ERR("Wait for ADC CONV timeout! \n");
                 hi6526_adc_enable(CHG_ADC_DIS);
-		wake_unlock(&di->hi6526_wake_lock);
+		__pm_relax(&di->hi6526_wake_lock);
 		mutex_unlock(&di->adc_conv_lock);
                 return -1;
         }
@@ -1162,11 +1291,11 @@ static int hi6526_get_adc_value(u32 chan, u32 * data)
                 SCHARGER_ERR("[%s]get ibus_ref_data fail,ret:%d\n", __func__,
                 	     ret);
                 hi6526_adc_enable(CHG_ADC_DIS);
-		wake_unlock(&di->hi6526_wake_lock);
+		__pm_relax(&di->hi6526_wake_lock);
 		mutex_unlock(&di->adc_conv_lock);
                 return -1;
         }
-	wake_unlock(&di->hi6526_wake_lock);
+	__pm_relax(&di->hi6526_wake_lock);
 	mutex_unlock(&di->adc_conv_lock);
         return 0;
 }
@@ -2139,6 +2268,28 @@ static int hi6526_get_vusb(int *vusb_mv)
         return ret;
 }
 
+static int hi6526_get_vusb_force(int *vusb_mv)
+{
+	int ret;
+	u32 result = 0;
+	struct hi6526_device_info *di = g_hi6526_dev;
+
+	if (!di || !vusb_mv)
+		return -1;
+
+	g_get_adc_value_enable = true;
+	ret = hi6526_get_adc_value(CHG_ADC_CH_VUSB, &result);
+	if (ret) {
+		SCHARGER_ERR("[%s]get vusb_mv fail,ret:%d\n", __func__, ret);
+		g_get_adc_value_enable = false;
+		return -1;
+	}
+
+	g_get_adc_value_enable = false;
+	*vusb_mv = (int)result;
+	return ret;
+}
+
 static int hi6526_get_dp_dm_volt(int ch)
 {
         u32 vol_mv = 0;
@@ -2224,6 +2375,10 @@ static int _hi6526_get_chip_temp(int *temp)
            SCHARGER_ERR("[%s]get vbat_data fail,ret:%d\n", __func__, ret);
            return -1;
        }
+
+	if (val == 0)
+		return -1;
+
        val       = (2500 * val)/4096;
        *temp  = (int)(13085180-val*10000)/(42392);
        return 0;
@@ -2232,6 +2387,7 @@ static int _hi6526_get_chip_temp(int *temp)
 int hi6526_get_chip_temp(int *temp)
 {
         struct hi6526_device_info *di = g_hi6526_dev;
+
         if (NULL == di)
                 return -1;
         if (NULL == temp)
@@ -2359,7 +2515,7 @@ static size_t printk_time(u64 ts, char *buf)
 
         rem_nsec = do_div(ts, 1000000000);
 
-        temp = snprintf_s(buf,80, 80, "[%5lu.%06lus]",
+        temp = snprintf_s(buf, (unsigned long)BUF_LEN, (unsigned long)BUF_LEN - 1, "[%5lu.%06lus]",
         		(unsigned long)ts, rem_nsec/1000);
         if (temp >= 0) {
         	return (unsigned int)temp;
@@ -2371,9 +2527,9 @@ static size_t printk_time(u64 ts, char *buf)
 static void hi6526_dbg_printk(struct hi6526_device_info *di )
 {
         int count = INFO_LEN;
-        char time_log[80] = "";
+        char time_log[BUF_LEN] = "";
         size_t tlen = 0;
-        char *ptime_log;
+        char *ptime_log = NULL;
         int index = 0;
 
         if (NULL == di)
@@ -2453,123 +2609,181 @@ static int hi6526_get_ibus_ma(void)
         return ibus;
 }
 
+static int hi6526_debug_value_dump(struct hi6526_device_info *di, char *buffer, int size)
+{
+	int vbus = 0, ibat = 0, ibus = 0;
+	int vusb = 0, vout = 0, vbat = 0;
+	int ret0 = 0, ret1 = 0, ret2 = 0, ret3 = 0, ret4 = 0;
+	int offset = 0;
+	int i, ret;
+	int temp = 0;
+	int str_len = size - 1;
+	int val_array[HI6526_DBG_VAL_SIZE] = { 0 };
+
+	ret0 =  hi6526_get_vbus_mv((unsigned int *)&vbus);
+	ret1 = hi6526_get_ibat(&ibat);
+	ret2 = hi6526_get_vusb(&vusb);
+	ret3 = hi6526_get_vout(&vout);
+	vbat = hi6526_get_vbat();
+	ibus = hi6526_get_ibus_ma();
+	ret4 = hi6526_get_chip_temp(&temp);
+	if (ret0 || ret1 || ret2 || ret3 || ret4) {
+		SCHARGER_ERR("%s get adc value failed!\n", __func__);
+	}
+
+	if(LVC == di->chg_mode)
+		offset = snprintf_s(buffer, str_len, 26, "LVC    ");
+	else if(SC == di->chg_mode)
+		offset = snprintf_s(buffer, str_len, 26, "SC     ");
+	else
+		offset = snprintf_s(buffer, str_len, 26, "BUCK   ");
+	if(offset <= 0) {
+		SCHARGER_ERR("[%s]snprintf_s fail, %s\n",__func__, buffer);
+	}
+
+	val_array[0] = ibus;
+	val_array[1] = vbus;
+	val_array[2] = ibat;
+	val_array[3] = vusb;
+	val_array[4] = vout;
+	val_array[5] = vbat;
+	val_array[6] = I_bias_all;
+	val_array[7] = temp;
+
+	for(i = 0; i < HI6526_DBG_VAL_SIZE; i++) {
+		ret = snprintf_s(buffer + offset, str_len - strlen(buffer), 26, "%-7.2d", val_array[i]);
+		if(ret <= 0)
+			SCHARGER_ERR("[%s]snprintf_s fail, i %d, %s\n",__func__, i, buffer);
+		else
+			offset += ret;
+	}
+
+	return strlen(buffer);
+}
+
 /**********************************************************
 *  Function:       hi6526_dump_register
 *  Description:    print the register value in charging process
 *  Parameters:   reg_value:string for save register value
 *  return value:  0-success or others-fail
 **********************************************************/
-static int hi6526_dump_register(char *reg_value)
+static int hi6526_dump_register(char *buffer, int size)
 {
-        u8 reg_val = 0;
-        char buff[BUF_LEN] = { 0 };
-        int i = 0;
-        int ret = 0;
-        int vbus = 0, ibat = 0, ibus = 0;
-        int vusb = 0, vout = 0, vbat = 0;
-        int ret0 = 0, ret1 = 0, ret2 = 0, ret3 = 0;
-        struct hi6526_device_info *di = g_hi6526_dev;
+	u8 reg_val = 0;
+	int i = 0;
+	int ret = 0, ret1 = 0;
+	int offset = 0;
+	int str_len = size - 1;
+	errno_t err = EOK;
+	int len = 26;
+	struct hi6526_device_info *di = g_hi6526_dev;
 
-        if (NULL == di) {
-                SCHARGER_ERR("%s hi6526_device_info is NULL!\n", __func__);
-                return -ENOMEM;
-        }
-        memset_s(reg_value, CHARGELOG_SIZE, 0, CHARGELOG_SIZE);
+	if (NULL == di) {
+		SCHARGER_ERR("%s hi6526_device_info is NULL!\n", __func__);
+		return -ENOMEM;
+	}
+	err = memset_s(buffer, size, 0, size);
+	if(err != EOK) {
+		SCHARGER_ERR("[%s]memset_s fail, err=%d\n",__func__, err);
+	}
 
-        ret0 =  hi6526_get_vbus_mv((unsigned int *)&vbus);
-        ret1 = hi6526_get_ibat(&ibat);
-        ret2 = hi6526_get_vusb(&vusb);
-        ret3 = hi6526_get_vout(&vout);
-        vbat = hi6526_get_vbat();
-        ibus = hi6526_get_ibus_ma();
-        if (ret0 || ret1 || ret2 || ret3){
-                SCHARGER_ERR("%s hi6526_get_vbus_mv failed!\n", __func__);
+	offset = hi6526_debug_value_dump(di, buffer, size);
+
+	for (i = 0; i < (PAGE0_NUM); i++) {
+		ret = ret || hi6526_read(PAGE0_BASE + i , &reg_val);
+		ret1 = snprintf_s(buffer + offset, str_len - strlen(buffer), len,"0x%-9x", reg_val);
+		if(ret1 <= 0)
+			SCHARGER_ERR("[%s]strncat_s fail, err=%d\n",__func__, err);
+		else
+			offset += ret1;
+	}
+
+	for (i = 0; i < (PAGE1_NUM); i++) {
+		ret = ret || hi6526_read(PAGE1_BASE + i , &reg_val);
+		ret1 = snprintf_s(buffer + offset, str_len - strlen(buffer), len,"0x%-9x", reg_val);
+		if(ret1 <= 0)
+			SCHARGER_ERR("[%s]strncat_s fail, err=%d\n",__func__, err);
+		else
+			offset += ret1;
+        }
+	for (i = 0; i < (PAGE2_NUM); i++) {
+		ret = ret || hi6526_read(PAGE2_BASE + i , &reg_val);
+		ret1 = snprintf_s(buffer + offset, str_len - strlen(buffer), len,"0x%-9x", reg_val);
+		if(ret1 <= 0)
+			SCHARGER_ERR("[%s]strncat_s fail, err=%d\n",__func__, err);
+		else
+			offset += ret1;
         }
 
-        if(LVC == di->chg_mode)
-                snprintf_s(buff, BUF_LEN, 26, "LVC    ");
-        else if(SC == di->chg_mode)
-                snprintf_s(buff, BUF_LEN, 26, "SC     ");
-        else
-                snprintf_s(buff, BUF_LEN, 26, "BUCK   ");
-
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, BUF_LEN, 26, "%-8.2d", ibus);
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26,"%-8.2d", vbus);
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, BUF_LEN, 26,"%-8.2d", ibat);
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "%-8.2d", vusb);
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "%-8.2d", vout);
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "%-8.2d", vbat);
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "%-8.2d", I_bias_all);
-        strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-
-        for (i = 0; i < (PAGE0_NUM); i++) {
-                ret = ret || hi6526_read(PAGE0_BASE + i , &reg_val);
-                snprintf_s(buff, BUF_LEN, 26,"0x%-9x", reg_val);
-                strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        }
-        for (i = 0; i < (PAGE1_NUM); i++) {
-                ret = ret || hi6526_read(PAGE1_BASE + i , &reg_val);
-                snprintf_s(buff, BUF_LEN, 26,"0x%-9x", reg_val);
-                strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        }
-        for (i = 0; i < (PAGE2_NUM); i++) {
-                ret = ret || hi6526_read(PAGE2_BASE + i , &reg_val);
-                snprintf_s(buff, BUF_LEN, 26,"0x%-9x", reg_val);
-                strncat_s(reg_value, CHARGELOG_SIZE, buff, strlen(buff));
-        }
-        if(ret) {
-                SCHARGER_ERR("%s failed! \n", __func__);
-        }
-        return 0;
+	if(ret)
+		SCHARGER_ERR("[%s]ret %d\n",__func__, ret);
+	return 0;
 }
-
 /**********************************************************
 *  Function:       hi6526_get_register_head
 *  Description:    print the register head in charging process
 *  Parameters:   reg_head:string for save register head
 *  return value:  0-success or others-fail
 **********************************************************/
-static int hi6526_get_register_head(char *reg_head)
+static int hi6526_get_register_head(char *buffer, int size)
 {
-        char buff[BUF_LEN] = { 0 };
-        int i = 0;
+	int i = 0;
+	int ret = 0;
+	int str_len = size - 1;
+	int offset = 0;
+	int str_num = HI6526_DBG_VAL_SIZE + 1;
+	int len = 26;
+	errno_t err = EOK;
+	static char* type_str[] =
+	{
+		"mode        ",
+		"Ibus	",
+		"Vbus   ",
+		"Ibat   ",
+		"Vusb   ",
+		"Vout   ",
+		"Vbat   ",
+		"Ibias  ",
+		"Temp   ",
+	};
 
-        memset_s(reg_head,CHARGELOG_SIZE, 0, CHARGELOG_SIZE);
-        snprintf_s(buff, BUF_LEN, 26, "mode    ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, BUF_LEN, 26, "Ibus    ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "Vbus    ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "Ibat    ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "Vusb    ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "Vout    ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "Vbat    ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
+	err = memset_s(buffer, size, 0, size);
+	if(err != EOK)
+		SCHARGER_ERR("[%s]memset_s fail, err=%d\n",__func__, err);
 
-        snprintf_s(buff, (unsigned long)BUF_LEN, 26, "Ibias   ");
-        strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
+	for(i = 0; i < str_num; i++) {
+		ret = snprintf_s(buffer + offset,
+			str_len - strlen(buffer), len, "%s", type_str[i]);
+		if(ret <= 0)
+			SCHARGER_ERR("[%s]ret =%d\n",__func__, ret);
+		else
+			offset += ret;
+	}
+
         for (i = 0; i < (PAGE0_NUM); i++) {
-                snprintf_s(buff, BUF_LEN, 26, "Reg[0x%3x] ", PAGE0_BASE + i);
-                strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
+		ret = snprintf_s(buffer + offset,
+			str_len - strlen(buffer), len, "Reg[0x%3x] ", PAGE0_BASE + i);
+		if(ret <= 0)
+			SCHARGER_ERR("[%s]ret = %d\n",__func__, ret);
+		else
+			offset += ret;
         }
         for (i = 0; i < (PAGE1_NUM); i++) {
-                snprintf_s(buff, BUF_LEN, 26, "Reg[0x%3x] ", PAGE1_BASE + i);
-                strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
+		ret = snprintf_s(buffer + offset,
+			str_len - strlen(buffer), len, "Reg[0x%3x] ", PAGE1_BASE + i);
+		if(ret <= 0)
+			SCHARGER_ERR("[%s]ret = %d\n",__func__, ret);
+		else
+			offset += ret;
         }
+
         for (i = 0; i < (PAGE2_NUM); i++) {
-                snprintf_s(buff, BUF_LEN, 26, "Reg[0x%3x] ", PAGE2_BASE + i);
-                strncat_s(reg_head, CHARGELOG_SIZE, buff, strlen(buff));
+		ret = snprintf_s(buffer + offset,
+			str_len - strlen(buffer), len, "Reg[0x%3x] ", PAGE2_BASE + i);
+		if(ret <= 0)
+			SCHARGER_ERR("[%s]ret = %d\n",__func__, ret);
+		else
+			offset += ret;
         }
 
         return 0;
@@ -2783,14 +2997,25 @@ static int hi6526_get_dieid(char *dieid, unsigned int len)
 
 static void hi6526_vusb_uv_det_enable(u8 enable)
 {
-        int ret = 0;
-        u8 value = 0;
+	int ret = 0;
+	u8 value = 0;
+
+	struct hi6526_device_info *di = g_hi6526_dev;
+	if (NULL == di) {
+		SCHARGER_ERR("%s hi6526_device_info is NULL!\n", __func__);
+		return ;
+	}
+
+	if(di->hi6526_version != CHIP_VERSION_V100)
+		return;
 
         ret = hi6526_write_mask(VUSB_UV_DET_ENB_REG, VUSB_UV_DET_ENB_MASK, \
                 VUSB_UV_DET_ENB_SHIFT, !enable);
         if (ret) {
                 SCHARGER_ERR("%s : reg write failed!\n", __func__);
         }
+
+        hisi_tcpc_set_vusb_uv_det_sts(!enable);
 
         /*register read back*/
         ret = hi6526_read(VUSB_UV_DET_ENB_REG, &value);
@@ -3075,7 +3300,6 @@ int hi6526_fcp_adapter_reg_read_block( u8 reg,u8 * val, u8 num)
                 ret = hi6526_fcp_adapter_reg_read_block(reg, p, num);
                  if (ret) {
                         SCHARGER_ERR("%s: read error ret is %d \n", __func__, ret);
-                        //mutex_unlock(&di->accp_adapter_reg_lock);
                         return HI6526_FAIL;
                 }
         }
@@ -3360,7 +3584,7 @@ static int hi6526_fcp_adapter_vol_check(int adapter_vol_mv)
   Return:        0: success
                 -1: fail
 ***************************************************************************/
-static int hi6526_fcp_set_adapter_output_vol(int output_vol)
+static int hi6526_fcp_set_adapter_output_vol(int *output_vol)
 {
         u8 val = 0;
         u8 vol = 0;
@@ -3376,33 +3600,18 @@ static int hi6526_fcp_set_adapter_output_vol(int output_vol)
         }
         SCHARGER_INF("%s: id out reg[0x4] = %u.\n", __func__, val);
 
-	switch (output_vol) {
-	case CHG_FCP_OUTPUT_VOL_5V:
-		ret = hi6526_fcp_adapter_reg_read(&vol,
-			CHG_FCP_SLAVE_REG_DISCRETE_OUT_V(0));
-		if (ret) {
-			SCHARGER_ERR("%s get output_vol error\n", __func__);
-			return -1;
-		}
-		break;
-	case CHG_FCP_OUTPUT_VOL_9V:
-		/* get adapter max output vol value */
-		ret = hi6526_fcp_get_adapter_output_vol(&vol);
-		if (ret) {
-			SCHARGER_ERR("%s: fcp get adapter output vol err\n",
-				__func__);
-			return -1;
-		}
-		if (vol > (CHG_FCP_OUTPUT_VOL_9V * CHG_FCP_VOL_STEP)) {
-			vol = CHG_FCP_OUTPUT_VOL_9V * CHG_FCP_VOL_STEP;
-			SCHARGER_INF("limit adap to 9V, while support 12V\n");
-		}
-		break;
-	default:
-		SCHARGER_ERR("input val is invalid\n");
-		return -1;
-	}
-	SCHARGER_INF("%s: output_vol=%u\n", __func__, vol);
+        /*get adapter max output vol value */
+        ret = hi6526_fcp_get_adapter_output_vol(&vol);
+        if (ret) {
+                SCHARGER_ERR("%s: fcp get adapter output vol err.\n", __func__);
+                return -1;
+        }
+
+        if (vol > CHG_FCP_OUTPUT_VOL_9V * CHG_FCP_VOL_STEP) {
+                vol = CHG_FCP_OUTPUT_VOL_9V * CHG_FCP_VOL_STEP;
+                SCHARGER_INF("fcp limit adapter vol to 9V, while adapter support 12V.\n");
+        }
+        *output_vol = vol / CHG_FCP_VOL_STEP;
 
         /*retry if write fail */
         ret = hi6526_fcp_adapter_reg_write(vol, CHG_FCP_SLAVE_VOUT_CONFIG);
@@ -4265,7 +4474,6 @@ static int hi6526_scp_set_adaptor_voltage(int vol)
         val[0] = (volt >> ONE_BYTE_LEN) & ONE_BYTE_MASK;
         /*low byte store in high address*/
         val[1] = volt & ONE_BYTE_MASK;
-     //   SCHARGER_ERR("%s : %d, val0: 0x%x, val1: 0x%x \n ",__func__, vol, val[0], val[1]);
 
         ret = scp_adapter_reg_write_block(SCP_VSET_L, &val[0], 2);
         if(ret)
@@ -4739,7 +4947,7 @@ static void hi6526_dc_vusb2vbus_drpo_en(int en)
 static void hi6526_set_dc_regulator(enum chg_mode_state chg_mode)
 {
         struct hi6526_device_info *di = g_hi6526_dev;
-        struct dc_regulator_info *regulator;
+        struct dc_regulator_info *regulator = NULL;
         if (NULL == di) {
                 SCHARGER_ERR("%s hi6526_device_info is NULL!\n", __func__);
                 return ;
@@ -5019,85 +5227,177 @@ struct charge_device_ops hi6526_ops = {
         .get_register_head = hi6526_get_register_head,
         .dump_register = hi6526_dump_register,
         .get_iin_set = hi6526_get_input_current_set,
+	.get_vbat = hi6526_get_vbat,
+	.get_vusb = hi6526_get_vusb_force,
+};
+
+struct charger_otg_device_ops hi6526_otg_ops = {
+	.chip_name = "scharger_v600",
+	.otg_set_charger_enable = hi6526_set_charge_enable,
+	.otg_set_enable = hi6526_set_otg_enable,
+	.otg_set_current = hi6526_set_otg_current,
+	.otg_set_watchdog_timer = hi6526_set_watchdog_timer,
+	.otg_reset_watchdog_timer = hi6526_reset_watchdog_timer,
+	.otg_set_switch_mode = hi6526_otg_switch_mode,
 };
 
 struct  water_detect_ops hi6526_water_detect_ops = {
         .is_water_intrused = hi6526_is_water_intrused,
 };
 
-static int hi6526_scp_reg_read_block(int reg, int *val, int num)
+static int hi6526_fcp_reg_read_block(int reg, int *val, int num)
 {
-        int ret = 0;
-        int i = 0;
-        u8 data = 0;
-        scp_error_flag = SCP_NO_ERR;
+	int ret;
+	int i;
+	u8 data = 0;
 
-        for (i = 0; i < num; i++) {
-                ret = scp_adapter_reg_read(&data, reg + i);
-                if (ret) {
-                        SCHARGER_ERR("error: scp read failed(reg=0x%x)!\n", reg + i);
-                        return -1;
-                }
+	if (!val) {
+		SCHARGER_ERR("val is null\n");
+		return -1;
+	}
 
-                val[i] = data;
-        }
+	for (i = 0; i < num; i++) {
+		ret = hi6526_fcp_adapter_reg_read(&data, reg + i);
+		if (ret) {
+			SCHARGER_ERR("fcp read failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
 
-        return 0;
+		val[i] = data;
+	}
+
+	return 0;
 }
 
-static int hi6526_scp_reg_write_block(int reg, int *val, int num)
+static int hi6526_fcp_reg_write_block(int reg, const int *val, int num)
 {
-        int ret = 0;
-        int i = 0;
-        scp_error_flag = SCP_NO_ERR;
+	int ret;
+	int i;
 
-        for (i = 0; i < num; i++) {
-                ret = scp_adapter_reg_write(val[i], reg + i);
-                if (ret) {
-                        SCHARGER_ERR("error: scp write failed(reg=0x%x)!\n", reg + i);
-                        return -1;
-                }
-        }
+	if (!val) {
+		SCHARGER_ERR("val is null\n");
+		return -1;
+	}
 
-        return 0;
+	for (i = 0; i < num; i++) {
+		ret = hi6526_fcp_adapter_reg_write(val[i], reg + i);
+		if (ret) {
+			SCHARGER_ERR("fcp write failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static int hi6526_fcp_detect_adapter(void)
+{
+	struct hi6526_device_info *di = g_hi6526_dev;
+
+	if (!di) {
+		SCHARGER_ERR("hi6526_device_info is null\n");
+		return -1;
+	}
+
+	return hi6526_fcp_adapter_detect(di);
+}
+
+static struct fcp_protocol_ops hi6526_fcp_protocol_ops = {
+	.chip_name = "scharger_v600",
+	.reg_read = hi6526_fcp_reg_read_block,
+	.reg_write = hi6526_fcp_reg_write_block,
+	.detect_adapter = hi6526_fcp_detect_adapter,
+	.soft_reset_master = hi6526_fcp_master_reset,
+	.soft_reset_slave = hi6526_fcp_adapter_reset,
+	.get_master_status = fcp_read_switch_status,
+	.stop_charging_config = hi6526_fcp_stop_charge_config,
+	.is_accp_charger_type = is_fcp_charger_type,
+};
+
+static int hi6526_scp_reg_read_block(int reg, int *val, int num)
+{
+	int ret;
+	int i;
+	u8 data = 0;
+
+	if (!val) {
+		SCHARGER_ERR("val is null\n");
+		return -1;
+	}
+
+	scp_error_flag = SCP_NO_ERR;
+
+	for (i = 0; i < num; i++) {
+		ret = scp_adapter_reg_read(&data, reg + i);
+		if (ret) {
+			SCHARGER_ERR("scp read failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
+
+		val[i] = data;
+	}
+
+	return 0;
+}
+
+static int hi6526_scp_reg_write_block(int reg, const int *val, int num)
+{
+	int ret;
+	int i;
+
+	if (!val) {
+		SCHARGER_ERR("val is null\n");
+		return -1;
+	}
+
+	scp_error_flag = SCP_NO_ERR;
+
+	for (i = 0; i < num; i++) {
+		ret = scp_adapter_reg_write(val[i], reg + i);
+		if (ret) {
+			SCHARGER_ERR("scp write failed(reg=0x%x)\n", reg + i);
+			return -1;
+		}
+	}
+
+	return 0;
 }
 
 static int hi6526_scp_detect_adapter(void)
 {
-        struct hi6526_device_info *di = g_hi6526_dev;
-        if (NULL == di) {
-                SCHARGER_ERR("%s hi6526_device_info is NULL!\n", __func__);
-                return -1;
-        }
+	struct hi6526_device_info *di = g_hi6526_dev;
 
-        /* detect FCP adaptor */
-        return hi6526_fcp_adapter_detect(di);
+	if (!di) {
+		SCHARGER_ERR("hi6526_device_info is null\n");
+		return -1;
+	}
+
+	return hi6526_fcp_adapter_detect(di);
 }
 
 static int hi6526_pre_init(void)
 {
-        int ret = 0;
+	int ret;
 
-        ret = hi6526_self_check();
-        if (ret) {
-                SCHARGER_ERR("%s : hi6526_self_check fail\n", __func__);
-                return ret;
-        }
-        hi6526_scp_master_init();
+	ret = hi6526_self_check();
+	if (ret) {
+		SCHARGER_ERR("hi6526_self_check fail\n");
+		return ret;
+	}
+	hi6526_scp_master_init();
 
-        SCHARGER_INF("%s\n", __func__);
-        return ret;
+	return ret;
 }
 
 static struct scp_protocol_ops hi6526_scp_protocol_ops = {
-        .chip_name = "scharger_v600",
-        .reg_read = hi6526_scp_reg_read_block,
-        .reg_write = hi6526_scp_reg_write_block,
-        .reg_multi_read = hi6526_fcp_adapter_reg_read_block,
-        .detect_adapter = hi6526_scp_detect_adapter,
-        .soft_reset_master = hi6526_scp_chip_reset,
-        .soft_reset_slave = hi6526_scp_adaptor_reset,
-        .pre_init = hi6526_pre_init,
+	.chip_name = "scharger_v600",
+	.reg_read = hi6526_scp_reg_read_block,
+	.reg_write = hi6526_scp_reg_write_block,
+	.reg_multi_read = hi6526_fcp_adapter_reg_read_block,
+	.detect_adapter = hi6526_scp_detect_adapter,
+	.soft_reset_master = hi6526_scp_chip_reset,
+	.soft_reset_slave = hi6526_scp_adaptor_reset,
+	.pre_init = hi6526_pre_init,
 };
 
 /**********************************************************
@@ -5155,17 +5455,103 @@ static void hi6526_unmask_all_irq(void)
                                         CHG_IRQ_MASK_ALL_SHIFT, CHG_IRQ_UNMASK_DEFAULT);
 }
 
+static void hi6526_buck_irq2str(u32 buck_irq_state)
+{
+        int index = 0;
+        int str_len = BUF_MAX_512 - 1;
+        char buf[BUF_MAX_512] = { 0 };
+        char *buf_addr = buf;
+        int offset = 0;
+        int ret = 0;
+
+        buck_irq_state &= BUCK_IRQ_MASK;
+        offset = snprintf_s(buf_addr, str_len, STR_LEN_50, \
+                "hi6526_irq_work :buck_irq_state: 0x%x : ", buck_irq_state);
+        if(offset < 0) {
+                SCHARGER_ERR(" %s, offset %d, error \n", __func__, offset);
+                return;
+        }
+
+        for(index = IRQ_BIT_NUM; index >= 0; index--) {
+                if(buck_irq_state & (1UL << (unsigned int)index)) {
+                        if(strlen(buck_irq_str[index]) < (str_len - strlen(buf_addr))) {
+                                ret = snprintf_s(buf_addr + offset, str_len - strlen(buf), \
+                                         strlen(buck_irq_str[index]), "%s", buck_irq_str[index]);
+                                 if(ret < 0) {
+                                         SCHARGER_ERR(" %s, ret %d, index %d, error! \n", __func__, ret, index);
+                                         return;
+                                 } else {
+                                         offset += ret;
+                                 }
+                        }
+                }
+        }
+
+        SCHARGER_ERR("%s \n", buf);
+}
+
 static void hi6526_lvc_sc_irq2str(u32 lvc_sc_irq_state)
 {
         int index = 0;
-        char buf[512] = { 0 };
+        int str_len = BUF_MAX_512 - 1;
+        char buf[BUF_MAX_512] = { 0 };
+        char *buf_addr = buf;
+        int offset = 0;
+        int ret = 0;
 
         lvc_sc_irq_state &= LVC_SC_IRQ_MASK;
-        snprintf_s(buf, sizeof(buf), sizeof(buf) - 1, "hi6526_irq_work :lvc_sc_irq_state: 0x%x : ", lvc_sc_irq_state);
-        for(index = 24; index >= 0; index--) {
-                if(lvc_sc_irq_state & (1 << index)) {
-                        if(strlen(lvc_sc_irq_str[index]) < 512)
-                                strncat_s(buf, strlen(lvc_sc_irq_str[index]), lvc_sc_irq_str[index], strlen(lvc_sc_irq_str[index]));
+        offset = snprintf_s(buf_addr, str_len, STR_LEN_50, \
+                "hi6526_irq_work :lvc_sc_irq_state: 0x%x : ", lvc_sc_irq_state);
+        if(offset < 0) {
+                SCHARGER_ERR(" %s, offset %d, error \n", __func__, offset);
+                return;
+        }
+        for(index = IRQ_BIT_NUM; index >= 0; index--) {
+                if(lvc_sc_irq_state & (1UL << (unsigned int)index)) {
+                        if(strlen(lvc_sc_irq_str[index]) < (str_len - strlen(buf_addr))) {
+                                ret = snprintf_s(buf_addr + offset, str_len - strlen(buf), \
+                                        strlen(lvc_sc_irq_str[index]), "%s", lvc_sc_irq_str[index]);
+                                if(ret < 0) {
+                                        SCHARGER_ERR(" %s, ret %d, index %d, error! \n", __func__, ret, index);
+                                        return;
+                                } else {
+                                        offset += ret;
+                                }
+                        }
+                }
+        }
+
+        SCHARGER_ERR("%s \n", buf);
+}
+
+static void hi6526_others_irq2str(u32 others_irq_state)
+{
+        int index = 0;
+        int str_len = BUF_MAX_512 - 1;
+        char buf[BUF_MAX_512] = { 0 };
+        char *buf_addr = buf;
+        int offset = 0;
+        int ret = 0;
+
+        others_irq_state &= OTHERS_IRQ_MASK;
+        offset = snprintf_s(buf_addr, str_len, STR_LEN_50, \
+                "hi6526_irq_work :others_irq_state: 0x%x : ", others_irq_state);
+        if(offset < 0) {
+                SCHARGER_ERR(" %s, offset %d, error \n", __func__, offset);
+                return;
+        }
+        for(index = IRQ_BIT_NUM; index >= 0; index--) {
+                if(others_irq_state & (1UL << (unsigned int)index)) {
+                        if(strlen(others_irq_str[index]) < (str_len - strlen(buf_addr))) {
+                                ret = snprintf_s(buf_addr + offset, str_len - strlen(buf), \
+                                        strlen(others_irq_str[index]), "%s", others_irq_str[index]);
+                                if(ret < 0) {
+                                        SCHARGER_ERR(" %s, ret %d, index %d, error! \n", __func__, ret, index);
+                                        return;
+                                } else {
+                                        offset += ret;
+                                }
+                        }
                 }
         }
 
@@ -5176,14 +5562,14 @@ static void hi6526_direct_dmd_report(u32 fault_type, struct nty_data * data)
 {
 #ifdef CONFIG_DIRECT_CHARGER
         struct hi6526_device_info *di = g_hi6526_dev;
-        struct atomic_notifier_head *direct_charge_fault_notifier_list;
+        struct atomic_notifier_head *direct_charge_fault_notifier_list = NULL;
         if((NULL == di) || !(SC == di->chg_mode || LVC == di->chg_mode))
                 return;
 
         if(SC == di->chg_mode)
-                direct_charge_sc_get_fault_notifier(&direct_charge_fault_notifier_list);
+                sc_get_fault_notifier(&direct_charge_fault_notifier_list);
         else
-                direct_charge_lvc_get_fault_notifier(&direct_charge_fault_notifier_list);
+                lvc_get_fault_notifier(&direct_charge_fault_notifier_list);
 
         atomic_notifier_call_chain(direct_charge_fault_notifier_list, fault_type, data);
 #endif
@@ -5192,14 +5578,15 @@ static void hi6526_direct_dmd_report(u32 fault_type, struct nty_data * data)
 static void hi6526_direct_charge_fault_handle(u32 lvc_sc_irq_state)
 {
         struct hi6526_device_info *di = g_hi6526_dev;
-        u32 fault_type = DIRECT_CHARGE_FAULT_NON;
+        u32 fault_type = DC_FAULT_NON;
         struct nty_data * data = &(di->dc_nty_data);
+
+        hi6526_lvc_sc_irq2str(lvc_sc_irq_state);
 
         if((NULL == di) || !(SC == di->chg_mode || LVC == di->chg_mode))
                 return;
 
         di->abnormal_happened = 1;
-        hi6526_lvc_sc_irq2str(lvc_sc_irq_state);
 
         if(lvc_sc_irq_state & (LVC_REGULATOR_IRQ_MASK | IRQ_IBUS_DC_UCP_MASK))
                 return;
@@ -5211,33 +5598,33 @@ static void hi6526_direct_charge_fault_handle(u32 lvc_sc_irq_state)
 
         if (lvc_sc_irq_state & FAULT_VBUS_OVP)
         {
-                SCHARGER_ERR("hi6526_irq_work: chg_mode %s, vbus ovp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
-                fault_type = DIRECT_CHARGE_FAULT_VBUS_OVP;
+               // SCHARGER_ERR("hi6526_irq_work: chg_mode %s, vbus ovp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
+                fault_type = DC_FAULT_VBUS_OVP;
         }
         if (lvc_sc_irq_state & FAULT_IBUS_OCP)
         {
-                SCHARGER_ERR("hi6526_irq_work: chg_mode %s, ibus ocp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
-                fault_type = DIRECT_CHARGE_FAULT_IBUS_OCP;
+               // SCHARGER_ERR("hi6526_irq_work: chg_mode %s, ibus ocp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
+                fault_type = DC_FAULT_IBUS_OCP;
         }
         if (lvc_sc_irq_state & FAULT_REVERSE_OCP)
         {
-                SCHARGER_ERR("hi6526_irq_work: chg_mode %s, reverse ocp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
-                fault_type = DIRECT_CHARGE_FAULT_REVERSE_OCP;
+              //  SCHARGER_ERR("hi6526_irq_work: chg_mode %s, reverse ocp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
+                fault_type = DC_FAULT_REVERSE_OCP;
         }
         if (lvc_sc_irq_state & FAULT_VDROP_OVP)
         {
-                SCHARGER_ERR("hi6526_irq_work: chg_mode %s, vdrop ovp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
-                fault_type = DIRECT_CHARGE_FAULT_VDROP_OVP;
+              //  SCHARGER_ERR("hi6526_irq_work: chg_mode %s, vdrop ovp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
+                fault_type = DC_FAULT_VDROP_OVP;
         }
         if (lvc_sc_irq_state & FAULT_VBAT_OVP)
         {
-                SCHARGER_ERR("hi6526_irq_work: chg_mode %s, vbat ovp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
-                fault_type = DIRECT_CHARGE_FAULT_VBAT_OVP;
+               // SCHARGER_ERR("hi6526_irq_work: chg_mode %s, vbat ovp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
+                fault_type = DC_FAULT_VBAT_OVP;
         }
         if (lvc_sc_irq_state & FAULT_IBAT_OCP)
         {
-                SCHARGER_ERR("hi6526_irq_work: chg_mode %s, vbat ovp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
-                fault_type = DIRECT_CHARGE_FAULT_IBAT_OCP;
+               // SCHARGER_ERR("hi6526_irq_work: chg_mode %s, ibat ocp happened\n", (SC == di->chg_mode)? "SC":"LVC" );
+                fault_type = DC_FAULT_IBAT_OCP;
         }
         hi6526_direct_dmd_report(fault_type, data);
         hi6526_lvc_enable(0);
@@ -5251,13 +5638,17 @@ static void hi6526_chip_overtemp_handle(void)
         if((NULL == di) || !(SC == di->chg_mode || LVC == di->chg_mode))
                 return;
 
-        hi6526_direct_dmd_report( DIRECT_CHARGE_FAULT_TDIE_OTP,data);
+        hi6526_direct_dmd_report(DC_FAULT_TDIE_OTP, data);
 }
 
 static void hi6526_vbat_lv_handle(void)
 {
         u8 val = 0;
-        hi6526_read(VBAT_LV_CFG_REG, &val);
+        int ret = 0;
+        ret = hi6526_read(VBAT_LV_CFG_REG, &val);
+		if (ret) {
+			SCHARGER_INF("%s : hi6526_read fail ret = %d\n",__func__, ret);
+		}
         SCHARGER_INF("%s : VBAT_LV_REG is 0x%x\n",__func__, val);
         hi6526_write_mask(VBAT_LV_CFG_REG, VBAT_LV_CFG_MASK, VBAT_LV_CFG_SHIFT, 1);
 }
@@ -5268,7 +5659,7 @@ static void hi6526_buck_vbat_ovp_handle(void)
         int ret = 0;
         u8 vbat_ovp_cnt = 0, irq_st0 = 0;
 
-        SCHARGER_ERR("%s : irq_vbus_ovp \n", __func__);
+        SCHARGER_ERR("%s\n", __func__);
         for (i = 0; i < 5; i++) {
                 ret = hi6526_read(CHG_IRQ_STATUS0, &irq_st0);
                 if (ret || (CHG_VBAT_OVP == (irq_st0 & CHG_VBAT_OVP))) {
@@ -5290,6 +5681,8 @@ static void hi6526_buck_vbat_ovp_handle(void)
 static void hi6526_buck_fault_handle(u32 buck_irq_state)
 {
         struct hi6526_device_info *di = g_hi6526_dev;
+
+        hi6526_buck_irq2str(buck_irq_state);
 
         if((NULL == di) || SC == di->chg_mode || LVC == di->chg_mode)
                 return;
@@ -5320,6 +5713,28 @@ static void hi6526_buck_fault_handle(u32 buck_irq_state)
         }
 }
 
+static void hi6526_force_clear_all_irq(void)
+{
+        int i = 0;
+        int ret;
+        u8 value = 0;
+        int irq_reg_num = 8;
+
+        for(i = 0; i < irq_reg_num; i++) {
+                ret = hi6526_read(CHG_BUCK_IRQ_ADDR + i, &value);
+                if(ret) {
+                        SCHARGER_INF("%s i2c read error i %d\n", __func__, i);
+                }
+                if(value) {
+                        SCHARGER_INF("%s :irq flag%d: 0x%x \n", __func__, i, value);
+                        ret = hi6526_write(CHG_BUCK_IRQ_ADDR + i, value);
+                        if(ret) {
+                                SCHARGER_INF("%s i2c write error i %d\n", __func__, i);
+                        }
+                }
+        }
+}
+
 /**********************************************************
 *  Function:       hi6526_irq_work
 *  Description:    handler for chargerIC fault irq in charging process
@@ -5333,6 +5748,7 @@ static void hi6526_irq_work(struct work_struct *work)
         u16 fcp_irq_state1 = 0,fcp_irq_state2 = 0;
         u8 fcp_irq_state3 = 0;
         u32 others_irq_state = 0;
+        int retry_time = 0;
         int ret = 0;
         struct hi6526_device_info *di =
                 container_of(work, struct hi6526_device_info, irq_work);
@@ -5340,11 +5756,11 @@ static void hi6526_irq_work(struct work_struct *work)
 
 again:
         ret = hi6526_read(CHG_IRQ_ADDR, &irq_state);
-        SCHARGER_INF("%s :irq_state: 0x%x \n", __func__, irq_state);
+        SCHARGER_INF("%s %d:irq_state: 0x%x \n", __func__,retry_time, irq_state);
 
         if(irq_state & CHG_BUCK_IRQ) {
                 hi6526_read_block(CHG_BUCK_IRQ_ADDR, (u8*) &buck_irq_state, 3);
-                SCHARGER_INF("%s : CHG_BUCK_IRQ, irq_state: 0x%x, buck_irq_state: 0x%x \n",
+                SCHARGER_INF("%s : CHG_BUCK_IRQ, irq_state: 0x%x, buck_irq_state: 0x%6.6x \n",
                                                         __func__, irq_state, buck_irq_state);
                 buck_irq_state &= BUCK_IRQ_MASK;
                 hi6526_buck_fault_handle(buck_irq_state);
@@ -5352,7 +5768,7 @@ again:
         }
         if(irq_state & CHG_LVC_SC_IRQ) {
                 hi6526_read_block(CHG_LVC_SC_IRQ_ADDR, (u8*) &lvc_sc_irq_state, 3);
-                SCHARGER_ERR("%s : CHG_LVC_SC_IRQ, irq_state: 0x%x, lvc_sc_irq_state: 0x%x \n",
+                SCHARGER_ERR("%s : CHG_LVC_SC_IRQ, irq_state: 0x%x, lvc_sc_irq_state: 0x%6.6x \n",
                                                 __func__, irq_state, lvc_sc_irq_state);
                 lvc_sc_irq_state &= LVC_SC_IRQ_MASK;
                 hi6526_direct_charge_fault_handle(lvc_sc_irq_state);
@@ -5361,15 +5777,10 @@ again:
 
         if(irq_state & CHG_OTHERS_IRQ) {
                 hi6526_read_block(CHG_OTHERS_IRQ_ADDR, (u8*) &others_irq_state, 3);
-                SCHARGER_INF("%s : CHG_OTHERS_IRQ, irq_state: 0x%x, others_irq_state: 0x%x \n",
+                SCHARGER_INF("%s : CHG_OTHERS_IRQ, irq_state: 0x%x, others_irq_state: 0x%6.6x \n",
                                                 __func__, irq_state, others_irq_state);
+                hi6526_others_irq2str(others_irq_state);
 
-                if(others_irq_state & OTHERS_VDROP_IRQ_MASK) {
-                        if(others_irq_state & IRQ_VDROP_MIN_MASK)
-                                SCHARGER_ERR("hi6526_irq_work : irq_vdrop_min \n ");
-                        if(others_irq_state & IRQ_VDROP_MIN_MASK)
-                                SCHARGER_ERR("hi6526_irq_work : irq_vdrop_ovp \n ");
-                }
                 if(others_irq_state & OTHERS_OTP_IRQ_MASK)
                         hi6526_chip_overtemp_handle();
 
@@ -5403,7 +5814,14 @@ again:
                 if ((irq_state & CHG_IRQ_MASK_ALL_MSK) == 0) {
                         msleep(WAIT_PD_IRQ_TIME);
                 }
-                goto again;
+                if(retry_time > IRQ_RETRY_TIME) {
+                        SCHARGER_ERR("%s :gpio is low, retry time %d MAX\n", __func__, retry_time);
+                        /*clear all irq*/
+                        hi6526_force_clear_all_irq();
+                } else {
+                        retry_time++;
+                        goto again;
+                }
         }
 
 }
@@ -5511,7 +5929,7 @@ static void dc_regulator_parse_dts(struct device_node *np, struct hi6526_device_
 static void parse_dts(struct device_node *np, struct hi6526_device_info *di)
 {
         int ret = 0;
-        struct device_node *batt_node;
+        struct device_node *batt_node = NULL;
         di->param_dts.bat_comp = 80;
         di->param_dts.vclamp = 224;
         di->is_board_type = BAT_BOARD_ASIC;
@@ -5578,25 +5996,22 @@ static void hi6526_fcp_scp_ops_register(void)
         #define RET_SIZE_8 (8)
         int ret[RET_SIZE_8] = {0};
         int i;
-        /* if support fcp ,register fcp adapter ops */
-        if (0 == hi6526_is_support_fcp()) {
-                ret[0] = fcp_adapter_ops_register(&fcp_hi6526_ops);
-                if (ret[0])
-                        SCHARGER_ERR("register fcp adapter ops failed!\n");
-                else
-                        SCHARGER_INF(" fcp adapter ops register success!\n");
-        }
+
+	/* if chip support fcp, register fcp adapter ops */
+	if (hi6526_is_support_fcp() == 0)
+		fcp_protocol_ops_register(&hi6526_fcp_protocol_ops);
+
         /* if chip support scp ,register scp adapter ops */
         if( 0 == hi6526_is_support_scp())
         {
                 #ifdef CONFIG_DIRECT_CHARGER
-                ret[0] = scp_ops_register(&scp_hi6526_ops);
-                ret[1] = loadswitch_ops_register(&hi6526_lvc_ops);
+                ret[0] = 0;
+                ret[1] = lvc_ops_register(&hi6526_lvc_ops);
                 ret[2] = sc_ops_register(&hi6526_sc_ops);
-                ret[3] = batinfo_sc_ops_register(&hi6526_batinfo_ops);
-                ret[4] = batinfo_lvc_ops_register(&hi6526_batinfo_ops);
+                ret[3] = sc_batinfo_ops_register(&hi6526_batinfo_ops);
+                ret[4] = lvc_batinfo_ops_register(&hi6526_batinfo_ops);
                 #else
-                ret[0] = dummy_ops_register1(&scp_hi6526_ops);
+                ret[0] = 0;
                 ret[1] = dummy_ops_register2(&hi6526_lvc_ops);
                 ret[2] = dummy_ops_register2(&hi6526_sc_ops);
                 ret[3] = dummy_ops_register3(&hi6526_batinfo_ops);
@@ -5612,10 +6027,10 @@ static void hi6526_fcp_scp_ops_register(void)
                                 SCHARGER_ERR("register scp adapter ops failed, i %d!\n", i);
                 }
 
-                #ifdef CONFIG_DIRECT_CHARGER
-                scp_protocol_ops_register(&hi6526_scp_protocol_ops);
-                #endif
-        }
+#ifdef CONFIG_DIRECT_CHARGER
+		scp_protocol_ops_register(&hi6526_scp_protocol_ops);
+#endif /* CONFIG_DIRECT_CHARGER */
+	}
 }
 
 /**********************************************************
@@ -5867,18 +6282,22 @@ static int hi6526_probe(struct i2c_client *client,/*lint !e64*/
         i2c_set_clientdata(client, di);
         g_hi6526_dev = di;
 
+        ret = hi6526_device_check();
+        if(CHARGE_IC_BAD == ret)
+                goto hi6526_fail_0;
+
         parse_dts(np, di);
         INIT_WORK(&di->irq_work, hi6526_irq_work);
         INIT_DELAYED_WORK(&di->reverbst_work, hi6526_reverbst_delay_work);
         INIT_DELAYED_WORK(&di->dc_ucp_work, hi6526_dc_ucp_delay_work);
         INIT_DELAYED_WORK(&di->dbg_work, hi6526_dbg_work);
-	wake_lock_init(&di->hi6526_wake_lock, WAKE_LOCK_SUSPEND,
+	wakeup_source_init(&di->hi6526_wake_lock,
 		"hi6526_adc_wakelock");
 
 	ret = hi6526_irq_init(di, np);
         if(ret) {
                 SCHARGER_ERR("%s, hi6526_irq_init failed\n", __func__);
-                goto hi6526_fail_1;
+                goto hi6526_fail_0;
         }
         di->usb_nb.notifier_call = hi6526_usb_notifier_call;
         ret = hisi_charger_type_notifier_register(&di->usb_nb);
@@ -5887,24 +6306,12 @@ static int hi6526_probe(struct i2c_client *client,/*lint !e64*/
                 goto hi6526_fail_1;
         }
 
-        hisi_tcpc_reg_ops_register(client, &hi6526_tcpc_reg_ops);
-        hisi_tcpc_irq_gpio_register(client, di->gpio_int);
-
-        ret = hi6526_device_check();
-        if(CHARGE_IC_BAD == ret)
-                goto hi6526_fail_1;
         di->hi6526_version = hi6526_get_device_version();
 
         hi6526_vbat_lv_handle();
 
         di->term_vol_mv = hi6526_get_terminal_voltage();
-        ret = charge_ops_register(&hi6526_ops);
-        if (ret) {
-                SCHARGER_ERR("register charge ops failed!\n");
-                goto hi6526_fail_1;
-        }
-        water_detect_ops_register(&hi6526_water_detect_ops);
-        hi6526_fcp_scp_ops_register();
+
         ret = hi6526_sysfs_create_group(di);
         if (ret) {
                 SCHARGER_ERR("create sysfs entries failed!\n");
@@ -5919,7 +6326,7 @@ static int hi6526_probe(struct i2c_client *client,/*lint !e64*/
                         if (IS_ERR(charge_dev)) {
                                 charge_dev = NULL;
                                 SCHARGER_ERR("create charge_dev failed!\n");
-                                goto hi6526_fail_2;
+                                goto hi6526_fail_3;
                         }
                 }
                 ret =
@@ -5932,17 +6339,34 @@ static int hi6526_probe(struct i2c_client *client,/*lint !e64*/
         hi6526_opt_regs_set(common_opt_regs, ARRAY_SIZE(common_opt_regs));
         hi6526_buck_opt_param(VBUS_VSET_5V);
         hi6526_unmask_all_irq();
+
+	hisi_tcpc_reg_ops_register(client, &hi6526_tcpc_reg_ops);
+	hisi_tcpc_irq_gpio_register(client, di->gpio_int);
+	ret = charge_ops_register(&hi6526_ops);
+	if (ret)
+		SCHARGER_ERR("register charge ops failed!\n");
+
+	ret = charger_otg_ops_register(&hi6526_otg_ops);
+	if (ret)
+		SCHARGER_ERR("register charger_otg ops failed\n");
+
+	water_detect_ops_register(&hi6526_water_detect_ops);
+	hi6526_fcp_scp_ops_register();
+
         SCHARGER_INF("%s  success!\n", __func__);
         return 0;
 
-hi6526_fail_2:
+hi6526_fail_3:
         hi6526_sysfs_remove_group(di);
+hi6526_fail_2:
+	ret = hisi_charger_type_notifier_unregister(&di->usb_nb);
+	if (ret < 0)
+		SCHARGER_ERR("hisi_charger_type_notifier_unregister failed\n");
 hi6526_fail_1:
         free_irq(di->irq_int, di);
         gpio_free(di->gpio_int);
 hi6526_fail_0:
         g_hi6526_dev = NULL;
-        np = NULL;
 
         return ret;
 }

@@ -59,6 +59,7 @@
   2 全局变量声明
 *****************************************************************************/
 
+#if (FEATURE_ON == FEATURE_PTM)
 /* Warning：代码自动生成区域，不能手工改动 begin */
 
 /* TODO: g_aulModemErrRept hash_value:9162b1a1466dae7828cca9aea8608a81 */
@@ -90,6 +91,7 @@ int g_aulModem0ErrRept[][3]=
     {FAULT_ID_AP_GET_PHY_COUNT_DATA_REQ, TLPHY_PID_RTTAGENT, 8},
 
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     /* 注册失败 Item:20 */
     {FAULT_ID_1X_REG_FAIL, I0_WUEPS_PID_MMA, NAS_ERR_LOG_ALM_1X_COMMON_INFO},
     {FAULT_ID_1X_REG_FAIL, I0_WUEPS_PID_MMA, NAS_ERR_LOG_ALM_1X_CODEC_FAIL},
@@ -400,9 +402,11 @@ int g_aulModem0ErrRept[][3]=
     {FAULT_ID_1X_MT_CALL_FAIL, CPROC_PID_1X_CM, CPROC_1X_ERR_LOG_TCH_ABNORMAL},
     {FAULT_ID_1X_MT_CALL_FAIL, CPROC_PID_1X_CM, CPROC_1X_ERR_LOG_PAGING_RESULT},
 
+#endif
 
 };
 
+#if (FEATURE_ON == FEATURE_MULTI_MODEM)
 int g_aulModem1ErrRept[][3]=
 {
     /* GU ErrLog 上报相关 Item:10 */
@@ -418,6 +422,7 @@ int g_aulModem1ErrRept[][3]=
     {FAULT_ID_GU_ERR_LOG_REPT, I1_DSP_PID_APM, 0},
 
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     /* 注册失败 Item:20 */
     {FAULT_ID_1X_REG_FAIL, I1_WUEPS_PID_MMA, NAS_ERR_LOG_ALM_1X_COMMON_INFO},
     {FAULT_ID_1X_REG_FAIL, I1_WUEPS_PID_MMA, NAS_ERR_LOG_ALM_1X_CODEC_FAIL},
@@ -728,9 +733,11 @@ int g_aulModem1ErrRept[][3]=
     {FAULT_ID_1X_MT_CALL_FAIL, CPROC_PID_1X_CM, CPROC_1X_ERR_LOG_TCH_ABNORMAL},
     {FAULT_ID_1X_MT_CALL_FAIL, CPROC_PID_1X_CM, CPROC_1X_ERR_LOG_PAGING_RESULT},
 
+#endif
 
 };
 
+#if(3 == MULTI_MODEM_NUMBER)
 int g_aulModem2ErrRept[][3]=
 {
     /* GU ErrLog 上报相关 Item:9 */
@@ -745,6 +752,7 @@ int g_aulModem2ErrRept[][3]=
     {FAULT_ID_GU_ERR_LOG_REPT, I2_DSP_PID_APM, 0},
 
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     /* 注册失败 Item:20 */
     {FAULT_ID_1X_REG_FAIL, I2_WUEPS_PID_MMA, NAS_ERR_LOG_ALM_1X_COMMON_INFO},
     {FAULT_ID_1X_REG_FAIL, I2_WUEPS_PID_MMA, NAS_ERR_LOG_ALM_1X_CODEC_FAIL},
@@ -1055,10 +1063,14 @@ int g_aulModem2ErrRept[][3]=
     {FAULT_ID_1X_MT_CALL_FAIL, CPROC_PID_1X_CM, CPROC_1X_ERR_LOG_TCH_ABNORMAL},
     {FAULT_ID_1X_MT_CALL_FAIL, CPROC_PID_1X_CM, CPROC_1X_ERR_LOG_PAGING_RESULT},
 
+#endif
 
 };
+#endif
+#endif
 /* TODO: python search flag end */
 /* Warning：代码自动生成区域，不能手工改动 end */
+#endif
 
 /*****************************************************************************
   3 函数申明
@@ -1071,22 +1083,27 @@ VOS_INT32 ErrLog_GetErrReptAddrAndSize(
     VOS_UINT32                          *pulsize
 )
 {
+#if (FEATURE_ON == FEATURE_PTM)
     if (MODEM_ID_0 == ulModemId)
     {
         *pulErrLogAddr = (VOS_UINT_PTR)g_aulModem0ErrRept;
         *pulsize = sizeof(g_aulModem0ErrRept);
     }
+#if ( FEATURE_ON == FEATURE_MULTI_MODEM )
     else if (MODEM_ID_1 == ulModemId)
     {
         *pulErrLogAddr = (VOS_UINT_PTR)g_aulModem1ErrRept;
         *pulsize = sizeof(g_aulModem1ErrRept);
 
     }
+#if (3 == MULTI_MODEM_NUMBER)
     else if (MODEM_ID_2 == ulModemId)
     {
         *pulErrLogAddr = (VOS_UINT_PTR)g_aulModem2ErrRept;
         *pulsize = sizeof(g_aulModem2ErrRept);
     }
+#endif
+#endif
     else
     {
         return VOS_ERR;
@@ -1094,6 +1111,10 @@ VOS_INT32 ErrLog_GetErrReptAddrAndSize(
 
     return VOS_OK;
 
+#else
+    return VOS_ERR;
+
+#endif
 
 }
 

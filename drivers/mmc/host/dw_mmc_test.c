@@ -133,11 +133,8 @@ void sd_sdio_loop_test(struct work_struct *work)
 {
         struct delayed_work *dwork = to_delayed_work(work);
         struct mmc_host *host = container_of(dwork, struct mmc_host, sd_sdio_test_work);
-        /*struct dw_mci_slot *slot = mmc_priv(host);*/
-        /*struct dw_mci *dw_host = slot->host;*/
 
         /*do what you want,example read 0x0 reg*/
-        /*dev_err(dw_host->dev, ": CTRL:	0x%08x\n", mci_readl(dw_host, CTRL));*/
 	if (sd_loop_flag == 0x5a5a) {
 		printk(KERN_ERR "sd_sdio_loop_testXXXXXXXXX\n");
 		queue_delayed_work(sd_sdio_test_work,&host->sd_sdio_test_work, msecs_to_jiffies(1000));

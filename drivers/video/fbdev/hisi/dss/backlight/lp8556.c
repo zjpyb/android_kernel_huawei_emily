@@ -248,7 +248,6 @@ out:
 	up(&(lp8556_g_chip->test_sem));
 	return ret;
 }
-/* EXPORT_SYMBOL(lp8556_set_backlight_init); */
 
 static ssize_t lp8556_reg_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -305,7 +304,7 @@ static ssize_t lp8556_reg_store(struct device *dev,
 					struct device_attribute *devAttr,
 					const char *buf, size_t size)
 {
-	ssize_t ret = -1;
+	ssize_t ret;
 	struct lp8556_chip_data *pchip = NULL;
 	unsigned int reg = 0;
 	unsigned int mask = 0;
@@ -313,18 +312,18 @@ static ssize_t lp8556_reg_store(struct device *dev,
 
 	if (!buf) {
 		LP8556_ERR("buf is null\n");
-		return ret;
+		return -1;
 	}
 
 	if (!dev) {
 		LP8556_ERR("dev is null\n");
-		return ret;
+		return -1;
 	}
 
 	pchip = dev_get_drvdata(dev);
 	if(!pchip){
 		LP8556_ERR("pchip is null\n");
-		return ret;
+		return -1;
 	}
 
 	ret = sscanf(buf, "reg=0x%x, mask=0x%x, val=0x%x", &reg, &mask, &val);
@@ -343,13 +342,11 @@ static ssize_t lp8556_reg_store(struct device *dev,
 
 i2c_error:
 	dev_err(pchip->dev, "%s:i2c access fail to register\n", __func__);
-	ret = snprintf((char *)buf, PAGE_SIZE, "%s: i2c access fail to register\n", __func__);
-	return ret;
+	return -1;
 
 out_input:
 	dev_err(pchip->dev, "%s:input conversion fail\n", __func__);
-	ret = snprintf((char *)buf, PAGE_SIZE, "%s: input conversion fail\n", __func__);
-	return ret;
+	return -1;
 }
 
 static DEVICE_ATTR(reg, (S_IRUGO|S_IWUSR), lp8556_reg_show, lp8556_reg_store);
@@ -397,12 +394,14 @@ static int lp8556_probe(struct i2c_client *client,
 	if (!pchip)
 		return -ENOMEM;
 
+#ifdef CONFIG_REGMAP_I2C
 	pchip->regmap = devm_regmap_init_i2c(client, &lp8556_regmap);
 	if (IS_ERR(pchip->regmap)) {
 		ret = PTR_ERR(pchip->regmap);
 		dev_err(&client->dev, "fail : allocate register map: %d\n", ret);
 		goto err_out;
 	}
+#endif
 
 	lp8556_g_chip = pchip;
 	pchip->client = client;

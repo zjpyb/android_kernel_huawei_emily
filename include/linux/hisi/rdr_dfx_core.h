@@ -9,10 +9,10 @@ typedef enum{
 
 #ifdef CONFIG_HISI_DFX_CORE
 int dfx_read(u32 module, void *buffer, u32 size);
-int dfx_write(u32 module,const void *buffer, u32 size);
+int dfx_write(u32 module, const void *buffer, u32 size);
 #else
 static inline int dfx_read(u32 module, void *buffer, u32 size) {return 0;}
-static inline int dfx_write(u32 module,const void *buffer, u32 size) {return 0;}
+static inline int dfx_write(u32 module,void *buffer, u32 size) {return 0;}
 #endif
 
 #endif

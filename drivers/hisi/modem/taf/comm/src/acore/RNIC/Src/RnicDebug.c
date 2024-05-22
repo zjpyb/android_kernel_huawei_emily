@@ -175,8 +175,10 @@ VOS_VOID RNIC_ShowDLProcStats(VOS_UINT8 ucRmNetId)
     PS_PRINTF("RNIC %d下行加MAC头失败的个数                       %d\n", ucRmNetId, g_astRnicStats[ucRmNetId].ulDlAddMacHdFailNum);
     PS_PRINTF("RNIC %d网卡私有数据错误丢掉下行数据包的个数        %d\n", ucRmNetId, g_astRnicStats[ucRmNetId].ulDlNetCardDiscardNum);
     PS_PRINTF("RNIC %d网卡ID错误丢掉下行数据包的个数              %d\n", ucRmNetId, g_astRnicStats[ucRmNetId].ulDlNetIdDiscardNum);
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     PS_PRINTF("RNIC %d网卡NAPI Netif收到下行数据包的个数          %d\n", ucRmNetId, RNIC_GET_NAPI_NETIF_RCV_PKT_NUM(ucRmNetId));
     PS_PRINTF("RNIC %d网卡NAPI GRO收到下行数据包的个数            %d\n", ucRmNetId, RNIC_GET_NAPI_GRO_RCV_PKT_NUM(ucRmNetId));
+#endif
     PS_PRINTF("RNIC %d网卡GRO入队失败主动丢弃下行数据包的个数     %d\n", ucRmNetId, g_astRnicStats[ucRmNetId].ulDlNapiPollQueDiscardPktNum);
     PS_PRINTF("RNIC 当前NAPI Poll队列长度                         %d\n", g_ulRnicNapiPollQueLen[ucRmNetId]);
     PS_PRINTF("RNIC %d收到错误数据包的个数非ipv4ipv6包            %d\n", ucRmNetId, g_astRnicStats[ucRmNetId].ulDlRecvErrPktNum);
@@ -210,6 +212,7 @@ VOS_VOID RNIC_ShowImsPortsBindStats(VOS_VOID)
     return;
 }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 
 VOS_VOID RNIC_ShowNapiInfo(VOS_UINT8 ucRmNetId)
 {
@@ -230,6 +233,7 @@ VOS_VOID RNIC_ShowNapiInfo(VOS_UINT8 ucRmNetId)
     PS_PRINTF("\r\n");
     return;
 }
+#endif
 
 
 VOS_VOID RNIC_Help(VOS_VOID)
@@ -241,7 +245,9 @@ VOS_VOID RNIC_Help(VOS_VOID)
     PS_PRINTF("RNIC_ShowRnicPdpStats ucRmNetId                 显示指定RNIC网卡PDP激活信息\n");
     PS_PRINTF("RNIC_ShowResetStats                             显示指定RNIC复位状态信息\n");
     PS_PRINTF("RNIC_ShowImsPortsBindStats                      显示Ims保留端口号绑定的统计信息\n");
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     PS_PRINTF("RNIC_ShowNapiInfo     ucRmNetId                 显示指定RNIC网卡的NAPI相关信息\n");
+#endif
 
     return;
 }

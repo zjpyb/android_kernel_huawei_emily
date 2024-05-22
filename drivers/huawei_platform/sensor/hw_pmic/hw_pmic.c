@@ -337,7 +337,7 @@ static int hw_pmic_get_dt_data(struct hw_pmic_ctrl_t *pmic_ctrl)
 				hwlog_err("fail req boost en = %d\n", rc);
 				return -EPERM;
 			}
-			gpio_direction_output(pmic_info->boost_en_pin, 1);
+			(void)gpio_direction_output(pmic_info->boost_en_pin, 1);
 			gpio_req_status = true;
 		}
 	}
@@ -369,7 +369,7 @@ int hw_pmic_i2c_probe(struct i2c_client *client,
 		hwlog_err("%s id null\n", __func__);
 		return -EFAULT;
 	}
-	pmic_ctrl = (struct hw_pmic_ctrl_t *)id->driver_data;
+	pmic_ctrl = (struct hw_pmic_ctrl_t *)(uintptr_t)id->driver_data;
 	if (!pmic_ctrl || !pmic_ctrl->pmic_i2c_client || !pmic_ctrl->func_tbl ||
 		!pmic_ctrl->func_tbl->pmic_get_dt_data ||
 		!pmic_ctrl->func_tbl->pmic_init) {

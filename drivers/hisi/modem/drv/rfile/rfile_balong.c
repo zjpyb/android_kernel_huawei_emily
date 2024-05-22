@@ -1812,6 +1812,7 @@ EXPORT_SYMBOL(bsp_readdir);
 EXPORT_SYMBOL(bsp_closedir);
 EXPORT_SYMBOL(bsp_stat);
 
+#if (FEATURE_ON == FEATURE_DELAY_MODEM_INIT)
 
 static int  modem_rfile_probe(struct platform_device *dev)
 {
@@ -1831,6 +1832,7 @@ static void  modem_rfile_shutdown(struct platform_device *dev)
 
     g_stRfileMain.eInitFlag = EN_RFILE_INIT_INVALID;
 }
+#ifdef CONFIG_PM
 static s32 modem_rfile_suspend(struct device *dev)
 {
     static s32 count = 0;
@@ -1865,6 +1867,9 @@ static const struct dev_pm_ops modem_rfile_pm_ops ={
 };
 
 #define BALONG_RFILE_PM_OPS (&modem_rfile_pm_ops)
+#else
+#define BALONG_RFILE_PM_OPS  NULL
+#endif
 static struct platform_driver modem_rfile_drv = {
     .probe      = modem_rfile_probe,
     .shutdown   = modem_rfile_shutdown,
@@ -1916,6 +1921,9 @@ void  modem_rfile_exit(void)
 //module_init(modem_rfile_init);
 //module_exit(modem_rfile_exit);
 
+#else
+module_init(bsp_rfile_init);
+#endif
 
 
 

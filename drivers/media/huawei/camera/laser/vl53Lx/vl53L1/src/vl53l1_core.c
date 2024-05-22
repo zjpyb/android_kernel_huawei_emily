@@ -796,12 +796,8 @@ void V53L1_init_zone_results_structure(
 	uint8_t                 active_zones,
 	VL53L1_zone_results_t  *pdata)
 {
-
-
-
-
-	uint8_t  z = 0;
-	VL53L1_zone_objects_t *pobjects;
+	uint8_t z;
+	VL53L1_zone_objects_t *pobjects = NULL;
 
 	pdata->max_zones    = VL53L1_MAX_USER_ZONES;
 	pdata->active_zones = active_zones;
@@ -3146,9 +3142,9 @@ void VL53L1_hist_copy_results_to_sys_and_core(
 
 
 
-	uint8_t  i = 0;
+	uint8_t  i;
 
-	VL53L1_range_data_t  *pdata;
+	VL53L1_range_data_t  *pdata = NULL;
 
 	LOG_FUNCTION_START("");
 
@@ -3364,7 +3360,7 @@ VL53L1_Error VL53L1_save_cfg_data(
 	VL53L1_LLDriverResults_t  *pres =
 			VL53L1DevStructGetLLResultsHandle(Dev);
 
-	VL53L1_zone_private_dyn_cfg_t *pzone_dyn_cfg;
+	VL53L1_zone_private_dyn_cfg_t *pzone_dyn_cfg = NULL;
 	VL53L1_dynamic_config_t       *pdynamic = &(pdev->dyn_cfg);
 
 	LOG_FUNCTION_START("");
@@ -4498,7 +4494,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_corrector (
 	uint32_t smudge_margin_adjusted = 0;
 	uint8_t i = 0;
 	uint8_t nodetect_index = 0;
-	VL53L1_range_results_t *rangereslt;
+	VL53L1_range_results_t *rangereslt = NULL;
 
 
 	LOG_FUNCTION_START("");
@@ -4927,7 +4923,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_output_init(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_smudge_corrector_data_t *pdata;
+	VL53L1_smudge_corrector_data_t *pdata = NULL;
 
 	LOG_FUNCTION_START("");
 

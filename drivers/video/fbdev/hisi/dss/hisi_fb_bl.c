@@ -13,25 +13,23 @@
 
 #include "hisi_fb.h"
 #include <linux/leds.h>
-#include "lcdkit_backlight_ic_common.h"
 
+#ifdef CONFIG_HW_ZEROHUNG
 #include <chipset_common/hwzrhung/hung_wp_screen.h>
+#endif
 
 #define K3_DSS_SBL_WORKQUEUE	"k3_dss_sbl_workqueue"
 
 static int lcd_backlight_registered;
 static unsigned int is_recovery_mode;
 static int is_no_fastboot_bl_enable;
-static bool bl_slope_status;
 
-unsigned long backlight_duration = (3 * HZ / 60);
+#ifdef CONFIG_HISI_FB_BACKLIGHT_DELAY
+unsigned long backlight_duration = (2 * HZ / 60);
+#endif
 
 extern unsigned int get_boot_into_recovery_flag(void);
 
-bool hisi_get_bl_slope_status(void)
-{
-	return bl_slope_status;
-}
 void hisifb_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bkl_lvl, bool enforce)
 {
 	struct hisi_fb_panel_data *pdata = NULL;
@@ -59,17 +57,17 @@ void hisifb_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bkl_lvl, bo
 		return;
 	}
 
-	if (pdata->set_backlight) {
+	if (pdata->set_backlight != NULL) {
 		if (hisifd->backlight.bl_level_old == temp && !enforce) {
 			hisifd->bl_level = bkl_lvl;
 			HISI_FB_INFO("set_bl return: bl_level_old = %d, current_bl_level = %d, enforce = %d!\n",hisifd->backlight.bl_level_old,temp,enforce);
 			return;
 		}
 
+#ifdef CONFIG_HW_ZEROHUNG
 		hung_wp_screen_setbl(temp);
-		bl_slope_status = true;
+#endif
 		if (hisifd->backlight.bl_level_old == 0) {
-			bl_slope_status = false;
 			HISI_FB_INFO("backlight level = %d \n", bkl_lvl);
 		}
 		hisifd->bl_level = bkl_lvl;
@@ -95,19 +93,25 @@ void hisifb_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t bkl_lvl, bo
 	}
 }
 
+#ifdef CONFIG_HISI_FB_BACKLIGHT_DELAY
 static void hisifb_bl_workqueue_handler(struct work_struct *work)
+#else
+static void hisifb_bl_workqueue_handler(struct hisi_fb_data_type *hisifd)
+#endif
 {
 	struct hisi_fb_panel_data *pdata = NULL;
+#ifdef CONFIG_HISI_FB_BACKLIGHT_DELAY
 	struct hisifb_backlight *pbacklight = NULL;
 	struct hisi_fb_data_type *hisifd = NULL;
 
-	pbacklight = container_of(to_delayed_work(work), struct hisifb_backlight, bl_worker);
+	pbacklight = container_of(to_delayed_work(work), struct hisifb_backlight, bl_worker); //lint !e666
 	if (NULL == pbacklight) {
 		HISI_FB_ERR("pbacklight is NULL");
 		return;
 	}
 
 	hisifd = container_of(pbacklight, struct hisi_fb_data_type, backlight);
+#endif
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("hisifd is NULL");
@@ -182,12 +186,17 @@ void hisifb_backlight_update(struct hisi_fb_data_type *hisifd)
 		return;
 	}
 	if (hisifd->online_play_count < ONLINE_PLAY_LOG_PRINTF) {
-		HISI_FB_INFO("[online_play_count = %d] panel_power_on = %d, bl_updated = %d.\n", hisifd->online_play_count, hisifd->panel_power_on, hisifd->backlight.bl_updated);
+		HISI_FB_INFO("[online_play_count = %d] panel_power_on = %d, bl_updated = %d.\n",
+			hisifd->online_play_count, hisifd->panel_power_on, hisifd->backlight.bl_updated);
 	}
 	if (!hisifd->backlight.bl_updated && hisifd->panel_power_on) {
 		hisifd->backlight.frame_updated = 1;
+	#ifdef CONFIG_HISI_FB_BACKLIGHT_DELAY
 		schedule_delayed_work(&hisifd->backlight.bl_worker,
 			backlight_duration);
+	#else
+		hisifb_bl_workqueue_handler(hisifd);
+	#endif
 	}
 }
 
@@ -210,7 +219,9 @@ void hisifb_backlight_cancel(struct hisi_fb_data_type *hisifd)
 		return;
 	}
 
+#ifdef CONFIG_HISI_FB_BACKLIGHT_DELAY
 	cancel_delayed_work(&hisifd->backlight.bl_worker);
+#endif
 	hisifd->backlight.bl_updated = 0;
 	hisifd->backlight.bl_level_old = 0;
 	hisifd->backlight.frame_updated = 0;
@@ -219,7 +230,7 @@ void hisifb_backlight_cancel(struct hisi_fb_data_type *hisifd)
 		HISI_FB_INFO("[online_play_count = %d] set bl_updated = 0.\n", hisifd->online_play_count);
 	}
 
-	if (pdata->set_backlight) {
+	if (pdata->set_backlight != NULL) {
 		hisifd->bl_level = 0;
 		if (hisifd->panel_info.bl_set_type & BL_SET_BY_MIPI)
 			hisifb_activate_vsync(hisifd);
@@ -245,9 +256,6 @@ static void hisi_fb_set_bl_brightness(struct led_classdev *led_cdev,
 		HISI_FB_ERR("NULL pointer!\n");
 		return;
 	}
-
-	if (value < 0) //lint !e568
-		value = 0;
 
 	if (value > hisifd->panel_info.bl_max)
 		value = hisifd->panel_info.bl_max;
@@ -307,7 +315,9 @@ void hisifb_backlight_register(struct platform_device *pdev)
 	hisifd->backlight.frame_updated = 0;
 	hisifd->backlight.bl_level_old = 0;
 	sema_init(&hisifd->backlight.bl_sem, 1);
+#ifdef CONFIG_HISI_FB_BACKLIGHT_DELAY
 	INIT_DELAYED_WORK(&hisifd->backlight.bl_worker, hisifb_bl_workqueue_handler);
+#endif
 
 	if (lcd_backlight_registered)
 		return;
@@ -317,10 +327,12 @@ void hisifb_backlight_register(struct platform_device *pdev)
 	backlight_led.brightness = hisifd->panel_info.bl_default;
 	backlight_led.max_brightness = hisifd->panel_info.bl_max;
 	/* android supports only one lcd-backlight/lcd for now */
+#ifdef CONFIG_LEDS_CLASS
 	if (led_classdev_register(&pdev->dev, &backlight_led)) {
 		dev_err(&pdev->dev, "led_classdev_register failed!\n");
 		return;
 	}
+#endif
 
 	//support sbl
 	if (HISI_DSS_SUPPORT_DPP_MODULE_BIT(DPP_MODULE_SBL)) {
@@ -351,7 +363,9 @@ void hisifb_backlight_unregister(struct platform_device *pdev)
 
 	if (lcd_backlight_registered) {
 		lcd_backlight_registered = 0;
+	#ifdef CONFIG_LEDS_CLASS
 		led_classdev_unregister(&backlight_led);
+	#endif
 
 		if (hisifd->backlight.sbl_queue) {
 			destroy_workqueue(hisifd->backlight.sbl_queue);
@@ -648,6 +662,7 @@ void bl_flicker_detector_collect_device_bl(int level)
 			g_flicker_detector.upper_bl_value_last, upper_bl_value_cur,
 			g_flicker_detector.device_bl_value_last, device_bl_value_cur,
 			device_bl_weber, weber_threshold_min, weber_threshold_max);
+#if defined (CONFIG_HUAWEI_DSM)
 		if (!dsm_client_ocuppy(lcd_dclient)) {
 			dsm_client_record(lcd_dclient,"flicker warning: upper %d->%d, device %d->%d, %d out of [%d, %d]\n",
 			g_flicker_detector.upper_bl_value_last, upper_bl_value_cur,
@@ -655,6 +670,7 @@ void bl_flicker_detector_collect_device_bl(int level)
 			device_bl_weber, weber_threshold_min, weber_threshold_max);
 		}
 		dsm_client_notify(lcd_dclient, DSM_LCD_BACKLIGHT_FLICKER_ERROR_NO);
+#endif
 		if (g_flicker_detector.config.dump_enable)
 		{
 			bl_flicker_detector_ring_buffer_dump(jiffies_cur);

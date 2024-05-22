@@ -1,7 +1,7 @@
 /*
- * /ion/ion_secsg_heap.c
+ * ion_secsg_heap.c
  *
- * Copyright (C) 2011 Google, Inc.
+ * Copyright (C) 2018 Hisilicon, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,157 +16,458 @@
 
 #define pr_fmt(fmt) "secsg: " fmt
 
-#include <linux/delay.h>
+#include <linux/cma.h>
 #include <linux/err.h>
-#include <linux/mm.h>
-#include <linux/dma-mapping.h>
-#include <linux/dma-contiguous.h>
 #include <linux/genalloc.h>
+#include <linux/mm.h>
 #include <linux/mutex.h>
-#include <linux/of_fdt.h>
-#include <linux/of_reserved_mem.h>
-#include <linux/of_address.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
-#include <linux/cma.h>
 #include <linux/sizes.h>
-#include <linux/memblock.h>
-#include <linux/sched.h>
-#include <linux/list.h>
-#include <linux/workqueue.h>
 #include <linux/version.h>
 #include <linux/hisi/hisi_cma.h>
 #include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/hisi_mm.h>
-#include <teek_client_api.h>
-#include <teek_client_id.h>
-#include <teek_client_constants.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
 #include "ion.h"
-#include "hisi/ion_sec_priv.h"
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-#include "ion_priv.h"
-#else
+#include "hisi/ion_tee_op.h"
+#include "hisi/sec_alloc.h"
 #include "hisi_ion_priv.h"
-#endif
 
-static struct cma *hisi_cma;
-static struct ion_sec_cma hisi_secsg_cmas[SEC_SG_CMA_NUM];
-static unsigned int secsg_cma_num;
 
-int hisi_sec_cma_set_up(struct reserved_mem *rmem)
-{
-	phys_addr_t align = PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
-	phys_addr_t mask = align - 1;
-	unsigned long node = rmem->fdt_node;
+struct ion_secsg_heap {
+	struct ion_heap heap;
 	struct cma *cma;
-	const char *cma_name;
-	int err;
+	struct gen_pool *pool;
+	/* heap mutex */
+	struct mutex mutex;
+	/* heap total size */
+	size_t heap_size;
+	/* heap allocated size */
+	unsigned long alloc_size;
+	/* align size: 1MB or 2MB */
+	u64 per_bit_sz;
+	/* each sg section size */
+	u64 per_alloc_sz;
+	TEEC_Context *context;
+	TEEC_Session *session;
+	/* heap attr: secure, protect */
+	u32 heap_attr;
+	u32 pool_flag;
+	int TA_init;
+};
 
-	if (secsg_cma_num == 0)
-		memset(hisi_secsg_cmas, 0,/* unsafe_function_ignore: memset */
-		       sizeof(hisi_secsg_cmas));
+#ifdef CONFIG_SECMEM_TEST
+#define ION_FLAG_ALLOC_TEST (1U << 31)
 
-	if (secsg_cma_num >= SEC_SG_CMA_NUM) {
-		pr_err("Sec cma num overflow!secsg_cma_num:%u\n",
-		       secsg_cma_num);
-		return -EINVAL;
-	}
-
-	cma_name = (const char *)of_get_flat_dt_prop(node, "compatible", NULL);
-
-	if (!cma_name) {
-		pr_err("can't get compatible, id:%u\n", secsg_cma_num);
-		return -EINVAL;
-	}
-	if (!of_get_flat_dt_prop(node, "reusable", NULL) ||
-	    of_get_flat_dt_prop(node, "no-map", NULL)) {
-		pr_err("%s err node\n", __func__);
-		return -EINVAL;
-	}
-
-	if ((rmem->base & mask) || (rmem->size & mask)) {
-		pr_err("Reserved memory: incorrect alignment of CMA region\n");
-		return -EINVAL;
-	}
-
-	if (!memblock_is_memory(rmem->base)) {
-		memblock_free(rmem->base, rmem->size);
-		pr_err("memory is invalid(0x%llx), size(0x%llx)\n",
-			rmem->base, rmem->size);
-		return -EINVAL;
-	}
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-	err = cma_init_reserved_mem(rmem->base, rmem->size, 0, &cma);
-#else
-	err = cma_init_reserved_mem(rmem->base, rmem->size,
-				0, rmem->name, &cma);
-#endif
-	if (err) {
-		pr_err("Reserved memory: unable to setup CMA region\n");
-		return err;
-	}
-
-	hisi_secsg_cmas[secsg_cma_num].cma_region = cma;
-	hisi_secsg_cmas[secsg_cma_num].cma_name = cma_name;
-
-	pr_err("%s init cma:rmem->base:0x%llx,size:0x%llx,cmaname:%s, secsg_cma_num:%u\n",
-	       __func__, rmem->base, rmem->size, cma_name, secsg_cma_num);
-
-	secsg_cma_num++;
-
-	if (!strcmp(cma_name, "hisi-cma-pool")) {
-		pr_err("%s,cma reg to dma_camera_cma\n", __func__);
-		hisi_cma = cma;
-		ion_register_dma_camera_cma((void *)cma);
-	}
-
-	return 0;
-}
-/*lint -e528 -esym(528,RESERVEDMEM_OF_DECLARE)*/
-RESERVEDMEM_OF_DECLARE(hisi_dynamic_cma,
-		       "hisi-cma-pool",
-		       hisi_sec_cma_set_up);//lint !e611
-RESERVEDMEM_OF_DECLARE(hisi_iris_static_cma,
-		       "hisi-iris-sta-cma-pool",
-		       hisi_sec_cma_set_up);
-RESERVEDMEM_OF_DECLARE(hisi_algo_static_cma,
-		       "hisi-algo-sta-cma-pool",
-		       hisi_sec_cma_set_up);
-/*lint -e528 +esym(528,RESERVEDMEM_OF_DECLARE)*/
-
-struct cma *get_sec_cma(void)
+static void double_alloc_test(struct ion_secsg_heap *secsg_heap,
+			      struct ion_buffer *buffer, u32 cmd)
 {
-	return hisi_cma;
-}
-
-static int __secsg_pgtable_init(struct ion_secsg_heap *secsg_heap)
-{
-	int ret = 0;
+	struct sg_table *table = buffer->sg_table;
+	struct scatterlist *sg = NULL;
+	struct page *page = NULL;
 	struct mem_chunk_list mcl;
-	struct tz_pageinfo pageinfo;
+	struct tz_pageinfo *pageinfo = NULL;
+	unsigned int nents = table->nents;
+	int ret = 0;
+	u32 size = 0,i;
 
-	if (!secsg_heap->TA_init ||
-	    secsg_heap->heap_attr != HEAP_PROTECT) {
-		pr_err("normal/sec heap can't init secure iommu!\n");
+	pageinfo = kcalloc(nents, sizeof(*pageinfo), GFP_KERNEL);
+	if (!pageinfo)
+		return;
+
+	for_each_sg(table->sgl, sg, table->nents, i) {
+		page = sg_page(sg);
+		pageinfo[i].addr = page_to_phys(page);
+		pageinfo[i].nr_pages = sg->length / PAGE_SIZE;
+		size += sg->length;
+	}
+
+	mcl.phys_addr = (void *)pageinfo;
+	mcl.nents = nents;
+	mcl.protect_id = SEC_TASK_DRM;
+	mcl.size = size;
+
+	ret = secmem_tee_exec_cmd(secsg_heap->session, &mcl, cmd);
+	kfree(pageinfo);
+	if (!ret)
+		pr_err("Test double alloc Fail\n");
+	else
+		pr_err("Test double alloc Succ\n");
+}
+
+static void sion_test(struct ion_secsg_heap *secsg_heap,
+		      struct ion_buffer *buffer)
+{
+	struct sg_table *table = buffer->sg_table;
+	struct scatterlist *sg = NULL;
+	struct page *page = NULL;
+	struct mem_chunk_list mcl;
+	struct tz_pageinfo *pageinfo = NULL;
+	unsigned int nents = table->nents;
+	int ret = 0;
+	u32 size = 0;
+	u32 i;
+
+	if (!secsg_heap->TA_init) {
+		secsg_heap->context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
+		if (!secsg_heap->context)
+			return;
+
+		secsg_heap->session = kzalloc(sizeof(TEEC_Session), GFP_KERNEL);
+		if (!secsg_heap->session) {
+			kfree(secsg_heap->context);
+			return;
+		}
+
+		ret = secmem_tee_init(secsg_heap->context, secsg_heap->session);
+		if (ret) {
+			pr_err("[%s] TA init failed\n", __func__);
+			kfree(secsg_heap->context);
+			kfree(secsg_heap->session);
+			return;
+		}
+		secsg_heap->TA_init = 1;
+	}
+
+	pageinfo = kcalloc(nents, sizeof(*pageinfo), GFP_KERNEL);
+	if (!pageinfo)
+		return;
+
+	for_each_sg(table->sgl, sg, table->nents, i) {
+		page = sg_page(sg);
+		pageinfo[i].addr = page_to_phys(page);
+		pageinfo[i].nr_pages = sg->length / PAGE_SIZE;
+		size += sg->length;
+	}
+
+	mcl.phys_addr = (void *)pageinfo;
+	mcl.nents = nents;
+	mcl.size = size;
+	if (buffer->id) {
+		mcl.protect_id = SEC_TASK_DRM;
+		mcl.buff_id = buffer->id;
+	} else
+		mcl.protect_id = SEC_TASK_SEC;
+
+	ret = secmem_tee_exec_cmd(secsg_heap->session, &mcl, ION_SEC_CMD_TEST);
+	kfree(pageinfo);
+	if (ret)
+		pr_err("Test sion Fail\n");
+	else
+		pr_err("Test sion Succ\n");
+}
+#endif
+
+static int change_scatter_prop(struct ion_secsg_heap *secsg_heap,
+			       struct ion_buffer *buffer,
+			       u32 cmd)
+{
+	struct sg_table *table = buffer->sg_table;
+	struct scatterlist *sg = NULL;
+	struct page *page = NULL;
+	struct mem_chunk_list mcl;
+	struct tz_pageinfo *pageinfo = NULL;
+	unsigned int nents = table->nents;
+	int ret = 0;
+	u32 i;
+
+	if (!secsg_heap->TA_init) {
+		pr_err("[%s] TA not inited.\n", __func__);
 		return -EINVAL;
 	}
 
-	mcl.protect_id = SEC_TASK_DRM;
-	pageinfo.addr = secsg_heap->pgtable_phys;
-	pageinfo.nr_pages = secsg_heap->pgtable_size / PAGE_SIZE;
-	mcl.phys_addr = (void *)&pageinfo;
+	if (cmd == ION_SEC_CMD_ALLOC) {
+		pageinfo = kcalloc(nents, sizeof(*pageinfo), GFP_KERNEL);
+		if (!pageinfo)
+			return -ENOMEM;
 
-	ret = secmem_tee_exec_cmd(secsg_heap->session,
-				  &mcl, ION_SEC_CMD_PGATBLE_INIT);
-	if (ret)
-		pr_err("init secure iommu fail!\n");
+		for_each_sg(table->sgl, sg, table->nents, i) {
+			page = sg_page(sg);
+			pageinfo[i].addr = page_to_phys(page);
+			pageinfo[i].nr_pages = sg->length / PAGE_SIZE;
+		}
+
+		mcl.phys_addr = (void *)pageinfo;
+		mcl.nents = nents;
+		mcl.protect_id = SEC_TASK_DRM;
+	} else if (cmd == ION_SEC_CMD_FREE) {
+		mcl.protect_id = SEC_TASK_DRM;
+		mcl.buff_id = buffer->id;
+		mcl.phys_addr = NULL;
+	} else {
+		pr_err("%s: Error cmd\n", __func__);
+		return -EINVAL;
+	}
+
+	ret = secmem_tee_exec_cmd(secsg_heap->session, &mcl, cmd);
+	if (ret) {
+		pr_err("%s:exec cmd[%d] fail\n", __func__, cmd);
+		ret = -EINVAL;
+	} else {
+		if (cmd == ION_SEC_CMD_ALLOC)
+			buffer->id = mcl.buff_id;
+	}
+
+	if (pageinfo)
+		kfree(pageinfo);
 
 	return ret;
+}
+
+static struct page *__secsg_alloc_page(struct ion_secsg_heap *secsg_heap,
+				       unsigned long size,
+				       unsigned long align)
+{
+	struct page *page = NULL;
+	unsigned long offset = 0;
+	u32 count = 0;
+
+	if (secsg_heap->pool_flag) {
+		offset = gen_pool_alloc(secsg_heap->pool, size);
+		if (!offset)
+			return NULL;
+
+		page = pfn_to_page(PFN_DOWN(offset));
+	} else {
+		count = (u32)size / PAGE_SIZE;
+		page = cma_alloc(secsg_heap->cma, count,
+				 (u32)get_order((u32)align), false);
+	}
+
+	return page;
+}
+
+static void __secsg_free_page(struct ion_secsg_heap *secsg_heap,
+			      struct page *page,
+			      unsigned long size)
+{
+	if (secsg_heap->pool_flag)
+		gen_pool_free(secsg_heap->pool, page_to_phys(page), size);
+	else
+		cma_release(secsg_heap->cma, page, (u32)size / PAGE_SIZE);
+}
+
+static struct page *__secsg_alloc_large(struct ion_secsg_heap *secsg_heap,
+					unsigned long size,
+					unsigned long align)
+{
+	struct page *page = NULL;
+#ifdef CONFIG_HISI_KERNELDUMP
+	struct page *tmp_page = NULL;
+	u32 count = 0;
+	u32 k;
+#endif
+
+	page = __secsg_alloc_page(secsg_heap, size, align);
+	if (!page)
+		return NULL;
+
+	if (!secsg_heap->pool_flag)
+		memset(page_to_virt((uintptr_t)page), 0, size);
+#ifdef CONFIG_HISI_KERNELDUMP
+	count = (u32)size / PAGE_SIZE;
+	tmp_page = page;
+	for (k = 0; k < count; k++) {
+		SetPageMemDump(tmp_page);
+		tmp_page++;
+	}
+#endif
+	return page;
+}
+
+static int flush_tlb_cache_send_cmd(struct ion_buffer *buffer, struct sg_table *table,
+					struct ion_secsg_heap *secsg_heap)
+{
+	int ret;
+
+#ifdef CONFIG_NEED_CHANGE_MAPPING
+	flush_tlb_all();
+#endif
+	ion_flush_all_cpus_caches();
+
+	buffer->sg_table = table;
+
+	/*
+	 * Send cmd to secos change the memory form normal to protect when
+	 * user is DRM, and record some information of the sg_list for secos
+	 * va map.
+	 * Other user don't need to do this.
+	 */
+	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+		ret = change_scatter_prop(secsg_heap, buffer,
+					  ION_SEC_CMD_ALLOC);
+		if (ret)
+			return -1;
+	}
+
+#ifdef CONFIG_SECMEM_TEST
+	if (buffer->flags & ION_FLAG_ALLOC_TEST) {
+		pr_err("sion TEST start!\n");
+		if (secsg_heap->heap_attr == SEC_DRM_TEE)
+			double_alloc_test(secsg_heap, buffer, ION_SEC_CMD_ALLOC);
+		sion_test(secsg_heap, buffer);
+		pr_err("sion TEST end!\n");
+	}
+#endif
+
+	sec_debug("%s: exit\n", __func__);
+	return 0;
+}
+
+int __secsg_alloc_scatter(struct ion_secsg_heap *secsg_heap,
+			  struct ion_buffer *buffer, unsigned long size)
+{
+	struct sg_table *table = NULL;
+	struct scatterlist *sg = NULL;
+	struct page *page = NULL;
+	unsigned long per_bit_sz = secsg_heap->per_bit_sz;
+	unsigned long per_alloc_sz = secsg_heap->per_alloc_sz;
+	unsigned long size_remaining = ALIGN(size, per_bit_sz);
+	unsigned long alloc_size = 0;
+	unsigned long nents = ALIGN(size, per_alloc_sz) / per_alloc_sz;
+	int ret = 0;
+	u32 i = 0;
+
+	sec_debug("%s: enter, ALIGN size 0x%lx\n", __func__, size_remaining);
+	table = kzalloc(sizeof(*table), GFP_KERNEL);
+	if (!table)
+		return -ENOMEM;
+
+	if (sg_alloc_table(table, (u32)nents, GFP_KERNEL))
+		goto free_table;
+
+	/*
+	 * DRM memory alloc from CMA pool.
+	 * In order to speed up the allocation, we will apply for memory
+	 * in units of 2MB, and the memory portion of less than 2MB will
+	 * be applied for one time.
+	 */
+	sg = table->sgl;
+	while (size_remaining) {
+		if (size_remaining > per_alloc_sz)
+			alloc_size = per_alloc_sz;
+		else
+			alloc_size = size_remaining;
+
+		page = __secsg_alloc_large(secsg_heap, alloc_size, per_bit_sz);
+		if (!page)
+			goto free_pages;
+
+#ifdef CONFIG_NEED_CHANGE_MAPPING
+		/*
+		 * Before set memory in secure region, we need change kernel
+		 * pgtable from normal to device to avoid big CPU Speculative
+		 * read.
+		 */
+		change_secpage_range(page_to_phys(page),
+				     (unsigned long)page_address(page),
+				     alloc_size, __pgprot(PROT_DEVICE_nGnRE));
+#endif
+		size_remaining -= alloc_size;
+		sg_set_page(sg, page, (u32)alloc_size, 0);
+		sg = sg_next(sg);
+		i++;
+	}
+	/*
+	 * After change the pgtable prot, we need flush TLB and cache.
+	 */
+	 ret = flush_tlb_cache_send_cmd(buffer, table, secsg_heap);
+	 if (ret)
+		 goto free_pages;
+
+	 return 0;
+free_pages:
+	nents = i;
+	for_each_sg(table->sgl, sg, nents, i) {
+		page = sg_page(sg);
+#ifdef CONFIG_NEED_CHANGE_MAPPING
+		change_secpage_range(page_to_phys(page),
+				     (unsigned long)page_address(page),
+				     sg->length, PAGE_KERNEL);
+		flush_tlb_all();
+#endif
+		__secsg_free_page(secsg_heap, page, sg->length);
+	}
+#ifdef CONFIG_NEED_CHANGE_MAPPING
+	flush_tlb_all();
+#endif
+	sg_free_table(table);
+free_table:
+	kfree(table);
+
+	return -ENOMEM;
+}
+
+static void __secsg_free_scatter(struct ion_secsg_heap *secsg_heap,
+				 struct ion_buffer *buffer)
+{
+	struct sg_table *table = buffer->sg_table;
+	struct scatterlist *sg = NULL;
+	int ret = 0;
+	u32 i;
+
+	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+		ret = change_scatter_prop(secsg_heap, buffer, ION_SEC_CMD_FREE);
+		if (ret) {
+			pr_err("release MPU protect fail! Need check runtime\n");
+			return;
+		}
+	}
+
+	if (secsg_heap->pool_flag) {
+		buffer->flags |= ION_FLAG_CACHED;
+		ion_heap_buffer_zero(buffer);
+		ion_flush_all_cpus_caches();
+	}
+
+	for_each_sg(table->sgl, sg, table->nents, i) {
+#ifdef CONFIG_NEED_CHANGE_MAPPING
+		change_secpage_range(page_to_phys(sg_page(sg)),
+				     (unsigned long)page_address(sg_page(sg)),
+				     sg->length, PAGE_KERNEL);
+		flush_tlb_all();
+#endif
+		__secsg_free_page(secsg_heap, sg_page(sg), sg->length);
+	}
+#ifdef CONFIG_NEED_CHANGE_MAPPING
+	flush_tlb_all();
+#endif
+	sg_free_table(table);
+	kfree(table);
+	secsg_heap->alloc_size -= buffer->size;
+}
+
+int ion_secsg_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
+			phys_addr_t *addr, size_t *len)
+{
+	struct ion_secsg_heap *secsg_heap = NULL;
+
+	if (!heap || !buffer || !addr || !len) {
+		pr_err("%s: invalid input para!\n", __func__);
+		return -EINVAL;
+	}
+
+	if (heap->type != ION_HEAP_TYPE_SECSG) {
+		pr_err("%s: not secsg mem!\n", __func__);
+		return -EINVAL;
+	}
+
+	secsg_heap = container_of(heap, struct ion_secsg_heap, heap);
+
+	if (secsg_heap->heap_attr != SEC_DRM_TEE) {
+		pr_err("%s: sec buffer don't support get phys!\n", __func__);
+		return -EINVAL;
+	}
+
+	*addr = buffer->id;
+	*len = buffer->size;
+
+	return 0;
 }
 
 static int __secsg_heap_input_check(struct ion_secsg_heap *secsg_heap,
@@ -184,194 +485,25 @@ static int __secsg_heap_input_check(struct ion_secsg_heap *secsg_heap,
 		return -EINVAL;
 	}
 
-	if (size > secsg_heap->per_alloc_sz) {
-		pr_err("size too large! size 0x%lx, per_alloc_sz 0x%llx",
-			size, secsg_heap->per_alloc_sz);
-		return -EINVAL;
-	}
-
-	if (((secsg_heap->heap_attr == HEAP_SECURE) ||
-	    (secsg_heap->heap_attr == HEAP_PROTECT)) &&
-	    !(flag & ION_FLAG_SECURE_BUFFER)) {
-		pr_err("alloc mem w/o sec flag in sec heap(%u) flag(%lx)\n",
+	if (!(flag & ION_FLAG_SECURE_BUFFER)) {
+		pr_err("invalid alloc flag in heap(%u) flag(%lx)\n",
 		       secsg_heap->heap_attr, flag);
 		return -EINVAL;
 	}
 
-	if ((secsg_heap->heap_attr == HEAP_NORMAL) &&
-	    (flag & ION_FLAG_SECURE_BUFFER)) {
-		pr_err("invalid allocate sec in sec heap(%u) flag(%lx)\n",
-				secsg_heap->heap_attr, flag);
-		return -EINVAL;
-	}
-
-	secsg_heap->flag = flag;
 	return 0;
 }
 
-static int __secsg_create_static_cma_region(struct ion_secsg_heap *secsg_heap,
-					    u64 cma_base, u64 cma_size)
-{
-	struct page *page = NULL;
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-	page = cma_alloc(secsg_heap->cma, cma_size >> PAGE_SHIFT, 0);
-#else
-	page = cma_alloc(secsg_heap->cma, cma_size >> PAGE_SHIFT, 0, GFP_KERNEL);
-#endif
-	if (!page) {
-		pr_err("%s cma_alloc failed!cma_base 0x%llx cma_size 0x%llx\n",
-		       __func__, cma_base, cma_size);
-		return -ENOMEM;
-	}
-
-	pr_err("%s cma_alloc success!cma_base 0x%llx cma_size 0x%llx\n",
-	       __func__, cma_base, cma_size);
-
-	secsg_heap->static_cma_region =
-		gen_pool_create(secsg_heap->pool_shift, -1);
-
-	if (!secsg_heap->static_cma_region) {
-		pr_err("static_cma_region create failed\n");
-		cma_release(secsg_heap->cma, page, cma_size >> PAGE_SHIFT);
-		return -ENOMEM;
-	}
-	gen_pool_set_algo(secsg_heap->static_cma_region,
-			  gen_pool_best_fit, NULL);
-
-	if (gen_pool_add(secsg_heap->static_cma_region,
-			 page_to_phys(page), cma_size, -1)) {
-		pr_err("static_cma_region add base 0x%llx cma_size 0x%llx failed!\n",
-		       cma_base, cma_size);
-		cma_release(secsg_heap->cma, page, cma_size >> PAGE_SHIFT);
-		gen_pool_destroy(secsg_heap->static_cma_region);
-		secsg_heap->static_cma_region = NULL;
-		return -ENOMEM;
-	}
-
-	return 0;
-}
-
-static int __secsg_create_pool(struct ion_secsg_heap *secsg_heap)
-{
-	u64 cma_base;
-	u64 cma_size;
-	int ret = 0;
-
-	secsg_debug("into %s\n", __func__);
-	/* Allocate on 4KB boundaries (1 << ION_PBL_SHIFT)*/
-	secsg_heap->pool = gen_pool_create(secsg_heap->pool_shift, -1);
-
-	if (!secsg_heap->pool) {
-		pr_err("in __secsg_create_pool create failed\n");
-		return -ENOMEM;
-	}
-	gen_pool_set_algo(secsg_heap->pool, gen_pool_best_fit, NULL);
-
-	/* Add all memory to genpool first，one chunk only*/
-	cma_base = cma_get_base(secsg_heap->cma);
-	cma_size = cma_get_size(secsg_heap->cma);
-
-	if (gen_pool_add(secsg_heap->pool, cma_base, cma_size, -1)) {
-		pr_err("genpool add base 0x%llx cma_size 0x%llx\n",
-		       cma_base, cma_size);
-		ret = -ENOMEM;
-		goto err_add;
-	}
-
-	if (!gen_pool_alloc(secsg_heap->pool, cma_size)) {
-		pr_err("in __secsg_create_pool alloc failed\n");
-		ret = -ENOMEM;
-		goto err_alloc;
-	}
-
-	if (secsg_heap->cma_type == CMA_STATIC) {
-		ret = __secsg_create_static_cma_region(secsg_heap,
-						       cma_base,
-						       cma_size);
-		if (ret)
-			goto err_cma_alloc;
-	}
-
-	return 0;
-err_cma_alloc:
-	gen_pool_free(secsg_heap->pool, cma_base, cma_size);
-err_alloc:
-	gen_pool_destroy(secsg_heap->pool);
-err_add:
-	secsg_heap->pool = NULL;
-	return ret;
-}
-
-static int secsg_alloc(struct ion_secsg_heap *secsg_heap,
-			struct ion_buffer *buffer,
-			unsigned long size)
-{
-	int ret = 0;
-
-	if (secsg_heap->heap_attr == HEAP_PROTECT)
-		ret = __secsg_alloc_scatter(secsg_heap, buffer, size);
-	else
-		ret = __secsg_alloc_contig(secsg_heap, buffer, size);
-
-	return ret;
-}
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
-int ion_secmem_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
-			 phys_addr_t *addr, size_t *len)
-{
-	struct sg_table *table = buffer->sg_table;
-	struct page *page = sg_page(table->sgl);
-	struct ion_secsg_heap *secsg_heap;
-
-	if (heap->type != ION_HEAP_TYPE_SECSG) {
-		pr_err("%s: not secsg mem!\n", __func__);
-		return -EINVAL;
-	}
-
-	secsg_heap = container_of(heap, struct ion_secsg_heap, heap);
-
-	if (secsg_heap->heap_attr == HEAP_PROTECT) {
-		*addr = buffer->id;
-		*len = buffer->size;
-	} else {
-		phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
-		*addr = paddr;
-		*len = buffer->size;
-	}
-
-	return 0;
-}
-#endif
-
-static void secsg_free(struct ion_secsg_heap *secsg_heap,
-			struct ion_buffer *buffer)
-{
-	secsg_debug("%s: enter, free size 0x%zx\n", __func__, buffer->size);
-	if (secsg_heap->heap_attr == HEAP_PROTECT)
-		__secsg_free_scatter(secsg_heap, buffer);
-	else
-		__secsg_free_contig(secsg_heap, buffer);
-	secsg_debug("%s: exit\n", __func__);
-}
-
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-static int ion_secsg_heap_allocate(struct ion_heap *heap,
-				   struct ion_buffer *buffer,
-				   unsigned long size, unsigned long align,
-				   unsigned long flags)
-#else
 static int ion_secsg_heap_allocate(struct ion_heap *heap,
 				   struct ion_buffer *buffer,
 				   unsigned long size,
 				   unsigned long flags)
-#endif
 {
 	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
+		container_of(heap, struct ion_secsg_heap, heap);
 	int ret = 0;
 
-	secsg_debug("enter %s  size 0x%lx heap id %u\n",
+	sec_debug("enter %s  size 0x%lx heap id %u\n",
 		    __func__, size, heap->id);
 	mutex_lock(&secsg_heap->mutex);
 
@@ -382,8 +514,7 @@ static int ion_secsg_heap_allocate(struct ion_heap *heap,
 	}
 
 	/*init the TA conversion here*/
-	if (!secsg_heap->TA_init &&
-	   (flags & ION_FLAG_SECURE_BUFFER)) {
+	if (secsg_heap->heap_attr == SEC_DRM_TEE && !secsg_heap->TA_init) {
 		ret = secmem_tee_init(secsg_heap->context, secsg_heap->session);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
@@ -392,75 +523,70 @@ static int ion_secsg_heap_allocate(struct ion_heap *heap,
 		secsg_heap->TA_init = 1;
 	}
 
-	/* SMMU pgtable init */
-	if (!secsg_heap->iova_init && secsg_heap->pgtable_phys) {
-		ret = __secsg_pgtable_init(secsg_heap);
-		if (ret)
-			goto out;
-		secsg_heap->iova_init = 1;
-	}
-
-	if (secsg_alloc(secsg_heap, buffer, size)) {/*lint !e838*/
+	if (__secsg_alloc_scatter(secsg_heap, buffer, size)) {
 		ret = -ENOMEM;
 		goto out;
 	}
+
 	secsg_heap->alloc_size += size;
-	secsg_debug("secsg heap alloc succ, heap all alloc_size 0x%lx\n",
+	sec_debug("secsg heap alloc succ, heap all alloc_size 0x%lx\n",
 		    secsg_heap->alloc_size);
 	mutex_unlock(&secsg_heap->mutex);
+
 	return 0;
 out:
-	pr_err("heap[%d] alloc fail, size 0x%lx, heap all alloc_size 0x%lx\n",
-	       heap->id, size, secsg_heap->alloc_size);
+	if (!(flags & ION_FLAG_ALLOC_NOWARN_BUFFER))
+		pr_err("heap[%d] alloc fail, size 0x%lx, heap all alloc_size 0x%lx\n",
+			heap->id, size, secsg_heap->alloc_size);
 	mutex_unlock(&secsg_heap->mutex);
 
-	if (ret == -ENOMEM)
+	if (ret == -ENOMEM && !(flags & ION_FLAG_ALLOC_NOWARN_BUFFER))
 		hisi_ion_memory_info(true);
 
 	return ret;
-}  /*lint !e715*/
+}
 
 static void ion_secsg_heap_free(struct ion_buffer *buffer)
 {
 	struct ion_heap *heap = buffer->heap;
 	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
+		container_of(heap, struct ion_secsg_heap, heap);
 
-	secsg_debug("%s:enter, heap %d, free size:0x%zx,\n",
+	sec_debug("%s:enter, heap %d, free size:0x%zx,\n",
 		    __func__, heap->id, buffer->size);
 	mutex_lock(&secsg_heap->mutex);
-	secsg_free(secsg_heap, buffer);
-	secsg_debug("out %s:heap remaining allocate %lx\n",
+	__secsg_free_scatter(secsg_heap, buffer);
+	sec_debug("out %s:heap remaining allocate %lx\n",
 		    __func__, secsg_heap->alloc_size);
 	mutex_unlock(&secsg_heap->mutex);
-} /*lint !e715*/
-
-
+}
 
 static int ion_secsg_heap_map_user(struct ion_heap *heap,
-				   struct ion_buffer *buffer,
-				   struct vm_area_struct *vma)
+				    struct ion_buffer *buffer,
+				    struct vm_area_struct *vma)
 {
 	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
-	if ((secsg_heap->heap_attr == HEAP_SECURE) ||
-	    (secsg_heap->heap_attr == HEAP_PROTECT)) {
-		pr_err("secure buffer, can not call %s\n", __func__);
+		container_of(heap, struct ion_secsg_heap, heap);
+
+	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+		pr_err("heap(%d) DRM don't support map user\n", heap->id);
 		return -EINVAL;
 	}
+
 	return ion_heap_map_user(heap, buffer, vma);
 }
 
 static void *ion_secsg_heap_map_kernel(struct ion_heap *heap,
-					struct ion_buffer *buffer)
+				       struct ion_buffer *buffer)
 {
 	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
-	if ((secsg_heap->heap_attr == HEAP_SECURE) ||
-	    (secsg_heap->heap_attr == HEAP_PROTECT)) {
-		pr_err("secure buffer, can not call %s\n", __func__);
-		return NULL;
+		container_of(heap, struct ion_secsg_heap, heap);
+
+	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+		pr_err("heap(%d) DRM don't support map user\n", heap->id);
+		return ERR_PTR(-EINVAL);
 	}
+
 	return ion_heap_map_kernel(heap, buffer);
 }
 
@@ -468,108 +594,33 @@ static void ion_secsg_heap_unmap_kernel(struct ion_heap *heap,
 					struct ion_buffer *buffer)
 {
 	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
-	if ((secsg_heap->heap_attr == HEAP_SECURE) ||
-	    (secsg_heap->heap_attr == HEAP_PROTECT)) {
-		pr_err("secure buffer, can not call %s\n", __func__);
+		container_of(heap, struct ion_secsg_heap, heap);
+
+	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+		pr_err("heap(%d) DRM don't support map user\n", heap->id);
 		return;
 	}
+
 	ion_heap_unmap_kernel(heap, buffer);
 }
-
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-static int ion_secsg_heap_map_iommu(struct ion_buffer *buffer,
-				    struct ion_iommu_map *map_data)
-{
-	struct ion_heap *heap = buffer->heap;
-	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
-	int ret = 0;
-
-	if (secsg_heap->heap_attr == HEAP_PROTECT) {
-		ret = secsg_map_iommu(secsg_heap, buffer, map_data);
-		if (ret)
-			pr_err("%s:protect map iommu fail\n", __func__);
-		return ret;
-	} else if (secsg_heap->heap_attr == HEAP_SECURE) {
-		pr_err("%s:sec or protect buffer can't map iommu\n", __func__);
-		return -EINVAL;
-	} else {
-		return ion_heap_map_iommu(buffer, map_data);
-	}
-}
-
-static void ion_secsg_heap_unmap_iommu(struct ion_iommu_map *map_data)
-{
-	struct ion_buffer *buffer = map_data->buffer;
-	struct ion_heap *heap = buffer->heap;
-	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
-
-	if (secsg_heap->heap_attr == HEAP_PROTECT)
-		secsg_unmap_iommu(secsg_heap, buffer, map_data);
-	else if (secsg_heap->heap_attr == HEAP_SECURE)
-		pr_err("[%s]secure buffer, do nothing.\n", __func__);
-	else
-		ion_heap_unmap_iommu(map_data);
-}
-#endif
 
 static struct ion_heap_ops secsg_heap_ops = {
 	.allocate = ion_secsg_heap_allocate,
 	.free = ion_secsg_heap_free,
-	.map_user = ion_secsg_heap_map_user,
 	.map_kernel = ion_secsg_heap_map_kernel,
 	.unmap_kernel = ion_secsg_heap_unmap_kernel,
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-	.map_iommu = ion_secsg_heap_map_iommu,
-	.unmap_iommu = ion_secsg_heap_unmap_iommu,
-#endif
-};/*lint !e785*/
+	.map_user = ion_secsg_heap_map_user,
+};
 
-static void __secsg_parse_dt_cma_para(struct device_node *nd,
-				      struct ion_secsg_heap *secsg_heap)
-{
-	const char *compatible;
-	struct device_node *phandle_node;
-	u32 cma_type = 0;
-	int ret = 0;
-
-	phandle_node = of_parse_phandle(nd, "cma-region", 0);
-	if (phandle_node) {
-		ret = of_property_read_string(phandle_node,
-					      "compatible",
-					      &compatible);
-		if (ret) {
-			pr_err("no compatible\n");
-			return;
-		}
-		secsg_heap->cma_name = compatible;
-	} else {
-		secsg_heap->cma_name = "hisi-cma-pool";
-		pr_err("no cma-region phandle\n");
-	}
-	ret = of_property_read_u32(nd, "cma-type", &cma_type);
-	if (ret < 0) {
-		secsg_heap->cma_type = CMA_DYNAMIC;
-		pr_err("can't find prop:cma-type\n");
-	} else {
-		secsg_heap->cma_type = cma_type;
-	}
-}
 static int __secsg_parse_dt(struct device *dev,
 			    struct ion_platform_heap *heap_data,
 			    struct ion_secsg_heap *secsg_heap)
 {
-	struct device_node *nd;
-	struct device_node *mem_region;
-	struct resource res;
+	struct device_node *nd = NULL;
 	u64 per_bit_sz = 0;
 	u64 per_alloc_sz = 0;
-	u64 water_mark = 0;
 	u32 heap_attr = 0;
-	u32 pool_shift = ION_PBL_SHIFT;
-	u32 pre_alloc_attr = 0;
+	u32 pool_flag = 0;
 	int ret = 0;
 
 	nd = of_get_child_by_name(dev->of_node, heap_data->name);
@@ -579,23 +630,18 @@ static int __secsg_parse_dt(struct device *dev,
 		goto out;
 	}
 
-	mem_region = of_parse_phandle(nd, "memory-region", 0);
-	if (mem_region) {
-		ret = of_address_to_resource(mem_region, 0, &res);
-		of_node_put(mem_region);
-		if (ret) {
-			pr_err("failed to parse memory-region: %d\n", ret);
-			goto out;
-		}
-		secsg_heap->pgtable_phys = res.start;
-		secsg_heap->pgtable_size = resource_size(&res);
-	} else {
-		secsg_heap->pgtable_phys = 0;
-		secsg_heap->pgtable_size = 0;
-		pr_err("no memory-region phandle\n");
+	ret = of_property_read_u32(nd, "heap-attr", &heap_attr);
+	if (ret < 0) {
+		pr_err("can not find heap-attr.\n");
+		goto out;
 	}
 
-	__secsg_parse_dt_cma_para(nd, secsg_heap);
+	if (heap_attr >= SEC_SVC_MAX) {
+		pr_err("invalid heap-attr.\n");
+		goto out;
+	}
+
+	secsg_heap->heap_attr = heap_attr;
 
 	ret = of_property_read_u64(nd, "per-alloc-size", &per_alloc_sz);
 	if (ret < 0) {
@@ -611,174 +657,130 @@ static int __secsg_parse_dt(struct device *dev,
 	}
 	secsg_heap->per_bit_sz = PAGE_ALIGN(per_bit_sz);
 
-	ret = of_property_read_u64(nd, "water-mark", &water_mark);
+	ret = of_property_read_u32(nd, "use-static-pool", &pool_flag);
 	if (ret < 0) {
-		pr_err("can't find prop:water-mark\n");
-		water_mark = 0;
+		pr_err("can not find static-pool.\n");
+		pool_flag = 0;
 		ret = 0;
 	}
-	secsg_heap->water_mark = PAGE_ALIGN(water_mark);
-
-	ret = of_property_read_u32(nd, "pool-shift", &pool_shift);
-	if (ret < 0) {
-		pr_err("can't find prop:pool-shift.\n");
-		pool_shift = ION_PBL_SHIFT;
-		ret = 0;
-	}
-	secsg_heap->pool_shift = pool_shift;
-
-	ret = of_property_read_u32(nd, "heap-attr", &heap_attr);
-	if (ret < 0) {
-		pr_err("can't find prop:heap-arrt.\n");
-		heap_attr = HEAP_NORMAL;
-		ret = 0;
-	}
-	if (heap_attr >= HEAP_MAX)
-		heap_attr = HEAP_NORMAL;
-	secsg_heap->heap_attr = heap_attr;
-
-	ret = of_property_read_u32(nd, "pre-alloc-attr", &pre_alloc_attr);
-	if (ret < 0) {
-		pr_err("can't find prop:pre-alloc-attr.\n");
-		pre_alloc_attr = 0;
-		ret = 0;
-	}
-	secsg_heap->pre_alloc_attr = pre_alloc_attr;
+	secsg_heap->pool_flag = pool_flag;
 
 out:
 	return ret;
 }
 
-static struct cma *__secsg_heap_getcma(struct ion_secsg_heap *secsg_heap)
+static int secsg_create_pool(struct ion_secsg_heap *secsg_heap)
 {
-	int i = 0;
+	struct page *page = NULL;
+	u64 cma_base;
+	u64 cma_size;
 
-	for (i = 0; i < SEC_SG_CMA_NUM; i++) {
-		if (secsg_heap->cma_name &&
-		    hisi_secsg_cmas[i].cma_name &&
-		    (!strcmp(secsg_heap->cma_name,
-			     hisi_secsg_cmas[i].cma_name)))
-			return hisi_secsg_cmas[i].cma_region;
+	cma_base = cma_get_base(secsg_heap->cma);
+	cma_size = cma_get_size(secsg_heap->cma);
+
+	secsg_heap->pool = gen_pool_create(get_order(SZ_2M), -1);
+	if (!secsg_heap->pool) {
+		pr_err("create pool failed\n");
+		return -ENOMEM;
+	}
+	gen_pool_set_algo(secsg_heap->pool, gen_pool_best_fit, NULL);
+
+	page = cma_alloc(secsg_heap->cma, cma_size >> PAGE_SHIFT, 0, false);
+	if (!page) {
+		pr_err("%s cma_alloc failed!cma_base 0x%llx cma_size 0x%llx\n",
+			__func__, cma_base, cma_size);
+		goto destory_pool;
 	}
 
-	return NULL;
+	if (gen_pool_add(secsg_heap->pool, cma_base, cma_size, -1)) {
+		pr_err("genpool add base 0x%llx cma_size 0x%llx\n",
+			cma_base, cma_size);
+		goto free_cma;
+	}
+
+	return 0;
+
+free_cma:
+	cma_release(secsg_heap->cma, page, (u32)cma_size >> PAGE_SHIFT);
+destory_pool:
+	gen_pool_destroy(secsg_heap->pool);
+
+	return -ENOMEM;
 }
 
 struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 {
+	struct ion_secsg_heap *secsg_heap = NULL;
+	struct device *dev = NULL;
 	int ret;
-	struct device *dev;
-	struct ion_secsg_heap *secsg_heap;
 
 	secsg_heap = kzalloc(sizeof(*secsg_heap), GFP_KERNEL);
 	if (!secsg_heap)
-		return ERR_PTR(-ENOMEM);/*lint !e747*/
+		return ERR_PTR(-ENOMEM);
 
 	mutex_init(&secsg_heap->mutex);
-	mutex_init(&secsg_heap->pre_alloc_mutex);
 
-	secsg_heap->pool = NULL;
 	secsg_heap->heap.ops = &secsg_heap_ops;
 	secsg_heap->heap.type = ION_HEAP_TYPE_SECSG;
 	secsg_heap->heap_size = heap_data->size;
 	secsg_heap->alloc_size = 0;
-	secsg_heap->cma_alloc_size = 0;
 	dev = heap_data->priv;
-	INIT_LIST_HEAD(&secsg_heap->allocate_head);
 
 	ret = __secsg_parse_dt(dev, heap_data, secsg_heap);
 	if (ret)
 		goto free_heap;
 
-	secsg_heap->cma = __secsg_heap_getcma(secsg_heap);
-
+	secsg_heap->cma = get_svc_cma((int)secsg_heap->heap_attr);
 	if (!secsg_heap->cma) {
-		pr_err("%s, can't get cma! cma_type:%u, cma_name:%s\n",
-		       __func__, secsg_heap->cma_type, secsg_heap->cma_name);
+		pr_err("can't get heap[%u]'s cma!\n", heap_data->id);
 		goto free_heap;
 	}
 
-	if ((secsg_heap->heap_attr == HEAP_SECURE) ||
-	    (secsg_heap->heap_attr == HEAP_PROTECT)) {
+	if (secsg_heap->pool_flag) {
+		ret = secsg_create_pool(secsg_heap);
+		if (ret) {
+			pr_err("can't crate heap[%u]'s pool!\n", heap_data->id);
+			goto free_heap;
+		}
+	}
+
+	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
 		secsg_heap->context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
 		if (!secsg_heap->context)
 			goto free_heap;
+
 		secsg_heap->session = kzalloc(sizeof(TEEC_Session), GFP_KERNEL);
 		if (!secsg_heap->session)
 			goto free_context;
-	} else {
-		secsg_heap->context = NULL;
-		secsg_heap->session = NULL;
 	}
+
 	secsg_heap->TA_init = 0;
-	secsg_heap->iova_init = 0;
-
-	ret = __secsg_create_pool(secsg_heap);
-	if (ret) {
-		pr_err("[%s] pool create failed.\n", __func__);
-		goto free_session;
-	}
-
-	if (secsg_heap->water_mark &&
-	    __secsg_fill_watermark(secsg_heap))
-		pr_err("__secsg_fill_watermark failed!\n");
-
-	if (secsg_heap->pre_alloc_attr)
-		INIT_WORK(&secsg_heap->pre_alloc_work, secsg_pre_alloc_wk_func);
 
 	pr_err("secsg heap info %s:\n"
 		  "\t\t\t\t\t\t\t heap id : %u\n"
-		  "\t\t\t\t\t\t\t heap cmatype : %u\n"
-		  "\t\t\t\t\t\t\t heap cmaname : %s\n"
 		  "\t\t\t\t\t\t\t heap attr : %u\n"
-		  "\t\t\t\t\t\t\t pre alloc attr : %u\n"
-		  "\t\t\t\t\t\t\t pool shift : %u\n"
 		  "\t\t\t\t\t\t\t heap size : %lu MB\n"
-		  "\t\t\t\t\t\t\t per alloc size :  %llu MB\n"
 		  "\t\t\t\t\t\t\t per bit size : %llu KB\n"
-		  "\t\t\t\t\t\t\t water_mark size : %llu MB\n"
+		  "\t\t\t\t\t\t\t per alloc size : %llu KB\n"
+		  "\t\t\t\t\t\t\t heap pool flag : %u\n"
 		  "\t\t\t\t\t\t\t cma base : 0x%llx\n"
 		  "\t\t\t\t\t\t\t cma size : 0x%lx\n",
 		  heap_data->name,
 		  heap_data->id,
-		  secsg_heap->cma_type,
-		  secsg_heap->cma_name,
 		  secsg_heap->heap_attr,
-		  secsg_heap->pre_alloc_attr,
-		  secsg_heap->pool_shift,
 		  secsg_heap->heap_size / SZ_1M,
-		  secsg_heap->per_alloc_sz / SZ_1M,
 		  secsg_heap->per_bit_sz / SZ_1K,
-		  secsg_heap->water_mark / SZ_1M,
+		  secsg_heap->per_alloc_sz / SZ_1K,
+		  secsg_heap->pool_flag,
 		  cma_get_base(secsg_heap->cma),
 		  cma_get_size(secsg_heap->cma));
 
-	return &secsg_heap->heap;/*lint !e429*/
-free_session:
-	if (secsg_heap->session)
-		kfree(secsg_heap->session);
+	return &secsg_heap->heap;
+
 free_context:
 	if (secsg_heap->context)
 		kfree(secsg_heap->context);
 free_heap:
 	kfree(secsg_heap);
-	return ERR_PTR(-ENOMEM);/*lint !e747*/
+	return ERR_PTR(-ENOMEM);
 }
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-void ion_secsg_heap_destroy(struct ion_heap *heap)
-{
-	struct ion_secsg_heap *secsg_heap =
-		container_of(heap, struct ion_secsg_heap, heap);/*lint !e826*/
-
-	if (secsg_heap->TA_init) {
-		secmem_tee_destroy(secsg_heap->context, secsg_heap->session);
-		secsg_heap->TA_init = 0;
-	}
-
-	if (secsg_heap->context)
-		kfree(secsg_heap->context);
-	if (secsg_heap->session)
-		kfree(secsg_heap->session);
-	kfree(secsg_heap);
-}
-#endif

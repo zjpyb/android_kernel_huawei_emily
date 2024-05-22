@@ -50,6 +50,7 @@
 *****************************************************************************/
 #define    THIS_FILE_ID        PS_FILE_ID_AUTH_C
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 const VOS_CHAR *
 Auth2Nam(VOS_UINT16 auth, VOS_CHAR chap_type)
@@ -215,4 +216,5 @@ auth_ReadName(struct authinfo *authp, struct ppp_mbuf *bp, VOS_UINT32 len)
   return VOS_NULL_PTR;
 }
 
+#endif /*  #if(FEATURE_ON == FEATURE_PPP) */
 

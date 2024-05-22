@@ -1,11 +1,3 @@
-/*
- * Encryption policy functions for per-f2fs sdp file encryption support.
- *
- * Copyright (C) 2017, Huawei, Ltd..
- *
- * Written by Luo Peng, 2017.
- *
- */
 
 #include <linux/err.h>
 #include <linux/scatterlist.h>
@@ -13,9 +5,11 @@
 #include <linux/string.h>
 #include <linux/completion.h>
 #include <linux/printk.h>
-#include "f2fs_sdp.h"
+#include <linux/f2fs_fs.h>
+#include "f2fs.h"
+#include "sdp_internal.h"
 
-#if DEFINE_F2FS_FS_SDP_ENCRYPTION
+#if F2FS_FS_SDP_ENCRYPTION
 struct tcrypt_result {
 	struct completion completion;
 	int err;
@@ -52,11 +46,10 @@ static int wait_async_op(int ret, struct tcrypt_result *tr)
  * @shared_secret[out]: Used to decrypt the file content encryption key in GCM
  *               mode. Not stored.
  */
-static int ecdh_gen_filepubkey_secret(struct crypto_kpp *tfm,
-	int      curve_id,
-	const u8 *dev_pub_key,
-	u8       *file_pub_key,
-	u8       *shared_secret)
+static int
+ecdh_gen_filepubkey_secret(struct crypto_kpp *tfm, int curve_id,
+						   const u8 *dev_pub_key, u8 *file_pub_key,
+						   u8 *shared_secret)
 {
 	struct kpp_request   *req;
 	struct ecdh          *ecdh_param;
@@ -107,7 +100,8 @@ static int ecdh_gen_filepubkey_secret(struct crypto_kpp *tfm,
 		goto free_ecdh_buf;
 	}
 
-	/* File private key has been in the kpp request.
+	/*
+	 * File private key has been in the kpp request.
 	 * No other input is needed for generating public key.
 	 */
 	kpp_request_set_input(req, NULL, 0);
@@ -139,7 +133,8 @@ static int ecdh_gen_filepubkey_secret(struct crypto_kpp *tfm,
 				 tcrypt_complete, &result);
 	err = wait_async_op(crypto_kpp_compute_shared_secret(req), &result);
 	if (err) {
-		pr_err("Alg: %s: computes shared secret failed in ecdh_gen_filepubkey_secret. err %d\n",
+		pr_err("Alg: %s: computes shared secret failed in ecdh_gen_file"
+				" pubkey_secret. err %d\n",
 		       (tfm->base.__crt_alg)->cra_name, err);
 		goto free_all;
 	}
@@ -172,11 +167,10 @@ free_req:
  * @shared_secret[out]: Used to decrypt the file content encryption key in GCM
  *               mode. Not stored.
  */
-static int ecdh_gen_secret(struct crypto_kpp *tfm,
-	unsigned int curve_id,
-	const u8     *dev_privkey,
-	const u8     *file_pub_key,
-	u8           *shared_secret)
+static int
+ecdh_gen_secret(struct crypto_kpp *tfm, unsigned int curve_id,
+				const u8 *dev_privkey, const u8 *file_pub_key,
+				u8 *shared_secret)
 {
 	struct kpp_request   *req;
 	struct ecdh          *ecdh_param;
@@ -189,7 +183,7 @@ static int ecdh_gen_secret(struct crypto_kpp *tfm,
 	struct tcrypt_result result;
 	int                  err         = -ENOMEM;
 	struct scatterlist   src, dst;
-	u8                   dev_privkey_tmp[32];
+	u8                   dev_privkey_tmp[FS_SDP_ECC_PRIV_KEY_SIZE];
 
 	req = kpp_request_alloc(tfm, GFP_KERNEL);
 	if (!req)
@@ -203,8 +197,8 @@ static int ecdh_gen_secret(struct crypto_kpp *tfm,
 		goto free_req;
 
 	ecdh_param->curve_id = curve_id;
-	ecdh_param->key_size = 32;
-	memcpy(dev_privkey_tmp, dev_privkey, 32);
+	ecdh_param->key_size = FS_SDP_ECC_PRIV_KEY_SIZE;
+	memcpy(dev_privkey_tmp, dev_privkey, FS_SDP_ECC_PRIV_KEY_SIZE);
 	ecdh_param->key      = dev_privkey_tmp;
 	ecdh_size            = crypto_ecdh_key_len(ecdh_param);
 	ecdh_buf             = kzalloc(ecdh_size, GFP_KERNEL);
@@ -244,7 +238,8 @@ static int ecdh_gen_secret(struct crypto_kpp *tfm,
 				 tcrypt_complete, &result);
 	err = wait_async_op(crypto_kpp_compute_shared_secret(req), &result);
 	if (err) {
-		pr_err("Alg: %s: computes shared secret failed in ecdh_gen_secret. err %d\n",
+		pr_err("Alg: %s: computes shared secret failed in"
+				" ecdh_gen_secret. err %d\n",
 		       (tfm->base.__crt_alg)->cra_name, err);
 		goto free_all;
 	}
@@ -262,7 +257,7 @@ free_ecdh_param:
 	kzfree(ecdh_param);
 free_req:
 	kpp_request_free(req);
-	memset(dev_privkey_tmp, 0x00, 32);
+	memzero_explicit(dev_privkey_tmp, (size_t)FS_SDP_ECC_PRIV_KEY_SIZE);
 	input_buf  = NULL;
 	output_buf = NULL;
 	ecdh_buf   = NULL;
@@ -270,68 +265,64 @@ free_req:
 }
 
 int get_file_pubkey_shared_secret(unsigned int curve_id,
-	const u8     *dev_pub_key,
-	unsigned int dev_pub_key_len,
-	u8           *file_pub_key,
-	unsigned int file_pub_key_len,
-	u8           *shared_secret,
-	unsigned int shared_secret_len)
+								  const u8 *dev_pub_key,
+								  unsigned int dev_pub_key_len,
+								  u8 *file_pub_key,
+								  unsigned int file_pub_key_len,
+								  u8 *shared_secret,
+								  unsigned int shared_secret_len)
 {
 	const char        *alg_name = "ecdh";
 	struct crypto_kpp *tfm;
 	int               err       = -ENOMEM;
 
-	if ((curve_id != ECC_CURVE_NIST_P256) ||
-	    (dev_pub_key_len != 64) ||
-	    (file_pub_key_len != 64) ||
-	    (shared_secret_len != 32))
+	if ((curve_id != ECC_CURVE_NIST_P256)
+			|| (dev_pub_key_len != FS_SDP_ECC_PUB_KEY_SIZE)
+			|| (file_pub_key_len != FS_SDP_ECC_PUB_KEY_SIZE)
+			|| (shared_secret_len != FS_SDP_ECC_PRIV_KEY_SIZE))
 		return -EINVAL;
 
-	tfm = crypto_alloc_kpp(alg_name, CRYPTO_ALG_TYPE_KPP,
-			       CRYPTO_ALG_TYPE_MASK);
+	tfm = crypto_alloc_kpp(alg_name, CRYPTO_ALG_TYPE_KPP, CRYPTO_ALG_TYPE_MASK);
 	if (IS_ERR(tfm)) {
-		pr_err("Alg: kpp: Failed to load tfm for %s: %ld\n",
-		       alg_name, PTR_ERR(tfm));
+		pr_err("Alg: kpp: Failed to load tfm for %s: %ld\n", alg_name,
+				PTR_ERR(tfm));
 		return PTR_ERR(tfm);
 	}
 
-	err = ecdh_gen_filepubkey_secret(tfm, curve_id, dev_pub_key,
-					 file_pub_key, shared_secret);
+	err = ecdh_gen_filepubkey_secret(tfm, curve_id, dev_pub_key, file_pub_key,
+									 shared_secret);
 	if (err)
-		pr_err("Alg: kpp: Failed to generate file public key and shared secret.\n");
+		pr_err("Alg: kpp: Failed to generate file public key and"
+				" shared secret.\n");
 
 	crypto_free_kpp(tfm);
 	return err;
 }
 
-int get_shared_secret(unsigned int curve_id,
-	const u8     *dev_privkey,
-	unsigned int dev_privkey_len,
-	const u8     *file_pub_key,
-	unsigned int file_pub_key_len,
-	u8           *shared_secret,
-	unsigned int shared_secret_len)
+int get_shared_secret(unsigned int curve_id, const u8 *dev_privkey,
+					  unsigned int dev_privkey_len, const u8 *file_pub_key,
+					  unsigned int file_pub_key_len, u8 *shared_secret,
+					  unsigned int shared_secret_len)
 {
 	const char        *alg_name = "ecdh";
 	struct crypto_kpp *tfm;
 	int               err       = -ENOMEM;
 
-	if ((curve_id != ECC_CURVE_NIST_P256) ||
-	    (dev_privkey_len != 32) ||
-	    (file_pub_key_len != 64) ||
-	    (shared_secret_len != 32))
+	if ((curve_id != ECC_CURVE_NIST_P256)
+			|| (dev_privkey_len != FS_SDP_ECC_PRIV_KEY_SIZE)
+			|| (file_pub_key_len != FS_SDP_ECC_PUB_KEY_SIZE)
+			|| (shared_secret_len != FS_SDP_ECC_PRIV_KEY_SIZE))
 		return -EINVAL;
 
-	tfm = crypto_alloc_kpp(alg_name, CRYPTO_ALG_TYPE_KPP,
-			       CRYPTO_ALG_TYPE_MASK);
+	tfm = crypto_alloc_kpp(alg_name, CRYPTO_ALG_TYPE_KPP, CRYPTO_ALG_TYPE_MASK);
 	if (IS_ERR(tfm)) {
-		pr_err("Alg: kpp: Failed to load tfm for %s: %ld\n",
-		       alg_name, PTR_ERR(tfm));
+		pr_err("Alg: kpp: Failed to load tfm for %s: %ld\n", alg_name,
+				PTR_ERR(tfm));
 		return PTR_ERR(tfm);
 	}
 
 	err = ecdh_gen_secret(tfm, curve_id, dev_privkey, file_pub_key,
-			      shared_secret);
+						  shared_secret);
 	if (err)
 		pr_err("Alg: kpp: Failed to generate shared secret.\n");
 
@@ -339,3 +330,4 @@ int get_shared_secret(unsigned int curve_id,
 	return err;
 }
 #endif
+

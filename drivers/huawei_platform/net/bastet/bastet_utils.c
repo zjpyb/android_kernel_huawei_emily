@@ -20,7 +20,7 @@
 #include <linux/file.h>
 #include <linux/inetdevice.h>
 #include <linux/of.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/fb.h>
 #include <linux/mm.h>
 #include <linux/timer.h>
@@ -34,7 +34,6 @@
 #include <linux/sched/task.h>
 #endif
 
-#define BASTET_WAKE_LOCK				"bastet_wl"
 #define BASTET_DEFAULT_NET_DEV			"rmnet0"
 
 /* minimum uid number */
@@ -55,7 +54,6 @@
 
 static void channel_occupied_timeout(unsigned long data);
 
-static struct wake_lock wl_bastet;
 static bool bastet_cfg_en;
 static DEFINE_TIMER(channel_timer, channel_occupied_timeout, 0, 0);
 
@@ -864,25 +862,7 @@ int unbind_local_ports(u16 local_port)
 	return 0;
 }
 
-void bastet_wakelock_acquire(void)
-{
-	wake_lock(&wl_bastet);
-}
-
-void bastet_wakelock_acquire_timeout(long timeout)
-{
-	if (wake_lock_active(&wl_bastet))
-		wake_unlock(&wl_bastet);
-
-	wake_lock_timeout(&wl_bastet, timeout);
-}
-
-void bastet_wakelock_release(void)
-{
-	wake_unlock(&wl_bastet);
-}
-
-void ind_hisi_com(void *info, u32 len)
+void ind_hisi_com(const void *info, u32 len)
 {
 	post_indicate_packet(BST_IND_HISICOM, info, len);
 }
@@ -891,7 +871,7 @@ inline bool is_uid_valid(__u32 uid)
 	return uid >= MIN_UID && uid <= MAX_UID;
 }
 
-int set_current_net_device_name(char *iface)
+int set_current_net_device_name(const char *iface)
 {
 	if (NULL == iface)
 		return -EINVAL;
@@ -1015,14 +995,12 @@ void bastet_utils_init(void)
 {
 	BASTET_LOGI("bastet feature enabled");
 	bastet_cfg_en = true;
-	wake_lock_init(&wl_bastet, WAKE_LOCK_SUSPEND, BASTET_WAKE_LOCK);
 	reg_mss_reset_notify();
 	init_fb_notification();
 }
 
 void bastet_utils_exit(void)
 {
-	wake_lock_destroy(&wl_bastet);
 	unreg_mss_reset_notify();
 	deinit_fb_notification();
 }

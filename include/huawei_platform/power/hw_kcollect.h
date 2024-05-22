@@ -23,9 +23,11 @@
 
 #define KCOLLECT_FREEZER_MASK			(1 << 3)
 #define KCOLLECT_BINDERCALL_MASK		(1 << 4)
+#define KCOLLECT_NETPACKET_MASK			(1 << 5)
 #define KCOLLECT_ALL_MASK				(0x7fffffff)
 
 int kcollect(int mask, const char *fmt, ...);
 int hwkillinfo(int pid, int seg);
 int hwbinderinfo(int callingpid, int calledpid);
+int hw_packet_cb(int uid, int pid);
 #endif

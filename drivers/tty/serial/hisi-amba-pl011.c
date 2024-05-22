@@ -8,7 +8,7 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  */
-#include "../../hisi/tzdriver/libhwsecurec/securec.h"
+#include <securec.h>
 #define TX_WORK_TIMEOUT  1600000
 #include <linux/hisi/hisi_log.h>
 #define HISI_LOG_TAG HISI_AMBA_PL011_TAG
@@ -18,23 +18,23 @@
 static int console_fifo_enable_status = -1;
 static int __init console_fifo_enable_setup(char *str)
 {
-	char buf[2]; /* 2 for "1 or 0 " */
-	char *s = NULL;
-	if(strncpy_s(buf,sizeof(buf),str,sizeof(buf))){
-		pr_err("strncpy_s failed\n");
-	}
+	char buf[2] = {0}; /* 2 for "1 or 0 " */
+	size_t index;
 
-	for (s = buf; *s; s++) {
-		if (*s == '1') {
+	if(strncpy_s(buf, sizeof(buf), str, sizeof(buf) - 1)) {
+		pr_err("%s: strncpy_s failed\n", __func__);
+		return 0;
+	}
+	for (index = 0; index < sizeof(buf); index++) {
+		if (buf[index] == '1') {
 			console_fifo_enable_status = 1;
 			break;
 		}
-		if (*s == '0' || *s == ' ') {
+		if (buf[index] == '0' || buf[index] == ' ') {
 			console_fifo_enable_status = 0;
 			break;
 		}
 	}
-	*s = 0;
 
 	return 1;
 }
@@ -173,7 +173,7 @@ print_retry:
 int pl011_tx_work_init(struct uart_amba_port *uap, unsigned int aurt_tx_buf_size, int cpuid)
 {
 	struct uart_tx_unit *unit = &uap->tx_unit;
-	char dbgfs_name[16];
+	char dbgfs_name[16] = {'\0'};
 	int ret;
 
 	ret = kfifo_alloc(&unit->tx_fifo, aurt_tx_buf_size, GFP_KERNEL | __GFP_ZERO);

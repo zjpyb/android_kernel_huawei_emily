@@ -72,7 +72,13 @@ int dsm_ufs_updata_ice_info(struct ufs_hba *hba)
 		{
 			continue;
 		}
-		crypto_conf_index[i] = (hba->lrb[i].utr_descriptor_ptr)->header.dword_0;
+		if (ufshcd_is_hisi_ufs_hc_used(hba))
+			crypto_conf_index[i] = (hba->lrb[i].utr_descriptor_ptr)
+						       ->header.dword_0;
+		else
+			crypto_conf_index[i] =
+				(hba->lrb[i].hisi_utr_descriptor_ptr)
+					->header.dword_0;
 	}
 	return 0;
 }
@@ -554,7 +560,7 @@ int dsm_ufs_enabled(void)
 }
 
 /*lint -e648 -e845*/
-#ifdef CONFIG_HISI_MMC_SECURE_RPMB
+#if defined(CONFIG_HISI_RPMB_UFS)
 extern int get_rpmb_key_status(void);
 #endif
 int dsm_ufs_utp_err_need_report(struct ufs_hba *hba)
@@ -563,7 +569,7 @@ int dsm_ufs_utp_err_need_report(struct ufs_hba *hba)
 
 	if (unlikely(hba->host->is_emulator))
 		return 0;
-#ifdef CONFIG_HISI_MMC_SECURE_RPMB
+#if defined(CONFIG_HISI_RPMB_UFS)
 	key_status = get_rpmb_key_status();
 #endif
 	if ((0 == key_status) && (OCS_FATAL_ERROR == g_ufs_dsm_adaptor.ocs))

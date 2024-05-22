@@ -208,7 +208,7 @@ VL53L1_Error VL53L1_data_init(
 
 
 
-	VL53L1_zone_objects_t    *pobjects;
+	VL53L1_zone_objects_t    *pobjects = NULL;
 
 	uint8_t  i = 0;
 
@@ -4433,7 +4433,7 @@ VL53L1_Error VL53L1_get_histogram_bin_data(
 	VL53L1_LLDriverResults_t *pres =
 			VL53L1DevStructGetLLResultsHandle(Dev);
 
-	VL53L1_zone_private_dyn_cfg_t *pzone_dyn_cfg;
+	VL53L1_zone_private_dyn_cfg_t *pzone_dyn_cfg = NULL;
 
 	VL53L1_static_nvm_managed_t   *pstat_nvm = &(pdev->stat_nvm);
 	VL53L1_static_config_t        *pstat_cfg = &(pdev->stat_cfg);
@@ -4707,8 +4707,7 @@ void VL53L1_copy_sys_and_core_results_to_range_results(
 	VL53L1_range_results_t           *presults)
 {
 	uint8_t  i = 0;
-
-	VL53L1_range_data_t *pdata;
+	VL53L1_range_data_t *pdata = NULL;
 	int32_t range_mm = 0;
 	uint32_t tmpu32 = 0;
 

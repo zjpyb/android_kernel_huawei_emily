@@ -18,7 +18,7 @@
 #include <linux/device.h>
 #include <linux/hrtimer.h>
 #include <linux/workqueue.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/notifier.h>
 #include <linux/semaphore.h>
 
@@ -173,6 +173,7 @@ struct tcpc_ops {
 	int (*set_polarity)(struct tcpc_device *tcpc, int polarity);
 	int (*set_vconn)(struct tcpc_device *tcpc, int enable);
 	int (*deinit)(struct tcpc_device *tcpc);
+	bool (*is_reg_default)(struct tcpc_device *tcpc);
 	int (*mask_vsafe0v)(struct tcpc_device *tcpc, int enable);
 
 #ifdef CONFIG_TCPC_LOW_POWER_MODE
@@ -217,6 +218,7 @@ struct tcpc_ops {
 #define TCPC_VBUS_SINK_5V		(5000)
 
 #define TCPC_LEGACY_CABLE_CONFIRM	10
+#define TCPC_TIMER_WAKELOCK_TIMEOUT     1500
 
 struct tcpc_device {
 	struct i2c_client *client;
@@ -226,12 +228,14 @@ struct tcpc_device {
 	struct device dev;
 	bool wake_lock_user;
 	uint8_t wake_lock_pd;
-	struct wake_lock attach_wake_lock;
-	struct wake_lock dettach_temp_wake_lock;
+	struct wakeup_source attach_wake_lock;
+	struct wakeup_source dettach_temp_wake_lock;
+	struct wakeup_source tcpci_event_wakelock;
 
 	/* For tcpc timer & event */
 	uint32_t timer_handle_index;
 	struct hrtimer tcpc_timer[PD_TIMER_NR];
+	struct wakeup_source tcpci_timer_wakelock;
 
 	ktime_t last_expire[PD_TIMER_NR];
 	struct delayed_work timer_handle_work[2];

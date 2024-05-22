@@ -71,9 +71,11 @@
 #include "AppVcApi.h"
 #include "TafOamInterface.h"
 
+#if (FEATURE_ON==FEATURE_LTE)
 #include "msp_nvim.h"
 #include "at_common.h"
 #include "at_lte_common.h"
+#endif
 
 #include "nv_stru_sys.h"
 #include "nv_stru_gas.h"
@@ -119,6 +121,9 @@ extern VOS_UINT32                       g_ulMcastWifiRxPkts;
    3 函数、变量声明
 *****************************************************************************/
 
+#if (VOS_WIN32 == VOS_OS_VER)
+extern VOS_UINT8 NAS_GetPsRegContainDrx();
+#endif
 /*****************************************************************************
    4 函数实现
 *****************************************************************************/
@@ -1220,6 +1225,7 @@ VOS_UINT32 AT_QryBorderInfoPara(VOS_UINT8 ucIndex)
 
     return AT_ERROR;
 }
+#if (FEATURE_ON == FEATURE_CSG)
 
 VOS_UINT32 At_QryCampCsgIdInfo(VOS_UINT8 ucIndex)
 {
@@ -1234,6 +1240,7 @@ VOS_UINT32 At_QryCampCsgIdInfo(VOS_UINT8 ucIndex)
 
 }
 
+#endif
 
 
 VOS_UINT32 At_QryCgcattPara(VOS_UINT8 ucIndex)
@@ -1728,6 +1735,7 @@ TAF_UINT32 At_QryCmmsPara(
     }
 }
 
+#if ((FEATURE_ON == FEATURE_GCBS) || (FEATURE_ON == FEATURE_WCBS))
 
 
 VOS_UINT32 At_QryCscbPara(
@@ -1750,6 +1758,7 @@ VOS_UINT32 At_QryCscbPara(
         return AT_ERROR;
     }
 }
+#endif
 
 
 TAF_UINT32 At_QryCgregPara(TAF_UINT8 ucIndex)
@@ -1766,6 +1775,7 @@ TAF_UINT32 At_QryCgregPara(TAF_UINT8 ucIndex)
     }
 }
 
+#if(FEATURE_ON == FEATURE_LTE)
 
 VOS_UINT32 At_QryCeregPara(VOS_UINT8 ucIndex)
 {
@@ -1781,6 +1791,7 @@ VOS_UINT32 At_QryCeregPara(VOS_UINT8 ucIndex)
     }
 }
 
+#endif
 
 TAF_UINT32 At_QryCregPara(TAF_UINT8 ucIndex)
 {
@@ -2155,6 +2166,7 @@ TAF_UINT32 At_QrySysCfgPara(TAF_UINT8 ucIndex)
 }
 
 
+#if(FEATURE_ON == FEATURE_LTE)
 
 TAF_UINT32 At_QryCemode(TAF_UINT8 ucIndex)
 {
@@ -2192,6 +2204,7 @@ TAF_UINT32 At_QryLtecsInfo(TAF_UINT8 ucIndex)
         return AT_ERROR;
     }
 }
+#endif
 
 VOS_UINT32 At_QryClvlPara(VOS_UINT8 ucIndex)
 {
@@ -2307,6 +2320,7 @@ TAF_UINT32 At_QryFreqLock(TAF_UINT8 ucIndex)
 
 }
 
+#if (FEATURE_ON == FEATURE_PROBE_FREQLOCK)
 
 TAF_UINT32 At_QryM2MFreqLock(TAF_UINT8 ucIndex)
 {
@@ -2330,6 +2344,7 @@ TAF_UINT32 At_QryM2MFreqLock(TAF_UINT8 ucIndex)
         return AT_ERROR;
     }
 }
+#endif
 
 
 TAF_UINT32 At_QryU2DiagPara(TAF_UINT8 ucIndex)
@@ -2829,6 +2844,7 @@ TAF_UINT32 AT_QryAuthdataPara(TAF_UINT8 ucIndex)
 }
 
 
+#if (FEATURE_ON == FEATURE_IPV6)
 
 
 VOS_UINT32 AT_QryIpv6CapPara(VOS_UINT8 ucIndex)
@@ -2870,6 +2886,7 @@ VOS_UINT32 AT_QryIpv6CapPara(VOS_UINT8 ucIndex)
                                                      ucIpv6Capability);
     return AT_OK;
 }
+#endif
 
 
 TAF_UINT32 At_QryCrpnPara(TAF_UINT8 ucIndex)
@@ -2963,17 +2980,21 @@ VOS_UINT32 At_QryFrssiPara(
     AT_HPA_RF_RX_RSSI_REQ_STRU          *pstMsg;
     VOS_UINT32                          ulLength;
 
+#if(FEATURE_LTE == FEATURE_ON)
     if ((AT_RAT_MODE_FDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode)
       ||(AT_RAT_MODE_TDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode))
     {
         return atQryFRSSIPara(ucIndex);
     }
+#endif
 
+#if(FEATURE_UE_MODE_TDS == FEATURE_ON)
     if(AT_RAT_MODE_TDSCDMA == g_stAtDevCmdCtrl.ucDeviceRatMode)
     {
         return atQryFRSSIPara(ucIndex);
     }
 
+#endif
 
     /*该命令需在非信令模式下使用*/
     if (AT_TMODE_FTM != g_stAtDevCmdCtrl.ucCurrentTMode)
@@ -3141,6 +3162,7 @@ AT_CMD_ANTENNA_LEVEL_ENUM_UINT8 AT_CalculateAntennaLevel(
    VOS_INT32                            alRscpThreshold[AT_ANTEN_LEV_MAX_NUM] = {125, 108, 102, 96} ;
    VOS_INT32                            alEcioThreshold[AT_ANTEN_LEV_MAX_NUM] = {30, 16, 13, 10};
 
+#if(FEATURE_ON == FEATURE_LTE)
 
     VOS_UINT8                          *pucSystemAppConfig;
     pucSystemAppConfig                  = AT_GetSystemAppConfigAddr();
@@ -3179,6 +3201,7 @@ AT_CMD_ANTENNA_LEVEL_ENUM_UINT8 AT_CalculateAntennaLevel(
         }
         return enRlstAntennaLevel;
     }
+#endif
 
     enRlstAntennaLevel        = 0;
 
@@ -3291,6 +3314,7 @@ VOS_VOID AT_GetSmoothAntennaLevel(
 }
 
 
+#if (FEATURE_LTE == FEATURE_ON)
 
 TAF_VOID AT_CalculateLTESignalValue(
                                               VOS_INT16    *psRssi,
@@ -3353,6 +3377,7 @@ TAF_VOID AT_CalculateLTESignalValue(
         return;
 
 }
+#endif
 
 
 
@@ -3420,11 +3445,13 @@ VOS_UINT32  At_QryFlnaPara(VOS_UINT8 ucIndex)
     VOS_UINT16                          usLength;
 
     /* 添加 LTE 模的接口分支 */
+#if(FEATURE_LTE == FEATURE_ON)
     if ((AT_RAT_MODE_FDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode)
       ||(AT_RAT_MODE_TDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode))
     {
         return atQryFLNAPara(ucIndex);
     }
+#endif
 
     /*当前不为非信令模式*/
     if (AT_TMODE_FTM != g_stAtDevCmdCtrl.ucCurrentTMode)
@@ -3449,11 +3476,13 @@ TAF_UINT32  At_QryFChanPara(TAF_UINT8 ucIndex )
 {
     TAF_UINT16                 usLength;
 
+#if(FEATURE_LTE == FEATURE_ON)
     if ((AT_RAT_MODE_FDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode)
       ||(AT_RAT_MODE_TDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode))
     {
         return atQryFCHANPara(ucIndex);
     }
+#endif
 
     if (AT_TMODE_FTM != g_stAtDevCmdCtrl.ucCurrentTMode)
     {
@@ -3482,11 +3511,13 @@ VOS_UINT32  At_QryFRxonPara(VOS_UINT8 ucIndex)
     VOS_UINT16                          usLength;
 
     /* 添加LTE 模的接口分支 */
+#if(FEATURE_LTE == FEATURE_ON)
     if ((AT_RAT_MODE_FDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode)
       ||(AT_RAT_MODE_TDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode))
     {
         return atQryFRXONPara(ucIndex);
     }
+#endif
 
     /*当前不为非信令模式*/
     if (AT_TMODE_FTM != g_stAtDevCmdCtrl.ucCurrentTMode)
@@ -3513,11 +3544,13 @@ TAF_UINT32  At_QryFTxonPara(TAF_UINT8 ucIndex )
     TAF_UINT16                 usLength;
 
     /*添加 LTE 模的接口分支 */
+#if(FEATURE_LTE == FEATURE_ON)
     if ((AT_RAT_MODE_FDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode)
       ||(AT_RAT_MODE_TDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode))
     {
         return atQryFTXONPara(ucIndex);
     }
+#endif
 
     if (AT_TMODE_FTM != g_stAtDevCmdCtrl.ucCurrentTMode)
     {
@@ -4715,17 +4748,24 @@ VOS_UINT32 AT_QryNdisStatPara(
 )
 {
     AT_PDP_STATUS_ENUM_UINT32           enIpv4Status;
+#if (FEATURE_ON == FEATURE_IPV6)
     AT_PDP_STATUS_ENUM_UINT32           enIpv6Status;
     AT_PDP_STATUS_ENUM_UINT32           enIpv4v6Status;
+#endif
     VOS_UINT16                          usLength;
     VOS_UINT8                           aucAtStrIpv4[] = "IPV4";
+#if (FEATURE_ON == FEATURE_IPV6)
     VOS_UINT8                           aucAtStrIpv6[] = "IPV6";
+#endif
 
     usLength                            = 0;
     enIpv4Status                        = AT_PDP_STATUS_DEACT;
+#if (FEATURE_ON == FEATURE_IPV6)
     enIpv6Status                        = AT_PDP_STATUS_DEACT;
     enIpv4v6Status                      = AT_PDP_STATUS_DEACT;
+#endif
 
+#if (FEATURE_ON == FEATURE_IPV6)
     switch (AT_GetIpv6Capability())
     {
         case AT_IPV6_CAPABILITY_IPV4_ONLY:
@@ -4818,6 +4858,21 @@ VOS_UINT32 AT_QryNdisStatPara(
         default:
             break;
     }
+#else
+    enIpv4Status = AT_NdisGetConnStatus(AT_NdisGetState(TAF_PDP_IPV4));
+
+    usLength  = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR*)pgucAtSndCodeAddr,
+                                       (VOS_CHAR*)pgucAtSndCodeAddr,
+                                       "%s: ",
+                                       g_stParseContext[ucIndex].pstCmdElement->pszCmdName);
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                       (VOS_CHAR*)pgucAtSndCodeAddr,
+                                       (VOS_CHAR*)pgucAtSndCodeAddr + usLength,
+                                       "%d,,,\"%s\"",
+                                       enIpv4Status,
+                                       aucAtStrIpv4);
+#endif
     gstAtSendData.usBufLen = usLength;
 
     return AT_OK;
@@ -5068,6 +5123,7 @@ VOS_UINT32  AT_QryDislogPara ( VOS_UINT8 ucIndex )
 {
     AT_DIAG_OPEN_FLAG_ENUM_U32          enDiagPortState;
 
+#if (FEATURE_ON==FEATURE_LTE)
     VOS_UINT32                          ulRetDiag;
     VOS_UINT32                          ulRet3GDiag;
     VOS_UINT32                          ulRetGps;
@@ -5086,6 +5142,20 @@ VOS_UINT32  AT_QryDislogPara ( VOS_UINT8 ucIndex )
     {
         enDiagPortState = AT_DIAG_OPEN_FLAG_CLOSE;
     }
+#else
+    /* 从NV中读取 DISLOG 操作的密码及DIAG口的开关状态 */
+
+    /*DIAG 口的开关状态, 0 打开; 1 关闭*/
+    if (VOS_TRUE != AT_ExistSpecificPort(AT_DEV_DIAG))
+    {
+        enDiagPortState = AT_DIAG_OPEN_FLAG_CLOSE;
+    }
+    else
+    {
+        enDiagPortState = AT_DIAG_OPEN_FLAG_OPEN;
+    }
+
+#endif
 
     gstAtSendData.usBufLen = (TAF_UINT16)At_sprintf(AT_CMD_MAX_LEN,
                                                     (TAF_CHAR *)pgucAtSndCodeAddr,
@@ -5097,6 +5167,7 @@ VOS_UINT32  AT_QryDislogPara ( VOS_UINT8 ucIndex )
 
 }
 
+#if (FEATURE_ON == FEATURE_SECURITY_SHELL)
 
 VOS_UINT32 AT_QryShellPara (VOS_UINT8 ucIndex)
 {
@@ -5131,6 +5202,7 @@ VOS_UINT32 AT_QryShellPara (VOS_UINT8 ucIndex)
     return AT_OK;
 
 }
+#endif
 
 
 VOS_UINT32 AT_QryWifiGlobalMacPara(VOS_UINT8 ucIndex)
@@ -6788,6 +6860,7 @@ VOS_UINT32 AT_QrySARReduction(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
+#if (FEATURE_ON==FEATURE_LTE)
 
 VOS_UINT32  AT_QryRsrpCfgPara ( VOS_UINT8 ucIndex )
 {
@@ -6973,6 +7046,7 @@ VOS_UINT32 At_QrySfm(VOS_UINT8 ucIndex)
         return AT_OK;
     }
 }
+#endif
 
 
 
@@ -6986,7 +7060,9 @@ VOS_UINT32 AT_QryPhoneSimlockInfoPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 
+#if (VOS_OS_VER == VOS_LINUX)
     printk(KERN_ERR "\n AT_QryPhoneSimlockInfoPara enter \n");
+#endif
 
     /* 发送跨核消息到C核, 查询锁网锁卡信息 */
     ulResult = AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
@@ -7018,7 +7094,9 @@ VOS_UINT32 AT_QrySimlockDataReadPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 
+#if (VOS_OS_VER == VOS_LINUX)
     printk(KERN_ERR "\n AT_QrySimlockDataReadPara enter \n");
+#endif
 
     /* 发送跨核消息到C核, 查询锁网锁卡信息 */
     ulResult = AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
@@ -7107,6 +7185,43 @@ VOS_UINT32 AT_QryPortAttribSetPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
+#if (VOS_WIN32 == VOS_OS_VER)
+
+VOS_UINT32 At_QryTinTypeStub(VOS_UINT8 ucIndex)
+{
+    VOS_UINT8                           ucTinType;
+
+#if (FEATURE_ON == FEATURE_LTE)
+    ucTinType = NAS_GetTinType();
+#endif
+    gstAtSendData.usBufLen = (TAF_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                                    (TAF_CHAR *)pgucAtSndCodeAddr,
+                                                    (TAF_CHAR *)pgucAtSndCodeAddr,
+                                                    "%s:%d",
+                                                     g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                                     ucTinType);
+    return AT_OK;
+
+}
+
+
+VOS_UINT32 AT_QryPsRegisterContainDrxStub(VOS_UINT8 ucIndex)
+{
+    VOS_UINT8                           ucDrx;
+
+    ucDrx = NAS_GetPsRegContainDrx();
+    gstAtSendData.usBufLen = (TAF_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                                    (TAF_CHAR *)pgucAtSndCodeAddr,
+                                                    (TAF_CHAR *)pgucAtSndCodeAddr,
+                                                    "%s:%d",
+                                                     g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                                     ucDrx);
+    return AT_OK;
+
+}
+
+
+#endif
 
 
 
@@ -7259,6 +7374,7 @@ VOS_UINT32 At_QryCerssiPara(VOS_UINT8 ucIndex)
     }
 }
 
+#if(FEATURE_ON == FEATURE_LTE)
 
 
 VOS_UINT32 At_QryCecellidPara(VOS_UINT8 ucIndex)
@@ -7266,6 +7382,7 @@ VOS_UINT32 At_QryCecellidPara(VOS_UINT8 ucIndex)
     /* 调用L 提供接口 */
     return At_QryCellIdPara(ucIndex);
 }
+#endif
 
 
 
@@ -7956,6 +8073,7 @@ VOS_UINT32 AT_QryLogNvePara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_UINT32 AT_QryCiregPara(VOS_UINT8 ucIndex)
 {
@@ -8200,6 +8318,7 @@ VOS_UINT32 AT_QryImsEmcRdpPara(VOS_UINT8 ucIndex)
     gstAtSendData.usBufLen = usLength;
     return AT_OK;
 }
+#endif
 
 
 VOS_UINT32 AT_QryClccPara(VOS_UINT8 ucIndex)
@@ -8222,6 +8341,7 @@ VOS_UINT32 AT_QryClccPara(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_UINT32 AT_QryClccEconfInfo(VOS_UINT8 ucIndex)
 {
@@ -8385,6 +8505,7 @@ VOS_UINT32 AT_QryRoamImsServicePara(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#endif
 
 
 VOS_UINT32 AT_QryUserCfgOPlmnPara(VOS_UINT8 ucIndex)
@@ -8406,6 +8527,93 @@ VOS_UINT32 AT_QryUserCfgOPlmnPara(VOS_UINT8 ucIndex)
     }
 }
 
+#if (FEATURE_ON == FEATURE_AT_HSUART)
+
+VOS_UINT32 AT_QryIprPara(VOS_UINT8 ucIndex)
+{
+    AT_UART_CTX_STRU                   *pstUartCtx = VOS_NULL_PTR;
+    VOS_UINT16                          usLength;
+
+    /* 初始化 */
+    pstUartCtx = AT_GetUartCtxAddr();
+    usLength   = 0;
+
+    /* 通道检查 */
+    if (VOS_TRUE != AT_CheckHsUartUser(ucIndex))
+    {
+        return AT_OK;
+    }
+
+    usLength = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      "%s: %u",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      pstUartCtx->stPhyConfig.enBaudRate);
+
+    gstAtSendData.usBufLen = usLength;
+
+    return AT_OK;
+}
+
+
+VOS_UINT32 AT_QryIcfPara(VOS_UINT8 ucIndex)
+{
+    AT_UART_CTX_STRU                   *pstUartCtx = VOS_NULL_PTR;
+    VOS_UINT16                          usLength;
+
+    /* 初始化 */
+    pstUartCtx = AT_GetUartCtxAddr();
+    usLength   = 0;
+
+    /* 通道检查 */
+    if (VOS_TRUE != AT_CheckHsUartUser(ucIndex))
+    {
+        return AT_OK;
+    }
+
+    usLength = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      "%s: %d,%d",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      pstUartCtx->stPhyConfig.stFrame.enFormat,
+                                      pstUartCtx->stPhyConfig.stFrame.enParity);
+
+    gstAtSendData.usBufLen = usLength;
+
+    return AT_OK;
+}
+
+
+VOS_UINT32 AT_QryIfcPara(VOS_UINT8 ucIndex)
+{
+    AT_UART_CTX_STRU                   *pstUartCtx = VOS_NULL_PTR;
+    VOS_UINT16                          usLength;
+
+    /* 初始化 */
+    pstUartCtx = AT_GetUartCtxAddr();
+    usLength   = 0;
+
+    /* 通道检查 */
+    if (VOS_TRUE != AT_CheckHsUartUser(ucIndex))
+    {
+        return AT_OK;
+    }
+
+    usLength = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                     (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      "%s: %d,%d",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      pstUartCtx->stFlowCtrl.enDceByDte,
+                                      pstUartCtx->stFlowCtrl.enDteByDce);
+
+    gstAtSendData.usBufLen = usLength;
+
+    return AT_OK;
+}
+#endif
 
 
 VOS_UINT32 AT_QryAntSwitchPara(VOS_UINT8 ucIndex)
@@ -8648,6 +8856,24 @@ VOS_UINT32 AT_QryCclkPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
+#if (FEATURE_ON == FEATURE_HUAWEI_VP)
+
+VOS_UINT32 AT_QryVoicePreferPara(VOS_UINT8 ucIndex)
+{
+    VOS_UINT32                          ulRslt;
+
+    /* 调用MN_FillAndSndAppReqMsg()，等待RABM的回复 */
+    ulRslt = AT_SndQryVoicePrefer(gastAtClientTab[ucIndex].usClientId,gastAtClientTab[ucIndex].opId);
+    if (VOS_OK == ulRslt)
+    {
+        gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_VOICEPREFER_QRY;
+        return AT_WAIT_ASYNC_RETURN;
+    }
+
+    return AT_ERROR;
+}
+#endif
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_QryCLocInfo(VOS_UINT8 ucIndex)
 {
@@ -8673,6 +8899,7 @@ VOS_UINT32 AT_QryCLocInfo(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 
 }
+#endif
 
 
 
@@ -8699,6 +8926,7 @@ VOS_UINT32 AT_QryEmcCallBack( VOS_UINT8 ucIndex  )
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#if ((FEATURE_ON == FEATURE_UE_MODE_CDMA)&&(FEATURE_ON == FEATURE_CHINA_TELECOM_VOICE_ENCRYPT))
 
 
 VOS_UINT32 AT_QryEncryptCallCap( VOS_UINT8 ucIndex )
@@ -8723,6 +8951,82 @@ VOS_UINT32 AT_QryEncryptCallCap( VOS_UINT8 ucIndex )
 
     return AT_WAIT_ASYNC_RETURN;
 }
+#if  (FEATURE_ON == FEATURE_CHINA_TELECOM_VOICE_ENCRYPT_TEST_MODE)
+
+
+VOS_UINT32 AT_QryEncryptCallRandom( VOS_UINT8 ucIndex )
+{
+
+    VOS_UINT32                          ulRet;
+
+    /* 参数检查 */
+    if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    ulRet = TAF_XCALL_QryEncryptCallRandom (WUEPS_PID_AT,
+                                            gastAtClientTab[ucIndex].usClientId,
+                                            0);
+    if (VOS_OK != ulRet)
+    {
+        return AT_ERROR;
+    }
+
+    gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_ECRANDOM_QRY;
+
+    return AT_WAIT_ASYNC_RETURN;
+
+}
+
+VOS_UINT32 AT_QryEncryptCallKmc( VOS_UINT8 ucIndex )
+{
+    VOS_UINT32                          ulRet;
+
+    /* 参数检查 */
+    if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    ulRet = TAF_XCALL_QryEncryptCallKmc (WUEPS_PID_AT,
+                                         gastAtClientTab[ucIndex].usClientId,
+                                         0);
+    if (VOS_OK != ulRet)
+    {
+        return AT_ERROR;
+    }
+
+    gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_ECKMC_QRY;
+
+    return AT_WAIT_ASYNC_RETURN;
+}
+
+VOS_UINT32  AT_QryEccTestMode( VOS_UINT8 ucIndex )
+{
+    VOS_UINT32                          ulRet;
+
+    /* 参数检查 */
+    if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    ulRet = TAF_XCALL_QryEncryptCallTestMode (WUEPS_PID_AT,
+                                              gastAtClientTab[ucIndex].usClientId,
+                                              0);
+    if (VOS_OK != ulRet)
+    {
+        return AT_ERROR;
+    }
+
+    gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_ECCTEST_QRY;
+
+    return AT_WAIT_ASYNC_RETURN;
+}
+#endif
+#endif
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_QryPrivacyModePreferred(VOS_UINT8 ucIndex)
 {
@@ -8744,10 +9048,12 @@ VOS_UINT32 AT_QryPrivacyModePreferred(VOS_UINT8 ucIndex)
 
     return AT_ERROR;
 }
+#endif
 
 
 VOS_UINT32 AT_QryCFreqLockInfo(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
     /* 参数检查 */
     if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
@@ -8767,8 +9073,12 @@ VOS_UINT32 AT_QryCFreqLockInfo(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
+#else
+    return AT_ERROR;
+#endif
 
 }
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_QryCdmaCsqPara(VOS_UINT8 ucIndex)
 {
@@ -8791,6 +9101,7 @@ VOS_UINT32 AT_QryCdmaCsqPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 }
+#endif
 
 
 VOS_UINT32 AT_QryTTYModePara(VOS_UINT8 ucIndex)
@@ -8826,6 +9137,7 @@ VOS_UINT32 AT_QryTTYModePara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_QryCtaPara(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
     /* 参数检查 */
     if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
@@ -8847,6 +9159,9 @@ VOS_UINT32 AT_QryCtaPara(VOS_UINT8 ucIndex)
     /* 返回命令处理挂起状态 */
     return AT_WAIT_ASYNC_RETURN;
 
+#else
+    return AT_ERROR;
+#endif
 
 }
 
@@ -8890,6 +9205,7 @@ VOS_UINT32 At_QryRatRfSwitch(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_Qry1xChanPara(VOS_UINT8 ucIndex)
 {
@@ -8913,10 +9229,12 @@ VOS_UINT32 AT_Qry1xChanPara(VOS_UINT8 ucIndex)
     }
 
 }
+#endif
 
 
 VOS_UINT32 AT_QryProRevInUse(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
     /* 参数检查 */
     if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
@@ -8936,11 +9254,15 @@ VOS_UINT32 AT_QryProRevInUse(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
+#else
+    return AT_ERROR;
+#endif
 }
 
 
 VOS_UINT32 AT_QryCasState(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
     /* 参数检查 */
     if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
@@ -8960,8 +9282,12 @@ VOS_UINT32 AT_QryCasState(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
+#else
+    return AT_ERROR;
+#endif
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_QryProGetEsn(VOS_UINT8 ucIndex)
 {
@@ -9059,10 +9385,12 @@ VOS_UINT32 AT_QryProGetMeid(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
+#endif
 
 
 VOS_UINT32 AT_QryHighVer(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
     /* 参数检查 */
     if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
@@ -9082,6 +9410,9 @@ VOS_UINT32 AT_QryHighVer(VOS_UINT8 ucIndex)
     {
         return AT_ERROR;
     }
+#else
+    return AT_ERROR;
+#endif
 }
 
 
@@ -9116,6 +9447,7 @@ VOS_UINT32 AT_QryTransModePara(VOS_UINT8 ucIndex)
 }
 
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_QryCdmaDormTimerVal(VOS_UINT8 ucIndex)
 {
@@ -9140,6 +9472,7 @@ VOS_UINT32 AT_QryCdmaDormTimerVal(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#endif
 
 
 VOS_UINT32 AT_QryMccFreqPara(
@@ -9263,6 +9596,7 @@ VOS_UINT32 AT_QryUECenterPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_QryHdrCsqPara(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
     /* 参数检查 */
     if (AT_CMD_OPT_READ_CMD != g_stATParseCmd.ucCmdOptType)
@@ -9281,6 +9615,9 @@ VOS_UINT32 AT_QryHdrCsqPara(VOS_UINT8 ucIndex)
 
     return AT_ERROR;
 
+#else
+   return AT_ERROR;
+#endif
 
 }
 
@@ -9288,6 +9625,7 @@ VOS_UINT32 AT_QryHdrCsqPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_QryCurrSidNid(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     VOS_UINT32                          ulRet;
 
     /* 参数检查 */
@@ -9307,8 +9645,12 @@ VOS_UINT32 AT_QryCurrSidNid(VOS_UINT8 ucIndex)
     gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_CSNID_QRY;
 
     return AT_WAIT_ASYNC_RETURN;
+#else
+        return AT_ERROR;
+#endif
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_QryCtRoamInfo(VOS_UINT8 ucIndex)
 {
@@ -9356,6 +9698,7 @@ VOS_UINT32 AT_QryPRLID(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#endif
 
 
 
@@ -9437,6 +9780,7 @@ VOS_UINT32 AT_QryPacspPara(VOS_UINT8 ucIndex)
 }
 
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_QryNoCardMode(VOS_UINT8 ucIndex)
 {
@@ -9489,6 +9833,7 @@ VOS_UINT32 AT_QryRatCombinedMode(VOS_UINT8 ucIndex)
     return AT_WAIT_ASYNC_RETURN;
 }
 
+#endif
 
 
 VOS_UINT32 AT_QryFclassPara(VOS_UINT8 ucIndex)

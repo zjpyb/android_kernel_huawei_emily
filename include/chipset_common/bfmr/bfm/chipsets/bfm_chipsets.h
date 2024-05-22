@@ -286,7 +286,8 @@ int bfmr_save_log_to_raw_part(char *raw_part_name, unsigned long long offset, ch
 
     @note:
 */
-int bfmr_save_log_to_mem_buffer(char *dst_buf, unsigned int dst_buf_len, char *src_buf, unsigned int log_len);
+int bfmr_save_log_to_mem_buffer(char *dst_buf, unsigned int dst_buf_len,
+		const char *src_buf, unsigned int log_len);
 
 /**
     @function: char* bfm_get_bfmr_log_root_path(void)

@@ -105,6 +105,9 @@ PPM_DisconnectTLPortFuc g_disconnectCb = NULL;
 /*****************************************************************************
   4 º¯ÊýÊµÏÖ
 *****************************************************************************/
+#if (FEATURE_HISOCKET == FEATURE_ON)
+extern u32 PPM_SockPortInit(void);
+#endif
 
 
 void PPM_RegDisconnectCb(PPM_DisconnectTLPortFuc cb)
@@ -843,6 +846,12 @@ int PPM_InitPhyPort(void)
         return BSP_ERROR;
     }
 
+#if (FEATURE_HISOCKET == FEATURE_ON)
+    if (BSP_OK != PPM_SockPortInit())
+    {
+        return BSP_ERROR;
+    }
+#endif
 
     ppm_printf("diag ppm init ok\n");
     return BSP_OK;

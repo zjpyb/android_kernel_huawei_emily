@@ -82,7 +82,7 @@ static int ufshcd_pltfrm_suspend(struct device *dev)
 	struct ufs_hba *hba = (struct ufs_hba *)dev_get_drvdata(dev);
 	struct Scsi_Host *host = hba->host;
 	dev_info(dev, "%s:%d ++\n", __func__, __LINE__);
-	if (host->queue_quirk_flag |
+	if (host->queue_quirk_flag &
 		SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD)) {
 #ifdef CONFIG_HISI_BLK
 		blk_generic_freeze(hba->host->use_blk_mq
@@ -94,7 +94,7 @@ static int ufshcd_pltfrm_suspend(struct device *dev)
 	}
 	ret = ufshcd_system_suspend(dev_get_drvdata(dev));
 	if (ret) {
-		if (host->queue_quirk_flag |
+		if (host->queue_quirk_flag &
 			SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD)) {
 			__clr_quiesce_for_each_device(hba->host);
 #ifdef CONFIG_HISI_BLK
@@ -124,7 +124,7 @@ static int ufshcd_pltfrm_resume(struct device *dev)
 	struct Scsi_Host *host = hba->host;
 	dev_info(dev, "%s:%d ++\n", __func__, __LINE__);
 	ret = ufshcd_system_resume(dev_get_drvdata(dev));
-	if (host->queue_quirk_flag |
+	if (host->queue_quirk_flag &
 		SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD)) {
 		__clr_quiesce_for_each_device(hba->host);
 #ifdef CONFIG_HISI_BLK
@@ -168,10 +168,13 @@ static void ufshcd_pltfrm_shutdown(struct platform_device *pdev)
 	unsigned long timeout = SHUTDOWN_TIMEOUT;
 
 	dev_err(&pdev->dev, "%s ++\n", __func__);
-	if (host->queue_quirk_flag | SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD)) {
-	#ifdef CONFIG_HISI_BLK
-		blk_generic_freeze(hba->host->use_blk_mq ? &(hba->host->tag_set.lld_func) : &(hba->host->bqt->lld_func), BLK_LLD, true);
-	#endif
+	if (host->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD)) {
+#ifdef CONFIG_HISI_BLK
+		blk_generic_freeze(hba->host->use_blk_mq
+					   ? &(hba->host->tag_set.lld_func)
+					   : &(hba->host->bqt->lld_func),
+			BLK_LLD, true);
+#endif
 		/*set all scsi device state to quiet to forbid io form blk level*/
 		__set_quiesce_for_each_device(hba->host);
 	}
@@ -202,9 +205,14 @@ int ufshcd_pltfrm_probe(struct platform_device *pdev)
 	void __iomem *mmio_base;
 	struct resource *mem_res;
 	int irq, timer_irq = -1, err;
+
+	void __iomem *ufs_unipro_base;
+	int unipro_irq, fatal_err_irq, core0_irq;
+
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 	unsigned int timer_intr_index;
+	int use_hisi_ufs_hc = 0;
 
 	if (get_bootdevice_type() != BOOT_DEVICE_UFS) {
 		dev_err(dev, "system is't booted from UFS on ARIES FPGA board\n");
@@ -213,16 +221,58 @@ int ufshcd_pltfrm_probe(struct platform_device *pdev)
 
 	mem_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	mmio_base = devm_ioremap_resource(dev, mem_res);
-	if (IS_ERR(*(void **)&mmio_base)) {
-		err = PTR_ERR(*(void **)&mmio_base);
+	if (IS_ERR(mmio_base)) {
+		err = PTR_ERR(mmio_base);
 		goto out;
 	}
+
+	if (of_property_read_u32(
+		    np, "ufs-kirin-use-hisi-hc", &use_hisi_ufs_hc)) {
+		dev_err(dev, "cant find use_hisi_ufs_hc!\n");
+	}
+
+	if (use_hisi_ufs_hc) {
+		dev_info(dev, "use hisi ufs host controller\n");
+		mem_res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+		ufs_unipro_base = devm_ioremap_resource(dev, mem_res);
+		if (IS_ERR(*(void **)&ufs_unipro_base)) {
+			err = PTR_ERR(*(void **)&ufs_unipro_base); //lint !e712
+			goto out;
+		}
+	} else
+		ufs_unipro_base = 0;
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(dev, "IRQ resource not available\n");
 		err = -ENODEV;
 		goto out;
+	}
+
+	if (use_hisi_ufs_hc) {
+		unipro_irq = platform_get_irq(pdev, 1);
+		if (unipro_irq < 0) {
+			dev_err(dev, "IRQ resource not available\n");
+			err = -ENODEV;
+			goto out;
+		}
+
+		fatal_err_irq = platform_get_irq(pdev, 2);
+		if (fatal_err_irq < 0) {
+			dev_err(dev, "IRQ resource not available\n");
+			err = -ENODEV;
+			goto out;
+		}
+		core0_irq = platform_get_irq(pdev, 3);
+		if (core0_irq < 0) {
+			dev_err(dev, "core0_irq resource not available\n");
+			err = -ENODEV;
+			goto out;
+		}
+	} else {
+		unipro_irq = -1;
+		fatal_err_irq = -1;
+		core0_irq = -1;
 	}
 
 	err = ufshcd_alloc_host(dev, &hba);
@@ -246,15 +296,27 @@ int ufshcd_pltfrm_probe(struct platform_device *pdev)
 	pm_suspend_ignore_children(&pdev->dev, true);
 	pm_runtime_set_autosuspend_delay(&pdev->dev, 5);
 	pm_runtime_use_autosuspend(&pdev->dev);
-
 	if (of_find_property(np, "ufs-kirin-disable-pm-runtime", NULL))
 		hba->caps |= DISABLE_UFS_PMRUNTIME;
+
 	/* auto hibern8 can not exist with pm runtime */
 	if (hba->caps & DISABLE_UFS_PMRUNTIME ||
 		of_find_property(np, "ufs-kirin-use-auto-H8", NULL)) {
 		pm_runtime_forbid(hba->dev);
 	}
-	pm_runtime_enable(&pdev->dev);
+
+	hba->use_hisi_ufs_hc = use_hisi_ufs_hc;
+	if (use_hisi_ufs_hc) {
+		hba->unipro_irq = unipro_irq;
+		hba->fatal_err_irq = fatal_err_irq;
+		hba->core0_irq = core0_irq;
+		hba->ufs_unipro_base = ufs_unipro_base;
+	} else {
+		hba->unipro_irq = -1;
+		hba->fatal_err_irq = -1;
+		hba->core0_irq = -1;
+		hba->ufs_unipro_base = 0;
+	}
 
 	err = ufshcd_init(hba, mmio_base, irq, timer_irq);
 	if (err) {

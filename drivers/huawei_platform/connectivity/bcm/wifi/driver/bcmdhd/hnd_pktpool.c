@@ -328,7 +328,7 @@ pktpool_fill(osl_t *osh, pktpool_t *pktp, bool minimal)
 static void *
 pktpool_deq(pktpool_t *pktp)
 {
-	void *p;
+	void *p = NULL;
 
 	if (pktp->avail == 0)
 		return NULL;

@@ -487,7 +487,11 @@ VOS_VOID ADS_LogPrintf(ADS_LOG_LEVEL_ENUM_UINT32 enLevel, VOS_CHAR *pcFmt, ...)
 
     acBuff[ulPrintLength] = '\0';
 
+#if (VOS_OS_VER == VOS_LINUX)
     printk(KERN_ERR "%s", acBuff);
+#else
+    PS_PRINTF("%s", acBuff);
+#endif
 
     return ;
 }

@@ -10,9 +10,9 @@
 
 int phcd_seq_print_stat(struct proxy_hcd *phcd, struct seq_file *s)
 {
-	struct proxy_hcd_stat *phcd_stat;
-	struct proxy_hcd_usb_device_stat *udev_stat;
-	struct proxy_hcd_urb_stat *urb_stat;
+	struct proxy_hcd_stat *phcd_stat = NULL;
+	struct proxy_hcd_usb_device_stat *udev_stat = NULL;
+	struct proxy_hcd_urb_stat *urb_stat = NULL;
 	int i;
 
 	if (!phcd) {
@@ -85,8 +85,8 @@ static const struct file_operations phcd_print_stat_fops = {
 
 int phcd_debugfs_init(struct proxy_hcd *phcd)
 {
-	struct dentry		*root;
-	struct dentry		*file;
+	struct dentry		*root = NULL;
+	struct dentry		*file = NULL;
 
 	root = debugfs_create_dir("proxyhcd", usb_debug_root);
 	if (IS_ERR_OR_NULL(root))

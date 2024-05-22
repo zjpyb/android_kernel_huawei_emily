@@ -365,8 +365,6 @@ static void lcdkit_dump_dss_vreg(struct dss_vreg *vreg)
     LCDKIT_DEBUG("name               = %s\n",   vreg->vreg_name);
     LCDKIT_DEBUG("min_voltage        = 0x%d\n", vreg->min_voltage);
     LCDKIT_DEBUG("max_voltage        = 0x%d\n", vreg->max_voltage);
-    //LCDKIT_DEBUG("enable_load        = 0x%d\n", vreg->enable_load);
-    //LCDKIT_DEBUG("disable_load       = 0x%d\n", vreg->disable_load);
     LCDKIT_DEBUG("pre_on_sleep       = 0x%d\n", vreg->pre_on_sleep);
     LCDKIT_DEBUG("post_on_sleep      = 0x%d\n", vreg->post_on_sleep);
     LCDKIT_DEBUG("pre_off_sleep      = 0x%d\n", vreg->pre_off_sleep);
@@ -564,18 +562,6 @@ static int lcdkit_power_config(struct platform_device *ctrl_pdev,
     {
         if (lcdkit_bias_is_regulator_ctrl_power())
         {
-            #if 0
-        	rc = lcdkit_regulator_config(ctrl_pdev,
-                ctrl_pdata->panel_power_data.vreg_config,
-        		ctrl_pdata->panel_power_data.num_vreg,
-        		LCDKIT_VREG_BIAS_NAME, 1);
-        	if (rc) {
-        		LCDKIT_ERR(": failed to init regulator: %s, rc=%d\n",
-                        LCDKIT_VREG_BIAS_NAME, rc);
-        		return rc;
-        	}
-            #endif
-
         	rc = lcdkit_regulator_config(ctrl_pdev,
                 ctrl_pdata->panel_power_data.vreg_config,
         		ctrl_pdata->panel_power_data.num_vreg,
@@ -599,16 +585,6 @@ static int lcdkit_power_config(struct platform_device *ctrl_pdev,
         }
         else
         {
-            #if 0
-            rc = lcdkit_gpio_config(lcdkit_info.gpio_lcd_bias,
-                    LCDKIT_VREG_BIAS_NAME);
-        	if (rc) {
-        		LCDKIT_ERR(": failed to init bias gpio: %d, rc=%d\n",
-                        lcdkit_info.gpio_lcd_bias, rc);
-        		return rc;
-        	}
-            #endif
-
             rc = lcdkit_gpio_config(lcdkit_info.panel_infos.gpio_lcd_vsp,
                     LCDKIT_VREG_LAB_NAME);
         	if (rc) {
@@ -838,20 +814,6 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
                                 LCDKIT_VREG_LAB_NAME);
                 		return ret;
                 	}
-
-                    #if 0
-                    ret = lcdkit_regulator_enable(
-                                ctrl_pdata->panel_power_data.vreg_config,
-                                ctrl_pdata->panel_power_data.num_vreg,
-                                LCDKIT_VREG_BIAS_NAME, 0);
-                	if (ret)
-                    {
-                		LCDKIT_ERR(": failed to enable vregs for %s\n",
-                                LCDKIT_VREG_BIAS_NAME);
-                		return ret;
-                	}
-                    #endif
-
                 }
 				 else if(lcdkit_bias_is_ic_ctrl_power())
                 {
@@ -892,18 +854,6 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
                 	}
 
                     lcdkit_delay(lcdkit_info.panel_infos.delay_af_vsp_off);
-
-                    #if 0
-                    ret = lcdkit_disable_power_gpio(lcdkit_info.gpio_lcd_bias);
-                	if (ret) {
-                		LCDKIT_ERR(": failed to enable bias gpio:%d!\n",
-                                lcdkit_info.gpio_lcd_bias);
-                		return ret;
-                	}
-
-                    lcdkit_delay(lcdkit_info.delay_af_bias_off);
-                    #endif
-
                 }
             }
 
@@ -1099,19 +1049,6 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
                    		    ctrl_pdata->panel_power_data.num_vreg);
                    }
 
-                    #if 0
-                    ret = lcdkit_regulator_enable(
-                            ctrl_pdata->panel_power_data.vreg_config,
-                            ctrl_pdata->panel_power_data.num_vreg,
-                            LCDKIT_VREG_BIAS_NAME, 1);
-                    if (ret)
-                    {
-                        LCDKIT_ERR(": failed to enable vregs for %s\n",
-                                LCDKIT_VREG_BIAS_NAME);
-                        return ret;
-                    }
-                    #endif
-
                     ret = lcdkit_regulator_enable(
                             ctrl_pdata->panel_power_data.vreg_config,
                             ctrl_pdata->panel_power_data.num_vreg,
@@ -1183,17 +1120,6 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
                 }
                 else
                 {
-                    #if 0
-                    ret = lcdkit_enable_power_gpio(lcdkit_info.gpio_lcd_bias);
-                    if (ret) {
-                        LCDKIT_ERR(": failed to enable bias gpio:%d!\n",
-                                lcdkit_info.gpio_lcd_bias);
-                        return ret;
-                    }
-
-                    lcdkit_delay(lcdkit_info.delay_af_bias_on);
-                    #endif
-
                     ret = lcdkit_enable_gpio(lcdkit_info.panel_infos.gpio_lcd_vsp);
                     if (ret) {
                         LCDKIT_ERR(": failed to enable vsp gpio:%d!\n",

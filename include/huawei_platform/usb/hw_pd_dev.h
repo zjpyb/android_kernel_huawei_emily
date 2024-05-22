@@ -10,6 +10,11 @@
 #ifdef CONFIG_CONTEXTHUB_PD
 #include <linux/hisi/contexthub/tca.h>
 #endif
+#include <linux/mfd/hisi_pmic_mntn.h>
+#include <linux/regulator/consumer.h>
+#include <linux/regulator/driver.h>
+#include <linux/regulator/machine.h>
+#include <linux/wakelock.h>
 
 #define CONFIG_DPM_USB_PD_CUSTOM_DBGACC
 #define CONFIG_DPM_TYPEC_CAP_DBGACC_SNK
@@ -51,6 +56,12 @@
 #define PD_DPM_CC2_STATUS_OFFSET               (0x02)
 #define PD_DPM_CC_STATUS_MASK                  (0x03)
 #define PD_DPM_BOTH_CC_STATUS_MASK             (0x0F)
+
+#define CC_ORIENTATION_FACTORY_SET             1
+#define CC_ORIENTATION_FACTORY_UNSET           0
+#define LDO_NAME_SIZE 16
+
+#define PD_PDM_RE_ENABLE_DRP                    1
 
 /* type-c inserted plug orientation */
 enum pd_cc_orient{
@@ -193,6 +204,9 @@ struct pd_dpm_ops {
 	void (*pd_dpm_set_voltage)(void*, int vol);
 	int (*pd_dpm_get_cc_state)(void);
 	int (*pd_dpm_disable_pd)(void *client, bool disable);
+	void (*pd_dpm_reinit_chip)(void *client);
+	bool (*pd_dpm_check_cc_vbus_short)(void);
+	void (*pd_dpm_enable_drp)(int mode);
 };
 struct pd_dpm_pd_state {
 	uint8_t connected;
@@ -273,7 +287,8 @@ struct pd_dpm_info{
     struct device *dev;
     struct mutex pd_lock;
     struct mutex sink_vbus_lock;
-
+	struct regulator *pd_vdd_ldo;
+	struct notifier_block ocp_nb;
     struct dual_role_phy_instance *dual_role;
     struct dual_role_phy_desc *desc;
 
@@ -299,6 +314,7 @@ struct pd_dpm_info{
     struct workqueue_struct *usb_wq;
     struct delayed_work usb_state_update_work;
     struct delayed_work cc_moisture_flag_restore_work;
+	struct delayed_work reinit_pd_work;
 
 #ifdef CONFIG_CONTEXTHUB_PD
     struct pd_dpm_combphy_event last_combphy_notify_event;
@@ -308,6 +324,10 @@ struct pd_dpm_info{
 #endif
 
     int vconn_en;
+	int max_ocp_count;
+	int ocp_delay_time;
+	bool is_ocp;
+	int pd_reinit_enable;
     bool bc12_finish_flag;
     bool pd_finish_flag;
     bool pd_source_vbus;
@@ -316,6 +336,8 @@ struct pd_dpm_info{
     int cur_usb_event;
 	unsigned int cable_vdo;
 	bool ctc_cable_flag;
+	struct wake_lock vdd_ocp_lock;
+	char ldo_name[LDO_NAME_SIZE];
 };
 
 struct cc_check_ops {
@@ -328,8 +350,6 @@ struct cable_vdo_ops {
 	int (*is_cust_src2_cable)(void);
 };
 int pd_dpm_cable_vdo_ops_register(struct cable_vdo_ops *);
-extern int pd_dpm_get_is_support_smart_holder(void);
-extern int pd_dpm_smart_holder_without_emark(void);
 #endif
 
 /* for chip layer to get class created by core layer */
@@ -360,6 +380,16 @@ extern int pd_dpm_get_cc_state_type(unsigned int *cc1, unsigned int *cc2);
 #ifdef CONFIG_CONTEXTHUB_PD
 extern int pd_dpm_handle_combphy_event(struct pd_dpm_combphy_event event);
 #endif
+
+#ifdef CONFIG_CONTEXTHUB_PD
+extern int pd_dpm_get_pd_event_num(void);
+#else
+static inline int pd_dpm_get_pd_event_num(void)
+{
+	return 0;
+}
+#endif /* CONFIG_CONTEXTHUB_PD */
+
 void pd_dpm_set_cc_voltage(int type);
 enum pd_dpm_cc_voltage_type pd_dpm_get_cc_voltage(void);
 int pd_dpm_ops_register(struct pd_dpm_ops *ops, void*client);
@@ -389,6 +419,7 @@ extern bool pd_dpm_ignore_vbuson_event(void);
 extern bool pd_dpm_ignore_vbusoff_event(void);
 extern void pd_dpm_set_ignore_vbuson_event(bool _ignore_vbus_on_event);
 extern void pd_dpm_set_ignore_vbusoff_event(bool _ignore_vbus_off_event);
+extern void pd_pdm_enable_drp(void);
 
 
 #ifdef CONFIG_CONTEXTHUB_PD
@@ -415,10 +446,12 @@ extern void pd_set_product_id_info(unsigned int vid,
 				   unsigned int type);
 extern bool pd_dpm_check_cc_vbus_short(void);
 extern bool pd_dpm_get_cc_moisture_status(void);
+extern int pd_dpm_get_otg_channel(void);
 extern enum cur_cap pd_dpm_get_cvdo_cur_cap(void);
 extern int pd_dpm_get_emark_detect_enable(void);
 extern void pd_dpm_detect_emark_cable(void);
 bool pd_dpm_get_ctc_cable_flag(void);
+extern void pd_dpm_cc_dynamic_protect(void);
 void pd_dpm_set_source_sink_state(enum charger_event_type type);
 bool pmic_vbus_is_connected(void);
 void pmic_vbus_disconnect_process(void);

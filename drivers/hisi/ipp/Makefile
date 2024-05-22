@@ -13,3 +13,4 @@ obj-$(CONFIG_HISPIPP_V250) += v250es/
 else
 obj-$(CONFIG_HISPIPP_V250) += v250/
 endif
+

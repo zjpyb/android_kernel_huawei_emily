@@ -20,18 +20,16 @@
 #include <linux/mm.h>
 #include <linux/rtmutex.h>
 #include <linux/sched.h>
+#include <uapi/linux/sched/types.h>
 #include <linux/scatterlist.h>
 #include <linux/vmalloc.h>
-#include <linux/ion-iommu.h>
 #ifdef CONFIG_HISI_LB
 #include <linux/hisi/hisi_lb.h>
 #endif
 #ifdef CONFIG_HISI_SVM
 #include <linux/hisi/hisi_svm.h>
 #endif
-
 #include "ion.h"
-#include "ion_priv.h"
 
 void *ion_heap_map_kernel(struct ion_heap *heap,
 			  struct ion_buffer *buffer)
@@ -58,13 +56,13 @@ void *ion_heap_map_kernel(struct ion_heap *heap,
 		lb_pid_prot_build(buffer->plc_id, &pgprot);
 #endif
 
-	for_each_sg(table->sgl, sg, table->nents, i) {/*lint !e574*/
+	for_each_sg(table->sgl, sg, table->nents, i) {
 		int npages_this_entry = PAGE_ALIGN(sg->length) / PAGE_SIZE;
 		struct page *page = sg_page(sg);
 
 		BUG_ON(i >= npages);
 		for (j = 0; j < npages_this_entry; j++)
-			*(tmp++) = page++;/*lint !e613*/
+			*(tmp++) = page++;
 	}
 	vaddr = vmap(pages, npages, VM_MAP, pgprot);
 	vfree(pages);
@@ -96,7 +94,7 @@ int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 		lb_pid_prot_build(buffer->plc_id, &vma->vm_page_prot);
 #endif
 
-	for_each_sg(table->sgl, sg, table->nents, i) {/*lint !e574*/
+	for_each_sg(table->sgl, sg, table->nents, i) {
 		struct page *page = sg_page(sg);
 		unsigned long remainder = vma->vm_end - addr;
 		unsigned long len = sg->length;
@@ -117,47 +115,18 @@ int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 		addr += len;
 		if (addr >= vma->vm_end)
 			goto done;
-
 	}
 
 done:
 #ifdef CONFIG_HISI_SVM
-		if (test_bit(MMF_SVM, &vma->vm_mm->flags)) {
-			hisi_svm_flush_cache(vma->vm_mm,
-					vma->vm_start,
-					vma->vm_end - vma->vm_start);
-		}
+	if (test_bit(MMF_SVM, &vma->vm_mm->flags)) {
+		hisi_svm_flush_cache(vma->vm_mm,
+				     vma->vm_start,
+				     vma->vm_end - vma->vm_start);
+	}
 #endif
 
 	return 0;
-}
-
-int ion_heap_map_iommu(struct ion_buffer *buffer,
-			struct ion_iommu_map *map_data)
-{
-	struct sg_table *table = buffer->sg_table;
-	int ret;
-
-#ifdef CONFIG_HISI_LB
-	map_data->format.prot |= (unsigned long)buffer->plc_id << IOMMU_PORT_SHIFT;
-#endif
-	ret = hisi_iommu_map_domain(table->sgl, &map_data->format);
-	if (ret) {
-		pr_err("%s: iommu map failed, heap: %s\n", __func__,
-			buffer->heap->name);
-	}
-	return ret;
-}
-
-void ion_heap_unmap_iommu(struct ion_iommu_map *map_data)
-{
-	int ret;
-
-	ret = hisi_iommu_unmap_domain(&map_data->format);
-	if (ret) {
-		pr_err("%s: iommu unmap failed, heap: %s\n", __func__,
-			map_data->buffer->heap->name);
-	}
 }
 
 static int ion_heap_clear_pages(struct page **pages, int num, pgprot_t pgprot)
@@ -287,7 +256,7 @@ static int ion_heap_deferred_free(void *data)
 		struct ion_buffer *buffer;
 
 		wait_event_freezable(heap->waitqueue,
-				     ion_heap_freelist_size(heap) > 0); /*lint !e666*/
+				     ion_heap_freelist_size(heap) > 0);
 
 		spin_lock(&heap->free_lock);
 		if (list_empty(&heap->free_list)) {
@@ -302,7 +271,7 @@ static int ion_heap_deferred_free(void *data)
 		ion_buffer_destroy(buffer);
 	}
 
-	return 0;/*lint !e527*/
+	return 0;
 }
 
 int ion_heap_init_deferred_free(struct ion_heap *heap)
@@ -332,7 +301,7 @@ static unsigned long ion_heap_shrink_count(struct shrinker *shrinker,
 	total = ion_heap_freelist_size(heap) / PAGE_SIZE;
 	if (heap->ops->shrink)
 		total += heap->ops->shrink(heap, sc->gfp_mask, 0);
-	return total;/* [false alarm]:fortify */
+	return total; /* [false alarm]:fortify */
 }
 
 static unsigned long ion_heap_shrink_scan(struct shrinker *shrinker,
@@ -356,11 +325,11 @@ static unsigned long ion_heap_shrink_scan(struct shrinker *shrinker,
 
 	to_scan -= freed;
 	if (to_scan <= 0)
-		return freed;/* [false alarm]:fortify */
+		return freed; /* [false alarm]:fortify */
 
 	if (heap->ops->shrink)
 		freed += heap->ops->shrink(heap, sc->gfp_mask, to_scan);
-	return freed;/* [false alarm]:fortify */
+	return freed; /* [false alarm]:fortify */
 }
 
 void ion_heap_init_shrinker(struct ion_heap *heap)
@@ -371,103 +340,3 @@ void ion_heap_init_shrinker(struct ion_heap *heap)
 	heap->shrinker.batch = 0;
 	register_shrinker(&heap->shrinker);
 }
-
-struct ion_heap *ion_heap_create(struct ion_platform_heap *heap_data)
-{
-	struct ion_heap *heap = NULL;
-
-	switch (heap_data->type) {
-	case ION_HEAP_TYPE_SYSTEM_CONTIG:
-		pr_err("%s: Heap type is disabled: %d\n", __func__,
-		       heap_data->type);
-		return ERR_PTR(-EINVAL);
-	case ION_HEAP_TYPE_SYSTEM:
-		heap = ion_system_heap_create(heap_data);
-		break;
-	case ION_HEAP_TYPE_CARVEOUT:
-		heap = ion_carveout_heap_create(heap_data);
-		break;
-	case ION_HEAP_TYPE_CHUNK:
-		heap = ion_chunk_heap_create(heap_data);
-		break;
-	case ION_HEAP_TYPE_DMA:
-		heap = ion_cma_heap_create(heap_data);
-		break;
-#ifdef CONFIG_ION_HISI_SECCM
-	case ION_HEAP_TYPE_SECCM:
-		heap = ion_seccm_heap_create(heap_data);
-		break;
-#endif
-
-#ifdef CONFIG_ION_HISI_SECSG
-	case ION_HEAP_TYPE_SECSG:
-		heap = ion_secsg_heap_create(heap_data);
-		break;
-#endif
-#ifdef CONFIG_ION_HISI_DMA_POOL
-	case ION_HEAP_TYPE_DMA_POOL:
-		heap = ion_dma_pool_heap_create(heap_data);
-		break;
-#endif
-	default:
-		pr_err("%s: Invalid heap type %d\n", __func__,
-		       heap_data->type);
-		return ERR_PTR(-EINVAL);
-	}
-
-	if (IS_ERR_OR_NULL(heap)) {
-		pr_err("%s: error creating heap %s type %d base %lu size %zu\n",
-		       __func__, heap_data->name, heap_data->type,
-		       heap_data->base, heap_data->size);
-		return ERR_PTR(-EINVAL);
-	}
-
-	heap->name = heap_data->name;
-	heap->id = heap_data->id;
-	return heap;
-}
-EXPORT_SYMBOL(ion_heap_create);
-
-void ion_heap_destroy(struct ion_heap *heap)
-{
-	if (!heap)
-		return;
-
-	switch (heap->type) {
-	case ION_HEAP_TYPE_SYSTEM_CONTIG:
-		pr_err("%s: Heap type is disabled: %d\n", __func__,
-		       heap->type);
-		break;
-	case ION_HEAP_TYPE_SYSTEM:
-		ion_system_heap_destroy(heap);
-		break;
-	case ION_HEAP_TYPE_CARVEOUT:
-		ion_carveout_heap_destroy(heap);
-		break;
-	case ION_HEAP_TYPE_CHUNK:
-		ion_chunk_heap_destroy(heap);
-		break;
-	case ION_HEAP_TYPE_DMA:
-		ion_cma_heap_destroy(heap);
-		break;
-#ifdef CONFIG_ION_HISI_SECCM
-	case ION_HEAP_TYPE_SECCM:
-		ion_seccm_heap_destroy(heap);
-		break;
-#endif
-#ifdef CONFIG_ION_HISI_SECSG
-	case ION_HEAP_TYPE_SECSG:
-		ion_secsg_heap_destroy(heap);
-		break;
-#endif
-#ifdef CONFIG_ION_HISI_DMA_POOL
-	case ION_HEAP_TYPE_DMA_POOL:
-		ion_dma_pool_heap_destroy(heap);
-		break;
-#endif
-	default:
-		pr_err("%s: Invalid heap type %d\n", __func__,
-		       heap->type);
-	}
-}
-EXPORT_SYMBOL(ion_heap_destroy);

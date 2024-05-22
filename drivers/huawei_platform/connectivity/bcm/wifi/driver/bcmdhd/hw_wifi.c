@@ -24,7 +24,7 @@
 #include <log/log_usertype.h>
 
 #ifdef CONFIG_HUAWEI_DUBAI
-#include <huawei_platform/log/hwlog_kernel.h>
+#include <chipset_common/dubai/dubai.h>
 #endif
 
 #ifdef CONFIG_HW_WLANFTY_STATUS
@@ -343,7 +343,7 @@ void hw_dhd_check_and_disable_timestamps(void)
 static void wlan_send_nl_event(struct net_device *net_dev,  u16 port)
 {
 /* Because selinux permission problem ,this function is not used
-** And send uevent can cause panic problem in VV product 
+** And send uevent can cause panic problem in VV product
 **/
 #ifdef HW_WIFI_WAKEUP_SRC_SEND_UEVENT
 	struct device* dev = NULL;
@@ -385,18 +385,14 @@ static void parse_ipv4_packet(struct sk_buff *skb)
 		uh = (struct udphdr *)(skb->data + iphdr_len);
 		HW_PRINT_HI("receive UDP packet, src port:%d, dst port:%d.\n", ntohs(uh->source), ntohs(uh->dest));
 #ifdef CONFIG_HUAWEI_DUBAI
-		if (BETA_USER == get_logusertype_flag()) {
-			HWDUBAI_LOGE("DUBAI_TAG_PACKET_WAKEUP_UDP_V4", "port=%d", ntohs(uh->dest));
-		}
+		dubai_log_packet_wakeup_stats("DUBAI_TAG_PACKET_WAKEUP_UDP_V4", "port=%d", ntohs(uh->dest));
 #endif
 		wlan_send_nl_event(skb->dev, ntohs(uh->dest));
 	}else if(iph->protocol == IPPROTO_TCP){
 		th = (struct tcphdr *)(skb->data + iphdr_len);
 		HW_PRINT_HI("receive TCP packet, src port:%d, dst port:%d.\n", ntohs(th->source), ntohs(th->dest));
 #ifdef CONFIG_HUAWEI_DUBAI
-		if (BETA_USER == get_logusertype_flag()) {
-			HWDUBAI_LOGE("DUBAI_TAG_PACKET_WAKEUP_TCP_V4", "port=%d", ntohs(th->dest));
-		}
+		dubai_log_packet_wakeup_stats("DUBAI_TAG_PACKET_WAKEUP_TCP_V4", "port=%d", ntohs(th->dest));
 #endif
 		wlan_send_nl_event(skb->dev, ntohs(th->dest));
 	}else if(iph->protocol == IPPROTO_ICMP){
@@ -404,23 +400,17 @@ static void parse_ipv4_packet(struct sk_buff *skb)
 		HW_PRINT_HI("receive ICMP packet, type(%d):%s, code:%d.\n", icmph->type,
 			((icmph->type == 0)?"ping reply":((icmph->type == 8)?"ping request":"other icmp pkt")), icmph->code);
 #ifdef CONFIG_HUAWEI_DUBAI
-		if (BETA_USER == get_logusertype_flag()) {
-			HWDUBAI_LOGE("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", (int32_t)iph->protocol);
-		}
+		dubai_log_packet_wakeup_stats("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", (int32_t)iph->protocol);
 #endif
 	}else if(iph->protocol == IPPROTO_IGMP){
 		HW_PRINT_HI("receive IGMP packet.\n");
 #ifdef CONFIG_HUAWEI_DUBAI
-		if (BETA_USER == get_logusertype_flag()) {
-			HWDUBAI_LOGE("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", (int32_t)iph->protocol);
-		}
+		dubai_log_packet_wakeup_stats("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", (int32_t)iph->protocol);
 #endif
 	}else{
 		HW_PRINT_HI("receive other IPv4 packet.\n");
 #ifdef CONFIG_HUAWEI_DUBAI
-		if (BETA_USER == get_logusertype_flag()) {
-			HWDUBAI_LOGE("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", (int32_t)iph->protocol);
-		}
+		dubai_log_packet_wakeup_stats("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", (int32_t)iph->protocol);
 #endif
 	}
 
@@ -429,8 +419,8 @@ static void parse_ipv4_packet(struct sk_buff *skb)
 
 void dump_ipv6_addr(unsigned short *addr)
 {
-	HW_PRINT_HI(":%x:%x:%x:%x\n", ntohs(addr[0]),ntohs(addr[1]),ntohs(addr[2]),ntohs(addr[3]));
-	HW_PRINT_HI(":%x:%x:%x:%x\n", ntohs(addr[4]),ntohs(addr[5]),ntohs(addr[6]),ntohs(addr[7]));
+	HW_PRINT_HI(":%x:**:**:%x\n", ntohs(addr[0]),ntohs(addr[3]));
+	HW_PRINT_HI(":%x:**:**:%x\n", ntohs(addr[4]),ntohs(addr[7]));
 }
 #ifdef CONFIG_HW_CLEAR_WARNING
 static uint8_t *get_next_ipv6_chain_header(uint8_t **headerscan, uint8_t *headtype, int8_t *done, uint16_t *payload_len)
@@ -551,7 +541,7 @@ static void parse_ipv6_packet(struct sk_buff *skb)
 	struct ipv6hdr *nh;
 	uint16_t src_port;
 	uint16_t des_port;
-	uint8_t *payload;
+	uint8_t *payload = NULL;
 	uint8_t icmpv6_type;
 
 	nh = (struct ipv6hdr *)skb->data;
@@ -578,9 +568,7 @@ static void parse_ipv6_packet(struct sk_buff *skb)
 		}
 	}
 #ifdef CONFIG_HUAWEI_DUBAI
-	if (BETA_USER == get_logusertype_flag()) {
-		HWDUBAI_LOGE("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", IPPROTO_IPV6);
-	}
+	dubai_log_packet_wakeup_stats("DUBAI_TAG_PACKET_WAKEUP", "protocol=%d", IPPROTO_IPV6);
 #endif
 
     /*
@@ -1707,9 +1695,9 @@ int hw_get_filter_pkg_stat(hw_wifi_filter_item *list, int max_count, int* count)
     uint8 *mask_and_pattern;
     uint32 i, mask_len, id, filter_len, enable = 1;
 
-    wl_pkt_filter_t         *filterp;
-    wl_pkt_filter_stats_t   *stats;
-    wl_pkt_filter_list_t    *filter_list;
+    wl_pkt_filter_t *filterp = NULL;
+    wl_pkt_filter_stats_t *stats = NULL;
+    wl_pkt_filter_list_t *filter_list = NULL;
 
     if (NULL == hw_dhd_pub_t) {
         HW_PRINT_HI("%s: hw_dhd_pub_t is NULL\n", __FUNCTION__);
@@ -1912,7 +1900,7 @@ void hw_check_chip_otp(dhd_pub_t *dhd) {
 
     HW_PRINT_HI("hw_check_chip_otp enter\n");
     buf_chip = kmalloc(OTP_BUF_SIZE, GFP_KERNEL);
-    if(NULL == buf_chip){
+    if (NULL == buf_chip){
         HW_PRINT_HI("failed to allocate buf_chip\n");
         return;
     }
@@ -1933,22 +1921,24 @@ void hw_check_chip_otp(dhd_pub_t *dhd) {
 
     filp->f_pos = 0;
     buf_read = kmalloc(OTP_BUF_SIZE, GFP_KERNEL);
-    if(NULL == buf_read){
+    if (NULL == buf_read){
            HW_PRINT_HI("failed to allocate buf_read\n");
+           set_fs(old_fs);
+           filp_close(filp, NULL);
            goto out;
     }
     memset(buf_read, 0, OTP_BUF_SIZE);
-    ret = vfs_read(filp, buf_read, sizeof(buf_read), &filp->f_pos);
+    ret = vfs_read(filp, buf_read, OTP_BUF_SIZE, &filp->f_pos);
 
     if (ret == 0) {
         //calculate crc16
         crcvalue = crc16(0, buf_chip, SROM_MAX);
-        memcpy(&buf_chip[SROM_MAX], &crcvalue, CRC_16_SIZE);
+        memcpy(buf_chip + SROM_MAX, &crcvalue, CRC_16_SIZE);
         filp->f_pos = 0;
-        vfs_write(filp, buf_chip, sizeof(buf_chip), &filp->f_pos);
+        vfs_write(filp, buf_chip, OTP_BUF_SIZE, &filp->f_pos);
         HW_PRINT_HI("read length 0, write to filesystem\n");
     } else if (ret == OTP_BUF_SIZE) {
-        memcpy(&readcrcvalue, &buf_read[SROM_MAX], CRC_16_SIZE);
+        memcpy(&readcrcvalue, buf_read + SROM_MAX, CRC_16_SIZE);
         crcvalue = crc16(0, buf_read, SROM_MAX);
         if (crcvalue == readcrcvalue) {
             hw_check_otp_data(buf_read, buf_chip, SROM_MAX, &checkinfo);
@@ -1974,11 +1964,11 @@ void hw_check_chip_otp(dhd_pub_t *dhd) {
                 checkinfo.offset_start, checkinfo.offset_end, checkinfo.error_sum);
     }
 out:
-    if(buf_read){
+    if (buf_read){
        kfree(buf_read);
        buf_read = NULL;
     }
-    if(buf_chip){
+    if (buf_chip){
        kfree(buf_chip);
        buf_chip = NULL;
     }

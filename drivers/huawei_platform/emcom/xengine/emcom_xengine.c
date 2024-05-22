@@ -1,20 +1,24 @@
-#include <linux/init.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/errno.h>
-#include <linux/mutex.h>
-#include <linux/time.h>
+/*
+* emcom_xengine.c
+*
+*  xengine module implemention
+*
+* Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+*
+* This software is licensed under the terms of the GNU General Public
+* License version 2, as published by the Free Software Foundation, and
+* may be copied, distributed, and modified under those terms.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU General Public License for more details.
+*
+*/
+
+#include <huawei_platform/emcom/emcom_xengine.h>
 #include <net/sock.h>
 #include <net/tcp.h>
-#include <net/ip.h>
-#include <net/netlink.h>
-#include <net/inet_connection_sock.h>
-#include <net/tcp_states.h>
-#include <linux/skbuff.h>
-#include <linux/types.h>
-#include <linux/netlink.h>
-#include <uapi/linux/netlink.h>
-#include <linux/kthread.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netdevice.h>
@@ -27,6 +31,9 @@
 #include "../emcom_netlink.h"
 #include "../emcom_utils.h"
 #include <huawei_platform/emcom/network_evaluation.h>
+#ifdef CONFIG_HUAWEI_OPMP
+#include <huawei_platform/emcom/opmp_heartbeat.h>
+#endif
 #ifdef CONFIG_MPTCP
 #include <net/mptcp.h>
 #endif
@@ -34,9 +41,9 @@
 #ifdef CONFIG_HUAWEI_BASTET
 #include <huawei_platform/net/bastet/bastet_utils.h>
 #endif
-#include <huawei_platform/emcom/emcom_xengine.h>
 #include <linux/version.h>
 #include <asm/uaccess.h>
+#include "securec.h"
 
 #ifndef CONFIG_MPTCP
 /* These states need RST on ABORT according to RFC793 */
@@ -48,57 +55,65 @@ static inline bool tcp_need_reset(int state)
 }
 #endif
 
+
 #undef HWLOG_TAG
 #define HWLOG_TAG emcom_xengine
 HWLOG_REGIST();
-MODULE_LICENSE("GPL");
 
-
-#define     EMCOM_MAX_ACC_APP  (5)
-#define     EMCOM_UID_ACC_AGE_MAX  (1000)
-
-#define     EMCOM_SPEED_CTRL_BASE_WIN_SIZE   (10000)
-
+#define EMCOM_MAX_ACC_APP 5
+#define EMCOM_UID_ACC_AGE_MAX 1000
+#define EMCOM_SPEED_CTRL_BASE_WIN_SIZE 10000
+#define FAST_SYN_COUNT 5
+#define UDPTIMER_DELAY 4
+#define EMCOM_MAX_UDP_SKB 20
+#define MIN_JIFFIE 1
+#define EMCOM_MAX_MPIP_DEV_NUM 2
+#define EMCOM_GOOD_RECV_RATE_THR_BYTE_PER_SEC 400000
+#define EMCOM_GOOD_RTT_THR_MS 120
 
 static spinlock_t g_mpflow_lock;
 struct emcom_xengine_mpflow_info g_mpflow_uids[EMCOM_MPFLOW_MAX_APP];
 static uint8_t g_mpflow_index;
-static bool g_mpflow_tm_running = false;
+static bool g_mpflow_tm_running;
+
 static struct timer_list g_mpflow_tm;
-static bool g_mpflow_nf_hook = false;
+static bool g_mpflow_nf_hook;
+
+struct emcom_xengine_mpflow_stat g_mpflow_list[EMCOM_MPFLOW_MAX_LIST_NUM];
 
 #ifdef CONFIG_HUAWEI_BASTET_COMM
-	extern int bastet_comm_keypsInfo_write(uint32_t ulState);
+	extern int bastet_comm_keypsInfo_write(uint32_t state);
 #endif
 
-struct Emcom_Xengine_acc_app_info     g_CurrentUids[EMCOM_MAX_ACC_APP];
-struct Emcom_Xengine_speed_ctrl_info  g_SpeedCtrlInfo;
+struct emcom_xengine_acc_app_info g_current_uids[EMCOM_MAX_ACC_APP];
+struct emcom_xengine_speed_ctrl_info g_speedctrl_info;
 
-struct sk_buff_head g_UdpSkbList;
-struct timer_list   g_UdpSkb_timer;
-uid_t  g_UdpRetranUid;
-bool   g_Emcom_udptimerOn = false;
-uid_t g_FastSynUid;
-#define FAST_SYN_COUNT (5)
-#define EMCOM_UDPRETRAN_NODELAY
-#define UDPTIMER_DELAY  (4)
-#define EMCOM_MAX_UDP_SKB  (20)
-#define MIN_JIFFIE         1
-struct Emcom_Xengine_netem_skb_cb {
-	psched_time_t    time_to_send;
-	ktime_t          tstamp_save;
+struct sk_buff_head g_udp_skb_list;
+struct timer_list g_udp_skb_timer;
+uid_t  g_udp_retran_uid;
+bool g_emcom_udptimer_on;
+uid_t g_fastsyn_uid;
+
+struct emcom_xengine_netem_skb_cb {
+	psched_time_t time_to_send;
+	ktime_t tstamp_save;
 };
 
-struct mutex g_Mpip_mutex;
-struct  Emcom_Xengine_mpip_config g_MpipUids[EMCOM_MAX_MPIP_APP];/* The uid of bind to Mpip Application */
-bool    g_MpipStart               = false;/* The uid of bind to Mpip Application */
-char    g_Ifacename[IFNAMSIZ]     = {0};/* The uid of bind to Mpip Application */
-static uint8_t g_SocketIndex      = 0;
+struct mutex g_mpip_mutex;
 
+/* The uid of bind to Mpip Application */
+struct  emcom_xengine_mpip_config g_mpip_uids[EMCOM_MAX_MPIP_APP];
+bool g_mpip_start;
+char g_ifacename[IFNAMSIZ];
+static uint8_t g_socket_index;
 
-LIST_HEAD(emcom_xengine_mpflow_list);
+static bool g_ccalg_start;
+int8_t g_ccalg_uid_cnt;
+/* The uid of bind to CCAlg Application */
+struct emcom_xengine_ccalg_config g_ccalg_uids[EMCOM_MAX_CCALG_APP];
 
-void Emcom_Xengine_Mpip_Init(void);
+void emcom_xengine_mpip_init(void);
+void emcom_xengine_ccalg_init(void);
 static void emcom_xengine_mpflow_fi_init(struct emcom_xengine_mpflow_info *mpflow_uid);
 static void emcom_xengine_mpflow_register_nf_hook(void);
 static void emcom_xengine_mpflow_unregister_nf_hook(void);
@@ -109,180 +124,137 @@ static void emcom_xengine_mpflow_ptn_deinit(struct emcom_xengine_mpflow_ptn ptn[
 static bool emcom_xengine_mpflow_bm_build(const uint8_t *ptn, uint32_t ptnlen,
 	uint8_t **skip, uint8_t **shift);
 static void emcom_xengine_mpflow_apppriv_deinit(struct emcom_xengine_mpflow_info *uid);
-
-/******************************************************************************
-   6 º¯ÊýÊµÏÖ
-******************************************************************************/
 static inline bool invalid_uid(uid_t uid)
 {
 	/* if uid less than 10000, it is not an Android apk */
 	return (uid < UID_APP);
 }
 
-static inline bool invalid_SpeedCtrlSize(uint32_t grade)
+static inline bool invalid_speedctrl_size(uint32_t grade)
 {
 	/* the speed control grade bigger than 10000 */
 	return (grade < EMCOM_SPEED_CTRL_BASE_WIN_SIZE);
 }
-
-
-
-static inline struct Emcom_Xengine_netem_skb_cb *Emcom_Xengine_netem_skb_cb(struct sk_buff *skb)
+static inline struct emcom_xengine_netem_skb_cb *emcom_xengine_netem_skb_cb(const struct sk_buff *skb)
 {
 	/* we assume we can use skb next/prev/tstamp as storage for rb_node */
-	qdisc_cb_private_validate(skb, sizeof(struct Emcom_Xengine_netem_skb_cb));
-	return (struct Emcom_Xengine_netem_skb_cb *)qdisc_skb_cb(skb)->data;
+	qdisc_cb_private_validate(skb, sizeof(struct emcom_xengine_netem_skb_cb));
+	return (struct emcom_xengine_netem_skb_cb *)qdisc_skb_cb(skb)->data;
 }
 
-#ifndef EMCOM_UDPRETRAN_NODELAY
-
-static void Emcom_Xengine_setUdpTimerCb(struct sk_buff *skb)
+int emcom_xengine_udpretran_clear(void)
 {
-	struct Emcom_Xengine_netem_skb_cb *cb;
-	unsigned long now;
-	now = jiffies;
-	cb = Emcom_Xengine_netem_skb_cb(skb);
-	/* translate to jiffies */
-	cb->time_to_send = now + UDPTIMER_DELAY*HZ/MSEC_PER_SEC;
-}
-#endif
-
-
-int Emcom_Xengine_udpretran_clear(void)
-{
-	g_UdpRetranUid = UID_INVALID_APP;
-	skb_queue_purge(&g_UdpSkbList);
-	if(g_Emcom_udptimerOn)
-	{
-		del_timer(&g_UdpSkb_timer);
-		g_Emcom_udptimerOn = false;
+	g_udp_retran_uid = UID_INVALID_APP;
+	skb_queue_purge(&g_udp_skb_list);
+	if (g_emcom_udptimer_on) {
+		del_timer(&g_udp_skb_timer);
+		g_emcom_udptimer_on = false;
 	}
 	return 0;
 }
 
-
-static void Emcom_Xengine_UdpTimer_handler(unsigned long pac)
+static void emcom_xengine_udptimer_handler(unsigned long pac)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
 	unsigned long now;
-	struct Emcom_Xengine_netem_skb_cb *cb;
+	struct emcom_xengine_netem_skb_cb *cb = NULL;
 	int jiffie_n;
 
 	/* anyway, send out the first skb */
-    if(!skb_queue_empty(&g_UdpSkbList))
-	{
-		skb = skb_dequeue(&g_UdpSkbList);
-		if(skb)
-		{
+	if (!skb_queue_empty(&g_udp_skb_list)) {
+		skb = skb_dequeue(&g_udp_skb_list);
+		if (skb) {
 			dev_queue_xmit(skb);
-			EMCOM_LOGD("Emcom_Xengine_UdpTimer_handler send skb\n");
+			EMCOM_LOGD("emcom_xengine_udptimer_handler send skb");
 		}
 	}
 
-	skb = skb_peek(&g_UdpSkbList);
-	if(!skb)
-	{
+	skb = skb_peek(&g_udp_skb_list);
+	if (!skb)
 		goto timer_off;
-		return;
-	}
-	cb = Emcom_Xengine_netem_skb_cb(skb);
+	cb = emcom_xengine_netem_skb_cb(skb);
 	now = jiffies;
 	/* if remaining time is little than 1 jiffie, send out */
-	while(cb->time_to_send <= now + MIN_JIFFIE)
-	{
-		EMCOM_LOGD("Emcom_Xengine_UdpTimer_handler send another skb\n");
-		skb = skb_dequeue(&g_UdpSkbList);
-		if(skb)
-		{
+	while (cb->time_to_send <= (now + MIN_JIFFIE)) {
+		EMCOM_LOGD("emcom_xengine_udptimer_handler send another skb");
+		skb = skb_dequeue(&g_udp_skb_list);
+		if (skb)
 			dev_queue_xmit(skb);
-		}
-		skb = skb_peek(&g_UdpSkbList);
-		if(!skb)
-		{
+		skb = skb_peek(&g_udp_skb_list);
+		if (!skb)
 			goto timer_off;
-			return;
-		}
-		cb = Emcom_Xengine_netem_skb_cb(skb);
+		cb = emcom_xengine_netem_skb_cb(skb);
 		now = jiffies;
 	}
 	/* set timer based on next skb cb */
 	now = jiffies;
 	jiffie_n = cb->time_to_send - now;
 
-	if(jiffie_n < MIN_JIFFIE)
-	{
+	if (jiffie_n < MIN_JIFFIE)
 		jiffie_n = MIN_JIFFIE;
-	}
-	EMCOM_LOGD("Emcom_Xengine_UdpTimer_handler modify timer hz %d\n", jiffie_n);
-	mod_timer(&g_UdpSkb_timer, jiffies + jiffie_n);
-	g_Emcom_udptimerOn = true;
+	EMCOM_LOGD("emcom_xengine_udptimer_handler modify timer hz %d", jiffie_n);
+	mod_timer(&g_udp_skb_timer, jiffies + jiffie_n);
+	g_emcom_udptimer_on = true;
 	return;
 
 timer_off:
-	g_Emcom_udptimerOn = false;
+	g_emcom_udptimer_on = false;
 }
 
-
-void Emcom_Xengine_Init(void)
+void emcom_xengine_init(void)
 {
-	uint8_t  index;
-	for( index = 0; index < EMCOM_MAX_ACC_APP; index ++)
-	{
-		g_CurrentUids[index].lUid = UID_INVALID_APP;
-		g_CurrentUids[index].ulAge = 0;
+	uint8_t index;
+
+	for (index = 0; index < EMCOM_MAX_ACC_APP; index++) {
+		g_current_uids[index].uid = UID_INVALID_APP;
+		g_current_uids[index].age = 0;
 	}
-	g_SpeedCtrlInfo.lUid = UID_INVALID_APP;
-	g_SpeedCtrlInfo.ulSize = 0;
-	spin_lock_init(&g_SpeedCtrlInfo.stLocker);
-	g_UdpRetranUid = UID_INVALID_APP;
-	g_Emcom_udptimerOn = false;
-	skb_queue_head_init(&g_UdpSkbList);
-	init_timer(&g_UdpSkb_timer);
-	g_UdpSkb_timer.function = Emcom_Xengine_UdpTimer_handler;
-	mutex_init(&g_Mpip_mutex);
-	Emcom_Xengine_Mpip_Init();
+	g_speedctrl_info.uid = UID_INVALID_APP;
+	g_speedctrl_info.size = 0;
+	spin_lock_init(&g_speedctrl_info.stlocker);
+	g_udp_retran_uid = UID_INVALID_APP;
+	g_emcom_udptimer_on = false;
+	skb_queue_head_init(&g_udp_skb_list);
+	init_timer(&g_udp_skb_timer);
+	g_udp_skb_timer.function = emcom_xengine_udptimer_handler;
+	mutex_init(&g_mpip_mutex);
+	emcom_xengine_mpip_init();
 	emcom_xengine_mpflow_init();
-	g_FastSynUid = UID_INVALID_APP;
+	emcom_xengine_ccalg_init();
+	g_fastsyn_uid = UID_INVALID_APP;
 }
 
 
-void Emcom_Xengine_Mpip_Init(void)
+void emcom_xengine_mpip_init(void)
 {
-	uint8_t  uIndex;
-	mutex_lock(&g_Mpip_mutex);
-	for( uIndex = 0; uIndex < EMCOM_MAX_MPIP_APP; uIndex ++)
-	{
-		g_MpipUids[uIndex].lUid = UID_INVALID_APP;
-		g_MpipUids[uIndex].ulType = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
+	uint8_t index;
+
+	mutex_lock(&g_mpip_mutex);
+	for (index = 0; index < EMCOM_MAX_MPIP_APP; index++) {
+		g_mpip_uids[index].uid = UID_INVALID_APP;
+		g_mpip_uids[index].type = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
 	}
-	mutex_unlock(&g_Mpip_mutex);
+	mutex_unlock(&g_mpip_mutex);
 }
 
-
-bool Emcom_Xengine_IsAccUid(uid_t lUid)
+bool emcom_xengine_is_accuid(uid_t uid)
 {
-	uint8_t  index;
-	for( index = 0; index < EMCOM_MAX_ACC_APP; index ++)
-	{
-		if( lUid == g_CurrentUids[index].lUid )
-		{
+	uint8_t index;
+
+	for (index = 0; index < EMCOM_MAX_ACC_APP; index++) {
+		if (uid == g_current_uids[index].uid)
 			return true;
-		}
 	}
 
 	return false;
 }
 
-
-
-bool Emcom_Xengine_Hook_Ul_Stub(struct sock *pstSock)
+bool emcom_xengine_hook_ul_stub(struct sock *pstsock)
 {
-	uid_t lSockUid = 0;
-	bool  bFound   = false;
+	uid_t sock_uid;
 
-	if(( NULL == pstSock ) )
-	{
-		EMCOM_LOGD("Emcom_Xengine_Hook_Ul_Stub param invalid\n");
+	if (pstsock == NULL) {
+		EMCOM_LOGD("Emcom_Xengine_Hook_Ul_Stub param invalid");
 		return false;
 	}
 
@@ -290,184 +262,180 @@ bool Emcom_Xengine_Hook_Ul_Stub(struct sock *pstSock)
 	 * if uid equals current acc uid, accelerate it,else stop it
 	 */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
+	sock_uid = sock_i_uid(pstsock).val;
 #else
-	lSockUid = sock_i_uid(pstSock);
+	sock_uid = sock_i_uid(pstsock);
 #endif
 
-	if( invalid_uid ( lSockUid ))
-	{
+	if (invalid_uid(sock_uid))
 		return false;
-	}
 
-	bFound = Emcom_Xengine_IsAccUid ( lSockUid );
-
-	return bFound;
+	return emcom_xengine_is_accuid(sock_uid);
 }
 
-
-int Emcom_Xengine_clear(void)
+int emcom_xengine_clear(void)
 {
-	uint8_t  index;
-	for( index = 0; index < EMCOM_MAX_ACC_APP; index ++)
-	{
-		g_CurrentUids[index].lUid = UID_INVALID_APP;
-		g_CurrentUids[index].ulAge = 0;
+	uint8_t index;
+	errno_t err;
+
+	for (index = 0; index < EMCOM_MAX_ACC_APP; index++) {
+		g_current_uids[index].uid = UID_INVALID_APP;
+		g_current_uids[index].age = 0;
 	}
-	mutex_lock(&g_Mpip_mutex);
-	for( index = 0; index < EMCOM_MAX_MPIP_APP; index ++)
-	{
-		g_MpipUids[index].lUid = UID_INVALID_APP;
-		g_MpipUids[index].ulType = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
+	mutex_lock(&g_mpip_mutex);
+	for (index = 0; index < EMCOM_MAX_MPIP_APP; index++) {
+		g_mpip_uids[index].uid = UID_INVALID_APP;
+		g_mpip_uids[index].type = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
 	}
-	memset(g_Ifacename, 0, sizeof(char)*IFNAMSIZ);
-	g_MpipStart = false;
-	mutex_unlock(&g_Mpip_mutex);
+	err = memset_s(g_ifacename, sizeof(char) * IFNAMSIZ, 0, sizeof(char) * IFNAMSIZ);
+	if (err != EOK)
+		EMCOM_LOGE("emcom_xengine_clear memset failed");
+	g_mpip_start = false;
+	mutex_unlock(&g_mpip_mutex);
+	for (index = 0; index < EMCOM_MAX_CCALG_APP; index++) {
+		g_ccalg_uids[index].uid = UID_INVALID_APP;
+		g_ccalg_uids[index].alg = EMCOM_XENGINE_CONG_ALG_INVALID;
+		g_ccalg_uids[index].has_log = false;
+	}
+	g_ccalg_uid_cnt = 0;
+	g_ccalg_start = false;
 	emcom_xengine_mpflow_clear();
-	Emcom_Xengine_udpretran_clear();
-	EMCOM_XENGINE_SetSpeedCtrl(g_SpeedCtrlInfo, UID_INVALID_APP, 0);
-	g_FastSynUid = UID_INVALID_APP;
+	emcom_xengine_udpretran_clear();
+	EMCOM_XENGINE_SET_SPEEDCTRL(g_speedctrl_info, UID_INVALID_APP, 0);
+	g_fastsyn_uid = UID_INVALID_APP;
 	return 0;
 }
 
-
-
-int Emcom_Xengine_StartAccUid(uint8_t *pdata, uint16_t len)
+uint8_t emcom_xengine_found_avaiable_accindex(uid_t uid)
 {
-	uid_t              uid;
-	uint8_t            index;
-	uint8_t            ucIdleIndex;
-	uint8_t            ucOldIndex;
-	uint8_t            ucOldAge;
-	bool               bFound;
-	/*input param check*/
-	if( NULL == pdata )
-	{
+	uint8_t index;
+	uint8_t idle_index = EMCOM_MAX_ACC_APP;
+	uint8_t old_index = EMCOM_MAX_ACC_APP;
+	uint16_t old_age = 0;
+	bool found = false;
+
+	/* check whether has the same uid, and record the first idle position and the oldest position */
+	for (index = 0; index < EMCOM_MAX_ACC_APP; index++) {
+		if (g_current_uids[index].uid == UID_INVALID_APP) {
+			if (idle_index == EMCOM_MAX_ACC_APP)
+				idle_index = index;
+		} else if (uid == g_current_uids[index].uid) {
+			g_current_uids[index].age = 0;
+			found = true;
+		} else {
+			g_current_uids[index].age++;
+			if (g_current_uids[index].age > old_age) {
+				old_age = g_current_uids[index].age;
+				old_index = index ;
+			}
+		}
+	}
+
+	/* remove the too old acc uid */
+	if (old_age > EMCOM_UID_ACC_AGE_MAX) {
+		EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d added too long, remove it",
+				   g_current_uids[old_index].uid);
+		g_current_uids[old_index].age = 0;
+		g_current_uids[old_index].uid  = UID_INVALID_APP;
+	}
+
+	EMCOM_LOGD("Emcom_Xengine_StartAccUid: idle_index=%d,old_index=%d,old_age=%d",
+			   idle_index, old_index, old_age);
+
+	/* if has already added, return */
+	if (found)
+		return index;
+
+	/* if it is new uid, and has idle position , add it */
+	if (idle_index < EMCOM_MAX_ACC_APP) {
+		EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d added", uid);
+		return idle_index;
+	}
+
+	/* if it is new uid, and acc list if full , replace the oldest */
+	if (old_index < EMCOM_MAX_ACC_APP) {
+		EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d replace the oldest uid:%d",
+				   uid, g_current_uids[old_index].uid);
+		return old_index;
+	}
+
+	return EMCOM_MAX_ACC_APP;
+}
+
+/*
+ * start the special application use high priority queue
+ */
+int emcom_xengine_start_acc_uid(const uint8_t *pdata, uint16_t len)
+{
+	uid_t uid;
+	uint8_t index;
+
+	/* input param check */
+	if (pdata == NULL) {
 		EMCOM_LOGE("Emcom_Xengine_StartAccUid:data is null");
 		return -EINVAL;
 	}
 
-	/*check len is invalid*/
-	if(len != sizeof(uid_t))
-	{
+	/* check len is invalid */
+	if (len != sizeof(uid_t)) {
 		EMCOM_LOGI("Emcom_Xengine_StartAccUid: len:%d is illegal", len);
 		return -EINVAL;
 	}
 
-	uid =*(uid_t *)pdata;
+	uid = *(uid_t *)pdata;
 
-	/*check uid*/
+	/* check uid */
 	if (invalid_uid(uid))
 		return -EINVAL;
 
 	EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d ready to added", uid);
-	ucIdleIndex = EMCOM_MAX_ACC_APP;
-	ucOldIndex  = EMCOM_MAX_ACC_APP;
-	ucOldAge    = 0;
-	bFound  = false;
 
-	/*check whether has the same uid, and  record the first idle position and the oldest position*/
-	for( index = 0; index < EMCOM_MAX_ACC_APP; index ++)
-	{
-		if( UID_INVALID_APP == g_CurrentUids[index].lUid )
-		{
-			if( EMCOM_MAX_ACC_APP == ucIdleIndex )
-			{
-				ucIdleIndex  = index;
-			}
-		}
-		else if( uid == g_CurrentUids[index].lUid )
-		{
-			g_CurrentUids[index].ulAge = 0;
-			bFound = true;
-		}
-		else
-		{
-			g_CurrentUids[index].ulAge ++;
-			if( g_CurrentUids[index].ulAge > ucOldAge )
-			{
-				ucOldAge    = g_CurrentUids[index].ulAge;
-				ucOldIndex  = index ;
-			}
-
-		}
-	}
-
-	/*remove the too old acc uid*/
-	if(ucOldAge  > EMCOM_UID_ACC_AGE_MAX )
-	{
-		EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d added too long, remove it", g_CurrentUids[ucOldIndex].lUid );
-		g_CurrentUids[ucOldIndex].ulAge = 0;
-		g_CurrentUids[ucOldIndex].lUid  = UID_INVALID_APP;
-	}
-
-	EMCOM_LOGD("Emcom_Xengine_StartAccUid: ucIdleIndex=%d,ucOldIndex=%d,ucOldAge=%d",ucIdleIndex, ucOldIndex,ucOldAge);
-
-	/*if has already added, return*/
-	if(bFound)
-	{
-		EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d already added", uid);
-		return 0;
-	}
-
-	/*if it is new uid, and has idle position , add it*/
-	if( ucIdleIndex < EMCOM_MAX_ACC_APP )
-	{
+	index = emcom_xengine_found_avaiable_accindex(uid);
+	/* if it is new uid, and has idle position , add it */
+	if (index < EMCOM_MAX_ACC_APP) {
 		EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d added", uid);
-		g_CurrentUids[ucIdleIndex].ulAge = 0;
-		g_CurrentUids[ucIdleIndex].lUid = uid;
+		g_current_uids[index].age = 0;
+		g_current_uids[index].uid = uid;
 		return 0;
 	}
 
-
-	/*if it is new uid, and acc list if full , replace the oldest*/
-	if( ucOldIndex < EMCOM_MAX_ACC_APP )
-	{
-		EMCOM_LOGD("Emcom_Xengine_StartAccUid: uid:%d replace the oldest uid:%d", uid,g_CurrentUids[ucOldIndex].lUid);
-		g_CurrentUids[ucOldIndex].ulAge = 0;
-		g_CurrentUids[ucOldIndex].lUid = uid;
-		return 0;
-	}
-
+	EMCOM_LOGE("StartAccUid: not available index:%d, uid:%d", index, uid);
 	return 0;
 }
 
 
-
-
-int Emcom_Xengine_StopAccUid(uint8_t *pdata, uint16_t len)
+/*
+ * stop the special application use high priority queue
+ */
+int emcom_xengine_stop_acc_uid(const uint8_t *pdata, uint16_t len)
 {
-	uid_t              uid;
-	uint8_t            index;
+	uid_t uid;
+	uint8_t index;
 
-	/*input param check*/
-	if( NULL == pdata )
-	{
+	/* input param check */
+	if (pdata == NULL) {
 		EMCOM_LOGE("Emcom_Xengine_StopAccUid:data is null");
 		return -EINVAL;
 	}
 
-	/*check len is invalid*/
-	if(len != sizeof(uid_t))
-	{
+	/* check len is invalid */
+	if (len != sizeof(uid_t)) {
 		EMCOM_LOGI("Emcom_Xengine_StopAccUid: len: %d is illegal", len);
 		return -EINVAL;
 	}
 
-	uid =*(uid_t *)pdata;
+	uid = *(uid_t *)pdata;
 
-	/*check uid*/
+	/* check uid */
 	if (invalid_uid(uid))
 		return -EINVAL;
 
-	/*remove specify uid*/
-	for( index = 0; index < EMCOM_MAX_ACC_APP; index ++)
-	{
-		if( uid == g_CurrentUids[index].lUid )
-		{
-			g_CurrentUids[index].ulAge = 0;
-			g_CurrentUids[index].lUid  = UID_INVALID_APP;
-			EMCOM_LOGD("Emcom_Xengine_StopAccUid:lUid:%d",uid);
+	/* remove specify uid */
+	for (index = 0; index < EMCOM_MAX_ACC_APP; index++) {
+		if (uid == g_current_uids[index].uid) {
+			g_current_uids[index].age = 0;
+			g_current_uids[index].uid  = UID_INVALID_APP;
+			EMCOM_LOGD("Emcom_Xengine_StopAccUid:lUid:%d", uid);
 			break;
 		}
 	}
@@ -475,564 +443,670 @@ int Emcom_Xengine_StopAccUid(uint8_t *pdata, uint16_t len)
 	return 0;
 }
 
-
-int Emcom_Xengine_SetSpeedCtrlInfo(uint8_t *pdata, uint16_t len)
+/*
+ * confige the background application tcp window size
+ */
+int emcom_xengine_set_speedctrl_info(const uint8_t *data, uint16_t len)
 {
-	struct Emcom_Xengine_speed_ctrl_data* pSpeedCtrlInfo;
-	uid_t              lUid;
-	uint32_t           ulSize;
+	struct emcom_xengine_speed_ctrl_data *pspeedctrl_info = NULL;
+	uid_t uid;
+	uint32_t size;
 
-	/*input param check*/
-	if( NULL == pdata )
-	{
+	/* input param check */
+	if (data == NULL) {
 		EMCOM_LOGE("Emcom_Xengine_SetSpeedCtrlInfo:data is null");
 		return -EINVAL;
 	}
 
-	/*check len is invalid*/
-	if(len != sizeof(struct Emcom_Xengine_speed_ctrl_data))
-	{
+	/* check len is invalid */
+	if (len != sizeof(struct emcom_xengine_speed_ctrl_data)) {
 		EMCOM_LOGI("Emcom_Xengine_SetSpeedCtrlInfo: len:%d is illegal", len);
 		return -EINVAL;
 	}
 
-	pSpeedCtrlInfo = (struct Emcom_Xengine_speed_ctrl_data *)pdata;
-	lUid = pSpeedCtrlInfo->lUid;
-	ulSize = pSpeedCtrlInfo->ulSize;
+	pspeedctrl_info = (struct emcom_xengine_speed_ctrl_data *)data;
+	uid = pspeedctrl_info->uid;
+	size = pspeedctrl_info->size;
 
 	/* if uid and size is zero, clear the speed control info */
-	if(!lUid && !ulSize)
-	{
+	if (!uid && !size) {
 		EMCOM_LOGD("Emcom_Xengine_SetSpeedCtrlInfo: clear speed ctrl state");
-		EMCOM_XENGINE_SetSpeedCtrl(g_SpeedCtrlInfo, UID_INVALID_APP, 0);
+		EMCOM_XENGINE_SET_SPEEDCTRL(g_speedctrl_info, UID_INVALID_APP, 0);
 		return 0;
 	}
 
-	/*check uid*/
-	if (invalid_uid(lUid))
-	{
-		EMCOM_LOGI("Emcom_Xengine_SetSpeedCtrlInfo: uid:%d is illegal", lUid);
+	/* check uid */
+	if (invalid_uid(uid)) {
+		EMCOM_LOGI("Emcom_Xengine_SetSpeedCtrlInfo: uid:%d is illegal", uid);
 		return -EINVAL;
 	}
 
-	/*check size*/
-	if (invalid_SpeedCtrlSize(ulSize))
-	{
-		EMCOM_LOGI("Emcom_Xengine_SetSpeedCtrlInfo: size:%d is illegal", ulSize);
+	/* check size */
+	if (invalid_speedctrl_size(size)) {
+		EMCOM_LOGI("Emcom_Xengine_SetSpeedCtrlInfo: size:%d is illegal", size);
 		return -EINVAL;
 	}
 
-	EMCOM_LOGD("Emcom_Xengine_SetSpeedCtrlInfo: uid:%d size:%d", lUid, ulSize);
-	EMCOM_XENGINE_SetSpeedCtrl(g_SpeedCtrlInfo, lUid, ulSize);
+	EMCOM_LOGD("Emcom_Xengine_SetSpeedCtrlInfo: uid:%d size:%d", uid, size);
+	EMCOM_XENGINE_SET_SPEEDCTRL(g_speedctrl_info, uid, size);
 	return 0;
 }
 
-
-
-void Emcom_Xengine_SpeedCtrl_WinSize(struct sock *pstSock, uint32_t *pstSize)
+/*
+ * if the application is send packet, limit the other background  application
+ * send pakcet rate according adjust the send wind
+ */
+void emcom_xengine_speedctrl_winsize(struct sock *pstsock, uint32_t *pstsize)
 {
-	uid_t lSockUid = 0;
-	uid_t lUid = 0;
-	uint32_t ulSize = 0;
+	uid_t sock_uid;
+	uid_t uid;
+	uint32_t size;
 
-	if( NULL == pstSock )
-	{
+	if (pstsock == NULL) {
 		EMCOM_LOGD("Emcom_Xengine_Hook_Ul_Stub param invalid\n");
 		return;
 	}
 
-	if( NULL == pstSize )
-	{
+	if (pstsize == NULL) {
 		EMCOM_LOGD(" Emcom_Xengine_SpeedCtrl_WinSize window size invalid\n");
 		return;
 	}
 
-	EMCOM_XENGINE_GetSpeedCtrlUid(g_SpeedCtrlInfo, lUid);
-	if( invalid_uid ( lUid ))
-	{
+	EMCOM_XENGINE_GET_SPEEDCTRL_UID(g_speedctrl_info, uid);
+	if (invalid_uid(uid))
 		return;
-	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
+	sock_uid = sock_i_uid(pstsock).val;
 #else
-	lSockUid = sock_i_uid(pstSock);
+	sock_uid = sock_i_uid(pstsock);
 #endif
 
-	if( invalid_uid ( lSockUid ))
-	{
+	if (invalid_uid(sock_uid))
 		return;
-	}
 
-	EMCOM_XENGINE_GetSpeedCtrlInfo(g_SpeedCtrlInfo, lUid, ulSize);
+	EMCOM_XENGINE_GET_SPEEDCTRL_INFO(g_speedctrl_info, uid, size);
 	/* check uid */
-	if( lSockUid == lUid)
-	{
+	if (sock_uid == uid)
 		return;
-	}
 
-	if (ulSize)
-	{
-		*pstSize = g_SpeedCtrlInfo.ulSize < *pstSize ? g_SpeedCtrlInfo.ulSize : *pstSize;
-	}
-
+	if (size)
+		*pstsize = g_speedctrl_info.size < *pstsize ? g_speedctrl_info.size : *pstsize;
 }
 
-
-
-
-int Emcom_Xengine_Config_MPIP(uint8_t *pdata, uint16_t len)
+/*
+ * clear the mpip configure information, only confige but not start
+ */
+int emcom_xengine_config_mpip(const uint8_t *data, uint16_t len)
 {
-	uint8_t            uIndex;
-	uint8_t            *ptemp;
-	uint8_t            ulength;
-	/*The empty updated list means clear the Mpip App Uid list*/
-	EMCOM_LOGD("The Mpip list will be update to empty.");
+	uint8_t index;
+	const uint8_t *temp = data;
+	uint8_t length;
 
-	/*Clear the Mpip App Uid list*/
-	mutex_lock(&g_Mpip_mutex);
-	for( uIndex = 0; uIndex < EMCOM_MAX_MPIP_APP; uIndex ++)
-	{
-		g_MpipUids[uIndex].lUid = UID_INVALID_APP;
-		g_MpipUids[uIndex].ulType = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
+	/* The empty updated list means clear the Mpip App Uid list */
+	EMCOM_LOGD("The Mpip list will be update to empty");
+
+	/* Clear the Mpip App Uid list */
+	mutex_lock(&g_mpip_mutex);
+	for (index = 0; index < EMCOM_MAX_MPIP_APP; index++) {
+		g_mpip_uids[index].uid = UID_INVALID_APP;
+		g_mpip_uids[index].type = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
 	}
-	mutex_unlock(&g_Mpip_mutex);
-	if((NULL == pdata) || (0 == len))
-	{
-		/*pdata == NULL or len == 0 is ok, just return*/
+	mutex_unlock(&g_mpip_mutex);
+	/* pdata == NULL or len == 0 is ok, just return */
+	if ((temp == NULL) || (len == 0))
 		return 0;
-	}
-	ptemp = pdata;
-	ulength = len/sizeof(struct Emcom_Xengine_mpip_config);
-	if(EMCOM_MAX_MPIP_APP < ulength )
-	{
-		EMCOM_LOGE("The length of received MPIP APP uid list is error.");
+	length = len / sizeof(struct emcom_xengine_mpip_config);
+	if (length > EMCOM_MAX_MPIP_APP) {
+		EMCOM_LOGE("The length of received MPIP APP uid list is error");
 		return -EINVAL;
 	}
-	mutex_lock(&g_Mpip_mutex);
-	for(uIndex = 0; uIndex < ulength; uIndex++)
-	{
-		g_MpipUids[uIndex].lUid = *(uid_t *)ptemp;
-		g_MpipUids[uIndex].ulType = *(uint32_t*)(ptemp + sizeof(uid_t));
-		EMCOM_LOGD("The Mpip config [%d] is: lUid %d and type %d.",uIndex, g_MpipUids[uIndex].lUid, g_MpipUids[uIndex].ulType);
-		ptemp += sizeof(struct Emcom_Xengine_mpip_config);
+	mutex_lock(&g_mpip_mutex);
+	for (index = 0; index < length; index++) {
+		g_mpip_uids[index].uid = *(uid_t *)temp;
+		g_mpip_uids[index].type = *(uint32_t *)(temp + sizeof(uid_t));
+		EMCOM_LOGD("The Mpip config [%d] is: lUid %d and type %d", index,
+				   g_mpip_uids[index].uid, g_mpip_uids[index].type);
+		temp += sizeof(struct emcom_xengine_mpip_config);
 	}
-	mutex_unlock(&g_Mpip_mutex);
+	mutex_unlock(&g_mpip_mutex);
 
 	return 0;
 }
 
-
-int Emcom_Xengine_Clear_Mpip_Config(uint8_t *pdata, uint16_t len)
+/*
+ * clear the mpip configure information
+ */
+int emcom_xengine_clear_mpip_config(const uint8_t *data, uint16_t len)
 {
-	uint8_t            uIndex;
+	uint8_t index;
 
-	/*The empty updated list means clear the Mpip App Uid list*/
-	EMCOM_LOGD("The Mpip list will be update to empty.");
+	/* The empty updated list means clear the Mpip App Uid list */
+	EMCOM_LOGD("The Mpip list will be update to empty");
 
-	/*Clear the Mpip App Uid list*/
-	mutex_lock(&g_Mpip_mutex);
-	for( uIndex = 0; uIndex < EMCOM_MAX_MPIP_APP; uIndex ++)
-	{
-		g_MpipUids[uIndex].lUid = UID_INVALID_APP;
-		g_MpipUids[uIndex].ulType = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
+	/* Clear the Mpip App Uid list */
+	mutex_lock(&g_mpip_mutex);
+	for (index = 0; index < EMCOM_MAX_MPIP_APP; index++) {
+		g_mpip_uids[index].uid = UID_INVALID_APP;
+		g_mpip_uids[index].type = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
 	}
-	mutex_unlock(&g_Mpip_mutex);
+	mutex_unlock(&g_mpip_mutex);
 
 	return 0;
 }
 
-
-
-
-
-
-int Emcom_Xengine_StartMPIP(char *pdata, uint16_t len)
+/*
+ * start  the application use mpip function
+ * current support five application use this function in the same time
+ */
+int emcom_xengine_start_mpip(const char *data, uint16_t len)
 {
-	/*input param check*/
-	if( (NULL == pdata) || (0 == len) || (IFNAMSIZ < len) )
-	{
-	    EMCOM_LOGE("MPIP interface name or length %d is error", len);
+	errno_t err;
+
+	/* input param check */
+	if ((data == NULL) || (len == 0) || (len > IFNAMSIZ)) {
+		EMCOM_LOGE("MPIP interface name or length %d is error", len);
 		return -EINVAL;
 	}
-	mutex_lock(&g_Mpip_mutex);
-	memcpy (g_Ifacename, pdata, len);
-	g_MpipStart = true;
-	mutex_unlock(&g_Mpip_mutex);
-	EMCOM_LOGD("Mpip is :%d to start.", g_MpipStart);
+	mutex_lock(&g_mpip_mutex);
+	err = memcpy_s(g_ifacename, sizeof(char) * IFNAMSIZ, data, len);
+	if (err != EOK)
+		EMCOM_LOGE("emcom_xengine_start_mpip memcpy failed");
+	g_mpip_start = true;
+	mutex_unlock(&g_mpip_mutex);
+	EMCOM_LOGD("Mpip is :%d to start", g_mpip_start);
 	return 0;
 }
 
-
-
-
-int Emcom_Xengine_StopMPIP(uint8_t *pdata, uint16_t len)
+/*
+ * stop all the application use mpip function
+ * current not support stop single application use this function
+ */
+int emcom_xengine_stop_mpip(const uint8_t *data, uint16_t len)
 {
-	mutex_lock(&g_Mpip_mutex);
-	g_MpipStart = false;
-	mutex_unlock(&g_Mpip_mutex);
-	EMCOM_LOGD("MPIP function is :%d, ready to stop", g_MpipStart);
+	mutex_lock(&g_mpip_mutex);
+	g_mpip_start = false;
+	mutex_unlock(&g_mpip_mutex);
+	EMCOM_LOGD("MPIP function is :%d, ready to stop", g_mpip_start);
 
 	return 0;
 }
 
 
-int Emcom_Xengine_IsMpipBindUid(uid_t lUid)
+/*
+ * check the application is support mpip function
+ */
+int emcom_xengine_is_mpip_binduid(uid_t uid)
 {
 	int ret = -1;
-	uint8_t  uIndex;
-	mutex_lock(&g_Mpip_mutex);
-	for( uIndex = 0; uIndex < EMCOM_MAX_MPIP_APP; uIndex ++)
-	{
-		if( lUid == g_MpipUids[uIndex].lUid )
-		{
-			mutex_unlock(&g_Mpip_mutex);
-			ret = uIndex;
+	uint8_t index;
+
+	mutex_lock(&g_mpip_mutex);
+	for (index = 0; index < EMCOM_MAX_MPIP_APP; index++) {
+		if (uid == g_mpip_uids[index].uid) {
+			mutex_unlock(&g_mpip_mutex);
+			ret = index;
 			return ret;
 		}
 	}
-	mutex_unlock(&g_Mpip_mutex);
+	mutex_unlock(&g_mpip_mutex);
 
 	return ret;
 }
 
-
-void Emcom_Xengine_Mpip_Bind2Device(struct sock *pstSock)
+/*
+ * bind special socket to suitable device
+ */
+void emcom_xengine_mpip_bind2device(struct sock *pstsock)
 {
-	int iFound             = -1;
-	uint8_t  uIndex        = 0;
-	uid_t lSockUid         = 0;
-	struct net *net        = NULL;
-	struct net_device *dev = NULL;
+	int found;
+	uid_t sock_uid;
+	struct net *net = NULL;
 
-	if(NULL == pstSock)
-	{
-		EMCOM_LOGE(" param invalid.\n");
+	if (pstsock == NULL) {
+		EMCOM_LOGE(" param invalid");
 		return;
 	}
 
-	if(!g_MpipStart)
-	{
+	if (!g_mpip_start)
 		return;
-	}
 	/**
 	 * if uid equals current bind uid, bind 2 device
 	 */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
+	sock_uid = sock_i_uid(pstsock).val;
 #else
-	lSockUid = sock_i_uid(pstSock);
+	sock_uid = sock_i_uid(pstsock);
 #endif
 
-	if( invalid_uid ( lSockUid ))
-	{
+	if (invalid_uid(sock_uid)) {
 		return;
 	}
 
-	net = sock_net(pstSock);
-	iFound = Emcom_Xengine_IsMpipBindUid( lSockUid );
-	if(iFound != -1)
-	{
+	net = sock_net(pstsock);
+	found = emcom_xengine_is_mpip_binduid(sock_uid);
+	if (found != -1) {
+		uint8_t index = 0;
+		struct net_device *dev = NULL;
+
 		rcu_read_lock();
-		dev = dev_get_by_name_rcu(net, g_Ifacename);
-		if(dev)
-		{
-            uIndex = dev->ifindex;
-		}
+		dev = dev_get_by_name_rcu(net, g_ifacename);
+		if (dev)
+			index = dev->ifindex;
 		rcu_read_unlock();
-		if ((!dev) || (!test_bit(__LINK_STATE_START, &dev->state)))
-		{
-			mutex_lock(&g_Mpip_mutex);
-			g_MpipStart = false;
-			mutex_unlock(&g_Mpip_mutex);
+		if (!dev || !test_bit(__LINK_STATE_START, &dev->state)) {
+			mutex_lock(&g_mpip_mutex);
+			g_mpip_start = false;
+			mutex_unlock(&g_mpip_mutex);
 			emcom_send_msg2daemon(NETLINK_EMCOM_KD_XENIGE_DEV_FAIL, NULL, 0);
-			EMCOM_LOGE(" get dev fail or dev is not up.\n");
+			EMCOM_LOGE(" get dev fail or dev is not up");
 			return;
 		}
 
-		if(g_MpipUids[iFound].ulType == EMCOM_XENGINE_MPIP_TYPE_BIND_RANDOM)
-		{
-			if(g_SocketIndex % 2 == 0)
-			{
-				lock_sock(pstSock);
-				pstSock->sk_bound_dev_if = uIndex;
-				sk_dst_reset(pstSock);
-				release_sock(pstSock);
+		if (g_mpip_uids[found].type == EMCOM_XENGINE_MPIP_TYPE_BIND_RANDOM) {
+			if (g_socket_index % EMCOM_MAX_MPIP_DEV_NUM == 0) {
+				lock_sock(pstsock);
+				pstsock->sk_bound_dev_if = index;
+				sk_dst_reset(pstsock);
+				release_sock(pstsock);
 			}
-			g_SocketIndex++;
-			g_SocketIndex = g_SocketIndex % 2;
-		}
-		else
-		{
-			lock_sock(pstSock);
-			pstSock->sk_bound_dev_if = uIndex;
-			sk_dst_reset(pstSock);
-			release_sock(pstSock);
+			g_socket_index++;
+			g_socket_index = g_socket_index % EMCOM_MAX_MPIP_DEV_NUM;
+		} else {
+			lock_sock(pstsock);
+			pstsock->sk_bound_dev_if = index;
+			sk_dst_reset(pstsock);
+			release_sock(pstsock);
 		}
 	}
 }
 
 
-
-int Emcom_Xengine_RrcKeep( void )
+int emcom_xengine_rrckeep(void)
 {
 #ifdef CONFIG_HUAWEI_BASTET
-	post_indicate_packet(BST_IND_RRC_KEEP,NULL,0);
+	post_indicate_packet(BST_IND_RRC_KEEP, NULL, 0);
 #endif
 	return 0;
 }
 
 
-
-
-int Emcom_Send_KeyPsInfo(uint8_t *pdata, uint16_t len)
+/*
+ * inform modem current application is high priority
+ */
+int emcom_send_keypsinfo(const uint8_t *data, uint16_t len)
 {
-	uint32_t            ulState;
+	uint32_t state;
 
-	/*input param check*/
-	if( NULL == pdata )
-	{
+	/* input param check */
+	if (data == NULL) {
 		EMCOM_LOGE("Emcom_Send_KeyPsInfo:data is null");
 		return -EINVAL;
 	}
 
-	/*check len is invalid*/
-	if( len < sizeof( uint32_t ) )
-	{
+	/* check len is invalid */
+	if (len < sizeof(uint32_t)) {
 		EMCOM_LOGE("Emcom_Send_KeyPsInfo: len: %d is illegal", len);
 		return -EINVAL;
 	}
 
-	ulState =*(uint32_t *)pdata;
+	state = *(uint32_t *)data;
 
-	if( true != Emcom_Is_Modem_Support() )
-	{
-		EMCOM_LOGI( "Emcom_Send_KeyPsInfo: modem not support" );
+	if (true != emcom_is_modem_support()) {
+		EMCOM_LOGI("Emcom_Send_KeyPsInfo: modem not support");
 		return -EINVAL;
 	}
 
 #ifdef CONFIG_HUAWEI_BASTET_COMM
-	bastet_comm_keypsInfo_write( ulState );
+	bastet_comm_keypsInfo_write(state);
 #endif
 	return 0;
 }
 
-
-
-static inline bool Emcom_Xengine_isWlan(struct sk_buff *skb)
+/*
+ * judge current network is wifi
+ */
+static bool emcom_xengine_iswlan(const struct sk_buff *skb)
 {
 	const char *delim = "wlan0";
 	int len = strlen(delim);
-	if(!skb->dev)
-	{
+
+	if (!skb->dev)
 		return false;
-	}
 
 	if (strncmp(skb->dev->name, delim, len))
-	{
 		return false;
-	}
 
 	return true;
 }
 
 
-
-void Emcom_Xengine_UdpEnqueue(struct sk_buff *skb)
+/*
+ * when the application send packet ,we retran it immediately
+ */
+void emcom_xengine_udpenqueue(const struct sk_buff *skb)
 {
-	struct sock *sk;
-	struct sk_buff *skb2;
-	uid_t lSockUid = UID_INVALID_APP;
-	/* invalid g_UdpRetranUid means UDP retran is closed */
+	struct sock *sk = NULL;
+	uid_t sock_uid;
 
-	if(invalid_uid(g_UdpRetranUid))
-	{
+	/* invalid g_udp_retran_uid means UDP retran is closed */
+	if (invalid_uid(g_udp_retran_uid))
 		return;
-	}
 
-	if((!skb))
-	{
+	if (!skb) {
 		EMCOM_LOGE("Emcom_Xengine_UdpEnqueue skb null");
 		return;
 	}
-	if(g_UdpSkbList.qlen >= EMCOM_MAX_UDP_SKB)
-	{
+
+	if (g_udp_skb_list.qlen >= EMCOM_MAX_UDP_SKB) {
 		EMCOM_LOGE("Emcom_Xengine_UdpEnqueue max skb");
 		return;
 	}
 
 	sk = skb_to_full_sk(skb);
-	if (unlikely(!sk))
-	{
+	if (unlikely(!sk)) {
 		EMCOM_LOGE("Emcom_Xengine_UdpEnqueue sk null");
 		return;
 	}
 
-	if (unlikely(!sk->sk_socket))
-	{
+	if (unlikely(!sk->sk_socket)) {
 		EMCOM_LOGE("Emcom_Xengine_UdpEnqueue sk_socket null");
 		return;
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(sk).val;
+	sock_uid = sock_i_uid(sk).val;
 #else
-	lSockUid = sock_i_uid(sk);
+	sock_uid = sock_i_uid(sk);
 #endif
-	if(lSockUid == g_UdpRetranUid)
-	{
-		if(!Emcom_Xengine_isWlan(skb))
-		{
+	if (sock_uid == g_udp_retran_uid) {
+		if (!emcom_xengine_iswlan(skb)) {
 			EMCOM_LOGD("Emcom_Xengine_UdpEnqueue not wlan");
-			Emcom_Xengine_udpretran_clear();
+			emcom_xengine_udpretran_clear();
 			return;
 		}
-		if(sk->sk_socket->type == SOCK_DGRAM)
-		{
-			skb2 = skb_copy(skb, GFP_ATOMIC);
-			if(unlikely(!skb2))
-			{
+
+		if (sk->sk_socket->type == SOCK_DGRAM) {
+			struct sk_buff *skb2 = skb_copy(skb, GFP_ATOMIC);
+			if (unlikely(!skb2)) {
 				EMCOM_LOGE("Emcom_Xengine_UdpEnqueue skb2 null");
 				return;
 			}
-#ifdef EMCOM_UDPRETRAN_NODELAY
 			dev_queue_xmit(skb2);
 			return;
-#else
-			skb_queue_tail(&g_UdpSkbList,skb2);
-			Emcom_Xengine_setUdpTimerCb(skb2);
-			if(!g_Emcom_udptimerOn)
-			{
-				skb2 = skb_peek(&g_UdpSkbList);
-				if(!skb2)
-				{
-					EMCOM_LOGE("Emcom_Xengine_UdpEnqueue peek skb2 null");
-					return;
-				}
-				g_Emcom_udptimerOn = true;
-				g_UdpSkb_timer.expires = jiffies + UDPTIMER_DELAY*HZ/MSEC_PER_SEC;
-				EMCOM_LOGD("Emcom_Xengine_UdpEnqueue: jiffie %d",UDPTIMER_DELAY*HZ/MSEC_PER_SEC);
-				add_timer(&g_UdpSkb_timer);
-			}
-#endif
 		}
 	}
 }
 
-
-
-int Emcom_Xengine_StartUdpReTran(uint8_t *pdata, uint16_t len)
+/*
+ * indicate the  application in current condition need retran packets in wifi
+ */
+int emcom_xengine_start_udpretran(const uint8_t *data, uint16_t len)
 {
-	uid_t              uid;
+	uid_t uid;
 
-	/*input param check*/
-	if( NULL == pdata )
-	{
+	/* input param check */
+	if (data == NULL) {
 		EMCOM_LOGE("Emcom_Xengine_StartUdpReTran:data is null");
 		return -EINVAL;
 	}
 
-	/*check len is invalid*/
-	if(len != sizeof(uid_t))
-	{
+	/* check len is invalid */
+	if (len != sizeof(uid_t)) {
 		EMCOM_LOGI("Emcom_Xengine_StartUdpReTran: len: %d is illegal", len);
 		return -EINVAL;
 	}
 
-	uid =*(uid_t *)pdata;
-	/*check uid*/
-	if (invalid_uid(uid))
-	{
+	uid = *(uid_t *)data;
+	/* check uid */
+	if (invalid_uid(uid)) {
 		EMCOM_LOGE("Emcom_Xengine_StartUdpReTran: uid is invalid %d", uid);
 		return -EINVAL;
 	}
 	EMCOM_LOGI("Emcom_Xengine_StartUdpReTran: uid: %d ", uid);
-	g_UdpRetranUid = uid;
+	g_udp_retran_uid = uid;
 	return 0;
 }
 
-
-int Emcom_Xengine_StopUdpReTran(uint8_t *pdata, uint16_t len)
+/*
+ * stop wifi retran function
+ */
+int emcom_xengine_stop_udpretran(const uint8_t *data, uint16_t len)
 {
-	Emcom_Xengine_udpretran_clear();
+	emcom_xengine_udpretran_clear();
 	return 0;
 }
 
-
-
-void Emcom_Xengine_FastSyn(struct sock *pstSock)
+/*
+ * when tcp need retrans sync packet, call this fucntion to
+ * adjust the interval for the application
+ */
+void emcom_xengine_fastsyn(struct sock *pstsock)
 {
-	uid_t lSockUid = 0;
-	struct inet_connection_sock *icsk;
+	uid_t sock_uid;
+	struct inet_connection_sock *icsk = NULL;
 
-	if( NULL == pstSock )
-	{
-		EMCOM_LOGD(" Emcom_Xengine_FastSyn param invalid\n");
+	if (pstsock == NULL) {
+		EMCOM_LOGD(" Emcom_Xengine_FastSyn param invalid");
 		return;
 	}
-	if( pstSock->sk_state != TCP_SYN_SENT )
-	{
+	if (pstsock->sk_state != TCP_SYN_SENT)
 		return;
-	}
 
-	if( invalid_uid ( g_FastSynUid ))
-	{
+	if (invalid_uid(g_fastsyn_uid))
 		return;
-	}
-
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
+	sock_uid = sock_i_uid(pstsock).val;
 #else
-	lSockUid = sock_i_uid(pstSock);
+	sock_uid = sock_i_uid(pstsock);
 #endif
 
-	if( lSockUid != g_FastSynUid )
-	{
+	if (sock_uid != g_fastsyn_uid)
+		return;
+
+	icsk = inet_csk(pstsock);
+	if (icsk->icsk_retransmits <= FAST_SYN_COUNT)
+		icsk->icsk_rto = TCP_TIMEOUT_INIT;
+}
+
+/*
+ * indicate spec application use fast sync function
+ * current only support one application in the same time
+ */
+int emcom_xengine_start_fastsyn(const uint8_t *data, uint16_t len)
+{
+	uid_t uid;
+
+	/* input param check */
+	if (data == NULL) {
+		EMCOM_LOGE(" emcom_xengine_start_fastsyn:data is null");
+		return -EINVAL;
+	}
+
+	/* check len is invalid */
+	if (len != sizeof(uid_t)) {
+		EMCOM_LOGI(" emcom_xengine_start_fastsyn: len: %d is illegal", len);
+		return -EINVAL;
+	}
+
+	uid = *(uid_t *)data;
+	/* check uid */
+	if (invalid_uid(uid)) {
+		EMCOM_LOGE(" emcom_xengine_start_fastsyn: uid is invalid %d", uid);
+		return -EINVAL;
+	}
+	EMCOM_LOGI(" emcom_xengine_start_fastsyn: uid: %d ", uid);
+	g_fastsyn_uid = uid;
+	return 0;
+}
+
+/*
+ * stop every application use fast sync function
+ * current not support stop single application
+ */
+int emcom_xengine_stop_fastsyn(const uint8_t *data, uint16_t len)
+{
+	g_fastsyn_uid = UID_INVALID_APP;
+	return 0;
+}
+
+/*
+ * init emcom_xengine congestion control algorithm and log flad for g_ccAlgUids
+ */
+void emcom_xengine_ccalg_init(void)
+{
+	int8_t index;
+
+	for (index = 0; index < EMCOM_MAX_CCALG_APP; index++) {
+		g_ccalg_uids[index].uid = UID_INVALID_APP;
+		g_ccalg_uids[index].alg = EMCOM_XENGINE_CONG_ALG_INVALID;
+		g_ccalg_uids[index].has_log = false;
+	}
+}
+
+/*
+ * find activated congestion control algorithm uid
+ * return index of activated uid in g_ccalg_uids
+ */
+int8_t emcom_xengine_find_ccalg(uid_t uid)
+{
+	int8_t index;
+
+	for (index = 0; index < EMCOM_MAX_CCALG_APP; index++) {
+		if (g_ccalg_uids[index].uid == uid)
+			return index;
+	}
+	return INDEX_INVALID;
+}
+
+/*
+ * activating congestion control algorithm with uid and algorithm
+ */
+void emcom_xengine_active_ccalg(const uint8_t *data, uint16_t len)
+{
+	uid_t uid;
+	uint32_t alg;
+	int8_t index;
+	struct emcom_xengine_ccalg_config_data *ccalg_config = NULL;
+
+	/* input param check */
+	if ((data == NULL) || (len == 0) || (len > IFNAMSIZ)) {
+		EMCOM_LOGE("CCAlg interface name or length %d is error", len);
+		return;
+	}
+	g_ccalg_start = true;
+	ccalg_config = (struct emcom_xengine_ccalg_config_data *)data;
+	uid = ccalg_config->uid;
+	alg = ccalg_config->alg;
+
+	index = emcom_xengine_find_ccalg(uid);
+	if (index != INDEX_INVALID) {
+		if (g_ccalg_uids[index].alg == alg) {
+			/* activating again, do nothing */
+			EMCOM_LOGD("alg: %u is activating again, uid: %u", alg, uid);
+		} else {
+			/* already activated, but change another algorithm */
+			EMCOM_LOGD("CCAlg function is ready to change alg, uid: %u, alg from %u to %u",
+					   uid, g_ccalg_uids[index].alg, alg);
+			g_ccalg_uids[index].alg = alg;
+			g_ccalg_uids[index].has_log = false;
+		}
+	} else {
+		/* a new app to activate */
+		int8_t indexNew = emcom_xengine_find_ccalg(UID_INVALID_APP);
+		if (indexNew != INDEX_INVALID) {
+			g_ccalg_uids[indexNew].uid = uid;
+			g_ccalg_uids[indexNew].alg = alg;
+			g_ccalg_uids[indexNew].has_log = false;
+			g_ccalg_uid_cnt++;
+			EMCOM_LOGD("CCAlg function is ready to start, uid: %u, alg: %u", uid, alg);
+		} else if (g_ccalg_uid_cnt >= EMCOM_MAX_CCALG_APP) {
+			EMCOM_LOGE("CCAlg has already activated %d apps, cannot activate more apps", g_ccalg_uid_cnt);
+			return;
+		} else {
+			EMCOM_LOGE("not supposed to happend: CCAlg has already activated %d apps", g_ccalg_uid_cnt);
+		}
+	}
+}
+
+/*
+ * deacvitating congestion control algorithm with uid
+ */
+void emcom_xengine_deactive_ccalg(const uint8_t *data, uint16_t len)
+{
+	uid_t uid;
+	int8_t index;
+
+	if ((data == NULL) || (len == 0) || (len > IFNAMSIZ)) {
+		EMCOM_LOGE("CCAlg interface name or length %d is error", len);
 		return;
 	}
 
-	icsk = inet_csk(pstSock);
-	if( icsk->icsk_retransmits <= FAST_SYN_COUNT )
-	{
-		icsk->icsk_rto = TCP_TIMEOUT_INIT;
+	uid = *((uid_t *)data);
+
+	index = emcom_xengine_find_ccalg(uid);
+	if (index != INDEX_INVALID) {
+		EMCOM_LOGD("CCAlg function is ready to stop, uid: %u, alg: %u", uid, g_ccalg_uids[index].alg);
+		g_ccalg_uids[index].uid = UID_INVALID_APP;
+		g_ccalg_uids[index].alg = EMCOM_XENGINE_CONG_ALG_INVALID;
+		g_ccalg_uids[index].has_log = false;
+		g_ccalg_uid_cnt--;
+	} else {
+		EMCOM_LOGE("CCAlg function is not activated yet, cannot be deactivated, uid: %u", uid);
+		return;
+	}
+
+	if (g_ccalg_uid_cnt <= 0) {
+		EMCOM_LOGD(" no ccalg is activated now: CCAlg function is ready to stop, cnt: %u", g_ccalg_uid_cnt);
+		g_ccalg_start = false;
+		return;
 	}
 }
 
-int Emcom_Xengine_StartFastSyn(uint8_t *pdata, uint16_t len)
+/*
+ * change default congestion control algorithm to activated algorithm
+ */
+void emcom_xengine_change_default_ca(struct sock *sk, struct list_head tcp_cong_list)
 {
-	uid_t              uid;
+	struct inet_connection_sock *icsk = NULL;
+	struct tcp_congestion_ops *ca = NULL;
+	int8_t index;
+	char *app_alg = NULL;
 
-	/*input param check*/
-	if( NULL == pdata )
-	{
-		EMCOM_LOGE(" Emcom_Xengine_StartFastSyn:data is null");
-		return -EINVAL;
+	if (!g_ccalg_start)
+		return;
+
+	index = emcom_xengine_find_ccalg(sock_i_uid(sk).val);
+	if (index == INDEX_INVALID)
+		return;
+
+	switch (g_ccalg_uids[index].alg) {
+	case EMCOM_XENGINE_CONG_ALG_BBR:
+		app_alg = EMCOM_CONGESTION_CONTROL_ALG_BBR;
+		break;
+	default:
+		return;
 	}
 
-	/*check len is invalid*/
-	if(len != sizeof(uid_t))
-	{
-		EMCOM_LOGI(" Emcom_Xengine_StartFastSyn: len: %d is illegal", len);
-		return -EINVAL;
+	icsk = inet_csk(sk);
+	list_for_each_entry_rcu(ca, &tcp_cong_list, list) {
+		if (likely(try_module_get(ca->owner))) {
+			if (strcmp(ca->name, app_alg) == 0) {
+				icsk->icsk_ca_ops = ca;
+				if (g_ccalg_uids[index].has_log == false) {
+					EMCOM_LOGD("app: %d change default congcontrol alg to :%s", sock_i_uid(sk).val, app_alg);
+					g_ccalg_uids[index].has_log = true;
+				}
+				return;
+			}
+		}
 	}
 
-	uid =*(uid_t *)pdata;
-	/*check uid*/
-	if (invalid_uid(uid))
-	{
-		EMCOM_LOGE(" Emcom_Xengine_StartFastSyn: uid is invalid %d", uid);
-		return -EINVAL;
+	if (g_ccalg_uids[index].has_log == false) {
+		EMCOM_LOGE("Emcom_Xengine_change_default_ca failed to find algorithm %s", EMCOM_CONGESTION_CONTROL_ALG_BBR);
+		g_ccalg_uids[index].has_log = true;
 	}
-	EMCOM_LOGI(" Emcom_Xengine_StartFastSyn: uid: %d ", uid);
-	g_FastSynUid = uid;
-	return 0;
-}
-
-int Emcom_Xengine_StopFastSyn(uint8_t *pdata, uint16_t len)
-{
-	g_FastSynUid = UID_INVALID_APP;
-	return 0;
 }
 
 bool emcom_xengine_check_ip_addrss(struct sockaddr *addr)
@@ -1050,9 +1124,13 @@ bool emcom_xengine_check_ip_addrss(struct sockaddr *addr)
 	return true;
 }
 
+/* start index of ipv4 address which is mapped into ipv6 address */
+#define EMCOM_MPFLOW_FI_CLAT_IPV4_INDEX 3
+
 bool emcom_xengine_check_ip_is_private(struct sockaddr *addr)
 {
 	struct sockaddr_in *usin = (struct sockaddr_in *)addr;
+
 	if (usin->sin_family == AF_INET) {
 		return (ipv4_is_linklocal_169(usin->sin_addr.s_addr) ||
 			ipv4_is_private_10(usin->sin_addr.s_addr) ||
@@ -1062,7 +1140,7 @@ bool emcom_xengine_check_ip_is_private(struct sockaddr *addr)
 		struct sockaddr_in6 *usin6 = (struct sockaddr_in6 *)addr;
 		int addr_type = ipv6_addr_type(&usin6->sin6_addr);
 		if (addr_type & IPV6_ADDR_MAPPED) {
-			__be32 s_addr = usin6->sin6_addr.s6_addr32[3];
+			__be32 s_addr = usin6->sin6_addr.s6_addr32[EMCOM_MPFLOW_FI_CLAT_IPV4_INDEX];
 			return (ipv4_is_linklocal_169(s_addr) ||
 				ipv4_is_private_10(s_addr) ||
 				ipv4_is_private_172(s_addr) ||
@@ -1076,8 +1154,9 @@ bool emcom_xengine_check_ip_is_private(struct sockaddr *addr)
 void emcom_xengine_mpflow_init(void)
 {
 	uint8_t uindex;
+	errno_t err;
 
-	EMCOM_LOGD("mpflow init.");
+	EMCOM_LOGD("mpflow init");
 	spin_lock_init(&g_mpflow_lock);
 	spin_lock_bh(&g_mpflow_lock);
 	for (uindex = 0; uindex < EMCOM_MPFLOW_MAX_APP; uindex++) {
@@ -1085,25 +1164,32 @@ void emcom_xengine_mpflow_init(void)
 		g_mpflow_uids[uindex].bindmode = EMCOM_XENGINE_MPFLOW_BINDMODE_NONE;
 		g_mpflow_uids[uindex].enableflag = 0;
 		g_mpflow_uids[uindex].protocol = 0;
-		memset(&g_mpflow_uids[uindex].dport_range,
-		       0,
-		       sizeof(g_mpflow_uids[uindex].dport_range));
+		err = memset_s(&g_mpflow_uids[uindex].dport_range,
+					   sizeof(g_mpflow_uids[uindex].dport_range),
+					   0,
+					   sizeof(g_mpflow_uids[uindex].dport_range));
+		if (err != EOK)
+			EMCOM_LOGD("emcom_xengine_mpflow_init failed");
 	}
+	err = memset_s(g_mpflow_list, sizeof(g_mpflow_list), 0, sizeof(g_mpflow_list));
+	if (err != EOK)
+		EMCOM_LOGD("emcom_xengine_mpflow_init g_mpflow_list failed");
 	spin_unlock_bh(&g_mpflow_lock);
 	g_mpflow_index = 0;
 }
 
 void emcom_xengine_mpflow_clear(void)
 {
-	uint8_t  index;
+	uint8_t index;
+	errno_t err;
 	struct emcom_xengine_mpflow_node *node = NULL;
 	struct emcom_xengine_mpflow_node *tmp = NULL;
 
 	spin_lock_bh(&g_mpflow_lock);
 	for (index = 0; index < EMCOM_MPFLOW_MAX_APP; index++) {
-		if (g_mpflow_uids[index].uid != UID_INVALID_APP &&
-		    (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK ||
-		     g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_MARKET)) {
+		if ((g_mpflow_uids[index].uid != UID_INVALID_APP) &&
+			((g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK) ||
+			 (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_MARKET))) {
 			list_for_each_entry_safe(node, tmp, &g_mpflow_uids[index].wifi.flows, list)
 				emcom_xengine_mpflow_download_flow_del(&g_mpflow_uids[index].wifi, node);
 
@@ -1119,9 +1205,12 @@ void emcom_xengine_mpflow_clear(void)
 		g_mpflow_uids[index].bindmode = EMCOM_XENGINE_MPFLOW_BINDMODE_NONE;
 		g_mpflow_uids[index].enableflag = 0;
 		g_mpflow_uids[index].protocol = 0;
-		memset(&g_mpflow_uids[index].dport_range,
-		       0,
-		       sizeof(g_mpflow_uids[index].dport_range));
+		err = memset_s(&g_mpflow_uids[index].dport_range,
+					   sizeof(g_mpflow_uids[index].dport_range),
+					   0,
+					   sizeof(g_mpflow_uids[index].dport_range));
+		if (err != EOK)
+			EMCOM_LOGD("emcom_xengine_mpflow_clear failed");
 	}
 	spin_unlock_bh(&g_mpflow_lock);
 
@@ -1132,6 +1221,7 @@ void emcom_xengine_mpflow_clear(void)
 int8_t emcom_xengine_mpflow_finduid(uid_t uid)
 {
 	int8_t index;
+
 	for (index = 0; index < EMCOM_MPFLOW_MAX_APP; index++) {
 		if (g_mpflow_uids[index].uid == uid)
 			return index;
@@ -1143,6 +1233,7 @@ int8_t emcom_xengine_mpflow_finduid(uid_t uid)
 static bool emcom_xengine_mpflow_uid_empty(void)
 {
 	int8_t index;
+
 	for (index = 0; index < EMCOM_MPFLOW_MAX_APP; index++) {
 		if (g_mpflow_uids[index].uid != UID_INVALID_APP)
 			return false;
@@ -1163,17 +1254,19 @@ int8_t emcom_xengine_mpflow_getfreeindex(void)
 }
 
 static bool emcom_xengine_mpflow_fi_start(bool is_new_uid_enable, uint8_t index, bool *ret,
-						struct emcom_xengine_mpflow_parse_start_info *mpflowstartinfo)
+	struct emcom_xengine_mpflow_parse_start_info *mpflowstartinfo)
 {
-	int i;
-	struct emcom_xengine_mpflow_app_priv *app_priv = NULL;
-	if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WEIBO) {
+	if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WEIBO ||
+		g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WIFI_PRI) {
 		if (is_new_uid_enable)
 			emcom_xengine_mpflow_fi_init(&g_mpflow_uids[index]);
 		*ret = true;
 		return true;
 	}
 	if (is_new_uid_enable) {
+		int i;
+		struct emcom_xengine_mpflow_app_priv *app_priv = NULL;
+
 		emcom_xengine_mpflow_fi_init(&g_mpflow_uids[index]);
 		app_priv = kzalloc(sizeof(struct emcom_xengine_mpflow_app_priv), GFP_ATOMIC);
 		if (!app_priv)
@@ -1219,13 +1312,11 @@ void emcom_xengine_mpflow_start(const char *pdata, uint16_t len)
 {
 	struct emcom_xengine_mpflow_parse_start_info *mpflowstartinfo = NULL;
 	int8_t index;
-	int8_t newindex = INDEX_INVALID;
 	bool ret = false;
-	bool fi_start_ret = false;
 	bool is_new_uid_enable = false;
 
 	/* input param check */
-	if ((!pdata) || (len != sizeof(struct emcom_xengine_mpflow_parse_start_info))) {
+	if (!pdata || (len != sizeof(struct emcom_xengine_mpflow_parse_start_info))) {
 		EMCOM_LOGE("mpflow start data or length %d is error", len);
 		return;
 	}
@@ -1233,18 +1324,20 @@ void emcom_xengine_mpflow_start(const char *pdata, uint16_t len)
 	mpflowstartinfo = (struct emcom_xengine_mpflow_parse_start_info *)pdata;
 
 	EMCOM_LOGD("mpflow start uid: %u, enableflag: %d, "
-		   "protocol: %d, bindmode: %d",
-		   mpflowstartinfo->uid, mpflowstartinfo->enableflag,
-		   mpflowstartinfo->protocol, mpflowstartinfo->bindmode);
+			   "protocol: %d, bindmode: %d, algorithm: %d",
+			   mpflowstartinfo->uid, mpflowstartinfo->enableflag,
+			   mpflowstartinfo->protocol, mpflowstartinfo->bindmode, mpflowstartinfo->algorithm_type);
 
 	spin_lock_bh(&g_mpflow_lock);
 	index = emcom_xengine_mpflow_finduid(mpflowstartinfo->uid);
 	if (index == INDEX_INVALID) {
-		EMCOM_LOGD("mpflow add new mpinfo uid: %d.", mpflowstartinfo->uid);
+		int8_t newindex;
+
+		EMCOM_LOGD("mpflow add new mpinfo uid: %d", mpflowstartinfo->uid);
 		newindex = emcom_xengine_mpflow_getfreeindex();
 		if (newindex == INDEX_INVALID) {
 			EMCOM_LOGE("mpflow start get free index exceed. uid: %d",
-				   mpflowstartinfo->uid);
+					   mpflowstartinfo->uid);
 			spin_unlock_bh(&g_mpflow_lock);
 			return;
 		}
@@ -1255,7 +1348,7 @@ void emcom_xengine_mpflow_start(const char *pdata, uint16_t len)
 	if (is_new_uid_enable)
 		emcom_xengine_mpflow_clear_blocked(mpflowstartinfo->uid);
 
-	/* Fill mpflow info.*/
+	/* Fill mpflow info. */
 	g_mpflow_uids[index].uid = mpflowstartinfo->uid;
 	g_mpflow_uids[index].enableflag = mpflowstartinfo->enableflag;
 	g_mpflow_uids[index].protocol = mpflowstartinfo->protocol;
@@ -1264,28 +1357,31 @@ void emcom_xengine_mpflow_start(const char *pdata, uint16_t len)
 	g_mpflow_uids[index].reserve_field = mpflowstartinfo->reserve_field;
 
 	if (mpflowstartinfo->enableflag & EMCOM_MPFLOW_ENABLEFLAG_DPORT) {
-		memcpy(g_mpflow_uids[index].dport_range,
-		       mpflowstartinfo->dport_range,
-		       sizeof(mpflowstartinfo->dport_range));
+		errno_t err = memcpy_s(g_mpflow_uids[index].dport_range,
+							   sizeof(g_mpflow_uids[index].dport_range),
+							   mpflowstartinfo->dport_range,
+							   sizeof(mpflowstartinfo->dport_range));
+		if (err != EOK)
+			EMCOM_LOGE("emcom_xengine_mpflow_start memcpy failed");
 	}
-	if (g_mpflow_uids[index].algorithm_type != EMCOM_MPFLOW_ENABLETYPE_NET_DISK &&
-		g_mpflow_uids[index].algorithm_type != EMCOM_MPFLOW_ENABLETYPE_MARKET &&
-		g_mpflow_uids[index].algorithm_type != EMCOM_MPFLOW_ENABLETYPE_WEIBO)
-		goto RETURN;
-	fi_start_ret = emcom_xengine_mpflow_fi_start(is_new_uid_enable, index, &ret, mpflowstartinfo);
-	if (!fi_start_ret) {
-		spin_unlock_bh(&g_mpflow_lock);
-		return;
+	if ((g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK) ||
+		(g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_MARKET) ||
+		(g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WEIBO) ||
+		(g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WIFI_PRI)) {
+		bool fi_start_ret = emcom_xengine_mpflow_fi_start(is_new_uid_enable, index, &ret, mpflowstartinfo);
+		if (!fi_start_ret) {
+			spin_unlock_bh(&g_mpflow_lock);
+			return;
+		}
 	}
 
-RETURN:
+	emcom_xengine_mpflow_show();
 	spin_unlock_bh(&g_mpflow_lock);
 
 	if (ret)
 		emcom_xengine_mpflow_register_nf_hook();
 	else
 		emcom_xengine_mpflow_unregister_nf_hook();
-	emcom_xengine_mpflow_show();
 }
 
 void emcom_xengine_mpflow_stop(const char *pdata, uint16_t len)
@@ -1297,24 +1393,27 @@ void emcom_xengine_mpflow_stop(const char *pdata, uint16_t len)
 	struct emcom_xengine_mpflow_node *tmp = NULL;
 	bool mpflow_uid_empty = false;
 
+
 	/* input param check */
-	if ((!pdata) || (len != sizeof(struct emcom_xengine_mpflow_parse_stop_info))) {
+	if (!pdata || (len != sizeof(struct emcom_xengine_mpflow_parse_stop_info))) {
 		EMCOM_LOGE("mpflow stop data or length %d is error", len);
 		return;
 	}
 
-	mpflowstopinfo = (struct emcom_xengine_mpflow_parse_stop_info*)pdata;
+	mpflowstopinfo = (struct emcom_xengine_mpflow_parse_stop_info *)pdata;
 	stop_reason = mpflowstopinfo->stop_reason;
-	EMCOM_LOGD("mpflow stop uid: %u, stop reason: %u", mpflowstopinfo->uid,stop_reason);
+	EMCOM_LOGD("mpflow stop uid: %u, stop reason: %u", mpflowstopinfo->uid, stop_reason);
 	spin_lock_bh(&g_mpflow_lock);
 	index = emcom_xengine_mpflow_finduid(mpflowstopinfo->uid);
 	if (index != INDEX_INVALID) {
-		if (stop_reason == EMCOM_MPFLOW_STOP_REASON_NETWORK_ROAMING ||
-		    stop_reason == EMCOM_MPFLOW_STOP_REASON_APPDIED) {
+		if ((stop_reason == EMCOM_MPFLOW_STOP_REASON_NETWORK_ROAMING) ||
+			(stop_reason == EMCOM_MPFLOW_STOP_REASON_APPDIED)) {
+			errno_t err;
+
 			EMCOM_LOGD("mpflow stop clear info uid: %u, index: %d ", mpflowstopinfo->uid, index);
 
-			if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK ||
-			    g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_MARKET) {
+			if ((g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK) ||
+				(g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_MARKET)) {
 				list_for_each_entry_safe(node, tmp, &g_mpflow_uids[index].wifi.flows, list)
 					emcom_xengine_mpflow_download_flow_del(&g_mpflow_uids[index].wifi, node);
 
@@ -1330,71 +1429,71 @@ void emcom_xengine_mpflow_stop(const char *pdata, uint16_t len)
 			g_mpflow_uids[index].enableflag = 0;
 			g_mpflow_uids[index].protocol = 0;
 			g_mpflow_uids[index].bindmode = EMCOM_XENGINE_MPFLOW_BINDMODE_NONE;
-			memset(&g_mpflow_uids[index].dport_range,
-			       0,
-			       sizeof(g_mpflow_uids[index].dport_range));
-		}
-		else
+			err = memset_s(&g_mpflow_uids[index].dport_range, sizeof(g_mpflow_uids[index].dport_range), 0,
+						   sizeof(g_mpflow_uids[index].dport_range));
+			if (err != EOK)
+				EMCOM_LOGE("emcom_xengine_mpflow_stop memset failed");
+		} else {
 			g_mpflow_uids[index].bindmode = EMCOM_XENGINE_MPFLOW_BINDMODE_NONE;
+		}
 	}
+	emcom_xengine_mpflow_show();
+	emcom_xengine_mpflow_delete(mpflowstopinfo->uid);
 
 	mpflow_uid_empty = emcom_xengine_mpflow_uid_empty();
 	spin_unlock_bh(&g_mpflow_lock);
 
 	if (mpflow_uid_empty)
 		emcom_xengine_mpflow_unregister_nf_hook();
-	emcom_xengine_mpflow_show();
-	emcom_xengine_mpflow_delete(mpflowstopinfo->uid);
 }
 
 bool emcom_xengine_mpflow_checkvalid(struct sock *sk, struct sockaddr *uaddr, int8_t index, uint16_t *dport)
 {
 	struct sockaddr_in *usin = (struct sockaddr_in *)uaddr;
-	struct sockaddr_in6 *usin6 = NULL;
 	bool isvalidaddr = false;
-	bool bfinddport = false;
 
-	if ((!sk) || (!uaddr))
+	if (!sk || !uaddr)
 		return false;
 
 	isvalidaddr = emcom_xengine_check_ip_addrss(uaddr) && (!emcom_xengine_check_ip_is_private(uaddr));
 	if (isvalidaddr == false) {
 		EMCOM_LOGD("mpflow check valid addr is not valid. uid: %u",
-			   g_mpflow_uids[index].uid);
+				   g_mpflow_uids[index].uid);
 		return false;
 	}
 
 	EMCOM_LOGD("mpflow check valid uid: %u link famliy: %d, link proto: %d,"
-		   "mpflow protocol: %d, bindmode: %u, ",
-		   g_mpflow_uids[index].uid, sk->sk_family, sk->sk_protocol,
-		   g_mpflow_uids[index].protocol,
-		   g_mpflow_uids[index].bindmode);
+			   "mpflow protocol: %d, bindmode: %u, ",
+			   g_mpflow_uids[index].uid, sk->sk_family, sk->sk_protocol,
+			   g_mpflow_uids[index].protocol,
+			   g_mpflow_uids[index].bindmode);
 
 	if (!(((sk->sk_protocol == IPPROTO_TCP) &&
-	    (EMCOM_MPFLOW_PROTOCOL_TCP & g_mpflow_uids[index].protocol))
-	    || ((sk->sk_protocol == IPPROTO_UDP) &&
+		(EMCOM_MPFLOW_PROTOCOL_TCP & g_mpflow_uids[index].protocol))
+		|| ((sk->sk_protocol == IPPROTO_UDP) &&
 		(EMCOM_MPFLOW_PROTOCOL_UDP & g_mpflow_uids[index].protocol)))) {
 		EMCOM_LOGD("mpflow check valid protocol not correct uid: %u, sk: %pK",
-			   g_mpflow_uids[index].uid, sk);
+				   g_mpflow_uids[index].uid, sk);
 		return false;
 	}
 
 	if (g_mpflow_uids[index].enableflag & EMCOM_MPFLOW_ENABLEFLAG_DPORT) {
+		bool bfinddport = false;
 		if (usin->sin_family == AF_INET) {
 			*dport = ntohs(usin->sin_port);
 		} else if (usin->sin_family == AF_INET6) {
-			usin6 = (struct sockaddr_in6 *)uaddr;
+			struct sockaddr_in6 *usin6 = (struct sockaddr_in6 *)uaddr;
 			*dport = (uint16_t)ntohs(usin6->sin6_port);
 		} else {
 			EMCOM_LOGD("mpflow check valid not support family uid: %u,"
-				   " sin_family: %d",
-				   g_mpflow_uids[index].uid, usin->sin_family);
+					   " sin_family: %d",
+					   g_mpflow_uids[index].uid, usin->sin_family);
 			return false;
 		}
 		bfinddport = emcom_xengine_mpflow_finddport(&g_mpflow_uids[index], *dport);
 		if (bfinddport == false) {
 			EMCOM_LOGD("mpflow check valid can not find uid: %u, dport: %d",
-				   g_mpflow_uids[index].uid, *dport);
+					   g_mpflow_uids[index].uid, *dport);
 			return false;
 		}
 	}
@@ -1412,7 +1511,8 @@ bool emcom_xengine_mpflow_getinetaddr(struct net_device *dev)
 		return false;
 	}
 
-	if (!(in_dev = __in_dev_get_rcu(dev))) {
+	in_dev = __in_dev_get_rcu(dev);
+	if (!in_dev) {
 		EMCOM_LOGD("mpflow get inet addr in_dev is null dev: %s", dev->name);
 		return false;
 	}
@@ -1424,16 +1524,24 @@ bool emcom_xengine_mpflow_getinetaddr(struct net_device *dev)
 	return false;
 }
 
-static inline uint8_t emcom_xengine_mpflow_ip_hash(__be32 addr)
+static uint8_t emcom_xengine_mpflow_ip_hash(__be32 addr)
 {
-	uint32_t h;
+#define EMCOM_MPFLOW_HASH_BIT_FOUR 4
+#define EMCOM_MPFLOW_HASH_BIT_EIGHT (4 * 2)
+#define EMCOM_MPFLOW_HASH_BIT_TWELVE (4 * 3)
+#define EMCOM_MPFLOW_HASH_BIT_SIXTEEN (4 * 4)
 
-	h = addr << 8;
-	h ^= addr >> 4;
-	h ^= addr >> 12;
-	h ^= addr >> 16;
+	uint32_t hash;
+	hash = (addr) << EMCOM_MPFLOW_HASH_BIT_EIGHT;
+	hash ^= (addr) >> EMCOM_MPFLOW_HASH_BIT_FOUR;
+	hash ^= (addr) >> EMCOM_MPFLOW_HASH_BIT_TWELVE;
+	hash ^= (addr) >> EMCOM_MPFLOW_HASH_BIT_SIXTEEN;
 
-	return (uint8_t)(h & (EMCOM_MPFLOW_HASH_SIZE - 1));
+#undef EMCOM_MPFLOW_HASH_BIT_FOUR
+#undef EMCOM_MPFLOW_HASH_BIT_EIGHT
+#undef EMCOM_MPFLOW_HASH_BIT_TWELVE
+#undef EMCOM_MPFLOW_HASH_BIT_SIXTEEN
+	return (uint8_t)(hash & (EMCOM_MPFLOW_HASH_SIZE - 1));
 }
 
 static struct emcom_xengine_mpflow_ip *emcom_xengine_mpflow_hash(__be32 addr,
@@ -1441,13 +1549,15 @@ static struct emcom_xengine_mpflow_ip *emcom_xengine_mpflow_hash(__be32 addr,
 {
 	struct emcom_xengine_mpflow_ip *ip = NULL;
 	struct hlist_node *tmp = NULL;
-	uint8_t hash = emcom_xengine_mpflow_ip_hash(addr);
+	uint8_t hash;
 	unsigned long aging;
 
 	if (algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK)
 		aging = EMCOM_MPFLOW_NETDISK_DOWNLOAD_THREH;
 	else
 		aging = EMCOM_MPFLOW_IP_AGING_THREH;
+
+	hash = emcom_xengine_mpflow_ip_hash(addr);
 
 	hlist_for_each_entry_safe(ip, tmp, &hashtable[hash], node) {
 		if (ip->addr == addr)
@@ -1499,7 +1609,7 @@ static bool emcom_xengine_mpflow_ip_chk_bind_lte(
 
 		if (time_before(now, ip->jiffies[index] + EMCOM_MPFLOW_NETDISK_DOWNLOAD_THREH)) {
 			/* if (lte_cnt/tot_cnt < lte_thresh/10), then we need bind on lte */
-			if (ip->lte_cnt * EMCOM_MPFLOW_FI_NETDISK_FLOW_NUM < priv->lte_thresh * ip->tot_cnt)
+			if ((ip->lte_cnt * EMCOM_MPFLOW_FI_NETDISK_FLOW_NUM) < (priv->lte_thresh * ip->tot_cnt))
 				return true;
 			else
 				return false;
@@ -1528,18 +1638,20 @@ static bool emcom_xengine_mpflow_get_addr_port(struct sockaddr *addr, __be32 *s_
 
 		if (!ipv6_addr_v4mapped(&usin6->sin6_addr))
 			return false;
-		*s_addr = usin6->sin6_addr.s6_addr32[3];
+		*s_addr = usin6->sin6_addr.s6_addr32[EMCOM_MPFLOW_FI_CLAT_IPV4_INDEX];
 		*port = ntohs(usin6->sin6_port);
 		return true;
 	}
 #endif
-	else
+	else {
 		return false;
-
+	}
 }
 
+#undef EMCOM_MPFLOW_FI_CLAT_IPV4_INDEX
+
 static int emcom_xengine_mpflow_ip_bind(struct sockaddr *addr,
-					struct emcom_xengine_mpflow_info *uid)
+	struct emcom_xengine_mpflow_info *uid)
 {
 	__be32 daddr;
 	uint16_t dport;
@@ -1551,10 +1663,10 @@ static int emcom_xengine_mpflow_ip_bind(struct sockaddr *addr,
 	if (!emcom_xengine_mpflow_get_addr_port(addr, &daddr, &dport))
 		return EMCOM_MPFLOW_BIND_WIFI;
 
-	if (dport == EMCOM_MPFLOW_FI_PORT_443 && !uid->ptn_443_num)
+	if ((dport == EMCOM_MPFLOW_FI_PORT_443) && !uid->ptn_443_num)
 		return EMCOM_MPFLOW_BIND_WIFI;
 
-	if (dport == EMCOM_MPFLOW_FI_PORT_80 && !uid->ptn_80_num)
+	if ((dport == EMCOM_MPFLOW_FI_PORT_80) && !uid->ptn_80_num)
 		return EMCOM_MPFLOW_BIND_WIFI;
 
 	ip = emcom_xengine_mpflow_hash(daddr, priv->hashtable, type);
@@ -1564,54 +1676,59 @@ static int emcom_xengine_mpflow_ip_bind(struct sockaddr *addr,
 	if (emcom_xengine_mpflow_ip_chk_bind_lte(priv, ip, type)) {
 		ip->lte_cnt++;
 		bind_dev = EMCOM_MPFLOW_BIND_LTE;
-	} else
+	} else {
 		bind_dev = EMCOM_MPFLOW_BIND_WIFI;
+	}
 	ip->jiffies[ip->tot_cnt % EMCOM_MPFLOW_FLOW_JIFFIES_REC] = jiffies;
 	ip->tot_cnt++;
 	return bind_dev;
 }
 
-static inline void emcom_xengine_mpflow_netdisk_lte_thresh(struct emcom_xengine_mpflow_app_priv *priv, int add)
+static void emcom_xengine_mpflow_netdisk_lte_thresh(struct emcom_xengine_mpflow_app_priv *priv, int add)
 {
-	if (add > 0 && priv->lte_thresh < priv->lte_thresh_max)
+	if ((add > 0) && (priv->lte_thresh < priv->lte_thresh_max))
 		priv->lte_thresh++;
-	else if (add < 0 && priv->lte_thresh > priv->lte_thresh_min)
+	else if ((add < 0) && (priv->lte_thresh > priv->lte_thresh_min))
 		priv->lte_thresh--;
 }
 
 static void emcom_xengine_mpflow_download_finish(struct emcom_xengine_mpflow_info *uid)
 {
+#define EMCOM_MPFLOW_FI_RATE_RATIO_NUMERATOR 4
+#define EMCOM_MPFLOW_FI_RATE_RATIO_DENOMINATOR 5
 	struct emcom_xengine_mpflow_app_priv *priv = uid->app_priv;
-	int add = 0;
 
 	if (!priv)
 		return;
 
 	if (uid->algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK) {
+		int add = 0;
+
 		EMCOM_LOGD("lte %u %u, wifi %u %u",
-			uid->lte.max_rate_received_flow,
-			uid->lte.bytes_received,
-			uid->wifi.max_rate_received_flow,
-			uid->wifi.bytes_received);
+				   uid->lte.max_rate_received_flow,
+				   uid->lte.bytes_received,
+				   uid->wifi.max_rate_received_flow,
+				   uid->wifi.bytes_received);
 
 		if ((uid->lte.bytes_received + uid->wifi.bytes_received) < EMCOM_MPFLOW_LTE_THREH_ADJUST_BYTES)
 			return;
 
 		if (uid->lte.max_rate_received_flow && uid->wifi.max_rate_received_flow &&
-			uid->lte.max_rate_received_flow < uid->wifi.max_rate_received_flow) {
+			(uid->lte.max_rate_received_flow < uid->wifi.max_rate_received_flow)) {
 			/* avg_speed_per_flow_LTE< avg_speed_per_flow_WIFI, lte_thresh-- */
 			EMCOM_LOGD("case 1: lte_thresh--");
 			add--;
-		} else if (uid->lte.max_rate_received_flow > EMCOM_MPFLOW_NETDISK_RATE_GOOD &&
-			(5 * uid->wifi.max_rate_received_flow < 4 * uid->lte.max_rate_received_flow)) {
+		} else if ((uid->lte.max_rate_received_flow > EMCOM_MPFLOW_NETDISK_RATE_GOOD) &&
+			((EMCOM_MPFLOW_FI_RATE_RATIO_DENOMINATOR * uid->wifi.max_rate_received_flow) <
+			(EMCOM_MPFLOW_FI_RATE_RATIO_NUMERATOR * uid->lte.max_rate_received_flow))) {
 			/* avg_speed_per_flow_LTE>1M && avg_speed_per_flow_WIFI < 0.8* avg_speed_per_flow_LTE, lte_thresh++ */
 			EMCOM_LOGD("case 2: lte_thresh++");
 			add++;
-		} else if (!priv->lte_thresh && uid->wifi.max_rate_received_flow < EMCOM_MPFLOW_NETDISK_RATE_BAD) {
+		} else if (!priv->lte_thresh && (uid->wifi.max_rate_received_flow < EMCOM_MPFLOW_NETDISK_RATE_BAD)) {
 			EMCOM_LOGD("case 3: lte_thresh++");
 			add++;
-		} else if (priv->lte_thresh == EMCOM_MPFLOW_LTE_FIRST_LTE_THREH_MAX &&
-			uid->lte.max_rate_received_flow < EMCOM_MPFLOW_NETDISK_RATE_BAD) {
+		} else if ((priv->lte_thresh == EMCOM_MPFLOW_LTE_FIRST_LTE_THREH_MAX) &&
+			(uid->lte.max_rate_received_flow < EMCOM_MPFLOW_NETDISK_RATE_BAD)) {
 			EMCOM_LOGD("case 4: lte_thresh--");
 			add--;
 		}
@@ -1620,70 +1737,72 @@ static void emcom_xengine_mpflow_download_finish(struct emcom_xengine_mpflow_inf
 	}
 
 	emcom_xengine_mpflow_hash_clear(priv);
+#undef EMCOM_MPFLOW_FI_RATE_RATIO_NUMERATOR
+#undef EMCOM_MPFLOW_FI_RATE_RATIO_DENOMINATOR
 }
+
 
 int emcom_xengine_mpflow_getmode_rand(int8_t index, uid_t uid, struct sockaddr *uaddr)
 {
-	bool isWifiBlock = false;
-	bool isLteBlock = false;
-	int bindDevice = EMCOM_MPFLOW_BIND_NONE;
+	bool is_wifi_block = false;
+	bool is_lte_block = false;
+	int bind_device = EMCOM_MPFLOW_BIND_NONE;
 
-	if (g_mpflow_uids[index].rst_bind_mode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI)
-		bindDevice = EMCOM_MPFLOW_BIND_WIFI;
-	else if (g_mpflow_uids[index].rst_bind_mode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE)
-		bindDevice = EMCOM_MPFLOW_BIND_LTE;
-	else if (g_mpflow_uids[index].app_priv)
-		bindDevice = emcom_xengine_mpflow_ip_bind(uaddr, &g_mpflow_uids[index]);
-	else {
+	if (g_mpflow_uids[index].rst_bind_mode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI) {
+		bind_device = EMCOM_MPFLOW_BIND_WIFI;
+	} else if (g_mpflow_uids[index].rst_bind_mode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE) {
+		bind_device = EMCOM_MPFLOW_BIND_LTE;
+	} else if (g_mpflow_uids[index].app_priv) {
+		bind_device = emcom_xengine_mpflow_ip_bind(uaddr, &g_mpflow_uids[index]);
+	} else {
 		g_mpflow_index++;
 		if (emcom_xengine_mpflow_connum(uid, EMCOM_WLAN_IFNAME) == 0)
-			bindDevice = EMCOM_MPFLOW_BIND_WIFI;
+			bind_device = EMCOM_MPFLOW_BIND_WIFI;
 		else if (g_mpflow_index % EMCOM_MPFLOW_DEV_NUM == 0)
-			bindDevice = EMCOM_MPFLOW_BIND_WIFI;
+			bind_device = EMCOM_MPFLOW_BIND_WIFI;
 		else
-			bindDevice = EMCOM_MPFLOW_BIND_LTE;
+			bind_device = EMCOM_MPFLOW_BIND_LTE;
 	}
 
-	isWifiBlock = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN_IFNAME);
-	isLteBlock = emcom_xengine_mpflow_blocked(uid, EMCOM_LTE_IFNAME);
-	if ((isWifiBlock == true) && (bindDevice == EMCOM_MPFLOW_BIND_WIFI))
-		bindDevice = EMCOM_MPFLOW_BIND_LTE;
-	else if ((isLteBlock == true) && (bindDevice == EMCOM_MPFLOW_BIND_LTE))
-		bindDevice = EMCOM_MPFLOW_BIND_WIFI;
+	is_wifi_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN_IFNAME);
+	is_lte_block = emcom_xengine_mpflow_blocked(uid, EMCOM_LTE_IFNAME);
+	if ((is_wifi_block == true) && (bind_device == EMCOM_MPFLOW_BIND_WIFI))
+		bind_device = EMCOM_MPFLOW_BIND_LTE;
+	else if ((is_lte_block == true) && (bind_device == EMCOM_MPFLOW_BIND_LTE))
+		bind_device = EMCOM_MPFLOW_BIND_WIFI;
 
-	return bindDevice;
+	return bind_device;
 }
 
 int emcom_xengine_mpflow_getmode_spec(int8_t index, uid_t uid)
 {
-	bool isWifiBlock = false;
-	bool isLteBlock = false;
-	int bindDevice = EMCOM_MPFLOW_BIND_NONE;
+	bool is_wifi_block = false;
+	bool is_lte_block = false;
+	int bind_device = EMCOM_MPFLOW_BIND_NONE;
 
-	isWifiBlock = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN_IFNAME);
-	isLteBlock = emcom_xengine_mpflow_blocked(uid, EMCOM_LTE_IFNAME);
+	is_wifi_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN_IFNAME);
+	is_lte_block = emcom_xengine_mpflow_blocked(uid, EMCOM_LTE_IFNAME);
 
-	if ((isWifiBlock && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI))
-	|| (isLteBlock && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE))) {
+	if ((is_wifi_block && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI))
+		|| (is_lte_block && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE))) {
 		EMCOM_LOGD("mpflow bind blocked uid: %u, bindmode: %d, blocked:%d, %d, connnum:%d",
-				uid, g_mpflow_uids[index].bindmode, isWifiBlock, isLteBlock,
-				emcom_xengine_mpflow_connum(uid, EMCOM_WLAN_IFNAME));
-		return bindDevice;
+				   uid, g_mpflow_uids[index].bindmode, is_wifi_block, is_lte_block,
+				   emcom_xengine_mpflow_connum(uid, EMCOM_WLAN_IFNAME));
+		return bind_device;
 	}
 
 	if (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI)
-		bindDevice = EMCOM_MPFLOW_BIND_WIFI;
+		bind_device = EMCOM_MPFLOW_BIND_WIFI;
 
 	if (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE)
-		bindDevice = EMCOM_MPFLOW_BIND_LTE;
+		bind_device = EMCOM_MPFLOW_BIND_LTE;
 
-	return bindDevice;
+	return bind_device;
 }
-
 
 int emcom_xengine_mpflow_getmode(int8_t index, uid_t uid, struct sockaddr *uaddr)
 {
-	int bindDevice = EMCOM_MPFLOW_BIND_NONE;
+	int bind_device = EMCOM_MPFLOW_BIND_NONE;
 
 	if (g_mpflow_uids[index].rst_bind_mode != EMCOM_XENGINE_MPFLOW_BINDMODE_NONE) {
 		if (time_after(jiffies, g_mpflow_uids[index].rst_jiffies + EMCOM_MPFLOW_RST_TIME_THREH))
@@ -1691,26 +1810,24 @@ int emcom_xengine_mpflow_getmode(int8_t index, uid_t uid, struct sockaddr *uaddr
 	}
 
 	if (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM)
-		bindDevice = emcom_xengine_mpflow_getmode_rand(index, uid, uaddr);
+		bind_device = emcom_xengine_mpflow_getmode_rand(index, uid, uaddr);
 	else
-		bindDevice = emcom_xengine_mpflow_getmode_spec(index, uid);
+		bind_device = emcom_xengine_mpflow_getmode_spec(index, uid);
 
-	return bindDevice;
+	return bind_device;
 }
 
 void emcom_xengine_mpflow_bind2device(struct sock *sk, struct sockaddr *uaddr)
 {
 	uid_t uid;
 	int8_t index;
-	struct net *net = NULL;
 	struct net_device *dev = NULL;
-	int ifindex;
 	char ifname[IFNAMSIZ] = {0};
-	bool valid = false;
-	int bindDevice = 0;
+	int bind_device;
 	uint16_t dport;
+	errno_t err;
 
-	if ((!sk) || (!uaddr))
+	if (!sk || !uaddr)
 		return;
 
 	uid = sock_i_uid(sk).val;
@@ -1724,41 +1841,41 @@ void emcom_xengine_mpflow_bind2device(struct sock *sk, struct sockaddr *uaddr)
 		return;
 	}
 
-	valid = emcom_xengine_mpflow_checkvalid(sk, uaddr, index, &dport);
-	if (valid == false) {
+	if (emcom_xengine_mpflow_checkvalid(sk, uaddr, index, &dport) == false) {
 		EMCOM_LOGD("mpflow bind2device check valid fail uid: %u", uid);
 		spin_unlock_bh(&g_mpflow_lock);
 		return;
 	}
 
-	bindDevice = emcom_xengine_mpflow_getmode(index, uid, uaddr);
-	if (bindDevice == EMCOM_MPFLOW_BIND_WIFI)
-		memcpy(ifname, EMCOM_WLAN_IFNAME, (strlen(EMCOM_WLAN_IFNAME) + 1));
-	else if (bindDevice == EMCOM_MPFLOW_BIND_LTE)
-		memcpy(ifname, EMCOM_LTE_IFNAME, (strlen(EMCOM_LTE_IFNAME) + 1));
-	else if (bindDevice == EMCOM_MPFLOW_BIND_NONE) {
+	bind_device = emcom_xengine_mpflow_getmode(index, uid, uaddr);
+
+	if (bind_device == EMCOM_MPFLOW_BIND_WIFI) {
+		err = memcpy_s(ifname, sizeof(char) * IFNAMSIZ, EMCOM_WLAN_IFNAME, (strlen(EMCOM_WLAN_IFNAME) + 1));
+	} else if (bind_device == EMCOM_MPFLOW_BIND_LTE) {
+		err = memcpy_s(ifname, sizeof(char) * IFNAMSIZ, EMCOM_LTE_IFNAME, (strlen(EMCOM_LTE_IFNAME) + 1));
+	} else if (bind_device == EMCOM_MPFLOW_BIND_NONE) {
 		spin_unlock_bh(&g_mpflow_lock);
 		return;
 	}
+	if (err != EOK)
+		EMCOM_LOGE("mpflow bind2device memcpy failed");
 
 	sk->is_mp_flow = 1;
 	spin_unlock_bh(&g_mpflow_lock);
 
-	net = sock_net(sk);
 	rcu_read_lock();
-	dev = dev_get_by_name_rcu(net, ifname);
-	if ((!dev) || (emcom_xengine_mpflow_getinetaddr(dev) == false)) {
+	dev = dev_get_by_name_rcu(sock_net(sk), ifname);
+	if (!dev || (emcom_xengine_mpflow_getinetaddr(dev) == false)) {
 		rcu_read_unlock();
 		EMCOM_LOGD("mpflow bind2device dev not ready uid: %u, sk: %pK, dev: %pK, name: %s",
 				   uid, sk, dev, (dev == NULL ? "null" : dev->name));
 		return;
 	}
-	ifindex = dev->ifindex;
 	rcu_read_unlock();
-	sk->sk_bound_dev_if = ifindex;
+	sk->sk_bound_dev_if = dev->ifindex;
 	EMCOM_LOGD("mpflow bind2device success uid: %u, sk: %pK, "
 			   "ifname: %s, ifindex: %d",
-			   uid, sk, ifname, ifindex);
+			   uid, sk, ifname, sk->sk_bound_dev_if);
 }
 
 
@@ -1767,15 +1884,15 @@ bool emcom_xengine_mpflow_finddport(struct emcom_xengine_mpflow_info *mpflowinfo
 	int i;
 
 	if (!mpflowinfo) {
-		EMCOM_LOGE("mpflow finddport mpflow info is NULL.");
+		EMCOM_LOGE("mpflow finddport mpflow info is NULL");
 		return false;
 	}
 
 	EMCOM_LOGD("mpflow finddport dport: %d", dport);
 
 	for (i = 0; i < EMCOM_MPFLOW_PORT_RANGE_NUM_MAX; i++) {
-		if (mpflowinfo->dport_range[i].start_port <= dport &&
-			mpflowinfo->dport_range[i].end_port >= dport)
+		if ((mpflowinfo->dport_range[i].start_port <= dport) &&
+			(mpflowinfo->dport_range[i].end_port >= dport))
 			return true;
 	}
 
@@ -1785,30 +1902,35 @@ bool emcom_xengine_mpflow_finddport(struct emcom_xengine_mpflow_info *mpflowinfo
 struct emcom_xengine_mpflow_stat *emcom_xengine_mpflow_get(int uid, char *name, int ifindex)
 {
 	struct emcom_xengine_mpflow_stat *node = NULL;
+	int8_t index;
+	errno_t err;
 
-	list_for_each_entry(node, &emcom_xengine_mpflow_list, list) {
-		if ((node->uid == uid) && (!strncmp(node->name, name, strlen(name))))
-			return node;
+	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
+		if ((node == NULL) && (g_mpflow_list[index].uid == UID_INVALID_APP))
+			node = &g_mpflow_list[index];
+		if ((g_mpflow_list[index].uid == uid) && (!strncmp(g_mpflow_list[index].name, name, strlen(name))))
+			return &g_mpflow_list[index];
 	}
 
-	node = (struct emcom_xengine_mpflow_stat *)kzalloc(sizeof(struct emcom_xengine_mpflow_stat), GFP_ATOMIC);
 	if (!node) {
-		EMCOM_LOGD("MpFlow %d kzalloc Emcom_Xengine_mpflow_stat node fail\n", __LINE__);
+		EMCOM_LOGD("emcom_xengine_mpflow_get list full\n");
 		return NULL;
 	}
 
 	node->uid = uid;
 	node->ifindex = ifindex;
-	strncpy(node->name, name, IFNAMSIZ);
+	err = strncpy_s(node->name, IFNAMSIZ, name, IFNAMSIZ - 1);
+	if (err != EOK)
+		EMCOM_LOGE("emcom_xengine_mpflow_get strncpy_s failed");
 	node->mpflow_fallback = EMCOM_MPFLOW_FALLBACK_CLR;
 	node->mpflow_fail_nopayload = 0;
 	node->mpflow_fail_syn_rst = 0;
 	node->mpflow_fail_syn_timeout = 0;
 	node->mpflow_estlink = 0;
 	node->start_jiffies = 0;
-	memset(node->retrans_count, 0, sizeof(node->retrans_count));
-
-	list_add(&(node->list), &emcom_xengine_mpflow_list);
+	err = memset_s(node->retrans_count, sizeof(node->retrans_count), 0, sizeof(node->retrans_count));
+	if (err != EOK)
+		EMCOM_LOGE("emcom_xengine_mpflow_get memset failed");
 
 	return node;
 }
@@ -1816,38 +1938,46 @@ struct emcom_xengine_mpflow_stat *emcom_xengine_mpflow_get(int uid, char *name, 
 
 void emcom_xengine_mpflow_delete(int uid)
 {
+	int8_t index;
 	struct emcom_xengine_mpflow_stat *node = NULL;
-	struct emcom_xengine_mpflow_stat *nodesafe = NULL;
 
-	list_for_each_entry_safe(node, nodesafe, &emcom_xengine_mpflow_list, list) {
-		if (node->uid == uid) {
-			list_del(&node->list);
-			kfree(node);
-		}
+
+	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
+		node = &g_mpflow_list[index];
+		if (node->uid == uid)
+			node->uid = UID_INVALID_APP;
 	}
 }
 
 void emcom_xengine_mpflow_clear_blocked(int uid)
 {
+	int8_t index;
 	struct emcom_xengine_mpflow_stat *node = NULL;
+	errno_t err;
 
-	list_for_each_entry(node, &emcom_xengine_mpflow_list, list) {
+	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
+		node = &g_mpflow_list[index];
 		if (node->uid == uid) {
 			node->mpflow_fallback = EMCOM_MPFLOW_FALLBACK_CLR;
 			node->mpflow_fail_nopayload = 0;
 			node->mpflow_fail_syn_rst = 0;
 			node->mpflow_fail_syn_timeout = 0;
 			node->start_jiffies = 0;
-			memset(node->retrans_count, 0, sizeof(node->retrans_count));
+			err = memset_s(node->retrans_count, sizeof(node->retrans_count),
+						   0, sizeof(node->retrans_count));
+			if (err != EOK)
+				EMCOM_LOGD("emcom_xengine_mpflow_clear_blocked memset failed");
 		}
 	}
 }
 
 bool emcom_xengine_mpflow_blocked(int uid, char *name)
 {
+	int8_t index;
 	struct emcom_xengine_mpflow_stat *node = NULL;
 
-	list_for_each_entry(node, &emcom_xengine_mpflow_list, list) {
+	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
+		node = &g_mpflow_list[index];
 		if ((node->uid == uid) && (!strncmp(node->name, name, strlen(name))))
 			return (node->mpflow_fallback == EMCOM_MPFLOW_FALLBACK_SET);
 	}
@@ -1857,9 +1987,11 @@ bool emcom_xengine_mpflow_blocked(int uid, char *name)
 
 int16_t emcom_xengine_mpflow_connum(int uid, char *name)
 {
+	int8_t index;
 	struct emcom_xengine_mpflow_stat *node = NULL;
 
-	list_for_each_entry(node, &emcom_xengine_mpflow_list, list) {
+	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
+		node = &g_mpflow_list[index];
 		if ((node->uid == uid) && (!strncmp(node->name, name, strlen(name))))
 			return node->mpflow_estlink;
 	}
@@ -1874,11 +2006,15 @@ void emcom_xengine_mpflow_report(void *data, int len)
 
 void emcom_xengine_mpflow_show(void)
 {
+	int8_t index;
 	struct emcom_xengine_mpflow_stat *node = NULL;
 
-	list_for_each_entry(node, &emcom_xengine_mpflow_list, list) {
-		EMCOM_LOGE("MpFlow showinfo uid:%d inf:%d(%s) fail(%d) estlink:%d "
-				   "nodata,rst,tout(%d,%d,%d)\n",
+	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
+		node = &g_mpflow_list[index];
+		if (node->uid == UID_INVALID_APP)
+			continue;
+		EMCOM_LOGE("MpFlow showinfo uid:%d inf:%d(%s) fail:%d estlink:%d "
+				   "nodata,rst,tout:%d,%d,%d \n",
 				   node->uid, node->ifindex, node->name,
 				   node->mpflow_fallback, node->mpflow_estlink,
 				   node->mpflow_fail_nopayload, node->mpflow_fail_syn_rst,
@@ -1909,12 +2045,13 @@ bool emcom_xengine_mpflow_errlink(int reason, struct emcom_xengine_mpflow_stat *
 bool emcom_xengine_mpflow_retrans(int reason, struct emcom_xengine_mpflow_stat *node)
 {
 	int i;
+	errno_t err;
 
 	if (reason != EMCOM_MPFLOW_FALLBACK_RETRANS)
 		return false;
 
 	for (i = 1; (i <= node->retrans_count[0]) && (i <= EMCOM_MPFLOW_FALLBACK_RETRANS_TIME); i++) {
-		if time_before_eq(jiffies, node->start_jiffies + i * HZ) {
+		if (time_before_eq(jiffies, node->start_jiffies + i * HZ)) {
 			node->retrans_count[i]++;
 			break;
 		}
@@ -1925,16 +2062,20 @@ bool emcom_xengine_mpflow_retrans(int reason, struct emcom_xengine_mpflow_stat *
 		/* expand time range */
 		if (node->retrans_count[i] == EMCOM_MPFLOW_FALLBACK_RETRANS_THRH) {
 			node->retrans_count[0]++;
-			EMCOM_LOGD("MpFlow fallback retrans uid:%d inf:%d(%s) count:%d, jiffies:%lu\n",
-				node->uid, node->ifindex, node->name, node->retrans_count[0], node->start_jiffies);
+			EMCOM_LOGD("MpFlow fallback uid:%d inf:%d(%s) count:%d, jiffies:%lu\n",
+					   node->uid, node->ifindex, node->name, node->retrans_count[0], node->start_jiffies);
 		}
 		/* retransmission fallback */
 		if (node->retrans_count[0] > EMCOM_MPFLOW_FALLBACK_RETRANS_TIME) {
-			memset(node->retrans_count, 0, sizeof(node->retrans_count));
+			err = memset_s(node->retrans_count, sizeof(node->retrans_count), 0, sizeof(node->retrans_count));
+			if (err != EOK)
+				EMCOM_LOGE("emcom_xengine_mpflow_retrans memset failed");
 			return true;
 		}
 	} else {
-		memset(node->retrans_count, 0, sizeof(node->retrans_count));
+		err = memset_s(node->retrans_count, sizeof(node->retrans_count), 0, sizeof(node->retrans_count));
+		if (err != EOK)
+			EMCOM_LOGE("emcom_xengine_mpflow_retrans memset failed");
 		node->retrans_count[0] = 1;
 		node->retrans_count[1] = 1;
 		node->start_jiffies = jiffies;
@@ -1967,10 +2108,12 @@ int8_t emcom_xengine_mpflow_checkstatus(struct sock *sk, int reason, int state, 
 			result = EMCOM_MPFLOW_FALLBACK_SYNCLR;
 			node->mpflow_estlink++;
 		}
-	} else if (reason == EMCOM_MPFLOW_FALLBACK_SYN_TOUT)
-		result = ((1 << oldstate) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) ? EMCOM_MPFLOW_FALLBACK_SET : EMCOM_MPFLOW_FALLBACK_NONE;
-	else
+	} else if (reason == EMCOM_MPFLOW_FALLBACK_SYN_TOUT) {
+		result = ((1 << oldstate) & (TCPF_SYN_SENT | TCPF_SYN_RECV)) ? EMCOM_MPFLOW_FALLBACK_SET :
+			EMCOM_MPFLOW_FALLBACK_NONE;
+	} else {
 		result = EMCOM_MPFLOW_FALLBACK_SET;
+	}
 
 	if (result != EMCOM_MPFLOW_FALLBACK_NONE)
 		EMCOM_LOGD("MpFlow checkinfo uid:%d sk:%pK inf:%d[%s] R:%d P[%d->%d] ret:%d,snt,fly,ack,rcv:%u,%u,%llu,%llu\n",
@@ -1984,11 +2127,10 @@ int8_t emcom_xengine_mpflow_checkstatus(struct sock *sk, int reason, int state, 
 void emcom_xengine_mpflow_fallback(struct sock *sk, int reason, int state)
 {
 	struct emcom_xengine_mpflow_stat *node = NULL;
-	struct emcom_xengine_mpflow_fallback fallback;
 	struct net *net = sock_net(sk);
 	struct net_device *dev = NULL;
 	char *name = NULL;
-	int8_t result = INDEX_INVALID;
+	int8_t result;
 	uid_t uid;
 	int8_t index;
 
@@ -2004,9 +2146,11 @@ void emcom_xengine_mpflow_fallback(struct sock *sk, int reason, int state)
 	dev = dev_get_by_index_rcu(net, sk->sk_bound_dev_if);
 	rcu_read_unlock();
 	if (!dev)
-		name = "none";
-	else
-		name = dev->name;
+		return;
+
+	name = dev->name;
+	if (!name)
+		return;
 
 	node = emcom_xengine_mpflow_get(uid, name, sk->sk_bound_dev_if);
 	if (!node)
@@ -2015,6 +2159,7 @@ void emcom_xengine_mpflow_fallback(struct sock *sk, int reason, int state)
 	result = emcom_xengine_mpflow_checkstatus(sk, reason, state, node);
 	if (result == EMCOM_MPFLOW_FALLBACK_SET) {
 		if (emcom_xengine_mpflow_errlink(reason, node) || emcom_xengine_mpflow_retrans(reason, node)) {
+			struct emcom_xengine_mpflow_fallback fallback;
 
 			node->mpflow_fallback = EMCOM_MPFLOW_FALLBACK_SET;
 			EMCOM_LOGE("MpFlow fallback uid:%d inf:%d(%s) estlink:%d nodata,rst,tout:%d,%d,%d\n",
@@ -2043,45 +2188,55 @@ void emcom_xengine_mpflow_fallback(struct sock *sk, int reason, int state)
 		node->mpflow_fail_syn_rst = 0;
 		node->mpflow_fail_syn_timeout = 0;
 	}
-
 	return;
 }
 
 char *strtok(char *string_org, const char *demial)
 {
+#define EMCOM_MPFLOW_FI_CHAR_MAP_NUM  32
+#define EMCOM_MPFLOW_FI_CHAR_MAP_HIGH_BITS_SHIFT  3
+#define EMCOM_MPFLOW_FI_CHAR_MAP_LOW_BITS_MASK  7
 	static unsigned char *last;
-	unsigned char *str;
+	unsigned char *str = NULL;
 	const unsigned char *ctrl = (const unsigned char *)demial;
-	unsigned char map[32];
+	unsigned char map[EMCOM_MPFLOW_FI_CHAR_MAP_NUM];
 	int count;
 
-	for (count = 0; count < 32; count++) {
+	for (count = 0; count < EMCOM_MPFLOW_FI_CHAR_MAP_NUM; count++)
 		map[count] = 0;
-	}
-	do {
-		map[*ctrl >> 3] |= (1 << (*ctrl & 7));
-	} while (*ctrl++);
-	if (string_org != NULL) {
+
+	do
+		map[*ctrl >> EMCOM_MPFLOW_FI_CHAR_MAP_HIGH_BITS_SHIFT] |=
+			(1 << (*ctrl & EMCOM_MPFLOW_FI_CHAR_MAP_LOW_BITS_MASK));
+	while (*ctrl++);
+
+	if (string_org != NULL)
 		str = (unsigned char *)string_org;
-	} else {
+	else
 		str = last;
-	}
-	while ((map[*str >> 3] & (1 << (*str & 7))) && *str) {
+
+	while ((map[*str >> EMCOM_MPFLOW_FI_CHAR_MAP_HIGH_BITS_SHIFT]
+		& (1 << (*str & EMCOM_MPFLOW_FI_CHAR_MAP_LOW_BITS_MASK)))
+		&& *str)
 		str++;
-	}
+
 	string_org = (char *)str;
 	for (; *str; str++) {
-		if (map[*str >> 3] & (1 << (*str & 7))) {
+		if (map[*str >> EMCOM_MPFLOW_FI_CHAR_MAP_HIGH_BITS_SHIFT]
+			& (1 << (*str & EMCOM_MPFLOW_FI_CHAR_MAP_LOW_BITS_MASK))) {
 			*str++ = '\0';
 			break;
 		}
 	}
 	last = str;
-	if (string_org == (char *)str) {
+	if (string_org == (char *)str)
 		return NULL;
-	} else {
+	else
 		return string_org;
-	}
+
+#undef EMCOM_MPFLOW_FI_CHAR_MAP_NUM
+#undef EMCOM_MPFLOW_FI_CHAR_MAP_HIGH_BITS_SHIFT
+#undef EMCOM_MPFLOW_FI_CHAR_MAP_LOW_BITS_MASK
 }
 
 static int emcom_xengine_mpflow_split(char *src, const char *separator, char **dest, int *num)
@@ -2089,9 +2244,9 @@ static int emcom_xengine_mpflow_split(char *src, const char *separator, char **d
 	char *p = NULL;
 	int count = 0;
 
-	if (src == NULL || strlen(src) == 0 || separator == NULL || strlen(separator) == 0) {
+	if ((src == NULL) || (strlen(src) == 0) || (separator == NULL) || (strlen(separator) == 0))
 		return *num;
-	}
+
 	p = strtok(src, separator);
 	while (p != NULL) {
 		*dest++ = p;
@@ -2108,6 +2263,7 @@ static bool emcom_xengine_mpflow_ptn_init(struct emcom_xengine_mpflow_ptn ptn[],
 	char *revbuf[EMCOM_MPFLOW_FI_PTN_MAX_NUM] = {0};
 	int n = 0;
 	int i;
+	errno_t err;
 
 	EMCOM_LOGD("hex %s\n", hex);
 	if (emcom_xengine_mpflow_split((char *)hex, EMCOM_MPFLOW_FI_PTN_SEPERATE_CHAR, revbuf, &n) == 0) {
@@ -2118,7 +2274,12 @@ static bool emcom_xengine_mpflow_ptn_init(struct emcom_xengine_mpflow_ptn ptn[],
 	for (i = 0; i < n; i++) {
 		ptn[i].skip = NULL;
 		ptn[i].shift = NULL;
-		memset(ptn[i].ptn, 0, EMCOM_MPFLOW_FI_PTN_MAX_SIZE);
+		err = memset_s(ptn[i].ptn, EMCOM_MPFLOW_FI_PTN_MAX_SIZE, 0, EMCOM_MPFLOW_FI_PTN_MAX_SIZE);
+		if (err != EOK) {
+			EMCOM_LOGE("emcom_xengine_mpflow_ptn_init memset failed!");
+			ptn[i].is_init = false;
+			return false;
+		}
 		ptn[i].ptnlen = strnlen(revbuf[i], EMCOM_MPFLOW_FI_PTN_MAX_SIZE) >> 1;
 		if (hex2bin(ptn[i].ptn, revbuf[i], ptn[i].ptnlen)) {
 			ptn[i].is_init = false;
@@ -2168,69 +2329,100 @@ static void emcom_xengine_mpflow_download_flow_del(struct emcom_xengine_mpflow_i
 {
 	struct sock *sk = (struct sock *)flow->tp;
 
-	EMCOM_LOGD("remove sk port %u", sk->sk_num);
+	EMCOM_LOGD("remove sk: %pK sport: %u srtt_us: %u bytes_received: %u duration: %u", flow->tp, sk->sk_num,
+			   flow->tp->srtt_us >> 3, flow->tp->bytes_received, jiffies_to_msecs(jiffies-flow->start_jiffies));
 	sock_put(sk);
 	list_del(&flow->list);
 	kfree(flow);
 	iface->flow_cnt--;
 }
 
-static void emcom_xengine_mpflow_update(struct emcom_xengine_mpflow_iface *flows)
+static void emcom_xengine_mpflow_update_wifi_pri(struct emcom_xengine_mpflow_iface *flows,
+	struct emcom_xengine_mpflow_info *mpflow_uid, u16 flow_cnt)
 {
+	int i = 0;
+	if (mpflow_uid->algorithm_type != EMCOM_MPFLOW_ENABLETYPE_WIFI_PRI)
+		return;
+
+	flows->is_slow = 1;    // initialize the interface as slow
+	flows->is_sure_no_slow = 0;    // but not sure the interface is actually slow
+
+	if (flow_cnt <= 1) {
+		flows->is_slow = 0;  // no active flow, reconsider the interface as fast but not sure
+	} else if (flows->mean_srtt_ms < EMCOM_GOOD_RTT_THR_MS) {  // low rtt, iface surely fast
+		flows->is_slow = 0;
+		flows->is_sure_no_slow = 1;
+	}
+
+	if (flows->rate_received[0] == 0 &&
+		flows->rate_received[1] == 0 &&
+		flows->rate_received[2] == 0)
+		flows->is_slow = 0;  // no bytes recieved for 3s, reconsider the iface as fast but not sure
+
+	for (i = EMCOM_MPFLOW_FI_STAT_SECONDS - 1; i >= 0; i--) {
+		if (flows->rate_received[i] > EMCOM_GOOD_RECV_RATE_THR_BYTE_PER_SEC) {
+			flows->is_slow = 0;  // recieve rate is more than xx KBps, interface is surely fast
+			flows->is_sure_no_slow = 1;
+			break;
+		}
+	}
+}
+
+static void emcom_xengine_mpflow_update(struct emcom_xengine_mpflow_iface *flows,
+	struct emcom_xengine_mpflow_info *mpflow_uid)
+{
+#define EMCOM_MPFLOW_MICROSECOND_SMOOTH_RATE   8
 	struct emcom_xengine_mpflow_node *node = NULL;
 	struct emcom_xengine_mpflow_node *tmp = NULL;
 	struct sock *sk = NULL;
-	u32 rcv_bytes;
 	u32 srtt_ms_sum = 0;
 	u32 max_rate_received = 0;
-	u64 bytes_received;
-	u16 is_slow = 1;
-	u16 flow_valid_cnt = 0;
 	u16 flow_cnt = 0;
-	uint32_t rate_received_flow = 0;
 	int i;
+
+	flows->is_slow = 1;
+	flows->flow_valid_cnt = 0;
 	for (i = EMCOM_MPFLOW_FI_STAT_SECONDS-1; i > 0; i--)
 		flows->rate_received[i] = flows->rate_received[i-1];
 	flows->rate_received[0] = 0;
 	list_for_each_entry_safe(node, tmp, &flows->flows, list) {
 		sk = (struct sock *)node->tp;
-
-		bytes_received = node->tp->bytes_received;
-		rcv_bytes = (u32)(bytes_received - node->last_bytes_received);
-		node->last_bytes_received = bytes_received;
 		/* now update interval is 1s, rcv_bytes is the rate */
 		for (i = EMCOM_MPFLOW_FI_STAT_SECONDS-1; i > 0; i--)
 			node->rate_received[i] = node->rate_received[i-1];
-		node->rate_received[0] = rcv_bytes;
+		node->rate_received[0] = (u32)(node->tp->bytes_received - node->last_bytes_received);
 		/* srtt_us is smoothed round trip time << 3 in usecs */
-		srtt_ms_sum += (node->tp->srtt_us >> 3) / EMCOM_MPFLOW_MICROSECOND_OF_MILLISECOND;
+		srtt_ms_sum += (node->tp->srtt_us / EMCOM_MPFLOW_MICROSECOND_SMOOTH_RATE) /
+			USEC_PER_MSEC;
 		flow_cnt++;
-		for (i = EMCOM_MPFLOW_FI_STAT_SECONDS-1; i >= 0; i--) {
+		for (i = EMCOM_MPFLOW_FI_STAT_SECONDS - 1; i >= 0; i--) {
 			if (node->rate_received[i] > EMCOM_MPFLOW_FLOW_SLOW_THREH) {
-				is_slow = 0;
+				flows->is_slow = 0;
 				break;
 			}
 		}
-		if (bytes_received > EMCOM_MPFLOW_RATE_VALID_THREH)
-			flow_valid_cnt++;
+		if (node->tp->bytes_received > EMCOM_MPFLOW_RATE_VALID_THREH)
+			flows->flow_valid_cnt++;
 		max_rate_received += node->rate_received[0];
-		flows->bytes_received += rcv_bytes;
-		flows->rate_received[0] += rcv_bytes;
+		flows->bytes_received += (u32)(node->tp->bytes_received - node->last_bytes_received);
+		flows->rate_received[0] += (u32)(node->tp->bytes_received - node->last_bytes_received);
+		node->last_bytes_received = node->tp->bytes_received;
 		if (sk->sk_state != TCP_ESTABLISHED)
 			emcom_xengine_mpflow_download_flow_del(flows, node);
 	}
 	if (flow_cnt > 0)
 		flows->mean_srtt_ms = srtt_ms_sum / flow_cnt;
-	flows->is_slow = is_slow;
-	flows->flow_valid_cnt = flow_valid_cnt;
-	if (flow_valid_cnt) {
-		rate_received_flow = max_rate_received / flow_valid_cnt;
-		if (flows->max_rate_received_flow < rate_received_flow)
-			flows->max_rate_received_flow = rate_received_flow;
+
+	emcom_xengine_mpflow_update_wifi_pri(flows, mpflow_uid, flow_cnt);
+
+	if (flows->flow_valid_cnt) {
+		if (flows->max_rate_received_flow < max_rate_received / flows->flow_valid_cnt)
+			flows->max_rate_received_flow = max_rate_received / flows->flow_valid_cnt;
 	}
 
 	if (flows->max_rate_received < max_rate_received)
 		flows->max_rate_received = max_rate_received;
+#undef EMCOM_MPFLOW_MICROSECOND_SMOOTH_RATE
 }
 
 static void emcom_xengine_mpflow_set_bind(struct emcom_xengine_mpflow_info *mpflow_uid, int bind_mode)
@@ -2258,55 +2450,58 @@ static void emcom_xengine_mpflow_set_bind(struct emcom_xengine_mpflow_info *mpfl
 }
 
 static bool emcom_xengine_mpflow_unbalance_netdisk(struct emcom_xengine_mpflow_iface *iface1,
-					struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
+	struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
 {
-	if (iface1->max_rate_received && iface1->max_rate_received < (iface2->max_rate_received >> 1) && iface2->is_slow &&
-		iface1->max_rate_received_flow < EMCOM_MPFLOW_NETDISK_RATE_BAD &&
-		((iface1->is_wifi && g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE) ||
-		(!iface1->is_wifi && g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI) ||
-		g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM))
+	if (iface1->max_rate_received && (iface1->max_rate_received < (iface2->max_rate_received >> 1)) &&
+		iface2->is_slow && (iface1->max_rate_received_flow < EMCOM_MPFLOW_NETDISK_RATE_BAD) &&
+		((iface1->is_wifi && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE)) ||
+		(!iface1->is_wifi && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI)) ||
+		(g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM)))
 		return true;
 	else
 		return false;
 }
 
 static bool emcom_xengine_mpflow_unbalance_market(struct emcom_xengine_mpflow_iface *iface1,
-					struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
+	struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
 {
 	if (iface1->max_rate_received &&
-		((iface1->is_wifi && iface2->is_slow && iface1->max_rate_received < (iface2->max_rate_received >> 1) &&
-		(g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE ||
-		g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM)) ||
-		(!iface1->is_wifi && iface1->max_rate_received < iface2->max_rate_received &&
-		(g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI ||
-		g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM))))
+		((iface1->is_wifi && iface2->is_slow && (iface1->max_rate_received < (iface2->max_rate_received >> 1)) &&
+		((g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE) ||
+		(g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM))) ||
+		(!iface1->is_wifi && (iface1->max_rate_received < iface2->max_rate_received_flow) &&
+		((g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI) ||
+		(g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM)))))
 		return true;
 	else
 		return false;
 }
 
 static bool emcom_xengine_mpflow_single_path(struct emcom_xengine_mpflow_iface *iface1,
-					struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
+	struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
 {
-	if (!g_mpflow_uids[index].rst_to_another && g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM &&
-		iface1->flow_valid_cnt > 1 && !iface2->max_rate_received_flow)
+	if (!g_mpflow_uids[index].rst_to_another && (iface1->flow_valid_cnt > 1) && !iface2->max_rate_received_flow &&
+		((iface1->is_wifi && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE)) ||
+		(!iface1->is_wifi && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI)) ||
+		(g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_RANDOM)))
 		return true;
 	else
 		return false;
 }
 
 static int emcom_xengine_mpflow_chk_rst_market(struct emcom_xengine_mpflow_iface *iface1,
-					struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
+	struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
 {
 	struct emcom_xengine_mpflow_node *node = NULL;
 	struct emcom_xengine_mpflow_node *tmp = NULL;
 	int need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_NORST;
+
 	list_for_each_entry_safe(node, tmp, &iface1->flows, list) {
 		if (time_before(jiffies, node->start_jiffies + EMCOM_MPFLOW_FLOW_TIME_THREH))
 			continue;
 		/* all downloading flows are on same iface */
-		if (node->last_bytes_received > EMCOM_MPFLOW_RST_RCV_BYTES_THREH &&
-			emcom_xengine_mpflow_single_path(iface1,iface2,index)) {
+		if ((node->last_bytes_received > EMCOM_MPFLOW_RST_RCV_BYTES_THREH) &&
+			emcom_xengine_mpflow_single_path(iface1, iface2, index)) {
 			emcom_xengine_mpflow_reset(node->tp);
 			need_set_bind = iface1->is_wifi ? EMCOM_XENGINE_MPFLOW_BINDMODE_RST2LTE :
 				EMCOM_XENGINE_MPFLOW_BINDMODE_RST2WIFI;
@@ -2316,7 +2511,7 @@ static int emcom_xengine_mpflow_chk_rst_market(struct emcom_xengine_mpflow_iface
 		if ((iface1->bytes_received + iface2->bytes_received) <= EMCOM_MPFLOW_RST_IFACE_GOOD)
 			break;
 		/* iface1 is slower than half of iface2 */
-		if (iface1->max_rate_received && iface1->max_rate_received < (iface2->max_rate_received >> 1))
+		if (iface1->max_rate_received && (iface1->max_rate_received < (iface2->max_rate_received >> 1)))
 			need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2FAST;
 		/* both wifi and lte download over */
 		if (iface1->is_slow && (iface2->is_slow || !iface2->bytes_received)) {
@@ -2324,8 +2519,8 @@ static int emcom_xengine_mpflow_chk_rst_market(struct emcom_xengine_mpflow_iface
 			need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2FAST;
 		}
 		/* wifi is slower than half of lte or lte is slower than wifi */
-		if (node->last_bytes_received > EMCOM_MPFLOW_RST_RCV_BYTES_THREH &&
-			emcom_xengine_mpflow_unbalance_market(iface1,iface2,index)) {
+		if ((node->last_bytes_received > EMCOM_MPFLOW_RST_RCV_BYTES_THREH) &&
+			emcom_xengine_mpflow_unbalance_market(iface1, iface2, index)) {
 			emcom_xengine_mpflow_reset(node->tp);
 			need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2FAST;
 		}
@@ -2334,48 +2529,81 @@ static int emcom_xengine_mpflow_chk_rst_market(struct emcom_xengine_mpflow_iface
 }
 
 static int emcom_xengine_mpflow_chk_rst_netdisk(struct emcom_xengine_mpflow_iface *iface1,
-					struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
+	struct emcom_xengine_mpflow_iface *iface2, uint8_t index)
 {
 	struct emcom_xengine_mpflow_node *node = NULL;
 	struct emcom_xengine_mpflow_node *tmp = NULL;
 	int need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_NORST;
+
 	list_for_each_entry_safe(node, tmp, &iface1->flows, list) {
 		if (time_before(jiffies, node->start_jiffies + EMCOM_MPFLOW_FLOW_TIME_THREH) ||
-			(iface1->bytes_received + iface2->bytes_received) <= EMCOM_MPFLOW_RST_IFACE_GOOD)
+			((iface1->bytes_received + iface2->bytes_received) <= EMCOM_MPFLOW_RST_IFACE_GOOD))
 			continue;
 		/* iface1 is slower than half of iface2 */
 		if (iface1->max_rate_received &&
-			iface1->max_rate_received < (iface2->max_rate_received >> 1))
+			(iface1->max_rate_received < (iface2->max_rate_received >> 1)))
 			need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2FAST;
 		/* both wifi and lte download over */
 		if (iface1->is_slow && (iface2->is_slow || !iface2->bytes_received)) {
 			emcom_xengine_mpflow_reset(node->tp);
 			need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2FAST;
 		}
-		if (node->last_bytes_received > EMCOM_MPFLOW_RST_RCV_BYTES_THREH &&
-			emcom_xengine_mpflow_unbalance_netdisk(iface1,iface2,index)) {
+		if ((node->last_bytes_received > EMCOM_MPFLOW_RST_RCV_BYTES_THREH) &&
+			emcom_xengine_mpflow_unbalance_netdisk(iface1, iface2, index))
 			emcom_xengine_mpflow_reset(node->tp);
-		}
 	}
 	return need_set_bind;
 }
 
 static int emcom_xengine_mpflow_chk_rst_weibo(struct emcom_xengine_mpflow_iface *iface1,
-					struct emcom_xengine_mpflow_iface *iface2)
+	struct emcom_xengine_mpflow_iface *iface2)
 {
 	int need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_NORST;
-	uint32_t  wifi_download_time = 0;
-	uint32_t lte_download_time = 0;
+	uint32_t wifi_download_time;
+	uint32_t lte_download_time;
+
 	if (!iface1->max_rate_received_flow || !iface2->max_rate_received_flow ||
 		time_before(jiffies, iface1->start_jiffies + EMCOM_MPFLOW_FLOW_TIME_THREH) ||
 		time_before(jiffies, iface2->start_jiffies + EMCOM_MPFLOW_FLOW_TIME_THREH))
 		return need_set_bind;
-	wifi_download_time = EMCOM_MPFLOW_MICROSECOND_OF_MILLISECOND * EMCOM_MPFLOW_WEIBO_SIZE / iface1->max_rate_received;
-	lte_download_time =  EMCOM_MPFLOW_MICROSECOND_OF_MILLISECOND * EMCOM_MPFLOW_WEIBO_SIZE / iface2->max_rate_received;
-	if (iface1->mean_srtt_ms + wifi_download_time < iface2->mean_srtt_ms + lte_download_time /EMCOM_MPFLOW_DEV_NUM)
+	wifi_download_time = MSEC_PER_SEC * EMCOM_MPFLOW_WEIBO_SIZE / iface1->max_rate_received;
+	lte_download_time =  MSEC_PER_SEC * EMCOM_MPFLOW_WEIBO_SIZE / iface2->max_rate_received;
+	if ((iface1->mean_srtt_ms + wifi_download_time) <
+		(iface2->mean_srtt_ms + (lte_download_time / EMCOM_MPFLOW_DEV_NUM)))
 		need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2WIFI;
-	else if (iface2->mean_srtt_ms + lte_download_time < iface1->mean_srtt_ms + wifi_download_time /EMCOM_MPFLOW_DEV_NUM)
+	else if ((iface2->mean_srtt_ms + lte_download_time) <
+		(iface1->mean_srtt_ms + (wifi_download_time / EMCOM_MPFLOW_DEV_NUM)))
 		need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2LTE;
+	return need_set_bind;
+}
+
+static int emcom_xengine_mpflow_chk_rst_wifi_pri(struct emcom_xengine_mpflow_iface *iface1,
+	struct emcom_xengine_mpflow_iface *iface2, struct emcom_xengine_mpflow_info *mpflow_uid)
+{
+	int need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_NORST;
+
+	if (!iface1->max_rate_received_flow || !iface2->max_rate_received_flow) {
+		EMCOM_LOGD("emcom_xengine_mpflow_chk_rst_wifi_pri, no enough dl return NORST\n");
+		return need_set_bind;
+	}
+
+	if (time_before(jiffies, iface1->start_jiffies + EMCOM_MPFLOW_FLOW_TIME_THREH) ||
+		time_before(jiffies, iface2->start_jiffies + EMCOM_MPFLOW_FLOW_TIME_THREH)) {
+		EMCOM_LOGD("emcom_xengine_mpflow_chk_rst_wifi_pri, not timeout, return NORST\n");
+		return need_set_bind;
+	}
+
+	if (!iface1->is_slow && iface1->is_sure_no_slow)
+		need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2WIFI;
+	else if (!iface2->is_slow && iface2->is_sure_no_slow)
+		need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_RST2LTE;
+
+	if (mpflow_uid->rst_bind_mode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE &&
+		(!iface1->is_slow && !iface1->is_sure_no_slow)) {
+		mpflow_uid->rst_bind_mode = EMCOM_XENGINE_MPFLOW_BINDMODE_NONE;
+		need_set_bind = EMCOM_XENGINE_MPFLOW_BINDMODE_NORST;
+	}
+
 	return need_set_bind;
 }
 
@@ -2391,35 +2619,37 @@ static void emcom_xengine_mpflow_timer(unsigned long arg)
 	spin_lock(&g_mpflow_lock);
 	for (index = 0; index < EMCOM_MPFLOW_MAX_APP; index++) {
 		mpflow_uid = &g_mpflow_uids[index];
-		if (mpflow_uid->uid == UID_INVALID_APP || !mpflow_uid->is_downloading)
+		if ((mpflow_uid->uid == UID_INVALID_APP) || !mpflow_uid->is_downloading)
 			continue;
-		emcom_xengine_mpflow_update(&mpflow_uid->wifi);
-		emcom_xengine_mpflow_update(&mpflow_uid->lte);
+		emcom_xengine_mpflow_update(&mpflow_uid->wifi, mpflow_uid);
+		emcom_xengine_mpflow_update(&mpflow_uid->lte, mpflow_uid);
 		if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_NET_DISK) {
 			bind_mode_wifi = emcom_xengine_mpflow_chk_rst_netdisk(&mpflow_uid->wifi, &mpflow_uid->lte, index);
 			bind_mode_lte = emcom_xengine_mpflow_chk_rst_netdisk(&mpflow_uid->lte, &mpflow_uid->wifi, index);
-		}else if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_MARKET) {
+		} else if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_MARKET) {
 			bind_mode_wifi = emcom_xengine_mpflow_chk_rst_market(&mpflow_uid->wifi, &mpflow_uid->lte, index);
 			bind_mode_lte = emcom_xengine_mpflow_chk_rst_market(&mpflow_uid->lte, &mpflow_uid->wifi, index);
-		}else{
+		} else if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WEIBO) {
 			bind_mode_wifi = emcom_xengine_mpflow_chk_rst_weibo(&mpflow_uid->wifi, &mpflow_uid->lte);
+		} else if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WIFI_PRI) {
+			bind_mode_wifi = emcom_xengine_mpflow_chk_rst_wifi_pri(&mpflow_uid->wifi,
+				&mpflow_uid->lte, mpflow_uid);
 		}
-		EMCOM_LOGD("uid %u rst_mode are %u and %u",mpflow_uid->uid,bind_mode_wifi,bind_mode_lte);
 		bind_mode = (bind_mode_wifi == EMCOM_XENGINE_MPFLOW_BINDMODE_NORST) ?
 			bind_mode_lte : bind_mode_wifi;
 		emcom_xengine_mpflow_set_bind(mpflow_uid, bind_mode);
-		if (mpflow_uid->wifi.flow_cnt || mpflow_uid->lte.flow_cnt)
+		if (mpflow_uid->wifi.flow_cnt || mpflow_uid->lte.flow_cnt) {
 			need_reset_timer = true;
-		else {
+		} else {
 			EMCOM_LOGD("uid %u download is stop", mpflow_uid->uid);
 			emcom_xengine_mpflow_download_finish(mpflow_uid);
 			emcom_xengine_mpflow_fi_init(mpflow_uid);
 		}
 	}
 
-	if (need_reset_timer)
+	if (need_reset_timer) {
 		mod_timer(&g_mpflow_tm, jiffies + HZ);
-	else {
+	} else {
 		EMCOM_LOGD("stop mpflow timer");
 		g_mpflow_tm_running = false;
 	}
@@ -2435,61 +2665,63 @@ static void emcom_xengine_mpflow_download_flow_add(struct sock *sk)
 	struct emcom_xengine_mpflow_iface *iface = NULL;
 	struct emcom_xengine_mpflow_node *node = NULL;
 	uint16_t port = sk->sk_num;
-	int i;
 
 	spin_lock_bh(&g_mpflow_lock);
 	index = emcom_xengine_mpflow_finduid(uid);
-	if (index != INDEX_INVALID) {
-		dst = sk_dst_get(sk);
-		if (dst) {
-			if (strncmp(EMCOM_WLAN_IFNAME, dst->dev->name, IFNAMSIZ) == 0) {
-				iface = &g_mpflow_uids[index].wifi;
-			} else if (strncmp(EMCOM_LTE_IFNAME, dst->dev->name, IFNAMSIZ) == 0) {
-				iface = &g_mpflow_uids[index].lte;
-			} else {
-				EMCOM_LOGD("sk port %u iface is %s", port, dst->dev->name);
-				dst_release(dst);
-				spin_unlock_bh(&g_mpflow_lock);
-				return;
-			}
-			dst_release(dst);
+	if (index == INDEX_INVALID) {
+		EMCOM_LOGD("emcom_xengine_mpflow_finduid fail");
+		spin_unlock_bh(&g_mpflow_lock);
+		return;
+	}
+	dst = sk_dst_get(sk);
+	if (dst) {
+		if (strncmp(EMCOM_WLAN_IFNAME, dst->dev->name, IFNAMSIZ) == 0) {
+			iface = &g_mpflow_uids[index].wifi;
+		} else if (strncmp(EMCOM_LTE_IFNAME, dst->dev->name, IFNAMSIZ) == 0) {
+			iface = &g_mpflow_uids[index].lte;
 		} else {
-			EMCOM_LOGD("sk port %u dst is not found", port);
+			EMCOM_LOGD("sk port %u iface is %s", port, dst->dev->name);
+			dst_release(dst);
 			spin_unlock_bh(&g_mpflow_lock);
 			return;
 		}
+		dst_release(dst);
+	} else {
+		EMCOM_LOGD("sk port %u dst is not found", port);
+		spin_unlock_bh(&g_mpflow_lock);
+		return;
+	}
 
-		sk->is_download_flow = 1;
+	sk->is_download_flow = 1;
 
-		node = kmalloc(sizeof(struct emcom_xengine_mpflow_node), GFP_ATOMIC);
-		if (node) {
-			node->last_bytes_received = tp->bytes_received;
-			for (i = EMCOM_MPFLOW_FI_STAT_SECONDS-1; i >= 0; i--)
-				node->rate_received[i] = 0;
-			node->tp = tp;
-			node->start_jiffies = jiffies;
-			sock_hold(sk);
-			list_add(&node->list, &iface->flows);
-			iface->flow_cnt++;
-			if (!g_mpflow_uids[index].is_downloading) {
-				EMCOM_LOGD("uid %u is_downloading", g_mpflow_uids[index].uid);
-				g_mpflow_uids[index].is_downloading = 1;
-				iface->start_jiffies = jiffies;
-			}
+	node = kmalloc(sizeof(struct emcom_xengine_mpflow_node), GFP_ATOMIC);
+	if (node) {
+		int i;
 
-			EMCOM_LOGD("sk %pK is a download flow sport %u ", tp, port);
-			if (!g_mpflow_tm_running) {
-				init_timer(&g_mpflow_tm);
-				g_mpflow_tm.function = emcom_xengine_mpflow_timer;
-				g_mpflow_tm.data     = (unsigned long)NULL;
-				g_mpflow_tm_running = true;
-				EMCOM_LOGD("start mpflow timer");
-				mod_timer(&g_mpflow_tm, jiffies + HZ);
-			}
+		node->last_bytes_received = tp->bytes_received;
+		for (i = EMCOM_MPFLOW_FI_STAT_SECONDS - 1; i >= 0; i--)
+			node->rate_received[i] = 0;
+		node->tp = tp;
+		node->start_jiffies = jiffies;
+		sock_hold(sk);
+		list_add(&node->list, &iface->flows);
+		iface->flow_cnt++;
+		if (!g_mpflow_uids[index].is_downloading) {
+			EMCOM_LOGD("uid %u is_downloading", g_mpflow_uids[index].uid);
+			g_mpflow_uids[index].is_downloading = 1;
+			iface->start_jiffies = jiffies;
 		}
-	} else
-		EMCOM_LOGD("emcom_xengine_mpflow_finduid fail");
 
+		EMCOM_LOGD("sk %pK is a download flow sport %u ", tp, port);
+		if (!g_mpflow_tm_running) {
+			init_timer(&g_mpflow_tm);
+			g_mpflow_tm.function = emcom_xengine_mpflow_timer;
+			g_mpflow_tm.data     = (unsigned long)NULL;
+			g_mpflow_tm_running = true;
+			EMCOM_LOGD("start mpflow timer");
+			mod_timer(&g_mpflow_tm, jiffies + HZ);
+		}
+	}
 	spin_unlock_bh(&g_mpflow_lock);
 }
 
@@ -2503,10 +2735,9 @@ static uint8_t *emcom_xengine_mpflow_make_skip(const uint8_t *ptrn, uint8_t plen
 	if (!skip)
 		return NULL;
 
-	for (i = 0; i < EMCOM_MPFLOW_FI_ASCII_CODE_SIZE; i++) {
+	for (i = 0; i < EMCOM_MPFLOW_FI_ASCII_CODE_SIZE; i++)
 		*(skip + i) = (plen >= EMCOM_MPFLOW_FI_ASCII_CODE_MARK) ?
 			EMCOM_MPFLOW_FI_ASCII_CODE_MARK : (plen + 1);
-	}
 	while (plen != 0)
 		*(skip + (uint8_t)*ptrn++) = plen--;
 	return skip;
@@ -2531,13 +2762,15 @@ static uint8_t *emcom_xengine_mpflow_make_shift(const uint8_t *ptrn, uint8_t ple
 	*sptr = 1;
 
 	while (sptr-- != shift) {
-		p1 = ptrn + plen - 2;
+		p1 = ptrn + (plen - 1) - 1;
 		do {
-			while ((p1 >= ptrn) && (*p1-- != c));
-			p2 = ptrn + plen - 2;
+			while ((p1 >= ptrn) && (*p1-- != c))
+				;
+			p2 = ptrn + (plen - 1) - 1;
 			p3 = p1;
 			while ((p3 >= ptrn) && (*p3-- == *p2--) &&
-				 (p2 >= pptr));
+				(p2 >= pptr))
+				;
 		} while ((p3 >= ptrn) && (p2 >= pptr));
 		*sptr = shift + plen - sptr + p2 - p3;
 		pptr--;
@@ -2558,14 +2791,14 @@ static void emcom_xengine_mpflow_bm_free(uint8_t **skip, uint8_t **shift)
 }
 
 static bool emcom_xengine_mpflow_bm_build(const uint8_t *ptn, uint32_t ptnlen,
-			uint8_t **skip, uint8_t **shift)
+	uint8_t **skip, uint8_t **shift)
 {
-	if (ptn != NULL && ptnlen > 0 && skip != NULL && shift != NULL) {
+	if ((ptn != NULL) && (ptnlen > 0) && (skip != NULL) && (shift != NULL)) {
 		*skip = emcom_xengine_mpflow_make_skip(ptn, ptnlen);
-		if (!(*skip))
+		if (!*skip)
 			return false;
 		*shift = emcom_xengine_mpflow_make_shift(ptn, ptnlen);
-		if (!(*shift)) {
+		if (!*shift) {
 			kfree(*skip);
 			*skip = NULL;
 			return false;
@@ -2576,33 +2809,31 @@ static bool emcom_xengine_mpflow_bm_build(const uint8_t *ptn, uint32_t ptnlen,
 }
 
 static bool emcom_xengine_mpflow_bm_search(const uint8_t *buf, uint32_t buflen,
-			const struct emcom_xengine_mpflow_ptn *sptn, uint32_t *offset)
+	const struct emcom_xengine_mpflow_ptn *sptn, uint32_t *offset)
 {
-	uint32_t ptnlen = sptn->ptnlen;
-	const uint8_t *ptn = sptn->ptn;
-	const uint8_t *skip = sptn->skip;
-	const uint8_t *shift = sptn->shift;
 	uint32_t pindex;
 	uint8_t skip_stride;
 	uint8_t shift_stride;
-	uint32_t bindex = ptnlen;
+	uint32_t bindex = sptn->ptnlen;
 
-	if (buf != NULL && ptn != NULL && skip != NULL &&
-		shift != NULL && ptnlen > 0 && buflen > ptnlen) {
-		while (bindex <= buflen) {
-			pindex = ptnlen;
-			while (ptn[--pindex] == buf[--bindex]) {
-				if (pindex == 0) {
-					if (offset != NULL)
-						*offset = bindex;
-					return true;
-				}
-			}
-			skip_stride = skip[buf[bindex]];
-			shift_stride = shift[pindex];
-			bindex += ((skip_stride > shift_stride) ?
-				skip_stride : shift_stride);
+	if ((buf == NULL) || (sptn->ptn == NULL) || (sptn->skip == NULL) || (sptn->shift == NULL)) {
+		return false;
+	}
+	if ((sptn->ptnlen <= 0) || (buflen <= sptn->ptnlen)) {
+		return false;
+	}
+	while (bindex <= buflen) {
+		pindex = sptn->ptnlen;
+		while (sptn->ptn[--pindex] == buf[--bindex]) {
+			if (pindex != 0)
+				continue;
+			if (offset != NULL)
+				*offset = bindex;
+			return true;
 		}
+		skip_stride = sptn->skip[buf[bindex]];
+		shift_stride = sptn->shift[pindex];
+		bindex += ((skip_stride > shift_stride) ? skip_stride : shift_stride);
 	}
 	return false;
 }
@@ -2631,9 +2862,17 @@ static void emcom_xengine_mpflow_apppriv_deinit(struct emcom_xengine_mpflow_info
 
 static void emcom_xengine_mpflow_fi_init(struct emcom_xengine_mpflow_info *mpflow_uid)
 {
-	memset(&mpflow_uid->wifi, 0, sizeof(struct emcom_xengine_mpflow_iface));
+	errno_t err;
+
+	err = memset_s(&mpflow_uid->wifi, sizeof(struct emcom_xengine_mpflow_iface),
+				   0, sizeof(struct emcom_xengine_mpflow_iface));
+	if (err != EOK)
+		EMCOM_LOGE("emcom_xengine_mpflow_fi_init memset failed");
 	mpflow_uid->wifi.is_wifi = 1;
-	memset(&mpflow_uid->lte, 0, sizeof(struct emcom_xengine_mpflow_iface));
+	err = memset_s(&mpflow_uid->lte, sizeof(struct emcom_xengine_mpflow_iface),
+				   0, sizeof(struct emcom_xengine_mpflow_iface));
+	if (err != EOK)
+		EMCOM_LOGE("emcom_xengine_mpflow_fi_init memset failed");
 	mpflow_uid->lte.is_wifi = 0;
 	INIT_LIST_HEAD(&mpflow_uid->wifi.flows);
 	INIT_LIST_HEAD(&mpflow_uid->lte.flows);
@@ -2654,36 +2893,40 @@ static bool emcom_xengine_mpflow_chk_download_flow(struct sk_buff *skb)
 
 	port = ntohs(tcph->dest);
 	/* download flow must be http(80) or https(443) */
-	if (port != EMCOM_MPFLOW_FI_PORT_80 && port != EMCOM_MPFLOW_FI_PORT_443)
+	if ((port != EMCOM_MPFLOW_FI_PORT_80) && (port != EMCOM_MPFLOW_FI_PORT_443))
 		return false;
 
 	spin_lock_bh(&g_mpflow_lock);
 	index = emcom_xengine_mpflow_finduid(skb->sk->sk_uid.val);
-	if (index != INDEX_INVALID) {
-		if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WEIBO) {
-			spin_unlock_bh(&g_mpflow_lock);
-			return true;
-		} else if (port == EMCOM_MPFLOW_FI_PORT_80 && g_mpflow_uids[index].ptn_80_num != 0) {
-			for (i = 0; i < g_mpflow_uids[index].ptn_80_num; i++) {
-				if (emcom_xengine_mpflow_bm_search((const uint8_t *)skb->data, buflen,
-					(const struct emcom_xengine_mpflow_ptn *)&(g_mpflow_uids[index].ptn_80[i]),
-					&offset)) {
-					EMCOM_LOGD("received a port 80 packet match ptn: %s\n",
-							   g_mpflow_uids[index].ptn_80[i].ptn);
-					spin_unlock_bh(&g_mpflow_lock);
-					return true;
-				}
+	if (index == INDEX_INVALID) {
+		EMCOM_LOGE("index is invalid\n");
+		spin_unlock_bh(&g_mpflow_lock);
+		return false;
+	}
+	if (g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WEIBO ||
+		g_mpflow_uids[index].algorithm_type == EMCOM_MPFLOW_ENABLETYPE_WIFI_PRI) {
+		spin_unlock_bh(&g_mpflow_lock);
+		return true;
+	} else if ((port == EMCOM_MPFLOW_FI_PORT_80) && (g_mpflow_uids[index].ptn_80_num != 0)) {
+		for (i = 0; i < g_mpflow_uids[index].ptn_80_num; i++) {
+			if (emcom_xengine_mpflow_bm_search((const uint8_t *)skb->data, buflen,
+				(const struct emcom_xengine_mpflow_ptn *)&(g_mpflow_uids[index].ptn_80[i]),
+				&offset)) {
+				EMCOM_LOGD("received a port 80 packet match ptn: %s\n",
+						   g_mpflow_uids[index].ptn_80[i].ptn);
+				spin_unlock_bh(&g_mpflow_lock);
+				return true;
 			}
-		} else if (port == EMCOM_MPFLOW_FI_PORT_443 && g_mpflow_uids[index].ptn_443_num != 0) {
-			for (i = 0; i < g_mpflow_uids[index].ptn_443_num; i++) {
-				if (emcom_xengine_mpflow_bm_search((const uint8_t *)skb->data, buflen,
-					(const struct emcom_xengine_mpflow_ptn *)&(g_mpflow_uids[index].ptn_443[i]),
-					&offset)) {
-					EMCOM_LOGD("received a port 443 packet match ptn: %s\n",
-							   g_mpflow_uids[index].ptn_443[i].ptn);
-					spin_unlock_bh(&g_mpflow_lock);
-					return true;
-				}
+		}
+	} else if ((port == EMCOM_MPFLOW_FI_PORT_443) && (g_mpflow_uids[index].ptn_443_num != 0)) {
+		for (i = 0; i < g_mpflow_uids[index].ptn_443_num; i++) {
+			if (emcom_xengine_mpflow_bm_search((const uint8_t *)skb->data, buflen,
+				(const struct emcom_xengine_mpflow_ptn *)&(g_mpflow_uids[index].ptn_443[i]),
+				&offset)) {
+				EMCOM_LOGD("received a port 443 packet match ptn: %s\n",
+						   g_mpflow_uids[index].ptn_443[i].ptn);
+				spin_unlock_bh(&g_mpflow_lock);
+				return true;
 			}
 		}
 	}
@@ -2691,23 +2934,20 @@ static bool emcom_xengine_mpflow_chk_download_flow(struct sk_buff *skb)
 	return false;
 }
 
-static unsigned int emcom_xengine_mpflow_hook_out(void *priv, struct sk_buff *skb,
-			const struct nf_hook_state *state)
+static unsigned int emcom_xengine_mpflow_hook_out_ipv4(void *priv, struct sk_buff *skb,
+	const struct nf_hook_state *state)
 {
 	struct sock *sk = skb->sk;
 	struct iphdr *iph = ip_hdr(skb);
 	struct tcphdr *tcph = tcp_hdr(skb);
 
-	if (!tcph)
-		return NF_ACCEPT;
-
 	if (!sk || !iph || !tcph)
 		return NF_ACCEPT;
 
-	if (sk->sk_protocol != IPPROTO_TCP || sk->sk_state != TCP_ESTABLISHED)
+	if ((sk->sk_state != TCP_ESTABLISHED) || (sk->sk_protocol != IPPROTO_TCP))
 		return NF_ACCEPT;
 
-	if (!sk->is_mp_flow || sk->is_download_flow || sk->snd_pkt_cnt > 0)
+	if (!sk->is_mp_flow || sk->is_download_flow || (sk->snd_pkt_cnt > 0))
 		return NF_ACCEPT;
 
 	if (skb_headlen(skb) <= (tcp_hdrlen(skb) + ip_hdrlen(skb)))
@@ -2719,15 +2959,40 @@ static unsigned int emcom_xengine_mpflow_hook_out(void *priv, struct sk_buff *sk
 	return NF_ACCEPT;
 }
 
+static unsigned int emcom_xengine_mpflow_hook_out_ipv6(void *priv, struct sk_buff *skb,
+	const struct nf_hook_state *state)
+{
+	struct sock *sk = skb->sk;
+	struct ipv6hdr *iph = ipv6_hdr(skb);
+	struct tcphdr *tcph = tcp_hdr(skb);
+
+	if (!sk || !iph || !tcph)
+		return NF_ACCEPT;
+
+	if ((sk->sk_state != TCP_ESTABLISHED) || (sk->sk_protocol != IPPROTO_TCP))
+		return NF_ACCEPT;
+
+	if (!sk->is_mp_flow || sk->is_download_flow || (sk->snd_pkt_cnt > 0))
+		return NF_ACCEPT;
+
+	if (skb_headlen(skb) <= (tcp_hdrlen(skb) + sizeof(struct ipv6hdr)))
+		return NF_ACCEPT;
+
+	sk->snd_pkt_cnt++;
+	if (emcom_xengine_mpflow_chk_download_flow(skb))
+		emcom_xengine_mpflow_download_flow_add(sk);
+	return NF_ACCEPT;
+}
+
 static const struct nf_hook_ops emcom_xengine_mpflow_nfhooks[] = {
 	{
-		.hook        = emcom_xengine_mpflow_hook_out,
+		.hook        = emcom_xengine_mpflow_hook_out_ipv4,
 		.pf          = PF_INET,
 		.hooknum     = NF_INET_LOCAL_OUT,
 		.priority    = NF_IP_PRI_FILTER + 1,
 	},
 	{
-		.hook        = emcom_xengine_mpflow_hook_out,
+		.hook        = emcom_xengine_mpflow_hook_out_ipv6,
 		.pf          = PF_INET6,
 		.hooknum     = NF_INET_LOCAL_OUT,
 		.priority    = NF_IP_PRI_FILTER + 1,
@@ -2736,7 +3001,7 @@ static const struct nf_hook_ops emcom_xengine_mpflow_nfhooks[] = {
 
 static void emcom_xengine_mpflow_register_nf_hook(void)
 {
-	int ret = 0;
+	int ret;
 
 	if (g_mpflow_nf_hook)
 		return;
@@ -2759,166 +3024,178 @@ static void emcom_xengine_mpflow_unregister_nf_hook(void)
 }
 
 #ifdef CONFIG_MPTCP
-void Emcom_Xengine_MptcpSocketClosed(void *data, int len)
+void emcom_xengine_mptcp_socket_closed(const void *data, int len)
 {
 	emcom_send_msg2daemon(NETLINK_EMCOM_KD_MPTCP_SOCKET_CLOSED, data, len);
 }
-EXPORT_SYMBOL(Emcom_Xengine_MptcpSocketClosed);
+EXPORT_SYMBOL(emcom_xengine_mptcp_socket_closed);
 
-void Emcom_Xengine_MptcpSocketSwitch(void *data, int len)
+void emcom_xengine_mptcp_socket_switch(const  void *data, int len)
 {
 	emcom_send_msg2daemon(NETLINK_EMCOM_KD_MPTCP_SOCKET_SWITCH, data, len);
 }
-EXPORT_SYMBOL(Emcom_Xengine_MptcpSocketSwitch);
+EXPORT_SYMBOL(emcom_xengine_mptcp_socket_switch);
 
-void Emcom_Xengine_MptcpProxyFallback(void *data, int len)
+void emcom_xengine_mptcp_proxy_fallback(const void *data, int len)
 {
 	emcom_send_msg2daemon(NETLINK_EMCOM_KD_MPTCP_PROXY_FALLBACK, data, len);
 }
-EXPORT_SYMBOL(Emcom_Xengine_MptcpProxyFallback);
+EXPORT_SYMBOL(emcom_xengine_mptcp_proxy_fallback);
 
-void Emcom_Xengine_MptcpFallback(void *data, int len)
+void emcom_xengine_mptcp_fallback(const void *data, int len)
 {
 	emcom_send_msg2daemon(NETLINK_EMCOM_KD_MPTCP_FALLBACK, data, len);
 }
-EXPORT_SYMBOL(Emcom_Xengine_MptcpFallback);
+EXPORT_SYMBOL(emcom_xengine_mptcp_fallback);
 #endif
 
-
-void Emcom_Xengine_EvtProc(int32_t event, uint8_t *pdata, uint16_t len)
+/*
+ * message proc , process every message for xengine module
+ */
+void emcom_xengine_evt_proc(int32_t event, const uint8_t *data, uint16_t len)
 {
-	switch(event)
-	{
-		case NETLINK_EMCOM_DK_START_ACC:
-			EMCOM_LOGD("emcom netlink receive acc start\n");
-			Emcom_Xengine_StartAccUid(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_STOP_ACC:
-			EMCOM_LOGD("emcom netlink receive acc stop\n");
-			Emcom_Xengine_StopAccUid(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_CLEAR:
-			EMCOM_LOGD("emcom netlink receive clear info\n");
-			Emcom_Xengine_clear();
-			break;
-		case NETLINK_EMCOM_DK_RRC_KEEP:
-			EMCOM_LOGD("emcom netlink receive rrc keep\n");
-			Emcom_Xengine_RrcKeep();
-			break;
-		case NETLINK_EMCOM_DK_KEY_PSINFO:
-			EMCOM_LOGD("emcom netlink receive psinfo\n");
-			Emcom_Send_KeyPsInfo(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_SPEED_CTRL:
-			EMCOM_LOGD("emcom netlink receive speed control uid\n");
-			Emcom_Xengine_SetSpeedCtrlInfo(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_START_UDP_RETRAN:
-			EMCOM_LOGD("emcom netlink receive wifi udp start\n");
-			Emcom_Xengine_StartUdpReTran(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_STOP_UDP_RETRAN:
-			EMCOM_LOGD("emcom netlink receive wifi udp stop\n");
-			Emcom_Xengine_StopUdpReTran(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_CONFIG_MPIP:
-			EMCOM_LOGD("emcom netlink receive btm config start\n");
-			Emcom_Xengine_Config_MPIP(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_CLEAR_MPIP:
-			EMCOM_LOGD("emcom netlink receive clear mpip config\n");
-			Emcom_Xengine_Clear_Mpip_Config(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_START_MPIP:
-			EMCOM_LOGD("emcom netlink receive btm start\n");
-			Emcom_Xengine_StartMPIP(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_STOP_MPIP:
-			EMCOM_LOGD("emcom netlink receive btm stop\n");
-			Emcom_Xengine_StopMPIP(pdata,len);
-			break;
-		case NETLINK_EMCOM_DK_START_FAST_SYN:
-			EMCOM_LOGD("emcom netlink receive fast syn start\n");
-			Emcom_Xengine_StartFastSyn(pdata, len);
-			break;
-		case NETLINK_EMCOM_DK_STOP_FAST_SYN:
-			EMCOM_LOGD("emcom netlink receive fast syn stop\n");
-			Emcom_Xengine_StopFastSyn(pdata, len);
-			break;
-		case NETLINK_EMCOM_DK_START_MPFLOW:
-			EMCOM_LOGD(" emcom netlink start mpflow control algorithm");
-			emcom_xengine_mpflow_start(pdata, len);
-			break;
-		case NETLINK_EMCOM_DK_STOP_MPFLOW:
-			EMCOM_LOGD(" emcom netlink stop mpflow control algorithm");
-			emcom_xengine_mpflow_stop(pdata, len);
-			break;
-		default:
-			EMCOM_LOGI("emcom Xengine unsupport packet, the type is %d.\n", event);
-			break;
+	switch (event) {
+	case NETLINK_EMCOM_DK_START_ACC:
+		EMCOM_LOGD("emcom netlink receive acc start");
+		emcom_xengine_start_acc_uid(data, len);
+		break;
+	case NETLINK_EMCOM_DK_STOP_ACC:
+		EMCOM_LOGD("emcom netlink receive acc stop");
+		emcom_xengine_stop_acc_uid(data, len);
+		break;
+	case NETLINK_EMCOM_DK_CLEAR:
+		EMCOM_LOGD("emcom netlink receive clear info");
+		emcom_xengine_clear();
+		break;
+	case NETLINK_EMCOM_DK_RRC_KEEP:
+		EMCOM_LOGD("emcom netlink receive rrc keep");
+		emcom_xengine_rrckeep();
+		break;
+	case NETLINK_EMCOM_DK_KEY_PSINFO:
+		EMCOM_LOGD("emcom netlink receive psinfo");
+		emcom_send_keypsinfo(data, len);
+		break;
+	case NETLINK_EMCOM_DK_SPEED_CTRL:
+		EMCOM_LOGD("emcom netlink receive speed control uid");
+		emcom_xengine_set_speedctrl_info(data, len);
+		break;
+	case NETLINK_EMCOM_DK_START_UDP_RETRAN:
+		EMCOM_LOGD("emcom netlink receive wifi udp start");
+		emcom_xengine_start_udpretran(data, len);
+		break;
+	case NETLINK_EMCOM_DK_STOP_UDP_RETRAN:
+		EMCOM_LOGD("emcom netlink receive wifi udp stop");
+		emcom_xengine_stop_udpretran(data, len);
+		break;
+	case NETLINK_EMCOM_DK_CONFIG_MPIP:
+		EMCOM_LOGD("emcom netlink receive btm config start");
+		emcom_xengine_config_mpip(data, len);
+		break;
+	case NETLINK_EMCOM_DK_CLEAR_MPIP:
+		EMCOM_LOGD("emcom netlink receive clear mpip config");
+		emcom_xengine_clear_mpip_config(data, len);
+		break;
+	case NETLINK_EMCOM_DK_START_MPIP:
+		EMCOM_LOGD("emcom netlink receive btm start");
+		emcom_xengine_start_mpip(data, len);
+		break;
+	case NETLINK_EMCOM_DK_STOP_MPIP:
+		EMCOM_LOGD("emcom netlink receive btm stop");
+		emcom_xengine_stop_mpip(data, len);
+		break;
+	case NETLINK_EMCOM_DK_START_FAST_SYN:
+		EMCOM_LOGD("emcom netlink receive fast syn start");
+		emcom_xengine_start_fastsyn(data, len);
+		break;
+	case NETLINK_EMCOM_DK_STOP_FAST_SYN:
+		EMCOM_LOGD("emcom netlink receive fast syn stop");
+		emcom_xengine_stop_fastsyn(data, len);
+		break;
+#ifdef CONFIG_HUAWEI_OPMP
+	case NETLINK_EMCOM_DK_OPMP_INIT_HEARTBEAT:
+		EMCOM_LOGD("emcom netlink received opmp init heartbeat");
+		opmp_event_process(event, data, len);
+		break;
+#endif
+	case NETLINK_EMCOM_DK_ACTIVE_CCALG:
+		EMCOM_LOGD(" emcom netlink active congestion control algorithm");
+		emcom_xengine_active_ccalg(data, len);
+		break;
+	case NETLINK_EMCOM_DK_DEACTIVE_CCALG:
+		EMCOM_LOGD(" emcom netlink deactive congestion control algorithm");
+		emcom_xengine_deactive_ccalg(data, len);
+		break;
+	case NETLINK_EMCOM_DK_START_MPFLOW:
+		EMCOM_LOGD(" emcom netlink start mpflow control algorithm");
+		emcom_xengine_mpflow_start(data, len);
+		break;
+	case NETLINK_EMCOM_DK_STOP_MPFLOW:
+		EMCOM_LOGD(" emcom netlink stop mpflow control algorithm");
+		emcom_xengine_mpflow_stop(data, len);
+		break;
+	default:
+		EMCOM_LOGI("emcom Xengine unsupport packet, the type is %d.\n", event);
+		break;
 	}
 }
 
 
-int Emcom_Xengine_SetProxyUid(struct sock *sk, char __user *optval, int optlen)
+int emcom_xengine_setproxyuid(struct sock *sk, const char __user *optval, int optlen)
 {
-    uid_t uid = 0;
-    int ret = 0;
+	uid_t uid = 0;
+	int ret;
 
-    ret = -EINVAL;
-    if (optlen != sizeof(uid_t))
-        goto out;
+	ret = -EINVAL;
+	if (optlen != sizeof(uid_t))
+		return ret;
 
-    ret = -EFAULT;
-    if (copy_from_user(&uid, optval, optlen))
-        goto out;
+	ret = -EFAULT;
+	if (copy_from_user(&uid, optval, optlen))
+		return ret;
 
-    lock_sock(sk);
-    sk->sk_uid.val = uid;
-    release_sock(sk);
-    EMCOM_LOGD("hicom set proxy uid, uid: %u", sk->sk_uid.val);
+	lock_sock(sk);
+	sk->sk_uid.val = uid;
+	release_sock(sk);
+	EMCOM_LOGD("hicom set proxy uid, uid: %u", sk->sk_uid.val);
+	ret = 0;
 
-    ret = 0;
-
-out:
-
-    return ret;
+	return ret;
 }
 
-int Emcom_Xengine_SetSockFlag(struct sock *sk, char __user *optval, int optlen)
+int emcom_xengine_setsockflag(struct sock *sk, const char __user *optval, int optlen)
 {
-    int ret = 0;
-    int hicom_flag = 0;
+	int ret;
+	int hicom_flag = 0;
 
-    ret = -EINVAL;
-    if (optlen != sizeof(uid_t))
-        goto out;
+	ret = -EINVAL;
+	if (optlen != sizeof(uid_t))
+		return ret;
 
-    ret = -EFAULT;
-    if (copy_from_user(&hicom_flag, optval, optlen))
-        goto out;
+	ret = -EFAULT;
+	if (copy_from_user(&hicom_flag, optval, optlen))
+		return ret;
 
-    lock_sock(sk);
-    sk->hicom_flag = hicom_flag;
-    release_sock(sk);
+	lock_sock(sk);
+	sk->hicom_flag = hicom_flag;
+	release_sock(sk);
 
-    EMCOM_LOGD(" hicom set proxy flag, uid: %u, flag: %x", sk->sk_uid.val, sk->hicom_flag);
+	EMCOM_LOGD(" hicom set proxy flag, uid: %u, flag: %x", sk->sk_uid.val, \
+		sk->hicom_flag);
+	ret = 0;
 
-    ret = 0;
-
-out:
-
-    return ret;
+	return ret;
 }
 
-void Emcom_Xengine_NotifySockError(struct sock *sk)
+void emcom_xengine_notify_sock_error(struct sock *sk)
 {
-    if (sk->hicom_flag == HICOM_SOCK_FLAG_FINTORST) {
-        EMCOM_LOGD(" hicom change fin to rst, uid: %u, flag: %x", sk->sk_uid.val, sk->hicom_flag);
-        sk->sk_err = ECONNRESET;
-        sk->sk_error_report(sk);
-    }
+	if (sk->hicom_flag == HICOM_SOCK_FLAG_FINTORST) {
+		EMCOM_LOGD(" hicom change fin to rst, uid: %u, flag: %x", sk->sk_uid.val, sk->hicom_flag);
+		sk->sk_err = ECONNRESET;
+		sk->sk_error_report(sk);
+	}
 
-    return;
+	return;
 }
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("xengine module driver");
 

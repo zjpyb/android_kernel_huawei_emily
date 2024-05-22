@@ -3,6 +3,7 @@
 /*****************************************************************************
   1 头文件包含
 *****************************************************************************/
+#include <linux/types.h>
 #include "drv_mailbox_cfg.h"
 #include "drv_mailbox_debug.h"
 #include "drv_mailbox_gut.h"
@@ -93,6 +94,7 @@ MAILBOX_EXTERN int mailbox_log_erro(
 }
 #endif
 
+#ifdef MAILBOX_OPEN_MNTN
 unsigned int g_mb_trans_time_limit = MAILBOX_MAIL_TRANS_TIME_LIMIT;
 unsigned int g_mb_deal_time_limit = MAILBOX_MAIL_DEAL_TIME_LIMIT;
 unsigned int g_mb_sche_limit = MAILBOX_MAIL_SCHE_TIME_LIMIT;
@@ -110,11 +112,6 @@ void mailbox_statistic_slice(
     unsigned int slice_start = slice->start;
 
     slice_diff = mailbox_get_slice_diff(slice_start, slice_end);
-    /*lint -e685*//*lint -e568*/
-    if (slice_diff < 0) {
-        return;
-    }
-    /*lint +e685*//*lint +e568*/
 
 	/*记录回调历史总耗时*/
 	slice_end = slice->total;
@@ -224,7 +221,7 @@ void mailbox_record_receive(
 /*清除某个邮箱通道的可维可测信息*/
 void mailbox_clear_mntn( struct mb_mntn *mntn, int clear)
 {
-	struct mb_buff	 *mbuff;
+	struct mb_buff *mbuff = NULL;
 	if (clear) {
 		mbuff = mntn->mbuff;
 		mailbox_memset(mntn, 0x00, sizeof(struct mb_mntn));
@@ -239,20 +236,20 @@ void mailbox_clear_mntn( struct mb_mntn *mntn, int clear)
 /*lint -e818*/
 MAILBOX_LOCAL void mailbox_show_general(struct mb_cfg *cfg)
 {
-    struct mb_head   *pBoxHead   =  (struct mb_head*)(cfg->head_addr);
+    struct mb_head   *pBoxHead   =  (struct mb_head*)(uintptr_t)(cfg->head_addr);
 
 	/*总体信息*/
     mailbox_out(("Max Id,      HeadAddr,    DataAddr,     DataSize,   IntSrcId"RT));
     mailbox_out(("0x%08x,  0x%pK,  0x%pK,   0x%08x, %04d"RT,(unsigned int)cfg->butt_id,
-				 (void *)cfg->head_addr, (void *)cfg->data_addr,
+				 (void *)(uintptr_t)cfg->head_addr, (void *)(uintptr_t)cfg->data_addr,
 				 (unsigned int)cfg->data_size, (unsigned int)cfg->int_src));
 	mailbox_out(("Head information:"RT));
 
 	/*打印此邮箱的邮箱头内容。*/
 	mailbox_out(("Head Front: 0x%x (0x%pK)"RT,  (unsigned int)pBoxHead->ulFront,
-				 (void *)(cfg->data_addr + (pBoxHead->ulFront * sizeof(unsigned long)))));
+				 (void *)(uintptr_t)(cfg->data_addr + (pBoxHead->ulFront * sizeof(unsigned long)))));
 	mailbox_out(("Head Rear: 0x%x (0x%pK)"RT, (unsigned int)pBoxHead->ulRear,
-				 (void *)(cfg->data_addr + (pBoxHead->ulRear * sizeof(unsigned long)))));
+				 (void *)(uintptr_t)(cfg->data_addr + (pBoxHead->ulRear * sizeof(unsigned long)))));
 	mailbox_out(("Head Frontslice: 0x%x"RT, (unsigned int)pBoxHead->ulFrontslice));
 	mailbox_out(("Head Rearslice: 0x%x"RT,	(unsigned int)pBoxHead->ulRearslice));
 	mailbox_out((":-------------------------------------------------------------:"RT));
@@ -319,11 +316,11 @@ MAILBOX_LOCAL void mailbox_show_detail(struct mb *mb,
 									   struct mb_buff *mbuf,
 									   int clear)
 {
-	struct mb_mntn		  *mntn 		=  MAILBOX_NULL;  /*此邮箱通道的可维可测数据*/
-    unsigned int          channel  =  mbuf->channel_id;
-	struct mb_queue 	  *queue   =  &mbuf->mail_queue;
-	struct mb_mail		  *mail;
-    unsigned int i;
+	struct mb_mntn *mntn =  MAILBOX_NULL;  /*此邮箱通道的可维可测数据*/
+	unsigned int channel = mbuf->channel_id;
+	struct mb_queue *queue = &mbuf->mail_queue;
+	struct mb_mail *mail = NULL;
+	unsigned int i;
 
 	mailbox_out(("mail box show channel(0x%08x) information:"RT, (unsigned int)channel));
 
@@ -337,7 +334,7 @@ MAILBOX_LOCAL void mailbox_show_detail(struct mb *mb,
     mailbox_out(("id   ,address     ,send slice   ,recv slice  ,diff slice"RT));
 	do {
 		i = ((0 == i) ? (MAILBOX_RECORD_USEID_NUM - 1) : (i - 1));
-        mail = (struct mb_mail *)(mntn->track_array[i].mail_addr);
+        mail = (struct mb_mail *)(uintptr_t)(mntn->track_array[i].mail_addr);
 
 		if (mail && (0 == mntn->track_array[i].recv_slice)) {
 			mntn->track_array[i].recv_slice = mail->ulReadSlice;
@@ -460,6 +457,16 @@ MAILBOX_EXTERN int mailbox_show(
 	mailbox_out((":================================================:"RT));
 	return MAILBOX_OK;
 }
+#else
+
+MAILBOX_EXTERN int mailbox_show(
+                unsigned int    channel,
+                unsigned int    show_flag)
+{
+	return MAILBOX_OK;
+}
+
+#endif
 /*lint -e838*/
 /*lint -e818*/
 

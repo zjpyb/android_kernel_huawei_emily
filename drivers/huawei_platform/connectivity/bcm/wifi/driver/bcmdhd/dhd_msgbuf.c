@@ -2647,10 +2647,10 @@ dhd_msgbuf_rxbuf_post(dhd_pub_t *dhd, bool use_rsv_pktid)
 static int BCMFASTPATH
 dhd_prot_rxbuf_post(dhd_pub_t *dhd, uint16 count, bool use_rsv_pktid)
 {
-	void *p;
+	void *p = NULL;
 	uint16 pktsz = DHD_FLOWRING_RX_BUFPOST_PKTSZ;
-	uint8 *rxbuf_post_tmp;
-	host_rxbuf_post_t *rxbuf_post;
+	uint8 *rxbuf_post_tmp = NULL;
+	host_rxbuf_post_t *rxbuf_post = NULL;
 	void *msg_start;
 	dmaaddr_t pa;
 	uint32 pktlen;
@@ -3425,8 +3425,8 @@ dhd_prot_txstatus_process(dhd_pub_t *dhd, void *msg)
 	void *pkt = NULL;
 	dmaaddr_t pa;
 	uint32 len = 0;
-	void *dmah;
-	void *secdma;
+	void *dmah = NULL;
+	void *secdma = NULL;
 #ifdef DEVICE_TX_STUCK_DETECT
 	flow_ring_node_t *flow_ring_node;
 	uint16 flowid;
@@ -3711,8 +3711,8 @@ dhd_prot_txdata(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 		dhd_prot_alloc_ring_space(dhd, ring, 1, &alloced, FALSE);
 	if (txdesc == NULL) {
 #if defined(DHD_PCIE_PKTID)
-		void *dmah;
-		void *secdma;
+		void *dmah = NULL;
+		void *secdma = NULL;
 		/* Free up the PKTID. physaddr and pktlen will be garbage. */
 		DHD_PKTID_TO_NATIVE(dhd, dhd->prot->pktid_map_handle, pktid,
 			pa, pktlen, dmah, secdma, PKTTYPE_NO_CHECK);
@@ -5211,7 +5211,7 @@ dhd_prot_upd_read_idx(dhd_pub_t *dhd, msgbuf_ring_t * ring)
 static void
 dhd_prot_dma_indx_set(dhd_pub_t *dhd, uint16 new_index, uint8 type, uint16 ringid)
 {
-	uint8 *ptr;
+	uint8 *ptr = NULL;
 	uint16 offset;
 	dhd_prot_t *prot = dhd->prot;
 

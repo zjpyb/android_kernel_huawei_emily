@@ -39,7 +39,7 @@ HWLOG_REGIST();
 static u32 g_asw_protect_support;
 static int g_asw_iin_limit;
 static int g_is_nv_need_save = 1;
-static struct wake_lock asw_lock;
+static struct wakeup_source asw_lock;
 
 int asw_get_iin_limit(void)
 {
@@ -51,21 +51,23 @@ void asw_set_iin_limit(int value)
 	g_asw_iin_limit = value;
 }
 
+/*lint -e454 -e455 -e456*/
 static void asw_protect_wake_lock(void)
 {
-	if (!wake_lock_active(&asw_lock)) {
-		wake_lock(&asw_lock);
-		hwlog_info("asw_protect_wake_lock\n");
+	if (!asw_lock.active) {
+		__pm_stay_awake(&asw_lock);
+		hwlog_info("asw protect wake lock\n");
 	}
 }
 
 static void asw_protect_wake_unlock(void)
 {
-	if (wake_lock_active(&asw_lock)) {
-		wake_unlock(&asw_lock);
-		hwlog_info("asw_protect_wake_unlock\n");
+	if (asw_lock.active) {
+		__pm_relax(&asw_lock);
+		hwlog_info("asw protect wake unlock\n");
 	}
 }
+/*lint +e454 +e455 +e456*/
 
 /*
  * asw_print_battery_data - Print battery modeling data
@@ -367,10 +369,10 @@ static int interpolation_calc(const int *x_array, const int *y_array,
 		else
 			n += (x - x_array[i]);
 
-		if (x_array[i + 1] - x > 0)
-			n += (x_array[i + 1] - x);
+		if (x_array[i + 1] - x > 0) /*lint !e679*/
+			n += (x_array[i + 1] - x); /*lint !e679*/
 		else
-			n += (x - x_array[i + 1]);
+			n += (x - x_array[i + 1]); /*lint !e679*/
 
 		if (n < temp) {
 			temp = n;
@@ -428,7 +430,7 @@ static int asw_calculate_battery_data(struct hisi_coul_battery_data *pdat,
 	int *percent = NULL;
 
 	if (!di || !pdat) {
-		hwlog_err("asw_calculate_battery_data null point\n");
+		hwlog_err("asw calculate battery data null point\n");
 		return -EINVAL;
 	}
 
@@ -541,7 +543,6 @@ static int asw_hw_coul_fcc_operate(struct smartstar_coul_device *di,
 {
 	int ret;
 	int i;
-	int j;
 	struct hisi_nve_info_user nve;
 	struct ss_coul_nv_info *hi_info = NULL;
 
@@ -828,7 +829,7 @@ void asw_protect_do_work(struct work_struct *work)
 
 	voltage = hisi_battery_voltage();
 	if (voltage >= (di->batt_data->vbatt_max -
-			ASW_PROTECT_DELTA_VOLT)) {
+			ASW_PROTECT_DELTA_VOLT)) { /*lint !e574*/
 		di->hw_nv_info.asw_protect_status = ASW_PROTECT_FLAG_START;
 		if (g_is_nv_need_save) {
 			asw_protect_save_info_to_nv(di);
@@ -874,7 +875,7 @@ void asw_protect_check(struct smartstar_coul_device *di)
 		return;
 	}
 
-	wake_lock_init(&asw_lock, WAKE_LOCK_SUSPEND, "asw_wakelock");
+	wakeup_source_init(&asw_lock, "asw_wakelock");
 	INIT_DELAYED_WORK(&di->asw_protect_do_delayed_work,
 		asw_protect_do_work);
 
@@ -927,6 +928,6 @@ void asw_protect_exit(struct smartstar_coul_device *di)
 		return;
 	}
 
-	wake_lock_destroy(&asw_lock);
+	wakeup_source_trash(&asw_lock);
 	cancel_delayed_work(&di->asw_protect_do_delayed_work);
 }

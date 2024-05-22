@@ -55,6 +55,11 @@
 	"/vendor/bin/diagserver:/vendor/bin/fcs:/vendor/bin/gcovd:"           \
 	"/vendor/bin/hwemerffu:/vendor/bin/modemchr:"                         \
 	"/vendor/bin/modemlogcat_via:/vendor/bin/statusd:"                    \
-	"/system/bin/tee_auth_daemon"
+	"/system/bin/tee_auth_daemon:"                                        \
+	"/system/bin/ntfs-3g:/system/bin/fsck.exfat:"                         \
+	"/system/bin/patchoat:/system/bin/init:/system/bin/apexd:"            \
+	"/vendor/bin/sh:/vendor/bin/toybox_vendor:"                           \
+	"/vendor/bin/mac_addr_normalization:/system/bin/fsck_msdos:"          \
+	"/vendor/bin/hw/vendor.huawei.hardware.hwupdate@1.0-service"
 #endif
 

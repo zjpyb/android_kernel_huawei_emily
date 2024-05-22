@@ -102,12 +102,12 @@ static inline void decode_ctrl_reg(u32 reg,
 
 #ifdef CONFIG_HAVE_HW_BREAKPOINT_ADDR_MASK
 /* Addr Mask */
-#define ARM_WATCHPOINT_ADDR_MASK_0		0
-#define ARM_WATCHPOINT_ADDR_MASK_3		3
-#define ARM_WATCHPOINT_ADDR_MASK_MAX	31
+#define ARM_WATCHPOINT_ADDR_MASK_0      0
+#define ARM_WATCHPOINT_ADDR_MASK_3      3
+#define ARM_WATCHPOINT_ADDR_MASK_MAX    31
 
 /* SSC */
-#define ARM_SSC_NON_SECURE	1
+#define ARM_SSC_NON_SECURE  1
 #endif
 
 /* Kernel stepping */
@@ -175,7 +175,7 @@ static inline void ptrace_hw_copy_thread(struct task_struct *task)
 /* Determine number of BRP registers available. */
 static inline int get_num_brps(void)
 {
-	u64 dfr0 = read_system_reg(SYS_ID_AA64DFR0_EL1);
+	u64 dfr0 = read_sanitised_ftr_reg(SYS_ID_AA64DFR0_EL1);
 	return 1 +
 		cpuid_feature_extract_unsigned_field(dfr0,
 						ID_AA64DFR0_BRPS_SHIFT);
@@ -184,7 +184,7 @@ static inline int get_num_brps(void)
 /* Determine number of WRP registers available. */
 static inline int get_num_wrps(void)
 {
-	u64 dfr0 = read_system_reg(SYS_ID_AA64DFR0_EL1);
+	u64 dfr0 = read_sanitised_ftr_reg(SYS_ID_AA64DFR0_EL1);
 	return 1 +
 		cpuid_feature_extract_unsigned_field(dfr0,
 						ID_AA64DFR0_WRPS_SHIFT);

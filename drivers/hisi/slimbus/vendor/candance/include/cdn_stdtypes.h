@@ -16,13 +16,12 @@
 #define NULL	((void *)0)
 #endif
 
-/* Define size_t data type */
-typedef uintptr_t	size_t;
-
 /* Define bool data type */
+//lint -esym(652,*)
 #define bool	_Bool
 #define true	1
 #define false	0
 #define __bool_true_false_are_defined 1
+//lint +esym(652,*)
 
 #endif	/* __INCLUDE_CDN_STDTYPES_H__ */

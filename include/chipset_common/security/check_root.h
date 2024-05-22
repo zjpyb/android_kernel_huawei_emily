@@ -1,21 +1,24 @@
 /*
- * check_root proc and stp trace log save
+ * check_root.h
  *
- * Copyright (c) 2001-2017, Huawei Tech. Co., Ltd., Zhebo Zhang <zhangzhebo at huawei.com>
- * Copyright (C) 2018 Huawei Tech. Co., Ltd., Ningyu Wang <wangningyu at huawei.com>
+ * check_root proc and funcitons
  *
+ * Copyright (c) 2001-2019, Huawei Tech. Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #ifndef _CHECK_ROOT_H_
 #define _CHECK_ROOT_H_
 
 #include <linux/types.h>
-
-#define STP_NAME_USERCOPY      "usercopy"
-#define STP_NAME_CFI           "cfi"
-
-#define STP_ID_USERCOPY        0x00000180
-#define STP_ID_CFI             0x00000181
 
 #define CHECKROOT_SETUID_FLAG     (1 << 0)
 #define CHECKROOT_SETGID_FLAG     (1 << 1)
@@ -35,15 +38,12 @@ extern int checkroot_setuid(uid_t uid);
 extern int checkroot_setgid(gid_t gid);
 extern int checkroot_setresuid(uid_t uid);
 extern int checkroot_setresgid(gid_t gid);
-extern void stp_save_trace_log(const char *name);
 #else
 static inline uint get_setids_state(void) { return 0; }
 static inline int checkroot_setuid(uid_t uid) { return 0; }
 static inline int checkroot_setgid(gid_t gid) { return 0; }
 static inline int checkroot_setresuid(uid_t uid) { return 0; }
 static inline int checkroot_setresgid(gid_t gid) { return 0; }
-static inline void stp_save_trace_log(const char *name) {}
-#endif
+#endif // CONFIG_HUAWEI_PROC_CHECK_ROOT
 
-
-#endif
+#endif // _CHECK_ROOT_H_

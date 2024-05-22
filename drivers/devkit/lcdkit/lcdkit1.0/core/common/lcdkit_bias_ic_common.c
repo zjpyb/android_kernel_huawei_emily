@@ -104,7 +104,7 @@ struct lcd_bias_voltage_info * lcdkit_get_lcd_bias_ic_info(void)
 }
 
 
-void lcdkit_bias_ic_propname_cat(char*pdest, char*psrc, int len)
+void lcdkit_bias_ic_propname_cat(char *pdest, const char *psrc, int len)
 {
     if(NULL == pdest || NULL == psrc)
     {
@@ -436,7 +436,7 @@ static void __exit lcdkit_bias_ic_module_exit(void)
 	i2c_del_driver(&lcdkit_bias_ic_driver);
 }
 
-module_init(lcdkit_bias_ic_module_init);
+late_initcall(lcdkit_bias_ic_module_init);
 module_exit(lcdkit_bias_ic_module_exit);
 MODULE_DESCRIPTION("AWINIC bias ic common driver");
 MODULE_LICENSE("GPL v2");

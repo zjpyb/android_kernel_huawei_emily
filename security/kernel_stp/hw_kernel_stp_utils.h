@@ -39,7 +39,7 @@
 
 #define KSTP_DEBUG "[Debug]"
 #define KSTPLogDebug(tag, fmt, args...) \
-	printk_ratelimited(KERN_DEBUG "%s[%s][%s] " fmt "\n", KSTP_DEBUG, \
+	printk_ratelimited("%s[%s][%s] " fmt "\n", KSTP_DEBUG, \
 							tag, __func__, ##args)
 
 #else

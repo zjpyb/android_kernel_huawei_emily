@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM wbt
 
@@ -5,7 +6,7 @@
 #define _TRACE_WBT_H
 
 #include <linux/tracepoint.h>
-#include <linux/wbt.h>
+#include "../../../block/blk-wbt.h"
 
 /**
  * wbt_stat - trace stats for blk_wb
@@ -67,10 +68,10 @@ TRACE_EVENT(wbt_lat,
 
 	TP_fast_assign(
 		strncpy(__entry->name, dev_name(bdi->dev), 32);
-		__entry->lat = lat;
+		__entry->lat = div_u64(lat, 1000);
 	),
 
-	TP_printk("%s: latency %llu\n", __entry->name,
+	TP_printk("%s: latency %lluus\n", __entry->name,
 			(unsigned long long) __entry->lat)
 );
 
@@ -86,7 +87,7 @@ TRACE_EVENT(wbt_lat,
 TRACE_EVENT(wbt_step,
 
 	TP_PROTO(struct backing_dev_info *bdi, const char *msg,
-		 unsigned int step, unsigned long window, unsigned int bg,
+		 int step, unsigned long window, unsigned int bg,
 		 unsigned int normal, unsigned int max),
 
 	TP_ARGS(bdi, msg, step, window, bg, normal, max),
@@ -94,7 +95,7 @@ TRACE_EVENT(wbt_step,
 	TP_STRUCT__entry(
 		__array(char, name, 32)
 		__field(const char *, msg)
-		__field(unsigned int, step)
+		__field(int, step)
 		__field(unsigned long, window)
 		__field(unsigned int, bg)
 		__field(unsigned int, normal)
@@ -105,15 +106,46 @@ TRACE_EVENT(wbt_step,
 		strncpy(__entry->name, dev_name(bdi->dev), 32);
 		__entry->msg	= msg;
 		__entry->step	= step;
-		__entry->window	= window;
+		__entry->window	= div_u64(window, 1000);
 		__entry->bg	= bg;
 		__entry->normal	= normal;
 		__entry->max	= max;
 	),
 
-	TP_printk("%s: %s: step=%u, window=%lu, background=%u, normal=%u, max=%u\n",
+	TP_printk("%s: %s: step=%d, window=%luus, background=%u, normal=%u, max=%u\n",
 		  __entry->name, __entry->msg, __entry->step, __entry->window,
 		  __entry->bg, __entry->normal, __entry->max)
+);
+
+/**
+ * wbt_timer - trace wb timer event
+ * @status: timer state status
+ * @step: the current scale step count
+ * @inflight: tracked writes inflight
+ */
+TRACE_EVENT(wbt_timer,
+
+	TP_PROTO(struct backing_dev_info *bdi, unsigned int status,
+		 int step, unsigned int inflight),
+
+	TP_ARGS(bdi, status, step, inflight),
+
+	TP_STRUCT__entry(
+		__array(char, name, 32)
+		__field(unsigned int, status)
+		__field(int, step)
+		__field(unsigned int, inflight)
+	),
+
+	TP_fast_assign(
+		strncpy(__entry->name, dev_name(bdi->dev), 32);
+		__entry->status		= status;
+		__entry->step		= step;
+		__entry->inflight	= inflight;
+	),
+
+	TP_printk("%s: status=%u, step=%d, inflight=%u\n", __entry->name,
+		  __entry->status, __entry->step, __entry->inflight)
 );
 
 #endif /* _TRACE_WBT_H */

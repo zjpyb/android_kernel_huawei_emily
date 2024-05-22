@@ -52,7 +52,7 @@ static bool hkip_compute_uid_root(const struct cred *creds)
 
 int hkip_check_uid_root(void)
 {
-	const struct cred *creds;
+	const struct cred *creds = NULL;
 
 	if (hkip_get_current_bit(hkip_uid_root_bits, true)) {
 		return 0;
@@ -88,7 +88,7 @@ static bool hkip_compute_gid_root(const struct cred *creds)
 
 int hkip_check_gid_root(void)
 {
-	const struct cred *creds;
+	const struct cred *creds = NULL;
 
 	if (hkip_get_current_bit(hkip_gid_root_bits, true)) {
 		return 0;

@@ -34,9 +34,10 @@
 #include <net/mptcp_v6.h>
 
 #include <linux/kconfig.h>
-#ifdef CONFIG_HW_NETWORK_MEASUREMENT
-#include <huawei_platform/emcom/smartcare/network_measurement/nm.h>
-#endif /* CONFIG_HW_NETWORK_MEASUREMENT */
+
+#ifdef CONFIG_MPTCP_EPC
+#include <net/mptcp_epc.h>
+#endif
 
 /* is seq1 < seq2 ? */
 static inline bool before64(const u64 seq1, const u64 seq2)
@@ -78,6 +79,7 @@ static inline int mptcp_tso_acked_reinject(const struct sock *meta_sk,
 
 	TCP_SKB_CB(skb)->seq += len;
 	skb->ip_summed = CHECKSUM_PARTIAL;
+
 	if (delta_truesize)
 		skb->truesize -= delta_truesize;
 
@@ -423,6 +425,7 @@ static inline void mptcp_prepare_skb(struct sk_buff *skb,
 	tcb->end_seq = tcb->seq + skb->len + inc;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 /**
  * @return: 1 if the segment has been eaten and can be suppressed,
  *          otherwise 0.
@@ -437,10 +440,6 @@ static inline int mptcp_direct_copy(const struct sk_buff *skb,
 	__set_current_state(TASK_RUNNING);
 
 	if (!skb_copy_datagram_msg(skb, 0, meta_tp->ucopy.msg, chunk)) {
-#ifdef CONFIG_HW_NETWORK_MEASUREMENT
-		if (unlikely(nm_sample_on(meta_sk)))
-			nm_nse(meta_sk, (struct sk_buff *)skb, 0, chunk, NM_TCP, NM_DOWNLINK, NM_FUNC_HTTP);
-#endif /* CONFIG_HW_NETWORK_MEASUREMENT */
 		meta_tp->ucopy.len -= chunk;
 		meta_tp->copied_seq += chunk;
 		eaten = (chunk == skb->len);
@@ -448,6 +447,7 @@ static inline int mptcp_direct_copy(const struct sk_buff *skb,
 	}
 	return eaten;
 }
+#endif
 
 static inline void mptcp_reset_mapping(struct tcp_sock *tp, u32 old_copied_seq)
 {
@@ -1004,7 +1004,11 @@ static int mptcp_queue_skb(struct sock *sk)
 		/* Quick ACK if more 3/4 of the receive window is filled */
 		if (after64(tp->mptcp->map_data_seq,
 			    rcv_nxt64 + 3 * (tcp_receive_window(meta_tp) >> 2)))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+			tcp_enter_quickack_mode(sk, TCP_MAX_QUICKACKS);
+#else
 			tcp_enter_quickack_mode(sk);
+#endif
 
 	} else {
 		/* Ready for the meta-rcv-queue */
@@ -1033,20 +1037,23 @@ static int mptcp_queue_skb(struct sock *sk)
 			if (mpcb->sched_ops->rcv_skb)
 				(*mpcb->sched_ops->rcv_skb)(sk, tmp1->len,
 						TCP_SKB_CB(tmp1)->end_seq, 1);
-
+#ifdef CONFIG_MPTCP_EPC
 			/*update rcv_nxt and free the socks skb, not report read event to user*/
-			if ((tp->mptcp_cap_flag == MPTCP_CAP_ALL_APP) && (mptcp_hw_socks_recv(sk, tmp1) == 0)) {
+			if ((meta_tp->mptcp_cap_flag == MPTCP_CAP_ALL_APP) && (mptcp_hw_socks_recv(sk, tmp1) == 0)) {
 				meta_tp->rcv_nxt = TCP_SKB_CB(tmp1)->end_seq;
+				meta_tp->copied_seq = TCP_SKB_CB(tmp1)->end_seq;
 				__kfree_skb(tmp1);
-				break;
+				goto next;
 			}
-
+#endif
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 			/* Is direct copy possible ? */
 			if (TCP_SKB_CB(tmp1)->seq == meta_tp->rcv_nxt &&
 			    meta_tp->ucopy.task == current &&
 			    meta_tp->copied_seq == meta_tp->rcv_nxt &&
 			    meta_tp->ucopy.len && sock_owned_by_user(meta_sk))
 				eaten = mptcp_direct_copy(tmp1, meta_sk);
+#endif
 
 			if (mpcb->in_time_wait) /* In time-wait, do not receive data */
 				eaten = 1;
@@ -1077,7 +1084,11 @@ next:
 		}
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_jiffies32;
+#else
 	inet_csk(meta_sk)->icsk_ack.lrcvtime = tcp_time_stamp;
+#endif
 	mptcp_reset_mapping(tp, old_copied_seq);
 
 	return data_queued ? -1 : -2;
@@ -1089,6 +1100,10 @@ void mptcp_data_ready(struct sock *sk)
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct sk_buff *skb, *tmp;
 	int queued = 0;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	tcp_mstamp_refresh(tcp_sk(meta_sk));
+#endif
 
 	/* restart before the check, because mptcp_fin might have changed the
 	 * state.
@@ -1466,9 +1481,14 @@ static void mptcp_snd_una_update(struct tcp_sock *meta_tp, u32 data_ack)
 {
 	u32 delta = data_ack - meta_tp->snd_una;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	sock_owned_by_me((struct sock *)meta_tp);
+	meta_tp->bytes_acked += delta;
+#else
 	u64_stats_update_begin(&meta_tp->syncp);
 	meta_tp->bytes_acked += delta;
 	u64_stats_update_end(&meta_tp->syncp);
+#endif
 	meta_tp->snd_una = data_ack;
 }
 
@@ -1565,7 +1585,11 @@ static void mptcp_data_ack(struct sock *sk, const struct sk_buff *skb)
 	 */
 	sk->sk_err_soft = 0;
 	inet_csk(meta_sk)->icsk_probes_out = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	meta_tp->rcv_tstamp = tcp_jiffies32;
+#else
 	meta_tp->rcv_tstamp = tcp_time_stamp;
+#endif
 	prior_packets = meta_tp->packets_out;
 	if (!prior_packets)
 		goto no_queue;
@@ -1951,8 +1975,13 @@ bool mptcp_check_rtt(const struct tcp_sock *tp, int time)
 		if (!mptcp_sk_can_recv(sk))
 			continue;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		if (rtt_max < tcp_sk(sk)->rcv_rtt_est.rtt_us)
+			rtt_max = tcp_sk(sk)->rcv_rtt_est.rtt_us;
+#else
 		if (rtt_max < tcp_sk(sk)->rcv_rtt_est.rtt)
 			rtt_max = tcp_sk(sk)->rcv_rtt_est.rtt;
+#endif
 	}
 	if (time < (rtt_max >> 3) || !rtt_max)
 		return true;
@@ -2396,6 +2425,9 @@ int mptcp_rcv_synsent_state_process(struct sock *sk, struct sock **skptr,
 		sk_set_socket(sk, meta_sk->sk_socket);
 		sk->sk_wq = meta_sk->sk_wq;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		bh_unlock_sock(sk);
+#endif
 		 /* hold in sk_clone_lock due to initialization to 2 */
 		sock_put(sk);
 	} else {
@@ -2486,7 +2518,12 @@ void mptcp_init_buffer_space(struct sock *sk)
 
 	if (is_master_tp(tp)) {
 		meta_tp->rcvq_space.space = meta_tp->rcv_wnd;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		tcp_mstamp_refresh(meta_tp);
+		meta_tp->rcvq_space.time = meta_tp->tcp_mstamp;
+#else
 		meta_tp->rcvq_space.time = tcp_time_stamp;
+#endif
 		meta_tp->rcvq_space.seq = meta_tp->copied_seq;
 
 		/* If there is only one subflow, we just use regular TCP

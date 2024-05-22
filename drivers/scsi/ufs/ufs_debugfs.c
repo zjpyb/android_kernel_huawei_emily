@@ -20,6 +20,7 @@
 #define pr_fmt(fmt) "ufshcd :" fmt
 
 #include <linux/random.h>
+#include <linux/version.h>
 #include "ufs_debugfs.h"
 #include "unipro.h"
 #include "ufshcd.h"
@@ -39,8 +40,11 @@ struct desc_field_offset {
 static int ufshcd_tag_req_type(struct request *rq)
 {
 	int rq_type = TS_WRITE;
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (!rq || blk_rq_is_passthrough(rq))
+#else
 	if (!rq || !(rq->cmd_type & REQ_TYPE_FS))
+#endif
 		rq_type = TS_NOT_SUPPORTED;
 	else if (rq->cmd_flags & REQ_PREFLUSH)
 		rq_type = TS_FLUSH;
@@ -70,10 +74,14 @@ void ufshcd_update_tag_stats(struct ufs_hba *hba, int tag)
 		return;
 
 	tag_stats[tag][TS_TAG]++;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (!rq || blk_rq_is_passthrough(rq))
+#else
 	if (!rq || !(rq->cmd_type & REQ_TYPE_FS))
+#endif
 		return;
 
-	WARN_ON(hba->ufs_stats.q_depth > hba->nutrs);
+	WARN_ON(hba->ufs_stats.q_depth > hba->nutrs); /*lint !e146 !e665*/
 	rq_type = ufshcd_tag_req_type(rq);
 	if (!(rq_type < 0 || rq_type > TS_NUM_STATS))
 		tag_stats[hba->ufs_stats.q_depth++][rq_type]++;
@@ -84,7 +92,11 @@ void ufshcd_update_tag_stats_completion(
 {
 	struct request *rq = cmd ? cmd->request : NULL;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (rq && !blk_rq_is_passthrough(rq))
+#else
 	if (rq && rq->cmd_type & REQ_TYPE_FS)
+#endif
 		hba->ufs_stats.q_depth--;
 }
 
@@ -235,7 +247,7 @@ static ssize_t ufsdbg_tag_stats_write(struct file *filp,
 		ufs_stats->enabled = true;
 		pr_debug("%s: Enabling & Resetting UFS tag statistics",
 			 __func__);
-		memset(hba->ufs_stats.tag_stats[0], 0,
+		memset(hba->ufs_stats.tag_stats[0], 0, /* unsafe_function_ignore: memset */
 		       sizeof(**hba->ufs_stats.tag_stats) *
 		       TS_NUM_STATS * hba->nutrs);
 
@@ -347,7 +359,7 @@ static ssize_t ufsdbg_err_stats_write(struct file *filp,
 	spin_lock_irqsave(hba->host->host_lock, flags);
 
 	pr_debug("%s: Resetting UFS error statistics", __func__);
-	memset(ufs_stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats));
+	memset(ufs_stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats)); /* unsafe_function_ignore: memset */
 
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 	return cnt;
@@ -379,7 +391,7 @@ static int ufshcd_init_statistics(struct ufs_hba *hba)
 	for (i = 1; i < hba->nutrs; i++)
 		stats->tag_stats[i] = &stats->tag_stats[0][i * TS_NUM_STATS];/*lint !e679*/
 
-	memset(stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats));
+	memset(stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats)); /* unsafe_function_ignore: memset */
 
 	goto exit;
 
@@ -419,8 +431,13 @@ static int ufsdbg_host_regs_show(struct seq_file *file, void *data)
 	struct ufs_hba *hba = (struct ufs_hba *)file->private;
 
 	pm_runtime_get_sync(hba->dev);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	ufsdbg_pr_buf_to_std(hba, 0, UFSHCI_REG_SPACE_SIZE / sizeof(u32),
+			     "host regs", file);
+#else
 	ufsdbg_pr_buf_to_std(hba, 0, REG_SPACE_SIZE / sizeof(u32),
 			     "host regs", file);
+#endif
 	pm_runtime_put_sync(hba->dev);
 	return 0;
 }
@@ -1021,7 +1038,6 @@ static ssize_t ufsdbg_idle_timeout_val_write(struct file *filp,
 				      loff_t *ppos)
 {
 	struct ufs_hba *hba = filp->f_mapping->host->i_private;
-	unsigned long flags;
 	int val;
 	int ret;
 	struct blk_dev_lld *lld = &(hba->host->tag_set.lld_func);
@@ -1032,15 +1048,13 @@ static ssize_t ufsdbg_idle_timeout_val_write(struct file *filp,
 		return ret;
 	}
 
-	if (val <= 0) {
+	if (val <= 0 || val > (UFSHCD_IDLE_INTR_CHECK_INTERVAL / 1000)) {
 		dev_err(hba->dev, "%s: Invalid argument: %d\n", __func__, val);
 		return cnt;
 	}
 
 	hba->idle_timeout_val = val * 1000;
-	spin_lock_irqsave(hba->host->host_lock, flags);
 	ufs_idle_intr_toggle(hba, atomic_read(&lld->hw_idle_en));
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
 
 	return cnt;
 }
@@ -1083,7 +1097,7 @@ static ssize_t ufsdbg_idle_intr_check_timer_threshold_write(struct file *filp,
 		return ret;
 	}
 
-	if (val <= 0) {
+	if (val <= 0 || val > (UFSHCD_IDLE_INTR_CHECK_INTERVAL / 1000)) {
 		dev_err(hba->dev, "%s: Invalid argument: %d\n", __func__, val);
 		return cnt;
 	}

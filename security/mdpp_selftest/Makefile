@@ -6,4 +6,4 @@
 #
 
 obj-$(CONFIG_HUAWEI_CRYPTO_TEST_MDPP) += tcrypt_mdpp_selftest.o
-
+ccflags-$(CONFIG_HUAWEI_CRYPTO_TEST_MDPP) += -Ivendor/hisi/bsp/libc_sec/include

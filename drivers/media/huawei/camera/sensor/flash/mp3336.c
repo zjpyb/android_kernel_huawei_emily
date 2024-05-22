@@ -14,7 +14,8 @@
     2016/10/27  modified by huanglibo
 */
 #include "hw_flash.h"
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 
 /* MP3336 Registers define */
 #define REG_CHIPID          0x00
@@ -96,7 +97,7 @@ typedef enum {
 struct hw_mp3336_private_data_t {
     unsigned int flash_led_num;
     unsigned int torch_led_num;
-    struct wake_lock  mp3336_wakelock;
+    struct wakeup_source  mp3336_wakelock;
     unsigned int need_wakelock;
     /* flash control pin */
     unsigned int pin[MAX_PIN];
@@ -318,7 +319,7 @@ static int hw_mp3336_init(struct hw_flash_ctrl_t *flash_ctrl)
 
     hw_mp3336_set_pin_reset(flash_ctrl,LOW);
     if(pdata->need_wakelock == WAKE_LOCK_ENABLE) {
-        wake_lock_init(&pdata->mp3336_wakelock,WAKE_LOCK_SUSPEND,"mp3336");
+        wakeup_source_init(&pdata->mp3336_wakelock,"mp3336");
     }
     return rc;
 
@@ -624,7 +625,7 @@ static int hw_mp3336_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
 
     mutex_lock(flash_ctrl->hw_flash_mutex);
     if (pdata->need_wakelock == WAKE_LOCK_ENABLE) {
-        wake_lock(&pdata->mp3336_wakelock);
+        __pm_stay_awake(&pdata->mp3336_wakelock);
     }
 
     hw_mp3336_set_pin_strobe(flash_ctrl,LOW);
@@ -762,7 +763,7 @@ static int hw_mp3336_off(struct hw_flash_ctrl_t *flash_ctrl)
     hw_mp3336_set_pin_torch(flash_ctrl, LOW);
 
     if(pdata->need_wakelock == WAKE_LOCK_ENABLE) {
-        wake_unlock(&pdata->mp3336_wakelock);
+        __pm_relax(&pdata->mp3336_wakelock);
     }
     cam_info("%s end", __func__);
     mutex_unlock(flash_ctrl->hw_flash_mutex);

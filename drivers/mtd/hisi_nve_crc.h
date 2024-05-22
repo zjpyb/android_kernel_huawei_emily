@@ -1,3 +1,11 @@
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
+ * FileName: vendor/hisi/ap/kernel/drivers/mtd/hisi_nve_crc.h
+ * Description: define nve crc security algorithm check related
+ * Author: jinguojun
+ * Create: 2019-06-20
+ * Revision history:2019-06-20 zhanghugang NVE CSEC
+ */
+
 #ifndef __NVE_CRC32C_H
 #define __NVE_CRC32C_H
 

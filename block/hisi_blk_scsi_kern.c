@@ -29,6 +29,7 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_driver.h>
 #include <scsi/sg.h>
+#include <scsi/scsi_request.h>
 
 struct blk_scsi_device {
 	struct request_queue *queue;
@@ -50,20 +51,22 @@ static int hisi_blk_kern_fill_sgv4_hdr_rq(struct request_queue *q,
 					  struct request *rq,
 					  struct sg_io_v4 *hdr)
 {
+	struct scsi_request *req = scsi_req(rq);
+
 	if (hdr->request_len > BLK_MAX_CDB) {
-		rq->cmd = kzalloc((size_t)hdr->request_len, GFP_KERNEL);
-		if (!rq->cmd)
+		req->cmd = kzalloc((size_t)hdr->request_len, GFP_KERNEL);
+		if (!req->cmd)
 			return -ENOMEM;
 	}
 
-	memcpy((void *)rq->cmd, /* unsafe_function_ignore: memcpy */
+	memcpy((void *)req->cmd, /* unsafe_function_ignore: memcpy */
 	       (void *)(unsigned long)hdr->request,
 	       (unsigned long)hdr->request_len);
 
 	/*
 	 * fill in request structure
 	 */
-	rq->cmd_len = (unsigned short)hdr->request_len;
+	req->cmd_len = (unsigned short)hdr->request_len;
 
 	rq->timeout = (unsigned int)msecs_to_jiffies(hdr->timeout);
 	if (!rq->timeout)
@@ -80,7 +83,7 @@ static int hisi_blk_kern_fill_sgv4_hdr_rq(struct request_queue *q,
  * Check if sg_io_v4 from kernel is allowed and valid
  */
 static int hisi_blk_kern_validate_sgv4_hdr(struct sg_io_v4 *hdr,
-					   int *rw)
+					   int *op)
 {
 	int ret = 0;
 
@@ -101,7 +104,7 @@ static int hisi_blk_kern_validate_sgv4_hdr(struct sg_io_v4 *hdr,
 		ret = -EINVAL;
 	}
 
-	*rw = hdr->dout_xfer_len ? WRITE : READ;
+	*op = hdr->dout_xfer_len ? REQ_OP_SCSI_OUT : REQ_OP_SCSI_IN;
 	return ret;
 }
 
@@ -109,12 +112,11 @@ static int hisi_blk_kern_validate_sgv4_hdr(struct sg_io_v4 *hdr,
  * map sg_io_v4 to a request.
  */
 static struct request *hisi_blk_kern_map_hdr(struct blk_scsi_device *bd,
-					     struct sg_io_v4 *hdr,
-					     u8 *sense)
+					     struct sg_io_v4 *hdr)
 {
 	struct request_queue *q = bd->queue;
-	struct request *rq = NULL, *next_rq = NULL;
-	int ret, rw;
+	struct request *rq = NULL;
+	int ret, op;
 	unsigned int dxfer_len;
 	void *dxferp = NULL;
 	struct bsg_class_device *bcd = &q->bsg_dev;
@@ -126,42 +128,26 @@ static struct request *hisi_blk_kern_map_hdr(struct blk_scsi_device *bd,
 	if (!bcd->class_dev)
 		return ERR_PTR(-ENXIO);
 
-	ret = hisi_blk_kern_validate_sgv4_hdr(hdr, &rw);
+	ret = hisi_blk_kern_validate_sgv4_hdr(hdr, &op);
 	if (ret)
 		return ERR_PTR(ret);
 
 	/*
 	 * map scatter-gather elements separately and string them to request
 	 */
-	rq = blk_get_request(q, rw, GFP_KERNEL);
+	rq = blk_get_request(q, op, GFP_KERNEL);
 	if (IS_ERR(rq))
 		return rq;
-	blk_rq_set_block_pc(rq);
 
 	ret = hisi_blk_kern_fill_sgv4_hdr_rq(q, rq, hdr);
 	if (ret)
 		goto out;
 
-	if (rw == WRITE && hdr->din_xfer_len) {
+	if (op == REQ_OP_SCSI_OUT && hdr->din_xfer_len) {
 		if (!test_bit(QUEUE_FLAG_BIDI, &q->queue_flags)) {
 			ret = -EOPNOTSUPP;
 			goto out;
 		}
-
-		next_rq = blk_get_request(q, READ, GFP_KERNEL);
-		if (IS_ERR(next_rq)) {
-			ret = PTR_ERR(next_rq);
-			next_rq = NULL;
-			goto out;
-		}
-		rq->next_rq = next_rq;
-		next_rq->cmd_type = rq->cmd_type;
-
-		dxferp = (void __user *)(unsigned long)hdr->din_xferp;
-		ret = blk_rq_map_kern(q, next_rq, dxferp, hdr->din_xfer_len,
-				      GFP_KERNEL);
-		if (ret)
-			goto out;
 	}
 
 	if (hdr->dout_xfer_len) {
@@ -179,54 +165,48 @@ static struct request *hisi_blk_kern_map_hdr(struct blk_scsi_device *bd,
 			goto out;
 	}
 
-	rq->sense = sense;
-	rq->sense_len = 0;
-
 	return rq;
 out:
-	if (rq->cmd != rq->__cmd)
-		kfree(rq->cmd);
+	scsi_req_free_cmd(scsi_req(rq));
 	blk_put_request(rq);
-	if (next_rq) {
-		blk_put_request(next_rq);
-	}
 	return ERR_PTR(ret);
 }
 
 static int hisi_blk_kern_complete_hdr_rq(struct request *rq,
 					 struct sg_io_v4 *hdr)
 {
+	struct scsi_request *req = scsi_req(rq);
 	int ret = 0;
 
 	/*
 	 * fill in all the output members
 	 */
-	hdr->device_status = (unsigned int)(rq->errors) & 0xff;
-	hdr->transport_status = host_byte((unsigned int)(rq->errors));
-	hdr->driver_status = driver_byte((unsigned int)(rq->errors));
+	hdr->device_status = (unsigned int)req->result & 0xff;
+	hdr->transport_status = host_byte((unsigned int)(req->result));
+	hdr->driver_status = driver_byte((unsigned int)(req->result));
 	hdr->info = 0;
 	if (hdr->device_status || hdr->transport_status || hdr->driver_status)
 		hdr->info |= SG_INFO_CHECK;
 	hdr->response_len = 0;
 
-	if (rq->sense_len && hdr->response) {
+	if (req->sense_len && hdr->response) {
 		unsigned int len = min_t(unsigned int, hdr->max_response_len,
-				rq->sense_len);
+				req->sense_len);
 
 		memcpy((void *)(unsigned long)hdr->response, /* unsafe_function_ignore: memcpy */
-		       rq->sense,
+		       req->sense,
 		       (unsigned long)len);
 		hdr->response_len = len;
 	}
 
 	if (rq->next_rq) {
-		hdr->dout_resid = (__s32)rq->resid_len;
-		hdr->din_resid = (__s32)rq->next_rq->resid_len;
+		hdr->dout_resid = (__s32)req->resid_len;
+		hdr->din_resid = (__s32)scsi_req(rq->next_rq)->resid_len;
 		blk_put_request(rq->next_rq);
 	} else if (rq_data_dir(rq) == READ)
-		hdr->din_resid = (__s32)rq->resid_len;
+		hdr->din_resid = (__s32)req->resid_len;
 	else
-		hdr->dout_resid = (__s32)rq->resid_len;
+		hdr->dout_resid = (__s32)req->resid_len;
 
 	/*
 	 * If the request generated a negative error number, return it
@@ -234,11 +214,10 @@ static int hisi_blk_kern_complete_hdr_rq(struct request *rq,
 	 * just a protocol response (i.e. non negative), that gets
 	 * processed above.
 	 */
-	if (!ret && rq->errors < 0)
-		ret = rq->errors;
+	if (!ret && req->result < 0)
+		ret = req->result;
 
-	if (rq->cmd != rq->__cmd)
-		kfree(rq->cmd);
+	scsi_req_free_cmd(req);
 	blk_put_request(rq);
 
 	return ret;
@@ -251,7 +230,6 @@ long blk_scsi_kern_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	struct request *rq;
 	struct sg_io_v4 hdr;
 	int at_head;
-	u8 sense[SCSI_SENSE_BUFFERSIZE];
 	struct blk_scsi_device *bd;
 	struct file *pfile = fget(fd);
 	if (pfile == NULL)
@@ -260,7 +238,7 @@ long blk_scsi_kern_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case SG_IO:
 		memcpy(&hdr, uarg, sizeof(hdr)); /* unsafe_function_ignore: memcpy */
-		rq = hisi_blk_kern_map_hdr(bd, &hdr, sense);
+		rq = hisi_blk_kern_map_hdr(bd, &hdr);
 
 		if (IS_ERR(rq))
 			return PTR_ERR(rq);

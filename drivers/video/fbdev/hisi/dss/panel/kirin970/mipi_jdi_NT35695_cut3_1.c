@@ -20,7 +20,9 @@
 #define DTS_COMP_JDI_NT35695_CUT3_1	"hisilicon,mipi_jdi_NT35695_cut3_1"
 static int g_lcd_fpga_flag;
 
+#ifdef CONFIG_HUAWEI_TS
 extern bool g_lcd_control_tp_power;
+#endif
 
 extern unsigned int g_led_rg_para1;
 extern unsigned int g_led_rg_para2;
@@ -144,11 +146,6 @@ static char exit_sleep[] = {
 static char bl_enable[] = {
 	0x53,
 	0x24,
-};
-
-static char bl_pwm[] = {
-	0x51,
-	0xFF,
 };
 
 //0x07, 0x68-origen;0x06, 0xEA-for autoulps test
@@ -586,12 +583,14 @@ static int mipi_jdi_panel_on(struct platform_device *pdev)
 		pinfo->lcd_init_step = LCD_INIT_MIPI_LP_SEND_SEQUENCE;
 	} else if (pinfo->lcd_init_step == LCD_INIT_MIPI_LP_SEND_SEQUENCE) {
 
+	#ifdef CONFIG_HUAWEI_TS
 		if (g_lcd_control_tp_power && !g_lcd_fpga_flag) {
 			error = ts_power_control_notify(TS_RESUME_DEVICE, SHORT_SYNC_TIMEOUT);
 			if (error) {
 				HISI_FB_ERR("ts resume device err!\n");
 			}
 		}
+	#endif
 
 		// lcd gpio normal
 		gpio_cmds_tx(asic_lcd_gpio_normal_cmds_sub2, \
@@ -631,7 +630,6 @@ static int mipi_jdi_panel_on(struct platform_device *pdev)
 		while (status & 0x10) {
 			udelay(50);
 			if (++try_times > 100) {
-				try_times = 0;
 				HISI_FB_ERR("Read lcd power status timeout!\n");
 				break;
 			}
@@ -644,12 +642,14 @@ static int mipi_jdi_panel_on(struct platform_device *pdev)
 		pinfo->lcd_init_step = LCD_INIT_MIPI_HS_SEND_SEQUENCE;
 	} else if (pinfo->lcd_init_step == LCD_INIT_MIPI_HS_SEND_SEQUENCE) {
 
+	#ifdef CONFIG_HUAWEI_TS
 		if (g_lcd_control_tp_power && !g_lcd_fpga_flag) {
 			error = ts_power_control_notify(TS_AFTER_RESUME, NO_SYNC_TIMEOUT);
 			if (error) {
 				HISI_FB_ERR("ts after resume err!\n");
 			}
 		}
+	#endif
 
 	} else {
 		HISI_FB_ERR("failed to init lcd!\n");
@@ -711,6 +711,7 @@ static int mipi_jdi_panel_off(struct platform_device *pdev)
 				ARRAY_SIZE(fpga_lcd_gpio_free_cmds));
 		}
 
+	#ifdef CONFIG_HUAWEI_TS
 		if (g_lcd_control_tp_power && !g_lcd_fpga_flag && !hisifd->fb_shutdown) {
 			error = ts_power_control_notify(TS_BEFORE_SUSPEND, SHORT_SYNC_TIMEOUT);
 			if (error) {
@@ -726,6 +727,7 @@ static int mipi_jdi_panel_off(struct platform_device *pdev)
 		if (hisifd->fb_shutdown) {
 			ts_thread_stop_notify();
 		}
+	#endif
 
 	} else {
 		HISI_FB_ERR("failed to uninit lcd!\n");
@@ -825,7 +827,7 @@ static struct dsi_cmd_desc set_display_address[] = {
 	{DTYPE_DCS_LWRITE, 0, 5, WAIT_TYPE_US,
 		sizeof(lcd_disp_y), lcd_disp_y},
 };
-
+/*lint -e574*/
 static int mipi_jdi_panel_set_display_region(struct platform_device *pdev,
 	struct dss_rect *dirty)
 {
@@ -846,21 +848,21 @@ static int mipi_jdi_panel_set_display_region(struct platform_device *pdev,
 			dirty->x, dirty->y, dirty->w, dirty->h);
 	}
 
-	lcd_disp_x[1] = (dirty->x >> 8) & 0xff;
-	lcd_disp_x[2] = dirty->x & 0xff;
-	lcd_disp_x[3] = ((dirty->x + dirty->w - 1) >> 8) & 0xff;
-	lcd_disp_x[4] = (dirty->x + dirty->w - 1) & 0xff;
-	lcd_disp_y[1] = (dirty->y >> 8) & 0xff;
-	lcd_disp_y[2] = dirty->y & 0xff;
-	lcd_disp_y[3] = ((dirty->y + dirty->h - 1) >> 8) & 0xff;
-	lcd_disp_y[4] = (dirty->y + dirty->h - 1) & 0xff;
+	lcd_disp_x[1] = ((unsigned)dirty->x >> 8) & 0xff;
+	lcd_disp_x[2] = (unsigned)dirty->x & 0xff;
+	lcd_disp_x[3] = ((unsigned)(dirty->x + dirty->w - 1) >> 8) & 0xff;
+	lcd_disp_x[4] = (unsigned)(dirty->x + dirty->w - 1) & 0xff;
+	lcd_disp_y[1] = ((unsigned)dirty->y >> 8) & 0xff;
+	lcd_disp_y[2] = (unsigned)dirty->y & 0xff;
+	lcd_disp_y[3] = ((unsigned)(dirty->y + dirty->h - 1) >> 8) & 0xff;
+	lcd_disp_y[4] = (unsigned)(dirty->y + dirty->h - 1) & 0xff;
 
 	mipi_dsi_cmds_tx(set_display_address, \
 		ARRAY_SIZE(set_display_address), hisifd->mipi_dsi0_base);
 
 	return 0;
 }
-
+/*lint +e574*/
 /******************************************************************************/
 static ssize_t mipi_jdi_panel_lcd_model_show(struct platform_device *pdev,
 	char *buf)
@@ -978,7 +980,9 @@ static int mipi_jdi_probe(struct platform_device *pdev)
 	uint32_t lcd_display_type = 0;
 	uint32_t lcd_ifbc_type = 0;
 
+#ifdef CONFIG_HUAWEI_TS
 	g_lcd_control_tp_power = false;
+#endif
 	HISI_FB_INFO("mipi_jdi_NT35695_cut3_1 + ");
 	np = of_find_compatible_node(NULL, NULL, DTS_COMP_JDI_NT35695_CUT3_1);
 	if (!np) {
@@ -1227,7 +1231,7 @@ static int mipi_jdi_probe(struct platform_device *pdev)
 		pinfo->vesa_dsc.rc_buf_thresh13 = (0x7d7e0000 >> 16) & 0xFF;
 
 		//DSC_RC_RANGE_PARAM0: 0x1020100
-		pinfo->vesa_dsc.range_min_qp0 = (0x1020100 >> 27) & 0x1F;
+		pinfo->vesa_dsc.range_min_qp0 = (0x1020100 >> 27) & 0x1F; //lint !e572
 		pinfo->vesa_dsc.range_max_qp0 = (0x1020100 >> 22) & 0x1F;
 		pinfo->vesa_dsc.range_bpg_offset0 = (0x1020100 >> 16) & 0x3F;
 		pinfo->vesa_dsc.range_min_qp1 = (0x1020100 >> 11) & 0x1F;
@@ -1333,7 +1337,7 @@ err_return:
 err_probe_defer:
 	return -EPROBE_DEFER;
 
-	return ret;
+	return ret; //lint !e527
 }
 
 static const struct of_device_id hisi_panel_match_table[] = {

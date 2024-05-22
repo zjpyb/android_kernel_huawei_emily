@@ -20,6 +20,7 @@
 #include <linux/workqueue.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
+#include <linux/types.h>
 #include <asm/memory.h>
 /*lint -e451*/
 #include <asm/types.h>
@@ -38,7 +39,9 @@
 #include "huawei_platform/log/imonitor.h"
 #include "huawei_platform/log/imonitor_keys.h"
 
+#ifdef CONFIG_HUAWEI_DSM
 #include <dsm_audio/dsm_audio.h>
+#endif
 #include <linux/hisi/rdr_pub.h>
 
 /*lint -e773*/
@@ -448,7 +451,9 @@ static void hifi_om_show_voice_3a_info(struct work_struct *work)
 			return;
 		}
 		memcpy(&voice_3a_om_info, data, sizeof(voice_3a_om_info));/* unsafe_function_ignore: memcpy */
+		#ifdef CONFIG_HUAWEI_DSM
 		audio_dsm_report_info(AUDIO_CODEC, DSM_SOC_HIFI_3A_ERROR, "3a error type:%d error:%d\n", hifi_msg_type, voice_3a_om_info.recv_msg);
+		#endif
 		break;
 	default:
 		logi("type(%d), not support\n", hifi_msg_type);
@@ -531,6 +536,57 @@ static void smartpa_dft_err_value_to_str(short err_value, short accu,
 	}
 }
 
+static void smartpa_dft_report_process_abnormal_gain(struct smartpa_msg *msg)
+{
+	int ret;
+	struct pa_status_str status_str = { {0}, {0}, {0}, {0}, {0}, {0} };
+	struct smartpa_info *info = (struct smartpa_info *)(&(msg->msg_body));
+	struct imonitor_eventobj *obj = NULL;
+	imedia_dft_report_raw_data_t *pa_status = NULL;
+
+	if (info->err_chl >= IMEDIA_SMARTPA_MAX_CHANNEL) {
+		loge("max channel count exceeded\n");
+		return;
+	}
+
+	pa_status = &(info->raw_data);
+	smartpa_dft_err_value_to_str(pa_status->current_gain[info->err_chl],
+					IMEDIA_PARAMS_ACCURACY_100,
+					IMEDIA_PARAMS_KEEP_TWO_DECIMAL,
+					status_str.total_gain);
+
+	smartpa_dft_err_value_to_str(pa_status->coil_tempreature[info->err_chl],
+					IMEDIA_PARAMS_ACCURACY_100,
+					IMEDIA_PARAMS_KEEP_ONE_DECIMAL,
+					status_str.tem);
+
+	smartpa_dft_err_value_to_str(pa_status->scene_id,
+					IMEDIA_PARAMS_ACCURACY_1,
+					IMEDIA_PARAMS_KEEP_ZERO_DECIMAL,
+					status_str.scene_id);
+
+	snprintf(status_str.err_module, SOC_SMARTPA_ERR_INFO_MAX_LEN,/* unsafe_function_ignore: snprintf */
+			"CG=%s,CT=%s,SI=%s,CV=%u,BV=%u,Calib=%u,CM=%s",
+			status_str.total_gain, status_str.tem, status_str.scene_id, pa_status->chip_vendor[info->err_chl],
+			pa_status->box_vendor[info->err_chl], pa_status->calibration_value[info->err_chl],
+			pa_status->chip_model);/*lint !e747*/ /* unsafe_function_ignore: snprintf */
+
+	obj = imonitor_create_eventobj(SOC_SMARTPA_ERR_BASE_ID +
+					info->err_class);
+	if (obj == NULL) {
+		loge("imonitor create obj failed\n");
+		return;
+	}
+	imonitor_set_param_integer_v2(obj, "EventLevel", info->err_level);
+	imonitor_set_param_integer_v2(obj, "ErrChnl", info->err_chl);
+	imonitor_set_param_string_v2(obj, "EventModule", status_str.err_module);
+
+	ret = imonitor_send_event(obj);
+	logi("sent event to imonitor, ret = %d\n", ret);
+
+	imonitor_destroy_eventobj(obj);
+}
+
 static void smartpa_dft_report_process(char *data)
 {
 	int ret;
@@ -539,6 +595,11 @@ static void smartpa_dft_report_process(char *data)
 	struct smartpa_info *info = (struct smartpa_info *)(&(msg->msg_body));
 	struct imonitor_eventobj *obj = NULL;
 	struct imedia_dft_report_info *pa_status = NULL;
+
+	if (info->err_code == 0) {
+		smartpa_dft_report_process_abnormal_gain(msg);
+		return;
+	}
 
 	pa_status = (struct imedia_dft_report_info *)info->err_info;
 	smartpa_dft_err_value_to_str(pa_status->slsm_re[info->err_chl],
@@ -561,16 +622,16 @@ static void smartpa_dft_report_process(char *data)
 					IMEDIA_PARAMS_KEEP_ONE_DECIMAL,
 					status_str.tem);
 
-	smartpa_dft_err_value_to_str(pa_status->spow_target_gain[info->err_chl],
+	smartpa_dft_err_value_to_str(pa_status->step_current_gain[info->err_chl],
 					IMEDIA_PARAMS_ACCURACY_100,
 					IMEDIA_PARAMS_KEEP_TWO_DECIMAL,
-					status_str.totoal_gain);
+					status_str.total_gain);
 
 	snprintf(status_str.err_module, SOC_SMARTPA_ERR_INFO_MAX_LEN,/* unsafe_function_ignore: snprintf */
-			"SOC_%d%s%d_R_%s_R0_%s_F0_%s_T_%s_TG_%s",
+			"SOC_%d%s%d_R_%s_R0_%s_F0_%s_T_%s_CG_%s",
 			pa_status->smode, "SmartPA_CH", info->err_chl + 1,
 			status_str.rdc, status_str.re, status_str.f0,
-			status_str.tem, status_str.totoal_gain);/*lint !e747*/ /* unsafe_function_ignore: snprintf */
+			status_str.tem, status_str.total_gain);/*lint !e747*/ /* unsafe_function_ignore: snprintf */
 
 	obj = imonitor_create_eventobj(SOC_SMARTPA_ERR_BASE_ID +
 					info->err_class);
@@ -684,7 +745,7 @@ static  void voice_bigdata_update_imonitor_inc_blkmic(unsigned int eventID, unsi
 	int i, j, k;
 	int bigdata_voice_charact_param_hs_size;
 	int bigdata_voice_charact_param_size;
-	struct imonitor_eventobj *voice_bigdata_obj;
+	struct imonitor_eventobj *voice_bigdata_obj = NULL;
 
 	static char *bigdata_voice_param[VOICE_BIGDATA_NOISE_VOICE_SIZE] = {
 		"NoiseCnt0", "NoiseCnt1", "NoiseCnt2", "NoiseCnt3", "NoiseCnt4", "NoiseCnt5", "NoiseCnt6", "NoiseCnt7",
@@ -760,7 +821,7 @@ static  void voice_bigdata_update_imonitor(unsigned int eventID, unsigned short 
 {
 	int i, j, k;
 	int bigdata_voice_charact_param_size;
-	struct imonitor_eventobj *voice_bigdata_obj;
+	struct imonitor_eventobj *voice_bigdata_obj = NULL;
 
 	static char *bigdata_voice_param[VOICE_BIGDATA_NOISE_VOICE_SIZE] = {
 		"NoiseCnt0", "NoiseCnt1", "NoiseCnt2", "NoiseCnt3", "NoiseCnt4", "NoiseCnt5", "NoiseCnt6", "NoiseCnt7",
@@ -893,7 +954,7 @@ static void hifi_dump_dsp(DUMP_DSP_INDEX index)
 
 	mm_segment_t fs = 0;
 	struct file *fp = NULL;
-	int file_flag = O_RDWR;
+	unsigned int file_flag = O_RDWR;
 	struct kstat file_stat;
 	int write_size = 0;
 	unsigned int err_no = 0xFFFFFFFF;
@@ -1069,9 +1130,9 @@ static int hifi_dump_dsp_thread(void *p)
 		hifi_get_time_stamp(g_om_data.cur_dump_time, HIFI_DUMP_FILE_NAME_MAX_LEN);
 
 		if (exception_no < 40 && (exception_no != g_om_data.pre_exception_no)) {
-			logi("panic addr:0x%pK, cur_pc:0x%pK, pre_pc:0x%pK, cause:0x%x\n", (void *)(unsigned long)(*hifi_info_addr), (void *)(unsigned long)(*(hifi_info_addr+1)), (void *)(unsigned long)(*(hifi_info_addr+2)), *(unsigned int*)(unsigned long)(hifi_info_addr+3));
+			logi("panic addr:0x%pK, cur_pc:0x%pK, pre_pc:0x%pK, cause:0x%x\n", (void *)(uintptr_t)(*hifi_info_addr), (void *)(uintptr_t)(*(hifi_info_addr+1)), (void *)(uintptr_t)(*(hifi_info_addr+2)), *(unsigned int*)(uintptr_t)(hifi_info_addr+3));
 			for( i = 0; i < (DRV_DSP_STACK_TO_MEM_SIZE/2)/sizeof(int)/4; i+=4){
-				logi("0x%pK: 0x%pK 0x%pK 0x%pK 0x%pK\n", (void *)(long)(unsigned)(hifi_stack_addr+i*4), (void *)(unsigned long)(*(hifi_info_addr+i)),(void *)(unsigned long)(*(hifi_info_addr+1+i)),(void *)(unsigned long)(*(hifi_info_addr+2+i)),(void *)(unsigned long)(*(hifi_info_addr+i+3)));
+				logi("0x%pK: 0x%pK 0x%pK 0x%pK 0x%pK\n", (void *)(uintptr_t)(hifi_stack_addr+i*4), (void *)(uintptr_t)(*(hifi_info_addr+i)),(void *)(uintptr_t)(*(hifi_info_addr+1+i)),(void *)(uintptr_t)(*(hifi_info_addr+2+i)),(void *)(uintptr_t)(*(hifi_info_addr+i+3)));/*lint !e647*/
 			}
 
 			hifi_dump_dsp(PANIC_LOG);
@@ -1241,6 +1302,7 @@ void hifi_om_deinit(struct platform_device *dev)
 
 	up(&g_om_data.dsp_dump_sema);
 	kthread_stop(g_om_data.kdumpdsp_task);
+	g_om_data.kdumpdsp_task = NULL;
 
 	if (NULL != g_om_data.dsp_time_stamp) {
 		iounmap(g_om_data.dsp_time_stamp);
@@ -1275,7 +1337,9 @@ void hifi_om_cpu_load_info_show(struct hifi_om_load_info_stru *hifi_om_info)
 		logw("DDRFreq: %dM, CpuUtilization:%d%%, Lack of performance!!!\n", hifi_om_info->cpu_load_info.ddr_freq,hifi_om_info->cpu_load_info.cpu_load);
 		/*upload totally 16 times in every 16 times in case of flushing msg*/
 		if (unlikely((dsm_notify_limit % 0x10) == 0)) {/*lint !e730*/
+			#ifdef CONFIG_HUAWEI_DSM
 			audio_dsm_report_info(AUDIO_CODEC, DSM_SOC_HIFI_HIGH_CPU, "DSM_SOC_HIFI_HIGH_CPU\n");
+			#endif
 		}
 		dsm_notify_limit++;
 		break;

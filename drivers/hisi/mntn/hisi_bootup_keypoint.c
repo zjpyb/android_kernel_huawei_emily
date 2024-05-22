@@ -99,6 +99,11 @@ Return:         NA
 ********************************************************************************/
 static int __init early_last_bootup_keypoint_cmdline(char *last_bootup_keypoint_cmdline)
 {
+	if(!last_bootup_keypoint_cmdline) {
+		pr_debug("last_bootup_keypoint_cmdline is null\n");
+		return -1;
+	}
+
 	g_last_bootup_keypoint = atoi(last_bootup_keypoint_cmdline);
 	pr_debug("g_last_bootup_keypoint is [%d]\n", g_last_bootup_keypoint);
 	return 0;

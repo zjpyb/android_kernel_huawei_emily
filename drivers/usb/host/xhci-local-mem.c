@@ -240,9 +240,6 @@ static int xhci_check_dma_addr(struct xhci_hcd *xhci, struct urb *urb,
 
 	if (urb->transfer_dma & ~(DMA_BIT_MASK(32))) {
 		WARN_ON(urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP);
-		xhci_dbg_trace(xhci, trace_xhci_dbg_map_unmap,
-				"transfer_dma is 0x%llx, do unmap\n",
-				urb->transfer_dma);
 		if (urb->transfer_flags & URB_DMA_MAP_PAGE)
 			dma_unmap_page(hcd->self.controller,
 					urb->transfer_dma,
@@ -270,8 +267,6 @@ int xhci_map_urb_for_dma(struct usb_hcd *hcd, struct urb *urb,
 	enum dma_data_direction dir;
 	int ret;
 
-	xhci_dbg_trace(xhci, trace_xhci_dbg_map_unmap,
-			"start map at %p", urb->transfer_buffer);
 	dir = usb_urb_dir_in(urb) ? DMA_FROM_DEVICE : DMA_TO_DEVICE;
 	if (urb->transfer_buffer_length != 0) {
 		if (!(urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP)) {
@@ -320,9 +315,6 @@ int xhci_map_urb_for_dma(struct usb_hcd *hcd, struct urb *urb,
 		else
 			WARN_ON(upper_32_bits(urb->transfer_dma));
 	}
-	xhci_dbg_trace(xhci, trace_xhci_dbg_map_unmap,
-			"end map at %p, dma 0x%llx",
-			urb->transfer_buffer, urb->transfer_dma);
 	return 0;
 err:
 	xhci_err(xhci, "xhci_check_dma_addr failed, ret %d\n", ret);
@@ -334,11 +326,6 @@ void xhci_unmap_urb_for_dma(struct usb_hcd *hcd, struct urb *urb)
 	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
 	enum dma_data_direction dir;
 
-	if (urb->transfer_buffer_length != 0) {
-		xhci_dbg_trace(xhci, trace_xhci_dbg_map_unmap,
-				"start unmap at %p, dma 0x%llx",
-				urb->transfer_buffer, urb->transfer_dma);
-	}
 	dir = usb_urb_dir_in(urb) ? DMA_FROM_DEVICE : DMA_TO_DEVICE;
 	if (urb->transfer_flags & URB_DMA_MAP_SINGLE)
 		dma_unmap_single(hcd->self.controller,
@@ -353,11 +340,6 @@ void xhci_unmap_urb_for_dma(struct usb_hcd *hcd, struct urb *urb)
 	else if (urb->transfer_flags & URB_MAP_LOCAL)
 		xhci_free_32bit_dma(xhci, urb);
 
-	if (urb->transfer_buffer_length != 0) {
-		xhci_dbg_trace(xhci, trace_xhci_dbg_map_unmap,
-				"end upmap at %p, dma 0x%llx",
-				urb->transfer_buffer, urb->transfer_dma);
-	}
 	/* Make it safe to call this routine more than once */
 	urb->transfer_flags &= ~(URB_DMA_MAP_SG | URB_DMA_MAP_PAGE |
 			URB_DMA_MAP_SINGLE | URB_MAP_LOCAL | URB_MAP_LOCAL_REALLOC);

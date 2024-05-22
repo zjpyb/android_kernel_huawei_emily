@@ -7,9 +7,6 @@
 #include "hisi_usb3_31phy.h"
 #include "common.h"
 
-extern int usb3_open_misc_ctrl_clk(struct hisi_dwc3_device *hisi_dwc3);
-extern void usb3_close_misc_ctrl_clk(struct hisi_dwc3_device *hisi_dwc3);
-
 static void __iomem *misc_base_addr;
 static void __iomem *sc_misc_base_addr;
 
@@ -85,9 +82,6 @@ void usb3_sc_misc_reg_clrvalue(u32 val, unsigned long int offset)
 	usb3_rw_reg_clrvalue(val, sc_misc_base_addr, offset);
 }
 
-extern struct hisi_dwc3_device *hisi_dwc3_dev;
-extern bool __clk_is_enabled(struct clk *clk);
-
 static unsigned int misc_usecount = 0;
 static DEFINE_MUTEX(misc_ctrl_mutex);
 
@@ -121,17 +115,12 @@ static char *misc_ctrl_type_string(enum misc_ctrl_type type)
 
 int dwc3_misc_ctrl_get(enum misc_ctrl_type type)
 {
-	struct hisi_usb_combophy *combophy;
+	struct hisi_usb_combophy *combophy = NULL;
 	int ret;
 
 	pr_debug("+ misc_usecount [%s] type[%s] \n",
 			misc_ctrl_status_string(misc_usecount),
 			misc_ctrl_type_string(type));
-
-	if (!hisi_dwc3_dev) {
-		pr_err("[USBERR] usb driver not probe\n");
-		return -ENODEV;
-	}
 
 	if ((type != MICS_CTRL_USB) && (type != MICS_CTRL_COMBOPHY)) {
 		pr_err("[USBERR] type[%d] is not correct\n", type);
@@ -148,7 +137,7 @@ int dwc3_misc_ctrl_get(enum misc_ctrl_type type)
 	if (misc_usecount == 0) {
 		pr_debug("it will be going to  release miscctrl\n");
 
-		ret = usb3_open_misc_ctrl_clk(hisi_dwc3_dev);
+		ret = usb3_open_misc_ctrl_clk();
 		if (ret) {
 			mutex_unlock(&misc_ctrl_mutex);
 			usb_err("misc ctrl clk enable err\n");
@@ -162,11 +151,11 @@ int dwc3_misc_ctrl_get(enum misc_ctrl_type type)
 		/* dis-reset usb misc ctrl module */
 		combophy_unreset_misc_ctrl(combophy);
 
-		misc_usecount = 1 << type;
+		misc_usecount = 1 << (unsigned int)type;
 	} else {
 		pr_debug("%s has got, just return!\n",
 				misc_ctrl_status_string(misc_usecount));
-		misc_usecount =  misc_usecount |(1 << type);
+		misc_usecount =  misc_usecount |(1 << (unsigned int)type);
 	}
 	mutex_unlock(&misc_ctrl_mutex);
 	pr_debug("-misc_usecount[%s]\n",misc_ctrl_status_string(misc_usecount));
@@ -175,16 +164,11 @@ int dwc3_misc_ctrl_get(enum misc_ctrl_type type)
 
 void dwc3_misc_ctrl_put(enum misc_ctrl_type type)
 {
-	struct hisi_usb_combophy *combophy;
+	struct hisi_usb_combophy *combophy = NULL;
 
 	pr_debug("+ misc_usecount [%s] type[%s] \n",
 			misc_ctrl_status_string(misc_usecount),
 			misc_ctrl_type_string(type));
-
-	if (!hisi_dwc3_dev) {
-		pr_err("[USB.DBG] usb driver not probe\n");
-		return;
-	}
 
 	if ((type != MICS_CTRL_USB) && (type != MICS_CTRL_COMBOPHY)) {
 		pr_err("[USB.DBG] type[%d] is not correct\n", type);
@@ -198,13 +182,13 @@ void dwc3_misc_ctrl_put(enum misc_ctrl_type type)
 	}
 
 	mutex_lock(&misc_ctrl_mutex);
-	misc_usecount = misc_usecount & (~(1 << type));/*lint !e502 */
+	misc_usecount = misc_usecount & (~(1 << (unsigned int)type));/*lint !e502 */
 	if (misc_usecount == 0) {
 		pr_debug("it will be going to reset miscctrl\n");
 		/* reset usb misc ctrl module */
 		combophy_reset_misc_ctrl(combophy);
 
-		usb3_close_misc_ctrl_clk(hisi_dwc3_dev);
+		usb3_close_misc_ctrl_clk();
 	} else {
 		pr_debug("%s has got, just return!\n",
 				misc_ctrl_status_string(misc_usecount));

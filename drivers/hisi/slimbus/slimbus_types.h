@@ -38,6 +38,7 @@
 #define SLIMBUS_SOUND_TRIGGER_CHANNELS                  (2)
 #define SLIMBUS_VOICE_UP_SOUNDTRIGGER                   (1)
 #define SLIMBUS_DEBUG_CHANNELS                          (1)
+#define SLIMBUS_KWS_CHANNELS                            (2)
 
 #define SLIMBUS_CHANNELS_MAX                            (4)
 
@@ -49,6 +50,10 @@
 #define SLIMBUS_SAMPLE_RATE_192K                        (192000)
 #define SLIMBUS_SAMPLE_RATE_384K                        (384000)
 #define SLIMBUS_SAMPLE_RATE_768K                        (768000)
+#define SLIMBUS_SAMPLE_RATE_44K1                        44100
+#define SLIMBUS_SAMPLE_RATE_88K2                        88200
+#define SLIMBUS_SAMPLE_RATE_176K4                       176400
+
 
 
 /* user value / information elements slice sizes */
@@ -222,6 +227,7 @@ typedef enum {
 	SLIMBUS_TRACK_DEBUG,
 	SLIMBUS_TRACK_DIRECT_PLAY,
 	SLIMBUS_TRACK_FAST_PLAY,
+	SLIMBUS_TRACK_KWS,
 	SLIMBUS_TRACK_MAX,
 } slimbus_track_type_t;
 

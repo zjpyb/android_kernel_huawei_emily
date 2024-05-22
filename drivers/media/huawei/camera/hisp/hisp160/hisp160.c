@@ -48,12 +48,13 @@
 #include "cam_log.h"
 #include "hisp_intf.h"
 #include "platform/sensor_commom.h"
-#include <linux/wakelock.h>
-#include <linux/hisi/hisi_ion.h>
+#include <linux/pm_wakeup.h>
 #include <linux/hisi-iommu.h>
 #include <linux/platform_data/remoteproc-hisi.h>
 #include <linux/iommu.h>
 #include <linux/mutex.h>
+#include <hicam_buf.h>
+#include <securec.h>
 
 //lint -save -e740
 #define HISP_MSG_LOG_MOD 100
@@ -62,10 +63,11 @@ DEFINE_MUTEX(hisi_rpmsg_service_mutex);
 
 static struct pm_qos_request qos_request_ddr_down_record;
 static int current_ddr_bandwidth = 0;
-static struct wake_lock hisp_power_wakelock;
+static struct wakeup_source hisp_power_wakelock;
 static struct mutex hisp_wake_lock_mutex;
 
 extern void hisi_isp_boot_stat_dump(void);
+extern int hisp_secmem_size_get(unsigned int *);
 
 typedef enum _timestamp_state_t{
     TIMESTAMP_UNINTIAL = 0,
@@ -101,11 +103,7 @@ enum {
  *@end
  */
 struct rpmsg_hisp160_service {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
     struct rpmsg_device *rpdev;
-#else
-    struct rpmsg_channel *rpdev;
-#endif
 	struct mutex send_lock;
 	struct mutex recv_lock;
 	struct completion *comp;
@@ -122,6 +120,7 @@ enum hisp160_mem_pool_attr
 {
     MEM_POOL_ATTR_READ_WRITE_CACHE = 0,
     MEM_POOL_ATTR_READ_WRITE_SECURITY,
+    MEM_POOL_ATTR_READ_WRITE_ISP_SECURITY,
     MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE,
     MEM_POOL_ATTR_MAX,
 };
@@ -135,7 +134,7 @@ struct hisp160_mem_pool {
     size_t align_size;
     int active;
     unsigned int security_isp_mode;
-    struct ion_client *ion_client;
+    struct sg_table *sgt;
 } ;
 
 /**@brief the instance to talk to hisp driver
@@ -152,8 +151,6 @@ typedef struct _tag_hisp160 {
 	atomic_t opened;
 	struct platform_device*  pdev; //by used to get dts node
 	hisp_dt_data_t dt;
-    struct iommu_domain *domain;
-    struct ion_client *ion_client;
     struct hisp160_mem_pool mem_pool[MEM_POOL_ATTR_MAX];
 } hisp160_t;
 
@@ -211,10 +208,14 @@ void hisp160_init_timestamp(void)
 
 void hisp160_destroy_timestamp(void)
 {
+	int rc = 0;
 	s_timestamp_state		= TIMESTAMP_UNINTIAL;
 	s_system_counter 		= 0;
 	s_system_couter_rate	= 0;
-	memset(&s_timeval, 0x00, sizeof(s_timeval));
+	rc = memset_s(&s_timeval, sizeof(struct timeval), 0x00, sizeof(struct timeval));
+	if (rc != EOK) {
+		cam_err("%s: memset_s fail rc.%d\n", __func__, rc);
+	}
 }
 
 /*Function declaration */
@@ -317,6 +318,7 @@ static void hisp160_notify_rpmsg_cb(void)
  *********************************************/
 static void hisp160_save_rpmsg_data(void *data, int len)
 {
+	int rc = 0;
 	struct rpmsg_hisp160_service *hisi_serv = rpmsg_local.hisi_isp_serv;
 	struct sk_buff *skb = NULL;
 	char *skbdata = NULL;
@@ -339,7 +341,10 @@ static void hisp160_save_rpmsg_data(void *data, int len)
 	}
 
 	skbdata = skb_put(skb, len); /*lint !e64 */
-	memcpy(skbdata, data, len);
+	rc = memcpy_s((void*)skbdata, len, data, len);
+	if (rc != EOK) {
+		cam_err("%s: memcpy_s fail rc.%d\n", __func__, rc);
+	}
 
 	/*add skb to skb queue */
 	mutex_lock(&hisi_serv->recv_lock);
@@ -358,15 +363,9 @@ static void hisp160_save_rpmsg_data(void *data, int len)
  *after power request done.
  *********************************************/
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-static void
+static int
 hisp160_rpmsg_ept_cb(struct rpmsg_device *rpdev,
               void *data, int len, void *priv, u32 src)
-#else
-static void
-hisp160_rpmsg_ept_cb(struct rpmsg_channel *rpdev,
-              void *data, int len, void *priv, u32 src)
-#endif
 {
 	struct rpmsg_hisp160_service *hisi_serv = rpmsg_local.hisi_isp_serv;
 	hisp_msg_t *msg = NULL;
@@ -374,11 +373,11 @@ hisp160_rpmsg_ept_cb(struct rpmsg_channel *rpdev,
 
 	if (NULL == hisi_serv){
 		cam_err("func %s: hisi_serv is NULL",__func__);
-		return;
+		return -EINVAL;
 	}
 	if (NULL == data){
 		cam_err("func %s: data is NULL",__func__);
-		return;
+		return -EINVAL;
 	}
 
 	hisp_assert(len > 0);
@@ -398,6 +397,7 @@ hisp160_rpmsg_ept_cb(struct rpmsg_channel *rpdev,
 	/* save the data and wait for hisp160_recv_rpmsg to get the data*/
 	hisp_recvx(data);
 	hisp160_save_rpmsg_data(data, len);
+	return 0;
 }
 
 char const *hisp160_get_name(hisp_intf_t *i)
@@ -436,14 +436,10 @@ static int hisp160_get_a7isp_addr(void *cfg)
     int ret = -ENODEV;
 #ifdef CONFIG_HISI_CAMERA_ISP_SECURE
     struct hisp_cfg_data *pcfg = NULL;
-    struct scatterlist *sg;
-    struct sg_table *table;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
+    struct scatterlist *sg = NULL;
+    struct sg_table *table = NULL;
     struct dma_buf *buf = NULL;
     struct dma_buf_attachment *attach = NULL;
-#else
-    struct ion_handle* hdl = NULL;
-#endif
     if (NULL == cfg){
         cam_err("func %s: cfg is NULL",__func__);
         return -1;
@@ -452,32 +448,11 @@ static int hisp160_get_a7isp_addr(void *cfg)
 
     mutex_lock(&hisi_rpmsg_service_mutex);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
     ret = hisp_get_sg_table(pcfg->param.sharedFd,&(s_hisp160.pdev->dev),&buf,&attach,&table);
     if(ret < 0){
        cam_err("func %s: get_sg_table failed",__func__);
        goto err_ion_client;
     }
-#else
-    if (IS_ERR_OR_NULL(s_hisp160.ion_client)) {
-        cam_err("func %s: s_hisp160.ion_client is NULL or ERR",__func__);
-        goto err_ion_client;
-    }
-
-    hdl = ion_import_dma_buf(s_hisp160.ion_client, pcfg->param.sharedFd);
-    if (IS_ERR_OR_NULL(hdl)) {
-        cam_err("failed to create ion handle!");
-        goto err_ion_client;
-    }
-
-    cam_info("func %s: import ok",__func__);
-    table = ion_sg_table(s_hisp160.ion_client, hdl);
-    if (IS_ERR_OR_NULL(table)) {
-        cam_err("%s Failed : ion_sg_table.%lu\n", __func__, PTR_ERR(table));
-        goto err_ion_sg_table;
-    }
-    cam_info("func %s: ion_sg_table ok",__func__);
-#endif
 
     sg = table->sgl;
 
@@ -487,166 +462,122 @@ static int hisp160_get_a7isp_addr(void *cfg)
     cam_info("func %s: a8 %x",__func__, pcfg->param.moduleAddr);
 
     ret = 0;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
     hisp_free_dma_buf(&buf,&attach,&table);
-#else
-err_ion_sg_table:
-    ion_free(s_hisp160.ion_client, hdl);
-#endif
 err_ion_client:
     mutex_unlock(&hisi_rpmsg_service_mutex);
 #endif
     return ret;
 }
 
-static int check_buffer_vaild(struct ion_client * client, struct ion_handle *ionhnd, unsigned int vaild_addr, unsigned int vaild_size)
+static int buffer_is_invalid(int share_fd, unsigned int req_addr, unsigned int req_size)
 {
-	struct iommu_map_format iommu_format;
-	int ret = 0;
+    int ret = 0;
+    struct iommu_format fmt = { 0 };
 
-	if (IS_ERR(ionhnd) || IS_ERR_OR_NULL(client)) {
-		return -1;//lint !e438
-	} else {
-		memset(&iommu_format, 0, sizeof(struct iommu_map_format));
-		if (ion_map_iommu(client, ionhnd, &iommu_format)) {
-			return -1;
-		}
-		if (vaild_addr != iommu_format.iova_start) {
-			ret = -1;
-		}
-		if (vaild_size > iommu_format.iova_size){
-			ret = -1;
-		}
-		ion_unmap_iommu(client, ionhnd);
-	}
+    ret = hicam_buf_map_iommu(share_fd, &fmt);
+    if (ret < 0) {
+        cam_err("%s: fail to map iommu.", __func__);
+        return ret;
+    }
 
-	return ret;
+    if (req_addr != fmt.iova || req_size > fmt.size) {
+        cam_err("%s:req_iova:%#x, req_size:%u", __func__, req_addr, req_size);
+        cam_err("%s:real_iova:%#llx, real_size:%llu.", __func__, fmt.iova, fmt.size);
+        ret = -ERANGE;
+    }
+    hicam_buf_unmap_iommu(share_fd, &fmt);
+
+    return ret;
+}
+
+static int find_suitable_mem_pool(struct hisp_cfg_data *pcfg)
+{
+    int ipool;
+    if (pcfg->param.type == MAP_TYPE_RAW2YUV) {
+        ipool = MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE;
+    } else if (pcfg->param.type == MAP_TYPE_STATIC_ISP_SEC) {
+        ipool =  MEM_POOL_ATTR_READ_WRITE_ISP_SECURITY;
+    } else {
+        for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++) {
+            if (s_hisp160.mem_pool[ipool].prot == pcfg->param.prot) {
+                break;
+            }
+        }
+        if (ipool >= MEM_POOL_ATTR_MAX) {
+            cam_err("func %s: no pool hit for prot:%d", __func__, pcfg->param.prot);
+            return -EINVAL;
+        }
+    }
+    return ipool;
 }
 
 static int hisp160_init_r8isp_memory_pool(void *cfg)
 {
-    int ret = -ENODEV;
     int ipool;
-    struct hisp_cfg_data *pcfg;
-    struct scatterlist *sg;
-    struct sg_table *table;
-    struct ion_handle* hdl = NULL;
-    struct ion_client *ion_client;
+    uint32_t r8va;
+    struct hisp_cfg_data *pcfg = NULL;
+    struct sg_table *sgt = NULL;
     enum mapType enMapType;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-	struct dma_buf *buf = NULL;
-	struct dma_buf_attachment *attach = NULL;
-#endif
 
     if (NULL == cfg){
         cam_err("func %s: cfg is NULL",__func__);
         return -1;
     }
 
-    mutex_lock(&hisi_rpmsg_service_mutex);
-
     pcfg = (struct hisp_cfg_data *)cfg;
-
-    cam_info("func %s: pool cfg vaddr=0x%pK, iova=0x%x, size=0x%x, type=%d, prot=0x%x align=0x%zd sec=0x%x",__func__, pcfg->param.vaddr,
+    cam_info("%s: pool cfg vaddr=0x%pK, iova=0x%x, size=0x%x",__func__,
+            pcfg->param.vaddr,
             pcfg->param.iova,
-            pcfg->param.size,
+            pcfg->param.size);
+    cam_info("%s: type=%d, prot=0x%x align=0x%zd sec=0x%x",__func__,
             pcfg->param.type,
             pcfg->param.prot,
             pcfg->param.pool_align_size,
             pcfg->param.security_isp_mode);
 
-    // find suitable mem pool
-    if(pcfg->param.type == MAP_TYPE_RAW2YUV){
-        ipool =  MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE;
-    }else{
-        for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++)
-        {
-            if (s_hisp160.mem_pool[ipool].prot == pcfg->param.prot) {
-                break;
-            }
-        }
-
-        if (ipool >= MEM_POOL_ATTR_MAX) {
-            cam_err("func %s: no pool hit",__func__);
-            goto err_ion_client;
-        }
-    }
-
-    s_hisp160.mem_pool[ipool].ap_va= pcfg->param.vaddr;
-    s_hisp160.mem_pool[ipool].ion_iova = pcfg->param.iova;
-    s_hisp160.mem_pool[ipool].size  = pcfg->param.size;
-    s_hisp160.mem_pool[ipool].align_size  = pcfg->param.pool_align_size;
-    s_hisp160.mem_pool[ipool].security_isp_mode  = pcfg->param.security_isp_mode;
-
-    if(ipool == MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE)
-    {
-        char ion_name[32];
-
-        memset(ion_name, 0, sizeof(ion_name));
-        snprintf(ion_name, sizeof(ion_name), "hwcam-hisp160-%d", ipool);
-        s_hisp160.mem_pool[ipool].ion_client = hisi_ion_client_create(ion_name);
-        if (IS_ERR_OR_NULL(s_hisp160.mem_pool[ipool].ion_client  )) {
-            cam_err("failed to create ion client %s\n", ion_name);
-            goto err_ion_client;
-        }
-    }
-
-    ion_client = s_hisp160.mem_pool[ipool].ion_client;
-    if (IS_ERR_OR_NULL(ion_client)) {
-        cam_err("func %s: s_hisp160.ion_client[%d] is NULL or ERR",__func__,ipool);
-        goto err_ion_client;
-    }
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-	hdl = ion_import_dma_buf_fd(ion_client, (int)(pcfg->param.sharedFd));
-#else
-	hdl = ion_import_dma_buf(ion_client, (int)(pcfg->param.sharedFd));
-#endif
-    if (IS_ERR_OR_NULL(hdl)) {
-        cam_err("failed to create ion handle!");
-        goto err_ion_client;
-    }
-
-    if ((!pcfg->param.security_isp_mode) && check_buffer_vaild(ion_client, hdl, pcfg->param.iova, pcfg->param.size)) {
+    if ((!pcfg->param.security_isp_mode) &&
+            buffer_is_invalid(pcfg->param.sharedFd, pcfg->param.iova, pcfg->param.size)) {
         cam_err("check buffer fail!");
-        goto err_ion_sg_table;
+        return -EINVAL;
     }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-	ret = hisp_get_sg_table(pcfg->param.sharedFd,&(s_hisp160.pdev->dev),&buf,&attach,&table);
-	if(ret < 0){
-		cam_err("func %s: get_sg_table failed",__func__);
-		goto err_ion_sg_table;
-	}
-#else
-    table = ion_sg_table(ion_client, hdl);
-    if (IS_ERR_OR_NULL(table)) {
-        cam_err("%s Failed : ion_sg_table.%lu\n", __func__, PTR_ERR(table));
-        goto err_ion_sg_table;
+    // find suitable mem pool
+    ipool = find_suitable_mem_pool(pcfg);
+    if (ipool < 0) {
+        return ipool;
     }
-#endif
-    sg = table->sgl;
-
-    if(ipool == MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE){
-        s_hisp160.mem_pool[ipool].r8_iova  = hisp_mem_map_steup(sg, pcfg->param.iova,
-            pcfg->param.size,
-            pcfg->param.prot,
-            (unsigned int)ipool,
-            MAP_TYPE_RAW2YUV,
-            (unsigned int)(pcfg->param.pool_align_size));
-    }else{
+    if(ipool == MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE) {
+        enMapType = MAP_TYPE_RAW2YUV;
+    } else {
         enMapType = pcfg->param.security_isp_mode ? MAP_TYPE_STATIC_SEC : MAP_TYPE_DYNAMIC;
-        s_hisp160.mem_pool[ipool].r8_iova  = hisp_mem_map_steup(sg, pcfg->param.iova,
-            pcfg->param.size,
-            pcfg->param.prot,
-            (unsigned int)ipool,
-            enMapType,
+    }
+
+    /* take care of putting sgtable. */
+    sgt = hicam_buf_get_sgtable(pcfg->param.sharedFd);
+    if (IS_ERR_OR_NULL(sgt)) {
+        cam_err("%s: fail to get sgtable.", __func__);
+        return -ENOENT;
+    }
+
+    mutex_lock(&hisi_rpmsg_service_mutex);
+    r8va = hisp_mem_map_steup(sgt->sgl, pcfg->param.iova, pcfg->param.size,
+            pcfg->param.prot, (unsigned int)ipool, enMapType,
             (unsigned int)(pcfg->param.pool_align_size));
+    if (!r8va) {
+        cam_err("%s: hisp_mem_map_steup failed", __func__);
+        mutex_unlock(&hisi_rpmsg_service_mutex);
+        hicam_buf_put_sgtable(sgt);
+        return -ENOMEM;
     }
-    if (!s_hisp160.mem_pool[ipool].r8_iova) {
-        cam_err("func %s: hisp_mem_map_steup failed",__func__);
-        goto err_ion_sg_table;
-    }
+
+    /* hold sg_table things, release at deinit. */
+    s_hisp160.mem_pool[ipool].sgt = sgt;
+    s_hisp160.mem_pool[ipool].r8_iova = r8va;
+    s_hisp160.mem_pool[ipool].ap_va = pcfg->param.vaddr;
+    s_hisp160.mem_pool[ipool].ion_iova = pcfg->param.iova;
+    s_hisp160.mem_pool[ipool].size = pcfg->param.size;
+    s_hisp160.mem_pool[ipool].align_size = pcfg->param.pool_align_size;
+    s_hisp160.mem_pool[ipool].security_isp_mode = pcfg->param.security_isp_mode;
 
     // ion iova isn't equal r8 iova, security or unsecurity, align etc
     // return r8 iova to daemon, and send to r8 later
@@ -655,64 +586,41 @@ static int hisp160_init_r8isp_memory_pool(void *cfg)
 
     cam_info("func %s: r8_iova_pool_base=0x%x",__func__, s_hisp160.mem_pool[ipool].r8_iova);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-    hisp_free_dma_buf(&buf,&attach,&table);
-#endif
-    ret = 0;
-err_ion_sg_table:
-    ion_free(ion_client, hdl);
-err_ion_client:
     mutex_unlock(&hisi_rpmsg_service_mutex);
-    return ret;
+    return 0;
 }
 
 static int hisp160_deinit_r8isp_memory_pool(void *cfg)
 {
     int ipool;
-    struct hisp_cfg_data *pcfg = NULL;
-
-    mutex_lock(&hisi_rpmsg_service_mutex);
+    int rc;
 
     if (NULL == cfg){
         cam_err("func %s: cfg is NULL",__func__);
-        goto err_ion_client;
-    }
-    pcfg = (struct hisp_cfg_data *)cfg;
-
-    // find suitable mem pool
-    if(pcfg->param.type == MAP_TYPE_RAW2YUV){
-        ipool =  MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE;
-    }else{
-        for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++)
-        {
-            if (s_hisp160.mem_pool[ipool].prot == pcfg->param.prot) {
-                break;
-            }
-        }
-
-        if (ipool >= MEM_POOL_ATTR_MAX) {
-            cam_err("func %s: no pool hit",__func__);
-            goto err_ion_client;
-        }
+        return -EINVAL;
     }
 
-    hisp_mem_pool_destroy((unsigned int)ipool);
+    ipool = find_suitable_mem_pool(cfg);
+    if (ipool < 0) {
+        return ipool;
+    }
 
-    if(s_hisp160.mem_pool[ipool].ion_client
-        && (ipool == MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE))
-    {
-        cam_debug("%s deinit memory pool ion client %d\n", __func__, ipool);
-        ion_client_destroy(s_hisp160.mem_pool[ipool].ion_client);
-        s_hisp160.mem_pool[ipool].ion_client = NULL;
+    mutex_lock(&hisi_rpmsg_service_mutex);
+    if (s_hisp160.mem_pool[ipool].active) {
+        s_hisp160.mem_pool[ipool].active = 0;
+        hisp_mem_pool_destroy((unsigned int)ipool);
+        /* release sg_table things. */
+        hicam_buf_put_sgtable(s_hisp160.mem_pool[ipool].sgt);
+    }
+    rc = memset_s(&(s_hisp160.mem_pool[ipool]), sizeof(struct hisp160_mem_pool),
+            0, sizeof(struct hisp160_mem_pool));
+    if (rc != 0) {
+        cam_warn("%s: fail for memset_s mem_pool.", __func__);
     }
 
     mutex_unlock(&hisi_rpmsg_service_mutex);
 
     return 0;
-
-err_ion_client:
-    mutex_unlock(&hisi_rpmsg_service_mutex);
-    return -ENODEV;
 }
 
 // handle daemon carsh
@@ -720,24 +628,24 @@ err_ion_client:
 // miss memory pool deinit
 static int hisp160_deinit_r8isp_memory_pool_force(void)
 {
-    int ipool;
+    int ipool = 0;
+    int rc;
 
-    cam_info("func %s", __func__);
+    cam_warn("func %s", __func__);
 
     mutex_lock(&hisi_rpmsg_service_mutex);
-
     for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++)
     {
         if (s_hisp160.mem_pool[ipool].active) {
+            cam_warn("%s: force deiniting pool:%d", __func__, ipool);
+            s_hisp160.mem_pool[ipool].active = 0;
             hisp_mem_pool_destroy((unsigned int)ipool);
+            hicam_buf_put_sgtable(s_hisp160.mem_pool[ipool].sgt);
         }
-
-        if(s_hisp160.mem_pool[ipool].ion_client
-            && (ipool == MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE))
-        {
-            cam_debug("%s deinit memory pool ion client %d\n", __func__, ipool);
-            ion_client_destroy(s_hisp160.mem_pool[ipool].ion_client);
-            s_hisp160.mem_pool[ipool].ion_client = NULL;
+        rc = memset_s(&(s_hisp160.mem_pool[ipool]), sizeof(struct hisp160_mem_pool),
+                0, sizeof(struct hisp160_mem_pool));
+        if (rc != 0) {
+            cam_warn("%s: fail for memset_s mem_pool.", __func__);
         }
     }
 
@@ -751,7 +659,7 @@ static int hisp160_alloc_r8isp_addr(void *cfg)
     int ipool;
     unsigned int r8_iova;
     size_t  offset;
-    struct hisp_cfg_data *pcfg;
+    struct hisp_cfg_data *pcfg = NULL;
     int rc = 0;
     bool bSecureMode = false;
 
@@ -796,21 +704,10 @@ static int hisp160_alloc_r8isp_addr(void *cfg)
     }
 
     // hanlde dynamic memory alloc
-    if(pcfg->param.type == MAP_TYPE_RAW2YUV){
-        ipool =  MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE;
-    }else{
-        for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++)
-        {
-            if (s_hisp160.mem_pool[ipool].prot == pcfg->param.prot) {
-                break;
-            }
-        }
-
-        if (ipool >= MEM_POOL_ATTR_MAX) {
-            cam_err("func %s: no pool hit",__func__);
-            rc = -EINVAL;
-            goto alloc_err;
-        }
+    ipool = find_suitable_mem_pool(pcfg);
+    if (ipool < 0) {
+        rc = -EINVAL;
+        goto alloc_err;
     }
 
     r8_iova = (unsigned int)hisp_mem_pool_alloc_iova(pcfg->param.size, (unsigned int)ipool);
@@ -856,7 +753,7 @@ static int hisp160_free_r8isp_addr(void *cfg)
 {
     int rc = 0;
     int ipool;
-    struct hisp_cfg_data *pcfg;
+    struct hisp_cfg_data *pcfg = NULL;
 
     if (NULL == cfg) {
         cam_err("func %s: cfg is NULL",__func__);
@@ -893,21 +790,10 @@ static int hisp160_free_r8isp_addr(void *cfg)
     }
 
     // hanlde dynamic memory alloc
-    if(pcfg->param.type == MAP_TYPE_RAW2YUV){
-        ipool =  MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE;
-    }else{
-        for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++)
-        {
-            if (s_hisp160.mem_pool[ipool].prot == pcfg->param.prot) {
-                break;
-            }
-        }
-
-        if (ipool >= MEM_POOL_ATTR_MAX) {
-            cam_err("func %s: no pool hit",__func__);
-            rc = -EINVAL;
-            goto free_err;
-        }
+    ipool = find_suitable_mem_pool(pcfg);
+    if (ipool < 0) {
+        rc = -EFAULT;
+        goto free_err;
     }
 
     rc = (int)hisp_mem_pool_free_iova((unsigned int)ipool, pcfg->param.iova, pcfg->param.size);
@@ -927,15 +813,19 @@ free_err:
 
 static int hisp160_mem_pool_pre_init(void)
 {
-    int ipool;
-    int prot;
-    char ion_name[32];
+    int ipool = 0;
+    int prot = 0;
+    int rc;
 
     cam_info("func %s", __func__);
 
     for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++)
     {
-        memset(&(s_hisp160.mem_pool[ipool]), 0, sizeof(struct hisp160_mem_pool));
+        rc = memset_s(&(s_hisp160.mem_pool[ipool]), sizeof(struct hisp160_mem_pool),
+                0, sizeof(struct hisp160_mem_pool));
+        if (rc != 0) {
+            cam_warn("%s: fail for memset_s mem_pool.", __func__);
+        }
 
         switch (ipool)
         {
@@ -945,6 +835,7 @@ static int hisp160_mem_pool_pre_init(void)
                 break;
 
             case MEM_POOL_ATTR_READ_WRITE_SECURITY:
+            case MEM_POOL_ATTR_READ_WRITE_ISP_SECURITY:
                 prot = IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE | IOMMU_SEC;
                 break;
 
@@ -961,38 +852,32 @@ static int hisp160_mem_pool_pre_init(void)
         }
 
         s_hisp160.mem_pool[ipool].prot = (unsigned int)prot;
-
-        if(ipool != MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE)
-        {
-            memset(ion_name, 0, sizeof(ion_name));
-            snprintf(ion_name, sizeof(ion_name), "hwcam-hisp160-%d", ipool);
-            s_hisp160.mem_pool[ipool].ion_client = hisi_ion_client_create(ion_name);
-            if (IS_ERR_OR_NULL(s_hisp160.mem_pool[ipool].ion_client  )) {
-                cam_err("failed to create ion client %s\n", ion_name);
-                return -ENOMEM;
-            }
-        }
     }
 
     return 0;
 }
 
-
 static int hisp160_mem_pool_later_deinit(void)
 {
-    int ipool;
-    cam_info("func %s", __func__);
+    int ipool = 0;
+    int rc;
+    cam_debug("func %s", __func__);
 
-    for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++)
-    {
-        if (s_hisp160.mem_pool[ipool].ion_client
-            && (ipool != MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE)) {
-            cam_debug("%s deinit memory pool ion client %d\n", __func__, ipool);
-            ion_client_destroy(s_hisp160.mem_pool[ipool].ion_client);
-            s_hisp160.mem_pool[ipool].ion_client = NULL;
+    for (ipool = 0; ipool < MEM_POOL_ATTR_MAX; ipool++) {
+        if (ipool == MEM_POOL_ATTR_READ_WRITE_CACHE_OFF_LINE) {
+            continue;
         }
-
-        memset(&(s_hisp160.mem_pool[ipool]), 0, sizeof(struct hisp160_mem_pool));
+        if (s_hisp160.mem_pool[ipool].active) {
+            cam_warn("%s: force deiniting pool:%d", __func__, ipool);
+            s_hisp160.mem_pool[ipool].active = 0;
+            hisp_mem_pool_destroy((unsigned int)ipool);
+            hicam_buf_put_sgtable(s_hisp160.mem_pool[ipool].sgt);
+        }
+        rc = memset_s(&s_hisp160.mem_pool[ipool], sizeof(struct hisp160_mem_pool),
+                0, sizeof(struct hisp160_mem_pool));
+        if (rc != 0) {
+            cam_warn("%s: fail for memset_s mem_pool.", __func__);
+        }
     }
 
     return 0;
@@ -1030,7 +915,6 @@ static int hisp160_config(hisp_intf_t *i, void *cfg)
 				__func__);
 
 			hisp160_deinit_r8isp_memory_pool_force();
-
 			rc = hisp160_power_off(i);
 			if (0 != rc){
 				break;
@@ -1074,7 +958,7 @@ static int hisp160_config(hisp_intf_t *i, void *cfg)
     case HISP_CONFIG_ISP_TURBO:
         cam_info("%s HISP_CONFIG_ISP_TURBO", __func__);
         rc = hisp_set_clk_rate(VIVOBUS_CLK, 600000000);
-        rc = hisp_set_clk_rate(ISPFUNC_CLK, 554000000);
+        rc = hisp_set_clk_rate(ISPFUNC_CLK, 553333333);
         break;
     case HISP_CONFIG_ISP_NORMAL:
         cam_info("%s HISP_CONFIG_ISP_NORMAL", __func__);
@@ -1102,8 +986,27 @@ static int hisp160_config(hisp_intf_t *i, void *cfg)
         cam_info("%s message_id.0x%x",__func__, pcfg->cfgdata[0]);
         hisp_dump_rpmsg_with_id(pcfg->cfgdata[0]);
         break;
+	case HISP_CONFIG_GET_SEC_ISPFW_SIZE:
+		rc = hisp_secmem_size_get(&pcfg->buf_size);
+		break;
+	case HISP_CONFIG_SET_SEC_ISPFW_BUFFER:
+		rc = hisp_set_sec_fw_buffer(cfg);
+		break;
+	case HISP_CONFIG_RELEASE_SEC_ISPFW_BUFFER:
+		rc = hisp_release_sec_fw_buffer();
+		break;
+	case HISP_CONFIG_SET_MDC_BUFFER:
+		rc = hisp_set_mdc_buffer(cfg);
+		break;
+	case HISP_CONFIG_RELEASE_MDC_BUFFER:
+		rc = hisp_release_mdc_buffer();
+		break;
     default:
+		cam_err("%s: unsupported cmd:%#x", __func__, pcfg->cfgtype);
         break;
+	}
+	if (rc < 0) {
+		cam_err("%s: cmd:%#x fail, rc:%d", __func__, pcfg->cfgtype, rc);
 	}
 	return rc;
 }
@@ -1113,17 +1016,14 @@ static int hisp160_power_on(hisp_intf_t *i)
 	int rc = 0;
 	bool rproc_enabled = false;
 	bool hi_opened = false;
-       bool ion_client_created = false;
 	hisp160_t *hi = NULL;
 	unsigned long current_jiffies = jiffies;
 	uint32_t timeout = hw_is_fpga_board() ? 60000 : 15000;
 
 	struct rpmsg_hisp160_service *hisi_serv = NULL;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
     struct rpmsg_channel_info chinfo = {
         .src = RPMSG_ADDR_ANY,
     };
-#endif
 	if (NULL == i){
 		return -1;
 	}
@@ -1132,8 +1032,8 @@ static int hisp160_power_on(hisp_intf_t *i)
 	cam_info("%s enter ....\n", __func__);
 
 	mutex_lock(&hisp_wake_lock_mutex);
-	if (!wake_lock_active(&hisp_power_wakelock)) {
-		wake_lock(&hisp_power_wakelock);
+	if (!hisp_power_wakelock.active) {
+		__pm_stay_awake(&hisp_power_wakelock);
 		cam_info("%s hisp power on enter, wake lock\n", __func__);
 	}
 	mutex_unlock(&hisp_wake_lock_mutex); /*lint !e456 */
@@ -1179,14 +1079,8 @@ static int hisp160_power_on(hisp_intf_t *i)
 	}
 
 	/*assign a new, unique, local address and associate instance with it */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
     hisi_serv->ept = rpmsg_create_ept(hisi_serv->rpdev, hisp160_rpmsg_ept_cb, hisi_serv,
               chinfo);
-#else
-hisi_serv->ept =
-rpmsg_create_ept(hisi_serv->rpdev, hisp160_rpmsg_ept_cb, hisi_serv,
-              RPMSG_ADDR_ANY);
-#endif
 	if (!hisi_serv->ept) {
 		rc = -ENOMEM;
 		goto FAILED_RET;
@@ -1201,20 +1095,12 @@ rpmsg_create_ept(hisi_serv->rpdev, hisp160_rpmsg_ept_cb, hisi_serv,
 
 	hisp160_init_timestamp();
 
-    s_hisp160.ion_client = hisi_ion_client_create("hwcam-hisp160");
-    if (IS_ERR_OR_NULL(s_hisp160.ion_client )) {
-        cam_err("failed to create ion client! \n");
-        rc = -ENOMEM;
-        goto FAILED_RET;
-    }
-
     if (hisp160_mem_pool_pre_init() ) {
         cam_err("failed to pre init mem pool \n");
         rc = -ENOMEM;
         goto FAILED_RET;
     }
 
-    ion_client_created = true;
 	mutex_unlock(&hisi_rpmsg_service_mutex);
 	cam_info("%s exit ,power on time:%d....\n", __func__,
 			jiffies_to_msecs(jiffies - current_jiffies) );
@@ -1230,18 +1116,14 @@ FAILED_RET:
                rproc_set_sync_flag(true);
 	}
 
-    if (ion_client_created) {
-        ion_client_destroy(s_hisp160.ion_client);
-        s_hisp160.ion_client = NULL;
-        hisp160_mem_pool_later_deinit();
-    }
+    hisp160_mem_pool_later_deinit();
 	remote_processor_up = false;
 
 	mutex_unlock(&hisi_rpmsg_service_mutex);
 
 	mutex_lock(&hisp_wake_lock_mutex);
-	if (wake_lock_active(&hisp_power_wakelock)) {
-		wake_unlock(&hisp_power_wakelock);
+	if (hisp_power_wakelock.active) {
+		__pm_relax(&hisp_power_wakelock);
 		cam_err("%s hisp power on failed, wake unlock\n", __func__);
 	}
 	mutex_unlock(&hisp_wake_lock_mutex); /*lint !e456 */
@@ -1312,11 +1194,6 @@ static int hisp160_power_off(hisp_intf_t *i)
 
 	hisp160_destroy_timestamp();
 UNLOCK_RET:
-    if (s_hisp160.ion_client) {
-        ion_client_destroy(s_hisp160.ion_client);
-        s_hisp160.ion_client = NULL;
-    }
-
     hisp160_mem_pool_later_deinit();
 
 	mutex_unlock(&hisi_rpmsg_service_mutex);
@@ -1325,19 +1202,15 @@ RET:
 			jiffies_to_msecs(jiffies - current_jiffies) );
 
 	mutex_lock(&hisp_wake_lock_mutex);
-	if (wake_lock_active(&hisp_power_wakelock)) {
-		wake_unlock(&hisp_power_wakelock);
+	if (hisp_power_wakelock.active) {
+		__pm_relax(&hisp_power_wakelock);
 		cam_info("%s hisp power off exit, wake unlock\n", __func__);
 	}
 	mutex_unlock(&hisp_wake_lock_mutex); /*lint !e456 */
 	return rc;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 static void hisp160_rpmsg_remove(struct rpmsg_device *rpdev)
-#else
-static void hisp160_rpmsg_remove(struct rpmsg_channel *rpdev)
-#endif
 {
 	struct rpmsg_hisp160_service *hisi_serv = dev_get_drvdata(&rpdev->dev);
 
@@ -1356,15 +1229,9 @@ static void hisp160_rpmsg_remove(struct rpmsg_channel *rpdev)
 	cam_notice("rpmsg hisi driver is removed\n");
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
-static void
+static int
 hisp160_rpmsg_driver_cb(struct rpmsg_device *rpdev,
             void *data, int len, void *priv, u32 src)
-#else
-static void
-hisp160_rpmsg_driver_cb(struct rpmsg_channel *rpdev,
-            void *data, int len, void *priv, u32 src)
-#endif
 {
 	cam_info("%s enter ....\n", __func__);
 	cam_warn("%s() %d uhm, unexpected message!\n", __func__,
@@ -1372,6 +1239,7 @@ hisp160_rpmsg_driver_cb(struct rpmsg_channel *rpdev,
 
 	print_hex_dump(KERN_DEBUG, __func__, DUMP_PREFIX_NONE, 16, 1,
 			   data, len, true);
+	return 0;
 }
 
 static int
@@ -1417,18 +1285,10 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 			goto UNLOCK_RET;
 		}
 		hisp_sendin(msg);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 		rc = rpmsg_send_offchannel(hisi_serv->ept,
 					   hisi_serv->ept->addr,
 					   hisi_serv->rpdev->dst, (void *)msg,
 					   len);
-#else
-        rc = rpmsg_send_offchannel(hisi_serv->rpdev,
-					   hisi_serv->ept->addr,
-					   hisi_serv->rpdev->dst, (void *)msg,
-					   len);
-#endif
-
 		if (rc) {
 			cam_err("%s() %d failed: first rpmsg_send_offchannel ret is %d!\n", __func__,
 				__LINE__, rc);
@@ -1436,14 +1296,8 @@ hisp160_send_rpmsg(hisp_intf_t *i, hisp_msg_t *from_user, size_t len)
 		goto UNLOCK_RET;
 	}
 	hisp_sendin(msg);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 	rc = rpmsg_send_offchannel(hisi_serv->ept, hisi_serv->ept->addr,
 				   hisi_serv->dst, (void *)msg, len);
-#else
-    rc = rpmsg_send_offchannel(hisi_serv->rpdev, hisi_serv->ept->addr,
-				   hisi_serv->dst, (void *)msg, len);
-#endif
-
 	if (rc) {
 		cam_err("%s() %d failed: rpmsg_send_offchannel ret is %d!\n", __func__,
 			__LINE__, rc);
@@ -1553,7 +1407,7 @@ hisp160_recv_rpmsg(hisp_intf_t *i, hisp_msg_t *user_addr, size_t len)
 	}
 
 	hisp160_handle_msg(msg);
-	if (!memcpy(user_addr, msg, rc)) {
+	if (memcpy_s(user_addr, sizeof(hisp_msg_t), msg, rc) != EOK) {
 		rc = -EFAULT;
 		cam_err("Fail: %s()%d ret = %d\n", __func__, __LINE__, rc);
 	}
@@ -1602,7 +1456,7 @@ static ssize_t hisp_ddr_freq_ctrl_show(struct device *dev,
 {
 	cam_info("enter %s,current_ddr_bandwidth:%d\n", __func__, current_ddr_bandwidth);
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", current_ddr_bandwidth);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", current_ddr_bandwidth);
 }
 
 static ssize_t hisp_ddr_freq_store(struct device *dev,
@@ -1630,11 +1484,7 @@ static ssize_t hisp_ddr_freq_store(struct device *dev,
 }
 
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0))
 static int32_t hisp160_rpmsg_probe(struct rpmsg_device *rpdev)
-#else
-static int32_t hisp160_rpmsg_probe(struct rpmsg_channel *rpdev)
-#endif
 {
 	int32_t ret = 0;
 	struct rpmsg_hisp160_service *hisi_serv = NULL;
@@ -1715,7 +1565,7 @@ hisp160_platform_probe(
 	int32_t ret = 0;
 
 	cam_info("%s: enter", __func__);
-	wake_lock_init(&hisp_power_wakelock, WAKE_LOCK_SUSPEND, "hisp_power_wakelock");
+	wakeup_source_init(&hisp_power_wakelock, "hisp_power_wakelock");
 	mutex_init(&hisp_wake_lock_mutex);
 	ret = hisp_get_dt_data(pdev, &s_hisp160.dt);
 	if (ret < 0) {
@@ -1741,7 +1591,6 @@ hisp160_platform_probe(
 	}
 
     s_hisp160.pdev = pdev;
-    s_hisp160.ion_client = NULL;
 
 #ifdef CONFIG_HISI_DEBUG_FS
 	ret = device_create_file(&pdev->dev, &hisp_ddr_freq_ctrl_attr);
@@ -1755,7 +1604,7 @@ hisp160_platform_probe(
 	return 0;
 
 error:
-	wake_lock_destroy(&hisp_power_wakelock);
+	wakeup_source_trash(&hisp_power_wakelock);
 	mutex_destroy(&hisp_wake_lock_mutex);
 	cam_notice("%s exit with ret = %d\n", __func__, ret);
 	return ret;
@@ -1786,7 +1635,7 @@ hisp160_exit_module(void)
 	cam_notice("%s enter\n", __func__);
 	hisp_unregister(s_hisp160.pdev);
 	platform_driver_unregister(&s_hisp160_driver);
-	wake_lock_destroy(&hisp_power_wakelock);
+	wakeup_source_trash(&hisp_power_wakelock);
 	mutex_destroy(&hisp_wake_lock_mutex);
 }
 

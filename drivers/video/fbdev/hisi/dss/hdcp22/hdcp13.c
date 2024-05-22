@@ -39,7 +39,7 @@ static int GetKSVListFromDPCD(struct dp_ctrl *dptx, uint8_t* sha1_buffer, uint32
 	uint32_t dev_count,  i;
 	uint8_t temp[16];
 	uint32_t ptr=0;
-	uint8_t* pKSVList;
+	uint8_t* pKSVList = NULL;
 	uint32_t len = 10;
 	int retval;
 
@@ -160,12 +160,14 @@ int HDCP_Read_TEInfo(struct dp_ctrl *dptx)
 	}
 	//HISI_FB_DEBUG("dptx_read BKSV: 0x%lx\n", g_BKSV);
 
+#ifdef CONFIG_HISI_FB_970
 	retval = dptx_read_dpcd(dptx, 0x68028, &g_bcaps);
 	if (retval) {
 		HISI_FB_ERR("failed to dptx_read_bytes_from_dpcd bcaps, retval=%d.\n", retval);
 		return retval;
 	}
 	HISI_FB_DEBUG("dptx_read bcaps:%x!\n", g_bcaps);
+#endif
 
 	//dptx_read_dpcd(dptx, 0x68029, &bstatus);
 
@@ -183,8 +185,8 @@ int HDCP_Read_TEInfo(struct dp_ctrl *dptx)
 
 int HDCP_GetSHA1Buffer(uint8_t* pSHA1buffer, uint32_t* plength, uint8_t* pV_prime)
 {
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 
 	if(pSHA1buffer == NULL || plength == NULL || pV_prime == NULL){
 		HISI_FB_ERR("pSHA1buffer or plength or pV_prime is NULL!\n");
@@ -223,6 +225,7 @@ int HDCP_GetSHA1Buffer(uint8_t* pSHA1buffer, uint32_t* plength, uint8_t* pV_prim
 	return 0;
 }
 
+#ifdef CONFIG_SWITCH
 static void HDCP_Notification(struct switch_dev *sdev, uint32_t state)
 {
 	char *envp[3];
@@ -257,16 +260,17 @@ static void HDCP_Notification(struct switch_dev *sdev, uint32_t state)
 	HISI_FB_NOTICE("[HDCP] Notification: %s, %s.\n", name_buf, state_buf);
 	return;
 }
+#endif
 
 static int hdcp_polling_thread(void *p)
 {
 	//uint32_t i=0;
 	uint32_t temp_value;
-	struct hdcp_params *hparams;
-	struct dp_ctrl *dptx;
+	struct hdcp_params *hparams = NULL;
+	struct dp_ctrl *dptx = NULL;
 
 	dptx = (struct dp_ctrl *)p;
-	if(!dptx){
+	if(dptx == NULL){
 		HISI_FB_ERR("dptx is null!\n");
 		return -1;
 	}
@@ -287,7 +291,9 @@ static int hdcp_polling_thread(void *p)
 			HISI_FB_DEBUG("check hdcp disable: DPTX_HDCP_CFG is:0x%x!\n", temp_value);
 			if(!(temp_value & DPTX_CFG_EN_HDCP)) { //hdcp disable
 				hdcp_polling_flag = HDCP_POLL_STOP;
+			#ifdef CONFIG_SWITCH
 				HDCP_Notification(&dptx->sdev, Hot_Plug_HDCP_DISABLE);
+			#endif
 			}
 		} else if (hdcp_polling_flag == HDCP_POLL_CHECK_ENABLE) {
 			if (dptx->hisifd->secure_ctrl.hdcp_reg_get) {
@@ -300,7 +306,9 @@ static int hdcp_polling_thread(void *p)
 			HISI_FB_DEBUG("check hdcp enable: DPTX_HDCP_CFG is:0x%x!\n", temp_value);
 			if(temp_value & DPTX_CFG_EN_HDCP) { //hdcp enable
 				hdcp_polling_flag = HDCP_POLL_STOP;
+			#ifdef CONFIG_SWITCH
 				HDCP_Notification(&dptx->sdev, Hot_Plug_HDCP_ENABLE);
+			#endif
 			}
 		}
 		up(&g_hdcp_poll_sem);
@@ -321,8 +329,8 @@ void HDCP_Stop_Polling_task(uint8_t stop)
 */
 int HDCP_CheckEnable(uint32_t IsCheckEnable)
 {
-	struct hisi_fb_data_type *hisifd;
-	struct dp_ctrl *dptx;
+	struct hisi_fb_data_type *hisifd = NULL;
+	struct dp_ctrl *dptx = NULL;
 
 	if (g_dp_pdev == NULL) {
 		HISI_FB_ERR("g_dp_pdev is NULL!\n");
@@ -337,7 +345,7 @@ int HDCP_CheckEnable(uint32_t IsCheckEnable)
 	dptx = &(hisifd->dp);
 
 	HISI_FB_ERR("HDCP_CheckEnable enter!\n");
-	if (!hdcp_polling_task) {
+	if (hdcp_polling_task == NULL) {
 		hdcp_polling_task = kthread_create(hdcp_polling_thread, dptx, "hdcp_polling_task");
 		if(IS_ERR(hdcp_polling_task)) {
 			HISI_FB_ERR("Unable to start kernel hdcp_polling_task./n");
@@ -368,7 +376,9 @@ static void hdcp_notify_wq_handler(struct work_struct *work)
 		return;
 	}
 
+#ifdef CONFIG_SWITCH
 	HDCP_Notification(&hdcp->dptx->sdev, hdcp->notification);
+#endif
 }
 
 static void HDCP_Init(struct dp_ctrl *dptx)
@@ -381,7 +391,7 @@ static void HDCP_Init(struct dp_ctrl *dptx)
 	hdcp_control.dptx = dptx;
 	hdcp_control.notification = 0;
 	hdcp_control.hdcp_notify_wq = create_singlethread_workqueue("hdcp_notify");
-	if (!hdcp_control.hdcp_notify_wq) {
+	if (hdcp_control.hdcp_notify_wq == NULL) {
 		HISI_FB_ERR("[HDCP]create hdcp_wq failed!\n");
 		return;
 	}
@@ -393,7 +403,7 @@ static void HDCP_DeInit(void)
 {
 	hdcp_control.dptx = NULL;
 	hdcp_control.notification = 0;
-	if (hdcp_control.hdcp_notify_wq) {
+	if (hdcp_control.hdcp_notify_wq != NULL) {
 		destroy_workqueue(hdcp_control.hdcp_notify_wq);
 		hdcp_control.hdcp_notify_wq = NULL;
 	}
@@ -407,7 +417,7 @@ void HDCP_DP_on(struct dp_ctrl *dptx, bool en)
 		return;
 	}
 
-	if (hdcp_polling_task) {
+	if (hdcp_polling_task != NULL) {
 		kthread_stop(hdcp_polling_task);
 		hdcp_polling_task = NULL;
 		hdcp_polling_flag = HDCP_POLL_STOP;
@@ -423,7 +433,7 @@ void HDCP_DP_on(struct dp_ctrl *dptx, bool en)
 void HDCP_SendNotification(uint32_t notification)
 {
 	hdcp_control.notification = notification;
-	if (hdcp_control.hdcp_notify_wq) {
+	if (hdcp_control.hdcp_notify_wq != NULL) {
 		queue_work(hdcp_control.hdcp_notify_wq, &(hdcp_control.hdcp_notify_work));
 	}
 }

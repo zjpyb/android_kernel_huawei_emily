@@ -55,6 +55,7 @@
 
 extern VOS_UINT32 PPP_SendPushedData(VOS_UINT16 usPppId, VOS_UINT8 * pucDataBuf, VOS_UINT16 usLen);
 
+#if(FEATURE_ON == FEATURE_PPP)
 void
 async_Init(struct async *async)
 {
@@ -143,7 +144,11 @@ async_LayerPush(struct link *l, struct ppp_mbuf *bp,
   cnt = cp - l->async.xbuff;
   ppp_m_freem(bp);
 
+#if (PPP_FEATURE == PPP_FEATURE_PPP)
   PPP_SendPushedData((VOS_UINT16)PPP_LINK_TO_ID(l), (VOS_UINT8 *)(l->async.xbuff), (VOS_UINT16)cnt);
+#else
+  PPPoE_PPPSendDataToRABM ((VOS_UINT8 *)(l->async.xbuff), (VOS_UINT16)cnt);
+#endif
 
   return VOS_NULL_PTR;
 }
@@ -342,4 +347,5 @@ async_LayerPull(struct link *l, PPP_ZC_STRU *bp, VOS_UINT16 *proto)
 struct layer asynclayer =
   { LAYER_ASYNC, "async", async_LayerPush, async_LayerPull };
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

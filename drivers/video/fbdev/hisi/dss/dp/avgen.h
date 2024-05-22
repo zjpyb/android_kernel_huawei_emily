@@ -29,8 +29,8 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
 
 #ifndef __DPTX_AVGEN_H__
 #define __DPTX_AVGEN_H__
@@ -38,6 +38,9 @@
 #include "../hisi_dp.h"
 
 #define AUDIO_INFOFREAME_HEADER 0x441B8400
+#define HDR_INFOFRAME_HEADER 0x4C1D8700
+#define FHD_TIMING_H_ACTIVE 1920
+#define FHD_TIMING_V_ACTIVE 1080
 
 void dptx_audio_params_reset(struct audio_params *aparams);
 void dptx_audio_config(struct dp_ctrl *dptx);
@@ -84,10 +87,13 @@ void dptx_audio_infoframe_sdp_send(struct dp_ctrl *dptx);
 bool dptx_check_low_temperature(struct dp_ctrl *dptx);
 #ifdef CONFIG_HISI_FB_V510
 void dptx_vsd_ycbcr420_send(struct dp_ctrl *dptx, u8 enable);
+void dptx_program_dsc_bits_perpixel(struct dp_ctrl* dptx);
 #endif
 //#define DPTX_COMBO_PHY
 // To enable audio during hotplug
 void dptx_audio_sdp_en(struct dp_ctrl *dptx);
 void dptx_audio_timestamp_sdp_en(struct dp_ctrl *dptx);
+void dptx_dsc_enable(struct dp_ctrl* dptx);
+int dptx_hdr_infoframe_sdp_send(struct dp_ctrl *dptx, const void __user *argp);
 
 #endif

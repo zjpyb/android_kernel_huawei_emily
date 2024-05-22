@@ -10,10 +10,14 @@
 * GNU General Public License for more details.
 *
 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winteger-overflow"
 
 #include "hisi_overlay_utils.h"
 #include "hisi_block_algorithm.h"
 #include "hisi_overlay_cmdlist_utils.h"
+#include "hisi_mmbuf_manager.h"
+
 /*lint -e570 -e648 -e666 -e838 -e574*/
 static int hisi_check_two_wch_wb_finish(struct hisi_fb_data_type *hisifd, uint32_t last_cmdlist_idxs,
 	int last_mctl_idx, uint32_t cmdlist_idxs, int mctl_idx)
@@ -87,8 +91,8 @@ REDO_ret1:
 
 static uint32_t hisi_get_block_info_layers_channels(dss_overlay_block_t *block_infos, uint32_t block_nums)
 {
-	dss_overlay_block_t *block_info;
-	dss_layer_t *layer_info;
+	dss_overlay_block_t *block_info = NULL;
+	dss_layer_t *layer_info = NULL;
 	uint32_t chn_idx = 0;
 	int i = 0;
 	int j = 0;
@@ -113,8 +117,8 @@ static uint32_t hisi_get_block_info_layers_channels(dss_overlay_block_t *block_i
 				continue;
 			}
 
-			if (!(chn_idx & (1 << layer_info->chn_idx))) {
-				chn_idx |= 1 << layer_info->chn_idx;
+			if (!(chn_idx & (1 << (uint32_t)layer_info->chn_idx))) {
+				chn_idx |= 1 << (uint32_t)layer_info->chn_idx;
 			}
 		}
 	}
@@ -139,14 +143,14 @@ bool hisi_offline_chn_include_online_chn(dss_overlay_block_t *offline_block_info
 	}
 
 	offline_chn_idx = hisi_get_block_info_layers_channels(offline_block_infos, offline_block_nums);
-	online_pre_chn_idx = hisi_get_block_info_layers_channels((dss_overlay_block_t *)(hisifd_primary->ov_req_prev.ov_block_infos_ptr),
+	online_pre_chn_idx = hisi_get_block_info_layers_channels((dss_overlay_block_t *)(uintptr_t)(hisifd_primary->ov_req_prev.ov_block_infos_ptr),
 															 hisifd_primary->ov_req_prev.ov_block_nums);
 	if (offline_chn_idx & online_pre_chn_idx) {
 		HISI_FB_ERR("offline_chn_idx(0x%x) be included at online_chn_idx(0x%x),\n", offline_chn_idx, online_pre_chn_idx);
 		return true;
 	}
 
-	online_pre_pre_chn_idx = hisi_get_block_info_layers_channels((dss_overlay_block_t *)(hisifd_primary->ov_req_prev_prev.ov_block_infos_ptr),
+	online_pre_pre_chn_idx = hisi_get_block_info_layers_channels((dss_overlay_block_t *)(uintptr_t)(hisifd_primary->ov_req_prev_prev.ov_block_infos_ptr),
 																 hisifd_primary->ov_req_prev_prev.ov_block_nums);
 
 	if (offline_chn_idx & online_pre_pre_chn_idx) {
@@ -286,9 +290,9 @@ static void hisi_offline_clear(struct hisi_fb_data_type *hisifd,
 	hisi_drm_layer_offline_clear(hisifd, pov_req);
 	hisifb_buf_sync_signal(hisifd);
 
-	pov_h_block_infos = (dss_overlay_block_t *)pov_req->ov_block_infos_ptr;
+	pov_h_block_infos = (dss_overlay_block_t *)(uintptr_t)pov_req->ov_block_infos_ptr;
 	if (pov_h_block_infos == NULL) {
-		if (pov_req) {
+		if (pov_req != NULL) {
 			kfree(pov_req);
 			pov_req = NULL;
 		}
@@ -318,8 +322,8 @@ static void hisi_offline_clear(struct hisi_fb_data_type *hisifd,
 		hisi_dss_mmbuf_info_clear(hisifd, 0);
 	}
 
-	if (pov_req) {
-		if (pov_h_block_infos) {
+	if (pov_req != NULL) {
+		if (pov_h_block_infos != NULL) {
 			kfree(pov_h_block_infos);
 			pov_h_block_infos = NULL;
 		}
@@ -330,7 +334,7 @@ static void hisi_offline_clear(struct hisi_fb_data_type *hisifd,
 }
 
 static int hisi_get_ov_data_from_user(struct hisi_fb_data_type *hisifd,
-	dss_overlay_t *pov_req, void __user *argp)
+	dss_overlay_t *pov_req, const void __user *argp)
 {
 	int ret = 0;
 	dss_overlay_block_t *pov_h_block_infos = NULL;
@@ -366,13 +370,13 @@ static int hisi_get_ov_data_from_user(struct hisi_fb_data_type *hisifd,
 
 	ov_block_size = pov_req->ov_block_nums * sizeof(dss_overlay_block_t);
 	pov_h_block_infos = (dss_overlay_block_t *)kmalloc(ov_block_size, GFP_ATOMIC);
-	if (!pov_h_block_infos) {
+	if (pov_h_block_infos == NULL) {
 		HISI_FB_ERR("fb%d, pov_h_block_infos alloc failed!\n", hisifd->index);
 		return -EINVAL;
 	}
 	memset(pov_h_block_infos, 0, ov_block_size);
 
-	ret = copy_from_user(pov_h_block_infos, (dss_overlay_block_t *)pov_req->ov_block_infos_ptr,
+	ret = copy_from_user(pov_h_block_infos, (dss_overlay_block_t *)(uintptr_t)pov_req->ov_block_infos_ptr,
 		ov_block_size);
 	if (ret) {
 		HISI_FB_ERR("fb%d, dss_overlay_block_t copy_from_user failed!\n",
@@ -389,7 +393,7 @@ static int hisi_get_ov_data_from_user(struct hisi_fb_data_type *hisifd,
 		pov_h_block_infos = NULL;
 		return -EINVAL;
 	}
-	pov_req->ov_block_infos_ptr = (uint64_t)pov_h_block_infos;
+	pov_req->ov_block_infos_ptr = (uint64_t)(uintptr_t)pov_h_block_infos;
 
 	return ret;
 }
@@ -431,8 +435,10 @@ static bool hisi_check_csc_config_needed(dss_overlay_t *pov_req_h_v)
 		return false;
 	}
 
-	pov_h_v_block = (dss_overlay_block_t *)(pov_req_h_v->ov_block_infos_ptr);
+	pov_h_v_block = (dss_overlay_block_t *)(uintptr_t)(pov_req_h_v->ov_block_infos_ptr);
 
+#if defined (CONFIG_HISI_FB_970) || defined (CONFIG_HISI_FB_V501) || defined (CONFIG_HISI_FB_V510) || \
+	defined (CONFIG_HISI_FB_V320) || defined (CONFIG_HISI_FB_V330) || defined (CONFIG_HISI_FB_V350)
 	// check whether csc config needed or not
 	if ((pov_h_v_block->layer_nums == 1) &&
 		(isYUV(pov_h_v_block->layer_infos[0].img.format))) {
@@ -445,11 +451,27 @@ static bool hisi_check_csc_config_needed(dss_overlay_t *pov_req_h_v)
 		}
 	}
 
+#else
+	// check whether csc config needed or not
+	if ((pov_h_v_block->layer_nums == 1) &&
+		(isYUV(pov_h_v_block->layer_infos[0].img.format))) {
+		if ((pov_req_h_v->wb_layer_nums == 1) &&
+			isYUV(pov_req_h_v->wb_layer_infos[0].dst.format)) {
+			return false;
+		} else if ((pov_req_h_v->wb_layer_nums == 2) &&
+			isYUV(pov_req_h_v->wb_layer_infos[0].dst.format) &&
+			isYUV(pov_req_h_v->wb_layer_infos[1].dst.format)) {
+			return false;
+		} else {
+			; //do nothing
+		}
+	}
+#endif
 
 	return true;
 }
 
-static int hisi_vactive0_start_wait(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req, int use_comm_mmbuf)
+static int hisi_vactive0_start_wait(struct hisi_fb_data_type *hisifd, dss_overlay_t *pov_req, uint32_t use_comm_mmbuf)
 {
 	struct hisi_fb_data_type *online_hisifd = NULL;
 	struct timeval tv0;
@@ -482,7 +504,7 @@ static int hisi_vactive0_start_wait(struct hisi_fb_data_type *hisifd, dss_overla
 		online_hisifd = hisifd_list[EXTERNAL_PANEL_IDX];
 	}
 
-	if (online_hisifd && online_hisifd->panel_power_on) {
+	if ((online_hisifd != NULL) && online_hisifd->panel_power_on) {
 		hisifb_get_timestamp(&tv0);
 		if (is_mipi_cmd_panel(online_hisifd) && (online_hisifd->vactive0_start_flag == 0)) {
 		REDO_CMD:
@@ -526,8 +548,10 @@ static void hisi_tuning_offline_clk_rate(struct hisi_fb_data_type *hisifd)
 {
 	uint64_t offline_clk_rate;
 	uint64_t online_clk_rate;
+	uint64_t external_clk_rate;
+	uint64_t target_clk_rate;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is null.\n");
 		return;
 	}
@@ -541,8 +565,15 @@ static void hisi_tuning_offline_clk_rate(struct hisi_fb_data_type *hisifd)
 		offline_clk_rate = hisifd->dss_vote_cmd.dss_pri_clk_rate;
 		online_clk_rate = hisifd_list[PRIMARY_PANEL_IDX]->dss_vote_cmd.dss_pri_clk_rate;
 
-		if (offline_clk_rate >= online_clk_rate) {
-			clk_set_rate(hisifd->dss_pri_clk, offline_clk_rate);
+		if (hisifd_list[EXTERNAL_PANEL_IDX]) {
+			external_clk_rate = hisifd_list[EXTERNAL_PANEL_IDX]->dss_vote_cmd.dss_pri_clk_rate;
+			target_clk_rate = (external_clk_rate > online_clk_rate) ? external_clk_rate : online_clk_rate;
+		} else {
+			target_clk_rate = online_clk_rate;
+		}
+
+		if (offline_clk_rate >= target_clk_rate) {
+			(void)clk_set_rate(hisifd->dss_pri_clk, offline_clk_rate);
 		}
 
 		HISI_FB_DEBUG("fb%d set online(%llu) -> offline(%llu).\n",
@@ -553,8 +584,10 @@ static void hisi_tuning_offline_clk_rate(struct hisi_fb_data_type *hisifd)
 static void hisi_recovery_online_clk_rate(struct hisi_fb_data_type *hisifd)
 {
 	uint64_t online_clk_rate;
+	uint64_t external_clk_rate;
+	uint64_t target_clk_rate;
 
-	if (!hisifd) {
+	if (hisifd == NULL) {
 		HISI_FB_ERR("hisifd is null.\n");
 		return;
 	}
@@ -567,9 +600,16 @@ static void hisi_recovery_online_clk_rate(struct hisi_fb_data_type *hisifd)
 	if (hisifd->need_tuning_clk) {
 		online_clk_rate = hisifd_list[PRIMARY_PANEL_IDX]->dss_vote_cmd.dss_pri_clk_rate;
 
-		clk_set_rate(hisifd->dss_pri_clk, online_clk_rate);
+		if (hisifd_list[EXTERNAL_PANEL_IDX]) {
+			external_clk_rate = hisifd_list[EXTERNAL_PANEL_IDX]->dss_vote_cmd.dss_pri_clk_rate;
+			target_clk_rate = external_clk_rate > online_clk_rate ? external_clk_rate : online_clk_rate;
+		} else {
+			target_clk_rate = online_clk_rate;
+		}
 
-		hisifd->dss_vote_cmd.dss_pri_clk_rate = online_clk_rate;
+		(void)clk_set_rate(hisifd->dss_pri_clk, target_clk_rate);
+
+		hisifd->dss_vote_cmd.dss_pri_clk_rate = target_clk_rate;//it have some problem.
 
 		hisifd->need_tuning_clk = false;
 
@@ -669,13 +709,13 @@ static int hisi_ov_block_config(struct hisi_fb_data_type *hisifd, dss_overlay_t 
 	////////////////////////////////////////////////////////////////////////////
 	// get vertical block ov
 	pov_req_h_v = &(hisifd->ov_req);
-	pov_req_h_v->ov_block_infos_ptr = (uint64_t)(&(hisifd->ov_block_infos));
+	pov_req_h_v->ov_block_infos_ptr = (uint64_t)(uintptr_t)(&(hisifd->ov_block_infos));
 
 	enable_cmdlist = g_enable_ovl_cmdlist_offline;
 
 	for (m = 0; m < pov_req->ov_block_nums; m++) {
 		pov_h_block = &(pov_h_block_infos[m]);
-		ret = get_ov_block_rect(pov_req, pov_h_block, wb_layer4block, &block_num, hisifd->ov_block_rects,false);//lint !e747
+		ret = get_ov_block_rect(pov_req, pov_h_block, wb_layer4block, &block_num, hisifd->ov_block_rects, false);//lint !e747
 		if ((ret != 0) || (block_num == 0) || (block_num >= HISI_DSS_CMDLIST_BLOCK_MAX)) {
 			HISI_FB_ERR("get_ov_block_rect failed! ret = %d, block_num[%d]\n", ret, block_num);
 			ret = -1;
@@ -786,15 +826,45 @@ static int hisi_ov_block_config(struct hisi_fb_data_type *hisifd, dss_overlay_t 
 	return ret;
 }
 
-int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
+static int hisi_check_panel_status_and_composer_type(dss_overlay_t *pov_req, uint32_t wb_compose_type)
+{
+	struct hisi_fb_data_type *primary_hisifd = NULL;
+
+	primary_hisifd = hisifd_list[PRIMARY_PANEL_IDX];
+
+	if (pov_req == NULL) {
+		HISI_FB_INFO("pov_req is null pointer\n");
+		return -EINVAL;
+	}
+
+	if (primary_hisifd == NULL) {
+		HISI_FB_INFO("primary_hisifd is NULL Pointer\n");
+		return 0;
+	}
+
+	if (pov_req->wb_layer_infos[0].dst.display_id == EXTERNAL_PANEL_IDX)
+		return 0;
+
+	if (!(primary_hisifd->panel_power_on) && (wb_compose_type == DSS_WB_COMPOSE_PRIMARY)) {
+		HISI_FB_INFO("primary panel is power off, quit offline compose!\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, const void __user *argp)
 {
 	dss_overlay_t *pov_req = NULL;
 	dss_overlay_block_t *pov_h_block_infos = NULL;
-	int use_comm_mmbuf = 0;
+	uint32_t use_comm_mmbuf = 0;
 	int ret = 0;
 	int ret_cmdlist_state = 0;
 	int times = 0;
 	uint32_t cmdlist_idxs = 0;
+#ifndef CONFIG_HISI_DSS_CMDLIST_LAST_USED
+	uint32_t cmdlist_idxs_need_start = 0;
+#endif
 	int enable_cmdlist = 0;
 	int mctl_idx = 0;
 	int32_t wb_type = 0;
@@ -808,10 +878,15 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	struct timeval tv5;
 	bool reset = false;
 	bool debug = false;
+#if defined (CONFIG_HISI_FB_970)
+	bool powerset = false;
+#endif
 	struct list_head lock_list;
 	uint32_t timeout_interval = 0;
 	bool parallel_compose_flag = false;
+#if defined (CONFIG_HUAWEI_DSM)
 	static uint32_t s_dmd_offline_compose_timeout_count = 0;
+#endif
 
 	if (NULL == hisifd) {
 		HISI_FB_ERR("NULL Pointer!\n");
@@ -832,21 +907,20 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 
 	if (g_debug_ovl_offline_composer_timediff & 0x1)
 		hisifb_get_timestamp(&tv0);
-
+#if !defined (CONFIG_HISI_FB_970)
 	hisi_dss_offline_composer_on(hisifd);
-
-	hisi_tuning_offline_clk_rate(hisifd);
-
+#endif
 	down(&(hisifd->cmdlist_info->cmdlist_wb_common_sem));
 
 	////////////////////////////////////////////////////////////////////////////
 	// get horizontal block ov
 	pov_req = (dss_overlay_t *)kmalloc(sizeof(dss_overlay_t), GFP_ATOMIC);
-	if (!pov_req) {
+	if (pov_req == NULL) {
 		ret = -1;
 		HISI_FB_ERR("fb%d, dss_overlay_t alloc failed!\n", hisifd->index);
 		goto err_return_sem0;
 	}
+	memset(pov_req, 0, sizeof(dss_overlay_t));
 
 	hisifb_dss_overlay_info_init(pov_req);
 	ret = hisi_get_ov_data_from_user(hisifd, pov_req, argp);
@@ -857,6 +931,24 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 		goto err_return_sem0;
 	}
 
+	wb_compose_type = pov_req->wb_compose_type;
+
+#if !defined (CONFIG_HISI_FB_970)
+	hisi_tuning_offline_clk_rate(hisifd);
+#endif
+	ret = hisi_check_panel_status_and_composer_type(pov_req, wb_compose_type);
+	if (ret != 0) {
+		kfree(pov_req);
+		pov_req = NULL;
+		ret = 1; /* primary panel is power off, quit offline compose */
+		goto err_return_sem0;
+	}
+#if defined (CONFIG_HISI_FB_970)
+	hisi_dss_offline_composer_on(hisifd);
+	powerset = true;
+
+	hisi_tuning_offline_clk_rate(hisifd);
+#endif
 	if (g_debug_ovl_offline_composer == 1) {
 		HISI_FB_INFO("fb%d, get ov_req from user.\n", hisifd->index);
 		dumpDssOverlay(hisifd, pov_req);
@@ -870,6 +962,10 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 	hisifb_layerbuf_flush(hisifd, &lock_list);
 
 	hisifd->mmbuf_info = hisi_dss_mmbuf_info_get(hisifd, 0);
+	if (hisifd->mmbuf_info == NULL) {
+		HISI_FB_ERR("mmbuf_info is NULL\n");
+		goto err_return_sem0;
+	}
 
 	enable_cmdlist = g_enable_ovl_cmdlist_offline;
 
@@ -884,11 +980,17 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 			goto err_return_sem0;
 		}
 
+	#ifndef CONFIG_HISI_DSS_CMDLIST_LAST_USED
+		cmdlist_idxs_need_start = hisi_cmdlist_get_cmdlist_need_start(hisifd, cmdlist_idxs);
+		if (cmdlist_idxs_need_start) {
+			hisi_cmdlist_add_nop_node(hisifd, cmdlist_idxs_need_start, 1, 0);
+			hisi_cmdlist_add_nop_node(hisifd, cmdlist_idxs_need_start, 0, 0);
+		}
+	#endif
 	} else {
 		hisifd->set_reg = hisifb_set_reg;
 	}
 
-	wb_compose_type = pov_req->wb_compose_type;
 	wb_type = hisi_get_wb_type(pov_req);
 	if ((wb_type < WB_TYPE_WCH0) || (wb_type >= WB_TYPE_MAX)) {
 		HISI_FB_ERR("fb%d, hisi_get_wb_type failed!\n", hisifd->index);
@@ -900,7 +1002,7 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 
 	parallel_compose_flag = hisi_get_parallel_compose_flag(hisifd, wb_compose_type);
 
-	pov_h_block_infos = (dss_overlay_block_t *)(pov_req->ov_block_infos_ptr);
+	pov_h_block_infos = (dss_overlay_block_t *)(uintptr_t)(pov_req->ov_block_infos_ptr);
 
 	if (hisi_offline_chn_include_online_chn(pov_h_block_infos, pov_req->ov_block_nums)) {
 		HISI_FB_ERR("fb%d, hisi_offline_ch_include_online_ch failed!,wb_compose_type=%d\n", hisifd->index, pov_req->wb_compose_type);
@@ -922,6 +1024,9 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 
 	if (enable_cmdlist) {
 		//Next frame
+	#ifndef CONFIG_HISI_DSS_CMDLIST_LAST_USED
+		hisi_cmdlist_add_nop_node(hisifd, cmdlist_idxs, 0, 1);
+	#endif
 		//wmb();
 		hisi_cmdlist_flush_cache(hisifd, cmdlist_idxs);
 	}
@@ -955,6 +1060,7 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 				HISI_FB_ERR("wb_compose_type=%d, OFFLINE_VACTIVE_TIMEDIFF is %u us!\n", wb_compose_type, timediff);
 		}
 
+	#ifdef CONFIG_HISI_DSS_CMDLIST_LAST_USED
 		if (parallel_compose_flag) {
 			hisi_cmdlist_exec(hisifd, cmdlist_idxs | hisifd->wb_info.cmdlist_idxs);
 			hisi_cmdlist_config_start(hisifd, hisifd->wb_info.mctl_idx, hisifd->wb_info.cmdlist_idxs, hisifd->wb_info.wb_compose_type);
@@ -965,6 +1071,12 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 				hisi_cmdlist_config_start(hisifd, mctl_idx, cmdlist_idxs, wb_compose_type);
 			}
 		}
+	#else
+		if (cmdlist_idxs_need_start) {
+			hisi_cmdlist_config_start(hisifd, mctl_idx, cmdlist_idxs_need_start, wb_compose_type);
+		}
+		hisi_cmdlist_exec(hisifd, cmdlist_idxs);
+	#endif
 	}
 
 	if (pov_req->to_be_continued == DSS_LAYER_PARALLEL_COMPOSE) {
@@ -1001,6 +1113,11 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 				"ret=%d, ret_rch_state=%d, diff =%d usecs!\n",
 				use_comm_mmbuf, wb_compose_type, inp32(hisifd->dss_base + GLB_CPU_OFF_INTS), ret, ret_cmdlist_state,
 				hisifb_timestamp_diff(&tv4, &tv5));
+
+			dumpDssOverlay(hisifd, pov_req);
+			hisi_cmdlist_dump_all_node(hisifd, pov_req, cmdlist_idxs);
+
+#if defined (CONFIG_HUAWEI_DSM)
 			s_dmd_offline_compose_timeout_count++;
 			if (s_dmd_offline_compose_timeout_count >= OFFLINE_COMPOSE_TIMEOUT_EXPECT_COUNT) {
 				if (lcd_dclient && !dsm_client_ocuppy(lcd_dclient)) {
@@ -1012,12 +1129,15 @@ int hisi_ov_offline_play(struct hisi_fb_data_type *hisifd, void __user *argp)
 				}
 				s_dmd_offline_compose_timeout_count = 0;
 			}
+#endif
 			ret = -ETIMEDOUT;
 			reset = true;
 
 			debug = hisi_get_debug_flag();
 		} else {
+#if defined (CONFIG_HUAWEI_DSM)
 			s_dmd_offline_compose_timeout_count = 0;
+#endif
 			/* remove mctl ch & ov */
 			hisi_remove_mctl_mutex(hisifd, mctl_idx, cmdlist_idxs);
 			ret = 0;
@@ -1034,9 +1154,12 @@ err_return_sem1:
 	up(&(hisifd->cmdlist_info->cmdlist_wb_sem[wb_type]));
 
 	hisi_recovery_online_clk_rate(hisifd);
-
+#if defined (CONFIG_HISI_FB_970)
+	if (powerset)
+		hisi_dss_offline_composer_off(hisifd);
+#else
 	hisi_dss_offline_composer_off(hisifd);
-
+#endif
 	if (g_debug_ovl_offline_composer_timediff & 0x1) {
 		hisifb_get_timestamp(&tv1);
 		timediff = hisifb_timestamp_diff(&tv0, &tv1);
@@ -1054,14 +1177,19 @@ err_return_sem1:
 err_return_sem0:
 	debug = hisi_get_debug_flag();
 	reset = true;
-	if (pov_req) {
+	if (pov_req != NULL) {
 		hisi_offline_clear(hisifd, pov_req, enable_cmdlist, cmdlist_idxs, reset, debug);
 	}
 	up(&(hisifd->cmdlist_info->cmdlist_wb_common_sem));
 
 	hisi_recovery_online_clk_rate(hisifd);
 
+#if defined (CONFIG_HISI_FB_970)
+	if (powerset)
+		hisi_dss_offline_composer_off(hisifd);
+#else
 	hisi_dss_offline_composer_off(hisifd);
+#endif
 
 	if (g_debug_ovl_offline_composer)
 		HISI_FB_INFO("-.\n");
@@ -1069,8 +1197,8 @@ err_return_sem0:
 	return ret;
 
 return_parallel_compose:
-	if (pov_req) {
-		if (pov_h_block_infos) {
+	if (pov_req != NULL) {
+		if (pov_h_block_infos != NULL) {
 			kfree(pov_h_block_infos);
 			pov_h_block_infos = NULL;
 		}
@@ -1087,7 +1215,12 @@ return_parallel_compose:
 
 	hisi_recovery_online_clk_rate(hisifd);
 
+#if defined (CONFIG_HISI_FB_970)
+	if (powerset)
+		hisi_dss_offline_composer_off(hisifd);
+#else
 	hisi_dss_offline_composer_off(hisifd);
+#endif
 
 	if (g_debug_ovl_offline_composer)
 		HISI_FB_INFO("-.\n");
@@ -1095,3 +1228,5 @@ return_parallel_compose:
 	return ret;
 }
 /*lint +e570 +e648 +e666 +e838 +e574*/
+
+#pragma GCC diagnostic pop

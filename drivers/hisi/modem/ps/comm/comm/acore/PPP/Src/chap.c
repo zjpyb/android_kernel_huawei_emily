@@ -38,6 +38,7 @@
 *****************************************************************************/
 #define    THIS_FILE_ID        PS_FILE_ID_CHAP_C
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 #define MAXCHAPCODE 4 /* "\?\?\?", "CHALLENGE", "RESPONSE", "SUCCESS", "FAILURE" */
 
@@ -511,4 +512,5 @@ PPP_ZC_STRU *chap_Input(struct link *l, PPP_ZC_STRU *pstMem)
   return VOS_NULL_PTR;
 }    /* chap_Input */
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

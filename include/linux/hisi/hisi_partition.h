@@ -15,6 +15,7 @@ enum {
 	UFS_PART_1 = 0x1,
 	UFS_PART_2 = 0x2,
 	UFS_PART_3 = 0x3,
+	UFS_PART_4 = 0x4,
 };
 
 #define PART_NAMELEN                    (36)
@@ -22,9 +23,6 @@ enum {
 #define MAX_UFS_LUN			(8)
 #define UFS_OFFSET_128KB		(128*1024)
 #define UFS_PTABLE_SIZE_17KB		(17*1024)
-
-#define UNIT_USING_COUNT       		(4)
-
 
 #if ((defined CONFIG_HISI_PARTITION_HI3650) || (defined CONFIG_HISI_PARTITION_HI6250))
 
@@ -51,6 +49,11 @@ enum {
 
 #endif
 
+#ifndef CONFIG_USER_MODE
+#define HIBENCH_ENG_STORAGE_START        0x600000000
+#define HIBENCH_SLT_STORAGE_START        0x640000000
+#endif
+
 /*partition macro definition*/
 #define PART_XLOADER                   "xloader"
 #define PART_XLOADER_INSE           "xloader_inse"
@@ -75,6 +78,8 @@ enum {
 #define PART_SPLASH2                   "splash2"
 #define PART_MISC                      "misc"
 #define PART_MODEMNVM_UPDATE           "modemnvm_update"
+#define PART_KERNEL_PATCH              "kernel_patch"
+#define PART_ERECOVERY                 "erecovery"
 #define PART_ERECOVERY_KERNEL          "erecovery_kernel"
 #define PART_ERECOVERY_RAMDISK         "erecovery_ramdisk"
 #define PART_ERECOVERY_VENDOR          "erecovery_vendor"
@@ -84,10 +89,12 @@ enum {
 #define PART_FW_HIFI                   "fw_hifi"
 #define PART_KERNEL                    "kernel"
 #define PART_RAMDISK                   "ramdisk"
+#define PART_RECOVERY                  "recovery"
 #define PART_RECOVERY_RAMDISK          "recovery_ramdisk"
 #define PART_RECOVERY_VENDOR           "recovery_vendor"
 #define PART_DTS                       "dts"
 #define PART_DTO                       "dto"
+#define PART_DTBO                      "dtbo"
 #define PART_MODEM                     "modem"
 #define PART_MODEM_DSP                 "modem_dsp"
 #define PART_MODEM_DTB                 "modem_dtb"
@@ -102,6 +109,7 @@ enum {
 #define PART_CUST                      "cust"
 #define PART_ODM                       "odm"
 #define PART_USERDATA                  "userdata"
+#define PART_USERDATA2                 "userdata2"
 #define PART_RESERVED                  "reserved"
 #define PART_RESERVED0                 "reserved0"
 #define PART_RESERVED1                 "reserved1"
@@ -116,6 +124,7 @@ enum {
 #define PART_RESERVED9                 "reserved9"
 #define PART_RESERVED10                 "reserved10"
 #define PART_RESERVED11                 "reserved11"
+#define PART_RESERVED12                 "reserved12"
 #define PART_HHEE                 "hhee"
 #define PART_HHEE_A                 "hhee_a"
 #define PART_ISP_BOOT                  "isp_boot"
@@ -130,6 +139,7 @@ enum {
 #define PART_VERSION                   "version"
 #define PART_PRODUCT                   "product"
 #define PART_PRELOAD                   "preload"
+#define PART_METADATA                  "metadata"
 #define PART_PREAS                     "preas"
 #define PART_PREAVS                    "preavs"
 /*AB*/
@@ -219,6 +229,8 @@ enum {
 #define PART_DDR_PARA                 "ddr_para"
 #define PART_HISEE_ENCOS               "hisee_encos"
 #define PART_HIBENCH_DATA             "hibench_data"
+#define PART_HIBENCH_LOG              "hibench_log"
+#define PART_HIBENCH_LPM3             "hibench_lpm3"
 #define PART_MODEMNVM_CUST_A          "modemnvm_cust_a"
 #define PART_MODEMNVM_CUST            "modemnvm_cust"
 #define PART_HDCP                     "hdcp"
@@ -248,6 +260,20 @@ enum {
 #define PART_HIEPS                    "hieps"
 #define PART_HIEPS_A                  "hieps_a"
 #define PART_HIEPS_B                  "hieps_b"
-#define PART_DICE                  "dice"
-#define PART_NPU                  "npu"
+#define PART_DICE                     "dice"
+#define PART_NPU                      "npu"
+#define PART_BL2                      "bl2"
+#define PART_VBMETA_SYSTEM            "vbmeta_system"
+#define PART_VBMETA_VENDOR            "vbmeta_vendor"
+#define PART_VBMETA_ODM               "vbmeta_odm"
+#define PART_VBMETA_CUST              "vbmeta_cust"
+#define PART_HW_PRODUCT               "hw_product"
+#define PART_VBMETA_HW_PRODUCT        "vbmeta_hw_product"
+#define PART_BOOT                     "boot"
+#define PART_SUPER                    "super"
+#define PART_FTTEST                   "fttest"
+#define PART_DDRTEST                  "ddrtest"
+#define PART_HW_PRODUCT_A             "hw_product_a"
+#define PART_HW_PRODUCT_B             "hw_product_b"
+#define PART_SECURITY_DTB             "security_dtb"
 #endif

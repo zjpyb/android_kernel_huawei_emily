@@ -28,7 +28,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <linux/completion.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
@@ -50,26 +50,31 @@
 #include "fts_lib/ftsTool.h"
 #include <linux/vmalloc.h>
 
-#if defined (CONFIG_TEE_TUI)
+#if defined(CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
 
 struct fts_ts_info *fts_info;
 
-//static unsigned char st_roi_data[ROI_DATA_READ_LENGTH] = { 0 };
+static struct completion st_roi_data_done;
+static u8 st_roi_data_staled;
+static u8 st_roi_switch_on;
+static unsigned char st_roi_data[ROI_DATA_READ_LENGTH];
 
 /*
  * Event installer helpers
  */
 #define event_id(_e)		(EVT_ID_##_e >> 4)
 #define handler_name(_h)	fts_##_h##_event_handler
-#define FTS_MODE_ACTIVE_SIZE    14
 
 #define install_handler(_i, _evt, _hnd) \
 do { \
 		_i->event_dispatch_table[event_id(_evt)] = handler_name(_hnd); \
 } while (0)
 
+#if defined(CONFIG_TEE_TUI)
+extern struct ts_tui_data tee_tui_data;
+#endif
 
 extern SysInfo systemInfo;
 extern TestToDo tests;
@@ -89,12 +94,21 @@ static struct class *fts_cmd_class =NULL;
 int fts_mode_handler(struct fts_ts_info *info, int force);
 static int fts_enable_reg(struct fts_ts_info *info,bool enable);
 int writeLockDownInfo(u8 *data, int size,u8 lock_id);
-int readLockDownInfo(u8 *lockData,u8 lock_id,int size);
+int read_lock_down_info(u8 *lock_data, u8 lock_id, int size);
+static void st_set_fold_status(struct ts_fold_info info, int calibration);
 
 #define STATUS_GLOVE_MODE 6
 #define STATUS_FINGER_MODE 1
+#define ST_CALIBRATE_NUM 3
+#define MATRIX_DATA_NUM 98
+#define FTS_MODE_ACTIVE_SIZE 14
+#define ROI_DATA_WAIT_TIMEOUT 30
+#define GLOVE_STATUS 0x02
+#define FINGER_STATUS 0x01
+#define DONT_CALIBRATE 0
 
-int check_MutualRawResGap(void);
+
+int check_mutual_raw_res_gap(void);
 struct fts_ts_info* fts_get_info(void)
 {
 	return fts_info;
@@ -110,6 +124,7 @@ static void st_set_ext_event_to_fingers(struct fts_ts_info *info, int wx, int wy
 	int yer, int ewx, int ewy, unsigned char touchId, unsigned char touchcount)
 {
 	struct ts_fingers *f_info = NULL;
+	u32 max_fingers = fts_info->chip_data->ts_platform_data->max_fingers;
 
 	if((!info)||(!info->fingers_info)){
 		TS_LOG_ERR( "%s:input error!\n", __func__);
@@ -121,9 +136,8 @@ static void st_set_ext_event_to_fingers(struct fts_ts_info *info, int wx, int wy
 	TS_LOG_DEBUG("%s: wx:%d, wy:%d, xer:%d, yer:%d,ewx:%d, ewy:%d,touchId:%u, touchcount:%u\n",
 		__func__, wx, wy, xer, yer,ewx,ewy, touchId, touchcount);
 
-	if (touchId <= 0 || touchId >= 10){
+	if ((touchId <= 0) || (touchId >= max_fingers))
 		touchId = 0;
-	}
 	f_info->fingers[touchId].wx = wx;
 	f_info->fingers[touchId].wy = wy;
 	f_info->fingers[touchId].xer= xer;
@@ -163,15 +177,14 @@ static void st_set_event_to_fingers(struct fts_ts_info *info, int x, int y, int 
 	int minor, int pressure, int status, unsigned char touchId, unsigned char touchcount)
 {
 	struct ts_fingers *f_info = NULL;
+	u32 max_fingers = fts_info->chip_data->ts_platform_data->max_fingers;
 	f_info = info->fingers_info;
 
-	TS_LOG_DEBUG("%s: x:%d, y:%d, z:%d, status:%d, touchId:%u, touchcount:%u\n",
-		__func__, x, y, pressure, status, touchId, touchcount);
+	TS_LOG_DEBUG("%s: z:%d, status:%d, touchId:%u, touchcount:%u\n",
+		__func__, pressure, status, touchId, touchcount);
 
-	if (touchId <= 0 || touchId >= 10){
+	if ((touchId <= 0) || (touchId >= max_fingers))
 		touchId = 0;
-	}
-
 	if (NOT_HANDLE_EVENT == f_info->fingers[touchId].pressure) {
 		TS_LOG_DEBUG("Not handle pointer event, has handled leave event\n");
 	}
@@ -182,8 +195,11 @@ static void st_set_event_to_fingers(struct fts_ts_info *info, int x, int y, int 
 	f_info->fingers[touchId].y = y;
 	f_info->fingers[touchId].pressure = pressure;
 	f_info->fingers[touchId].status = status;
+	f_info->fingers[touchId].major = major;
+	f_info->fingers[touchId].minor = minor;
 	f_info->cur_finger_number += touchcount;
-	TS_LOG_DEBUG("f_info->cur_finger_number = %d touchcount = %d\n",f_info->cur_finger_number,touchcount);
+	TS_LOG_DEBUG("%s:cur_finger_number %d,touchcount %d,major %d,minor %d\n",
+		__func__, f_info->cur_finger_number, touchcount, major, minor);
 	return;
 }
 
@@ -223,8 +239,12 @@ static void fts_gesture_event_handler(struct fts_ts_info *info, unsigned
 		switch (event[2]) {
 		case GEST_ID_DOUBLE_TAP:
 			mutex_lock(&info->wrong_touch_lock);
-			info->chip_data->easy_wakeup_info.off_motion_on = true;
-			value = TS_DOUBLE_CLICK;
+			if (info->chip_data->easy_wakeup_info.off_motion_on ==
+				true) {
+				info->chip_data->
+					easy_wakeup_info.off_motion_on = false;
+				value = TS_DOUBLE_CLICK;
+			}
 			mutex_unlock(&info->wrong_touch_lock);
 			TS_LOG_INFO("%s: double tap value = %d!\n",
 				__func__, value);
@@ -293,8 +313,15 @@ static void fts_enter_pointer_event_handler(struct fts_ts_info *info,unsigned ch
 
 	if (y == info->chip_data->y_max_mt)
 	            y--;
-
-	st_set_event_to_fingers(info, x, y, 0, 0, 1, status1, touchId, touchcount);
+	/*
+	 * When the finger is pressed,major,minor and pressure
+	 * should be set to 1. and when the finger is released,
+	 * major,minor,presure should set to 0
+	 */
+	st_set_event_to_fingers(info, x, y, 1, 1, 1,
+			status1, touchId, touchcount);
+	if (st_roi_switch_on)
+		st_roi_data_staled = 1; /* roi_data Ready to read the new */
 
 	return;
 
@@ -319,13 +346,11 @@ static void fts_leave_pointer_event_handler(struct fts_ts_info *info, unsigned c
 	touchcount = ((event[5] & 0xC0) >> 6) | ((event[7] & 0xC0) >> 4);
 	status = (event[1] & 0x0F);
 
-	if(status == 0x02) {
-		status1 = STATUS_GLOVE_MODE;
-	}else if(status == 0x01) {
-		status1 = STATUS_FINGER_MODE;
-	}else{
+	if ((status == FINGER_STATUS) || (status == GLOVE_STATUS))
+		status1 = TP_NONE_FINGER;
+	else
 		TS_LOG_ERR("[%s] status error 0x%x\n",__func__,status);
-	}
+
 	__clear_bit(touchId, &info->touch_id);
 	/* When the finger is lifted, the pressure 6th parm is 0 */
 	st_set_event_to_fingers(info, 0, 0, 0, 0, 0, status1,
@@ -706,6 +731,8 @@ static int fts_fw_update_auto(struct fts_ts_info *info, int force)
 	}
 
 	TS_LOG_INFO("%s Fw Auto Update Finished!\n", __func__);
+	snprintf(info->chip_data->version_name, MAX_STR_LEN, "%x.%x",
+		systemInfo.u16_fwVer, systemInfo.u16_cfgProjectId);
 	return retval;
 }
 
@@ -760,6 +787,7 @@ static int fts_init(struct fts_ts_info *info)
 		if (error == (ERROR_TIMEOUT | ERROR_SYSTEM_RESET_FAIL)) {
 			TS_LOG_ERR("%s Setting default Sys INFO!\n",__func__);
 			defaultSysInfo(0);
+			return OK;
 		} else {
 			error = readSysInfo(0);	/* system reset OK */
 			if (error < OK) {
@@ -1056,36 +1084,44 @@ static void fts_set_gpio(struct fts_ts_info *info) {
 
 static int st_calibrate(void)
 {
-	int res =0;
+	int res;
+	int reval;
+	int i = 0;
 	struct fts_ts_info *info = fts_get_info();
 
-
+	info->check_mutual_raw = FTS_TRUE;
+repeat:
 	disable_irq(info->chip_data->ts_platform_data->irq_id);
 	res = production_test_initialization(SPECIAL_FULL_PANEL_INIT);
-	if (res < 0){
-		TS_LOG_ERR("%s Error during  INITIALIZATION TEST! ERROR %08X\n", __func__, res);
-		goto END;
+	if (res < 0) {
+		TS_LOG_ERR("%s Error during initialize TEST! ERROR %08X\n",
+			__func__, res);
+		goto end;
 	} else {
 		TS_LOG_ERR("%s:INITIALIZATION TEST OK!\n", __func__);
 	}
 
 	res = saveMpFlag(MP_FLAG_BOOT);
 	if (res < OK)
-		TS_LOG_ERR("%s Error while saving MP FLAG! ERROR %08X\n",__func__, res);
+		TS_LOG_ERR("%s saving MP FLAG! ERROR %08X\n", __func__, res);
 	else
 		TS_LOG_ERR("%s MP FLAG saving OK!\n", __func__);
 
 	res |= fts_system_reset();
 	res |= senseOn();
 	res |= fts_enableInterrupt();
-
-END:
-
+	if (res < 0)
+		TS_LOG_ERR("Cannot initialize the hardware device after\n");
+end:
 	enable_irq(info->chip_data->ts_platform_data->irq_id);
-	if(res < OK)
-		info->check_MutualRawGap_after_callibrate = FTS_FALSE;
-	else
-		info->check_MutualRawGap_after_callibrate = FTS_TRUE;
+	reval = check_mutual_raw_res_gap();
+	if (reval) {
+		if (i < ST_CALIBRATE_NUM) {
+			i++;
+			goto repeat;
+		}
+	}
+	info->check_mutual_raw = FTS_FALSE;
 	return res;
 }
 
@@ -1179,6 +1215,11 @@ static int st_glove_switch(struct ts_glove_info *info)
 		retval = -ENOMEM;
 		return retval;
 	}
+	if (!info->glove_supported) {
+		TS_LOG_ERR("%s no supported\n", __func__);
+		retval = -ENOMEM;
+		return retval;
+	}
 	switch (info->op_action) {
 		case TS_ACTION_READ:
 			TS_LOG_INFO("read_glove_switch=%d, 1:on 0:off\n",info->glove_switch);
@@ -1207,49 +1248,124 @@ static int st_glove_switch(struct ts_glove_info *info)
 
 static int st_roi_switch(struct ts_roi_info *info)
 {
+	if (info == NULL) {
+		TS_LOG_ERR("sec_ts_roi_switch: info is null\n");
+		return -ENOMEM;
+	}
+
+	switch (info->op_action) {
+	case TS_ACTION_WRITE:
+		TS_LOG_INFO("%s:set roi switch:%d\n", __func__,
+			info->roi_switch);
+		st_roi_switch_on = info->roi_switch;
+		break;
+	case TS_ACTION_READ:
+		TS_LOG_INFO("%s: roi switch read not surport\n", __func__);
+		break;
+	default:
+		TS_LOG_INFO("%s: default\n", __func__);
+		break;
+	}
 	return 0;
 }
 
 static unsigned char *st_ts_roi_rawdata(void)
 {
-	return NULL;
-
+	if (st_roi_switch_on) {
+		/* roi_data may be refreshing now,
+		 * wait it for some time(30ms)
+		 */
+		if (st_roi_data_staled) {
+			if (!wait_for_completion_interruptible_timeout(
+				&st_roi_data_done, msecs_to_jiffies(
+				ROI_DATA_WAIT_TIMEOUT))) {
+				TS_LOG_DEBUG("%s:wait roi data timeout\n",
+					__func__);
+				st_roi_data_staled = 0;
+				memset(st_roi_data, 0, sizeof(st_roi_data));
+			}
+		}
+	}
+	return st_roi_data;
 }
 
 
 void st_ts_work_after_input_kit(void)
 {
+	u16 matrix_offset;
+	u8 matrix_data[MATRIX_DATA_NUM] = { 0x00 };
+	int ret;
+
+	matrix_offset = systemInfo.st_matrix_info_addr;
+	if (matrix_offset) {
+		TS_LOG_DEBUG("%s: matrix offset is 0x%04X\n", __func__,
+			matrix_offset);
+	} else {
+		TS_LOG_ERR("%s: matrix offset is not right\n", __func__);
+		return;
+	}
+
+	if (st_roi_switch_on) {
+		if (st_roi_data_staled == 0) /* roi_data is up to date now */
+			return;
+		/*
+		 * We are about to refresh roi_data
+		 * To avoid stale output, use a completion
+		 * to block possible readers
+		 */
+		reinit_completion(&st_roi_data_done);
+		ret = fts_writeReadU8UX(FTS_CMD_FRAMEBUFFER_R, BITS_16,
+			matrix_offset, matrix_data, MATRIX_DATA_NUM,
+			DUMMY_FRAMEBUFFER);
+		if (ret < OK)
+			TS_LOG_ERR("%s:read matrix data error %08X\n",
+				__func__, ret);
+		else
+			/* matrix data  to st_roi_data[4], store the data
+			 * from the forth bit
+			 */
+			memcpy(&st_roi_data[4], &matrix_data[0],
+				ARRAY_SIZE(matrix_data));
+	}
+
+	st_roi_data_staled = 0;
+	/* If anyone has been blocked by us, wake it up */
+	complete_all(&st_roi_data_done);
 	return;
 }
 
 static int st_after_resume(void *feature_info)
 {
-/*	int retval = NO_ERR;
-	u8 settings[2] = { 0 };
+	int retval;
+	u8 settings[2];
 	struct fts_ts_info *fts_info = fts_get_info();
-	struct ts_feature_info *info = &fts_info->chip_data->ts_platform_data->feature_info;
-*/
-	TS_LOG_INFO("%s +\n", __func__);
-/*	if(info->glove_info.glove_switch)
-		settings[0]= 0x01;
-	else
-		settings[0]= 0x00;
-	retval = setFeatures(FEAT_SEL_GLOVE, &settings[0], 1);
-	if (retval) {
-		TS_LOG_ERR("retore glove switch(%d) failed: %d\n",
-			info->glove_info.glove_switch, retval);
-	}
-	if(info->holster_info.holster_switch)
-		settings[1]= 0x01;
-	else
-		settings[1]= 0x00;
+	struct ts_feature_info *info =
+		&fts_info->chip_data->ts_platform_data->feature_info;
 
-	retval = setFeatures(FEAT_SEL_COVER, &settings[1], 1);
-	if (retval < 0) {
-		TS_LOG_ERR("retore holster switch(%d), failed: %d\n",
-			   info->holster_info.holster_switch, retval);
+	TS_LOG_INFO("%s +\n", __func__);
+	if (info->glove_info.glove_supported) {
+		if (info->glove_info.glove_switch)
+			settings[0] = MODE_OPEN;
+		else
+			settings[0] = MODE_SHUTDOWN;
+		retval = setFeatures(FEAT_SEL_GLOVE, &settings[0], 1);
+		if (retval)
+			TS_LOG_ERR("retore glove switch %d failed: %d\n",
+				info->glove_info.glove_switch, retval);
 	}
-*/
+	if (info->holster_info.holster_supported) {
+		if (info->holster_info.holster_switch)
+			settings[1] = MODE_OPEN;
+		else
+			settings[1] = MODE_SHUTDOWN;
+
+		retval = setFeatures(FEAT_SEL_COVER, &settings[1], 1);
+		if (retval)
+			TS_LOG_ERR("retore holster switch %d, failed: %d\n",
+				info->holster_info.holster_switch, retval);
+	}
+	st_set_fold_status(info->fold_info, DONT_CALIBRATE);
+	TS_LOG_INFO("%s -\n", __func__);
 	return OK;
 }
 
@@ -1270,7 +1386,7 @@ static int st_chip_get_info(struct ts_chip_info_param *info)
 	snprintf(info->ic_vendor, sizeof(info->ic_vendor), "st");
 	snprintf(info->mod_vendor, sizeof(info->mod_vendor), ts_info->project_id);
 	snprintf(info->fw_vendor, sizeof(info->fw_vendor),
-		 "%x.%x", systemInfo.u16_fwVer, systemInfo.u16_cfgVer);
+		"%x.%x", systemInfo.u16_fwVer, systemInfo.u16_cfgProjectId);
 
 	return retval;
 }
@@ -1445,12 +1561,20 @@ static int st_parse_dts(struct device_node *device, struct ts_kit_device_data *c
 		TS_LOG_INFO("get self_cap_test support = 0\n" );
 		chip_data->self_cap_test = 0;
 	}
-	retval = of_property_read_string(device, "fake_project_id", (const char**)&ts->fake_project_id);
-	if (retval) {
-		TS_LOG_INFO("fake_project_id not config\n" );
-		ts->fake_project_id = "";
-	}
 
+	retval = of_property_read_u32(device,
+		"support_notice_aft_gesture_mode",
+		&chip_data->support_notice_aft_gesture_mode);
+	if (retval) {
+		TS_LOG_INFO("get support_notice_aft_gesture_mode  = 0\n");
+		chip_data->support_notice_aft_gesture_mode = 0;
+	}
+	retval = of_property_read_u32(device, "support_extra_key_event_input",
+		&chip_data->support_extra_key_event_input);
+	if (retval) {
+		TS_LOG_INFO("get support_extra_key_event_input = 0\n");
+		chip_data->support_extra_key_event_input = 0;
+	}
 	retval = of_property_read_u32(device, "support_gesture_mode",
 				&chip_data->support_gesture_mode);
 	if (retval) {
@@ -1470,11 +1594,10 @@ static int st_get_project_id(struct fts_ts_info *fts_info)
 	int ret = 0;
 
 	fts_info->project_id[ST_PROJECT_ID_LEN] = '\0';
-	ret = readLockDownInfo(fts_info->project_id, 0x70,ST_PROJECT_ID_LEN);
-	if (ret < OK) {
-		TS_LOG_ERR("%s: project_id read failed, use fake id\n", __func__);
-		strncpy(fts_info->project_id, fts_info->fake_project_id,ST_PROJECT_ID_LEN);
-	}
+	ret = read_lock_down_info(fts_info->project_id, FTS_LOCK_ID,
+		ST_PROJECT_ID_LEN);
+	if (ret < OK)
+		TS_LOG_ERR("%s: project_id read failed\n", __func__);
 
 	TS_LOG_INFO("%s: project_id=%s\n", __func__, fts_info->project_id);
 	return 0;
@@ -1494,7 +1617,8 @@ static int st_init_chip(void)
 
 	snprintf(info->chip_data->chip_name, MAX_STR_LEN, "st");
 	snprintf(info->chip_data->module_name, MAX_STR_LEN, info->project_id);
-	snprintf(info->chip_data->version_name, MAX_STR_LEN,"%x.%x", systemInfo.u16_fwVer, systemInfo.u16_cfgVer);
+	snprintf(info->chip_data->version_name, MAX_STR_LEN, "%x.%x",
+		systemInfo.u16_fwVer, systemInfo.u16_cfgProjectId);
 
 	retval |= fts_interrupt_install(info);
 	mutex_init(&gestureMask_mutex);
@@ -1520,9 +1644,14 @@ static int st_init_chip(void)
 
 	retval |= fts_mode_handler(info, 0);
 	retval |= fts_enableInterrupt();
-//	retval = fts_proc_init();
-//	if (retval < OK)
-//		TS_LOG_ERR("%s Error: can not create /proc file!\n", __func__);
+	retval = fts_proc_init();
+	if (retval < OK)
+		TS_LOG_ERR("%s Error: can not create /proc file!\n", __func__);
+
+#if defined(CONFIG_TEE_TUI)
+	strncpy(tee_tui_data.device_name, "new_st", strlen("new_st"));
+	tee_tui_data.device_name[strlen("new_st")] = '\0';
+#endif
 
 	TS_LOG_INFO("%s: -\n", __func__);
 	return 0;
@@ -1642,6 +1771,9 @@ static int st_chip_detect(struct ts_kit_platform_data *data)
 		ts->chip_data->easy_wakeup_info.off_motion_on = false;
 		ts->chip_data->easy_wakeup_info.easy_wakeup_gesture = false;
 	}
+	init_completion(&st_roi_data_done);
+	if (data->max_fingers > TOUCH_ID_MAX)
+		ts->chip_data->fold_fingers_supported = 1; /* use 20 fingers */
 	TS_LOG_INFO("st detect success\n");
 
 	return 0;
@@ -1685,6 +1817,156 @@ static int st_get_testdata(struct ts_rawdata_info *info, struct ts_cmd_node *out
 	return NO_ERR;
 }
 
+static void st_set_tp_ic_cmd(struct tp_ic_command ic_cmd)
+{
+	struct ts_fold_info fold_info = {0};
+	int calibrate = 0;
+	int i;
+
+	if ((ic_cmd.data == NULL) || (ic_cmd.length == 0)) {
+		TS_LOG_ERR("%s:invalid input\n", __func__);
+		return;
+	}
+	for (i = 0; i < ic_cmd.length; i++)
+		TS_LOG_DEBUG("%s:ic cmd is %x\n", __func__, ic_cmd.data[i]);
+	switch (ic_cmd.type) {
+	case SCREEN_CALIBRATE:
+		/* in calibrate, data[3] is fold_status */
+		fold_info.fold_status = ic_cmd.data[3];
+		calibrate = 1;
+		st_set_fold_status(fold_info, calibrate);
+		break;
+	case SCREEN_FOLD:
+	case SCREEN_FLIP:
+		/* in fold, data[2] is fold_status, data[3] is flip_switch */
+		fold_info.fold_status = ic_cmd.data[2];
+		fold_info.flip_switch = ic_cmd.data[3];
+		calibrate = 0;
+		st_set_fold_status(fold_info, calibrate);
+		break;
+	default:
+		TS_LOG_ERR("%s:invalid cmd type %d\n", __func__,
+			ic_cmd.type);
+	}
+}
+
+static void st_set_fold_status(struct ts_fold_info info, int calibration)
+{
+	struct fts_ts_info *ts = fts_get_info();
+	struct ts_feature_info *feature_info =
+		&fts_info->chip_data->ts_platform_data->feature_info;
+	int retval;
+	/*
+	 * In fold_status_cmd array, 0xA4 and 0x0B are the command head of
+	 * setting fold status to ic. cmd[2] means fold status of the screen
+	 * which can be FULL_SCREEN(0x00), MAIN_SCREEN(0x01) or
+	 * MINOR_SCREEN(0x02), cmd[3] means flip switch which can be
+	 * ON(0x00) or OFF(0x01)
+	 */
+	unsigned char fold_status_cmd[4] = { 0xA4, 0x0B, 0x00, 0x00 };
+	/*
+	 * In force_calibrate_cmd array, 0xA4, 0x02, 0x05 are the command
+	 * head of doing force calibration.cmd[3] means fold status of screen
+	 * which can be FULL_SCREEN(0x00), MAIN_SCREEN(0x01) or MINOR_
+	 * SCREEN(0x02)
+	 */
+	unsigned char force_calibrate_cmd[4] = { 0xA4, 0x02, 0x05, 0x00 };
+
+	if (!ts->chip_data->fold_status_supported)
+		return;
+	switch (info.fold_status) {
+	/* just valid value can be write to tp ic */
+	case FULL_SCREEN:
+	case MAIN_SCREEN:
+	case MINOR_SCREEN:
+		fold_status_cmd[2] = info.fold_status;
+		fold_status_cmd[3] = info.flip_switch;
+		force_calibrate_cmd[3] = info.fold_status;
+		break;
+	default:
+		return;
+	}
+
+	if (!calibration) {
+		retval = fts_write(fold_status_cmd, sizeof(fold_status_cmd));
+		TS_LOG_INFO("%s:%x, %x, %x, %x\n", __func__,
+			fold_status_cmd[0], fold_status_cmd[1],
+			fold_status_cmd[2], fold_status_cmd[3]);
+		feature_info->fold_info.flip_switch = info.flip_switch;
+	} else {
+		retval = fts_write(force_calibrate_cmd,
+			sizeof(force_calibrate_cmd));
+		TS_LOG_INFO("%s:%x, %x, %x, %x\n", __func__,
+			force_calibrate_cmd[0], force_calibrate_cmd[1],
+			force_calibrate_cmd[2], force_calibrate_cmd[3]);
+	}
+	feature_info->fold_info.fold_status = info.fold_status;
+	if (retval < OK)
+		TS_LOG_ERR("%s: write failed error %08X\n", __func__, retval);
+}
+
+static void st_set_recovery_window(void)
+{
+	int retval;
+	unsigned char settings;
+	struct ts_kit_platform_data *p_data = NULL;
+	struct fts_ts_info *ts = fts_get_info();
+
+	/*
+	 * In the last step of recovery, the recovery thread will
+	 * send suspend and resume cmd. If not set holster switch,
+	 * the recovery window will be closed in resume process
+	 */
+	if (ts && ts->chip_data && ts->chip_data->ts_platform_data) {
+		p_data = ts->chip_data->ts_platform_data;
+		p_data->feature_info.holster_info.holster_switch = 1;
+	}
+	/*
+	 * settings = 1 means turning on window switch
+	 * settings = 0 means turning off window switch
+	 */
+	settings = 1;
+	retval = setFeatures(FEAT_SEL_COVER, &settings, sizeof(settings));
+	if (retval < 0)
+		TS_LOG_ERR("%s:set features failed: %d\n",
+			__func__, retval);
+}
+
+int check_mutual_raw_res_gap(void)
+{
+	int ret;
+	struct ts_rawdata_info *info = vmalloc(sizeof(struct ts_rawdata_info));
+
+	if (info == NULL) {
+		TS_LOG_ERR("%s:kzalloc failed\n", __func__);
+		return -ENOMEM;
+	}
+	memset(info, 0, sizeof(struct ts_rawdata_info));
+	ret = st_get_testdata(info, NULL);
+	TS_LOG_INFO("%s: %s\n", __func__, info->result);
+	if (strstr(info->result, "-2F")) {
+		TS_LOG_ERR("%s: check rawgap failed !\n", __func__);
+		ret = -EINVAL;
+	}
+	vfree(info);
+	return ret;
+}
+
+static int fts_palm_switch(struct ts_palm_info *info)
+{
+	return 0;
+}
+
+static int fts_wrong_touch(void)
+{
+	struct fts_ts_info *ts_info = fts_get_info();
+
+	mutex_lock(&ts_info->wrong_touch_lock);
+	ts_info->chip_data->easy_wakeup_info.off_motion_on = true;
+	mutex_unlock(&ts_info->wrong_touch_lock);
+	TS_LOG_INFO("done\n");
+	return 0;
+}
 
 struct ts_device_ops ts_kit_st_ops = {
 	.chip_detect = st_chip_detect,
@@ -1711,6 +1993,11 @@ struct ts_device_ops ts_kit_st_ops = {
 	.chip_work_after_input = st_ts_work_after_input_kit,
 	.oem_info_switch = st_oem_info_switch,
 	.chip_get_debug_data = st_get_debug_data,
+	.chip_set_tp_ic_cmd = st_set_tp_ic_cmd,
+	.chip_set_fold_status = st_set_fold_status,
+	.chip_set_recovery_window = st_set_recovery_window,
+	.chip_palm_switch = fts_palm_switch,
+	.chip_wrong_touch = fts_wrong_touch,
 	.chip_reset = NULL,
 };
 

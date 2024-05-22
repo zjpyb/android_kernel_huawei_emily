@@ -1,3 +1,8 @@
+ifeq ($(CONFIG_HUAWEI_DEVKIT_HISI),y)
+	EXTRA_CFLAGS += -DMAR_GET_LCDBK_ON
+endif
+
+
 obj-$(CONFIG_LCDKIT_DRIVER)	+= lcdkit_fb_util_hs.o
 obj-$(CONFIG_LCDKIT_DRIVER)	+= lcdkit_debug_hs.o
 obj-$(CONFIG_LCDKIT_DRIVER)	+= lcdkit_parse_hs.o

@@ -189,6 +189,7 @@ static void cci_extra_set_qos_accept(struct cci_extra_dev *dev)
 	return;
 }
 
+#ifdef CONFIG_PM_SLEEP
 static void cci_extra_resume(void)
 {
 	struct cci_extra_dev *dev = cci_extra_device;
@@ -202,6 +203,12 @@ static void cci_extra_resume(void)
 
 	return;
 }
+#else
+static void cci_extra_resume(void)
+{
+	return;
+}
+#endif
 
 static struct syscore_ops cci_extra_syscore_ops = {
 	.resume = cci_extra_resume,
@@ -209,9 +216,11 @@ static struct syscore_ops cci_extra_syscore_ops = {
 
 static int cci_extra_init(void)
 {
-	const struct of_device_id *id;
-	struct cci_extra_dev *dev;
-	struct device_node *np, *cp, *crg;
+	const struct of_device_id *id = NULL;
+	struct cci_extra_dev *dev = NULL;
+	struct device_node *np = NULL;
+	struct device_node *cp = NULL;
+	struct device_node *crg = NULL;
 	struct resource res;
 	struct cci_extra_port *port = NULL;
 	struct cci_extra_port_config *port_configs = NULL;
@@ -220,7 +229,7 @@ static int cci_extra_init(void)
 	int ret = 0;
 	int i = 0;
 	unsigned int val;
-	void __iomem *base;
+	void __iomem *base = NULL;
 
 	np = of_find_matching_node(NULL, hisilicon_cci_extra_matches);
 	if (!np)
@@ -308,7 +317,7 @@ static int cci_extra_init(void)
 			base = ioremap(res.start, resource_size(&res));
 
 		if (ret || !base) { /*lint !e644*/
-			WARN(1, "unable to ioremap CCI port %d\n", i);
+			WARN(1, "unable to ioremap CCI port %d\n", i); /*lint !e146 !e665*/
 			continue;
 		}
 

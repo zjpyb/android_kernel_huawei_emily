@@ -38,7 +38,7 @@
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <asm/irq.h>
 #include <linux/uaccess.h>
 #include <huawei_platform/log/hw_log.h>
@@ -55,6 +55,7 @@
 #define HWLOG_TAG huawei_play_key
 HWLOG_REGIST();
 static int support_play_key = 0;
+static int support_key_value;
 
 struct huawei_gpio_key {
 	struct input_dev		*input_dev;
@@ -68,7 +69,7 @@ struct huawei_gpio_key {
 	struct pinctrl_state *pins_idle;
 };
 
-static struct wake_lock play_key_lock;
+static struct wakeup_source play_key_lock;
 
 static int of_get_key_gpio(struct device_node *np, const char *propname,
 			   int prop_index, int gpio_index, enum of_gpio_flags *flags)
@@ -113,25 +114,17 @@ static void huawei_gpio_keyplay_work(struct work_struct *work)
 		return;
 	}
 
-	hwlog_info("%s-%d: play key %u action %u\n", __func__, __LINE__, KEY_PLAY, report_action);
-	input_report_key(gpio_key->input_dev, KEY_F25, report_action);
+	hwlog_info("%s-%d: play key %u action %u\n", __func__, __LINE__,
+		support_key_value, report_action);
+	input_report_key(gpio_key->input_dev, support_key_value, report_action);
 	input_sync(gpio_key->input_dev);
-
-	if (keyplay_value == GPIO_HIGH_VOLTAGE)
-		wake_unlock(&play_key_lock);
 
 	return;
 }
 
 static void gpio_keyplay_timer(unsigned long data)
 {
-	int keyplay_value;
 	struct huawei_gpio_key *gpio_key = (struct huawei_gpio_key *)data;
-
-	keyplay_value = gpio_get_value((unsigned int)gpio_key->gpio_play);
-        /*judge key is pressed or released.*/
-        if (keyplay_value == GPIO_LOW_VOLTAGE)
-                wake_lock(&play_key_lock);
 
 	schedule_delayed_work(&(gpio_key->gpio_keyplay_work), 0);
 
@@ -145,7 +138,7 @@ static irqreturn_t huawei_gpio_key_irq_handler(int irq, void *dev_id)
 	/* handle gpio key volume up & gpio key volume down event at here */
 	if (support_play_key && irq == gpio_key->key_play_irq) {
 		mod_timer(&(gpio_key->key_play_timer), jiffies + msecs_to_jiffies(TIMER_DEBOUNCE));
-		wake_lock_timeout(&play_key_lock, 50);
+		__pm_wakeup_event(&play_key_lock, jiffies_to_msecs(50));
 	} else {
 		hwlog_err("%s-%d: invalid irq!\n", __func__, __LINE__);
 	}
@@ -188,6 +181,17 @@ static int huawei_gpio_key_probe(struct platform_device* pdev)
 		hwlog_info("%s-%d: Support play_key: %d\n", __func__, __LINE__, support_play_key);
 	}
 
+	err = of_property_read_u32(pdev->dev.of_node, "support_key_value",
+		(u32 *)&support_key_value);
+	if (err) {
+		support_key_value = KEY_F25;
+		hwlog_info("%s-%d: support key_value is default\n",
+			__func__, __LINE__);
+	} else {
+		hwlog_info("%s-%d: Support key_value is: %d\n",
+			__func__, __LINE__, support_key_value);
+	}
+
 	gpio_key = devm_kzalloc(&pdev->dev, sizeof(struct huawei_gpio_key), GFP_KERNEL);
 	if (!gpio_key) {
 		dev_err(&pdev->dev, "Failed to allocate struct huawei_gpio_key!\n");
@@ -206,9 +210,8 @@ static int huawei_gpio_key_probe(struct platform_device* pdev)
 	input_set_drvdata(input_dev, gpio_key);
 	set_bit(EV_KEY, input_dev->evbit);
 	set_bit(EV_SYN, input_dev->evbit);
-	if (support_play_key) {
-		set_bit(KEY_F25, input_dev->keybit);
-	}
+	if (support_play_key)
+		set_bit(support_key_value, input_dev->keybit);
 	input_dev->open = huawei_gpio_key_open;
 	input_dev->close = huawei_gpio_key_close;
 
@@ -217,7 +220,7 @@ static int huawei_gpio_key_probe(struct platform_device* pdev)
 	/*initial work before we use it.*/
 	if (support_play_key) {
 		INIT_DELAYED_WORK(&(gpio_key->gpio_keyplay_work), huawei_gpio_keyplay_work);
-		wake_lock_init(&play_key_lock, WAKE_LOCK_SUSPEND, "key_play_wake_lock");
+		wakeup_source_init(&play_key_lock, "key_play_wake_lock");
 	}
 
 	if (support_play_key) {
@@ -273,7 +276,7 @@ static int huawei_gpio_key_probe(struct platform_device* pdev)
 	}
 
 	if (support_play_key) {
-		setup_timer(&(gpio_key->key_play_timer), gpio_keyplay_timer, (unsigned long )gpio_key);
+		setup_timer(&(gpio_key->key_play_timer), gpio_keyplay_timer, (uintptr_t)gpio_key);
 	}
 
 		hwlog_info("%s-%d: Support play_key: %d\n", __func__, __LINE__, support_play_key);
@@ -295,7 +298,9 @@ static int huawei_gpio_key_probe(struct platform_device* pdev)
 	device_init_wakeup(&pdev->dev, TRUE);
 	platform_set_drvdata(pdev, gpio_key);
 
-
+	// report gpio status immediately
+	schedule_delayed_work(&(gpio_key->gpio_keyplay_work), msecs_to_jiffies(18000)); //delay 18s
+	__pm_wakeup_event(&play_key_lock, jiffies_to_msecs(20000)); // release wake lock after 20s
 	dev_info(&pdev->dev, "hisi gpio key driver probes successfully!\n");
 	return 0;
 
@@ -314,7 +319,7 @@ err_gpio_to_irq:
 err_gpio_play_req:
 	input_free_device(input_dev);
 	if (support_play_key) {
-		wake_lock_destroy(&play_key_lock);
+		wakeup_source_trash(&play_key_lock);
 	}
 	pr_info(KERN_ERR "[gpiokey]K3v3 gpio key probe failed! ret = %d.\n", err);
 	return err;/*lint !e593*/
@@ -335,7 +340,7 @@ static int huawei_gpio_key_remove(struct platform_device* pdev)
 		free_irq(gpio_key->key_play_irq, gpio_key);
 		gpio_free((unsigned int)gpio_key->gpio_play);
 		cancel_delayed_work(&(gpio_key->gpio_keyplay_work));
-		wake_lock_destroy(&play_key_lock);
+		wakeup_source_trash(&play_key_lock);
 	}
 
 	input_unregister_device(gpio_key->input_dev);
@@ -368,6 +373,10 @@ static int huawei_gpio_key_resume(struct platform_device *pdev)
 	struct huawei_gpio_key *gpio_key = platform_get_drvdata(pdev);
 
 	dev_info(&pdev->dev, "%s: resume +\n", __func__);
+
+	// report gpio status when resume
+	schedule_delayed_work(&(gpio_key->gpio_keyplay_work), 0);
+	__pm_wakeup_event(&play_key_lock, 50); // release wake lock after 50ms
 
 	err = pinctrl_select_state(gpio_key->pctrl, gpio_key->pins_default);
 	if (err < 0) {

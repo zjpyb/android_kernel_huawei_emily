@@ -26,7 +26,12 @@
 #include <linux/err.h>
 #include <linux/random.h>
 #include <linux/skbuff.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#include "hw_wlan_plantform.h"
+#else
 #include <linux/wlan_plat.h>
+#endif
 #include <linux/gpio.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
@@ -522,14 +527,14 @@ int char2byte( char* strori, char* outbuf )
 
 static bool validate_wifi_addr(unsigned char macAddr)
 {
-	unsigned char mac1 = macAddr & 0x0F;
+    unsigned char mac1 = macAddr & 0x0F;
 
-	// legal wifi mac, mac1 should be 0,4,8 or ox0c
-	if (mac1 == 0x00 || mac1 == 0x04 || mac1 == 0x08 || mac1 == 0x0c)
-		return true;
-
-	hwlog_err("%s: illeagle wifi address: %02x", __func__, macAddr);
-	return false;
+    // legal wifi mac, mac1 should be 0,4,8 or ox0c
+    if (mac1 == 0x00 || mac1 == 0x04 || mac1 == 0x08 || mac1 == 0x0c) {
+        return true;
+    }
+    hwlog_err("%s: illeagle wifi address: %02x", __func__, macAddr);
+    return false;
 }
 /*****************************************************************************
  º¯ Êý Ãû  : bcm_wifi_get_mac_addr
@@ -569,21 +574,21 @@ int bcm_wifi_get_mac_addr(unsigned char *buf)
     if (!l_ret)
     {
         l_sum = char2byte(st_info.nv_data, buf);
-        if (0 != l_sum && validate_wifi_addr(buf[0]))
+        if (l_sum != 0 && validate_wifi_addr(buf[0]))
         {
-            hwlog_info("get MAC from NV: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+            hwlog_info("get MAC from NV: mac=%02x:**:**:**:%02x:%02x\n",buf[0],buf[4],buf[5]);
             memcpy(g_wifimac, buf, WLAN_MAC_LEN);
         }else{
             get_random_bytes(buf,WLAN_MAC_LEN);
             buf[0] = 0x0;
-            hwlog_info("get MAC from Random: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+            hwlog_info("get MAC from Random: mac=%02x:**:**:**:%02x:%02x\n",buf[0],buf[4],buf[5]);
             memcpy(g_wifimac,buf,WLAN_MAC_LEN);
 
         }
     }else{
         get_random_bytes(buf,WLAN_MAC_LEN);
         buf[0] = 0x0;
-        hwlog_info("get MAC from Random: mac=%02x:%02x:%02x:%02x:%02x:%02x\n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+        hwlog_info("get MAC from Random: mac=%02x:**:**:**:%02x:%02x\n",buf[0],buf[4],buf[5]);
         memcpy(g_wifimac,buf,WLAN_MAC_LEN);
 
     }

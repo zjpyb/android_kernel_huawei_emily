@@ -84,6 +84,11 @@ static inline struct hisi_pmic *rdev_to_pmic(struct regulator_dev *dev)
 	 * hisi regulator platform device_dev parent to->
 	 * hisi pmic platform device_dev
 	 */
+
+	if (rdev_get_dev(dev) == NULL) {
+		return NULL;
+	}
+
 	return dev_get_drvdata(rdev_get_dev(dev)->parent->parent);
 }
 
@@ -118,6 +123,10 @@ static int hisi_regulator_is_enabled(struct regulator_dev *dev)
 	struct hisi_regulator *sreg = rdev_get_drvdata(dev);
 	struct hisi_pmic *pmic = rdev_to_pmic(dev);
 
+	if (sreg == NULL) {
+		return 0;
+	}
+
 	reg_val = hisi_pmic_read(pmic, sreg->register_info.ctrl_reg);
 	BRAND_DEBUG("<[%s]: ctrl_reg=0x%x,enable_state=%d>\n", __func__, sreg->register_info.ctrl_reg,\
 			(reg_val & sreg->register_info.enable_mask));
@@ -129,6 +138,10 @@ static int hisi_regulator_enable(struct regulator_dev *dev)
 {
 	struct hisi_regulator *sreg = rdev_get_drvdata(dev);
 	struct hisi_pmic *pmic = rdev_to_pmic(dev);
+
+	if (sreg == NULL) {
+		return -EINVAL;
+	}
 
 	/* keep a distance of off_on_delay from last time disabled */
 	ensured_time_after(sreg->last_off_time, sreg->off_on_delay);
@@ -157,6 +170,9 @@ static int hisi_regulator_disable(struct regulator_dev *dev)
 	struct hisi_regulator *sreg = rdev_get_drvdata(dev);
 	struct hisi_pmic *pmic = rdev_to_pmic(dev);
 
+	if (sreg == NULL) {
+		return -EINVAL;
+	}
 	/* set enable register to 0 */
 	hisi_pmic_rmw(pmic, sreg->register_info.ctrl_reg,
 				sreg->register_info.enable_mask, 0);
@@ -172,12 +188,16 @@ static int hisi_regulator_get_voltage(struct regulator_dev *dev)
 	struct hisi_pmic *pmic = rdev_to_pmic(dev);
 	u32 reg_val, selector;
 
+	if (sreg == NULL) {
+		return -EINVAL;
+	}
+
 	/* get voltage selector */
 	reg_val = hisi_pmic_read(pmic, sreg->register_info.vset_reg);
 	BRAND_DEBUG("<[%s]: vset_reg=0x%x>\n", __func__, sreg->register_info.vset_reg);
 
 	selector = (reg_val & sreg->register_info.vset_mask) >>
-				(ffs(sreg->register_info.vset_mask) - 1);
+				((unsigned int)ffs(sreg->register_info.vset_mask) - 1);
 
 	return sreg->rdesc.ops->list_voltage(dev, selector);
 }
@@ -189,6 +209,10 @@ static int hisi_regulator_set_voltage(struct regulator_dev *dev,
 	struct hisi_pmic *pmic = rdev_to_pmic(dev);
 	u32 vsel;
 	int ret = 0;
+
+	if (sreg == NULL) {
+		return -EINVAL;
+	}
 
 	for (vsel = 0; vsel < sreg->rdesc.n_voltages; vsel++) {
 		int uV = sreg->rdesc.volt_table[vsel];
@@ -205,7 +229,7 @@ static int hisi_regulator_set_voltage(struct regulator_dev *dev,
 	/* set voltage selector */
 	hisi_pmic_rmw(pmic, sreg->register_info.vset_reg,
 		sreg->register_info.vset_mask,
-		vsel << (ffs(sreg->register_info.vset_mask) - 1));
+		vsel << ((unsigned int)ffs(sreg->register_info.vset_mask) - 1));
 
 	BRAND_DEBUG("<[%s]: vset_reg=0x%x, vset_mask=0x%x, value=0x%x>\n", __func__,\
 			sreg->register_info.vset_reg,\
@@ -221,6 +245,10 @@ static unsigned int hisi_regulator_get_mode(struct regulator_dev *dev)
 	struct hisi_regulator *sreg = rdev_get_drvdata(dev);
 	struct hisi_pmic *pmic = rdev_to_pmic(dev);
 	u32 reg_val;
+
+	if (sreg == NULL) {
+		return 0;
+	}
 
 	reg_val = hisi_pmic_read(pmic, sreg->register_info.ctrl_reg);
 	BRAND_DEBUG("<[%s]: reg_val=%d, ctrl_reg=0x%x, eco_mode_mask=0x%x>\n", __func__, reg_val,\
@@ -241,6 +269,10 @@ static int hisi_regulator_set_mode(struct regulator_dev *dev,
 	struct hisi_pmic *pmic = rdev_to_pmic(dev);
 	u32 eco_mode;
 
+	if (sreg == NULL) {
+		return -EINVAL;
+	}
+
 	switch (mode) {
 	case REGULATOR_MODE_NORMAL:
 		eco_mode = HISI_ECO_MODE_DISABLE;
@@ -255,7 +287,7 @@ static int hisi_regulator_set_mode(struct regulator_dev *dev,
 	/* set mode */
 	hisi_pmic_rmw(pmic, sreg->register_info.ctrl_reg,
 		sreg->register_info.eco_mode_mask,
-		eco_mode << (ffs(sreg->register_info.eco_mode_mask) - 1));
+		eco_mode << ((unsigned int)ffs(sreg->register_info.eco_mode_mask) - 1));
 
 	BRAND_DEBUG("<[%s]: ctrl_reg=0x%x, eco_mode_mask=0x%x, value=0x%x>\n", __func__,\
 			sreg->register_info.ctrl_reg,\
@@ -270,6 +302,10 @@ unsigned int hisi_regulator_get_optimum_mode(struct regulator_dev *dev,
 			int input_uV, int output_uV, int load_uA)
 {
 	struct hisi_regulator *sreg = rdev_get_drvdata(dev);
+
+	if (sreg == NULL) {
+		return 0;
+	}
 
 	if ((load_uA == 0) || ((unsigned int)load_uA > sreg->eco_uA))
 		return REGULATOR_MODE_NORMAL;
@@ -341,7 +377,7 @@ static int hisi_dt_parse_ldo(struct hisi_regulator *sreg,
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
 	struct regulator_desc *rdesc = &sreg->rdesc;
-	unsigned int *v_table;
+	unsigned int *v_table = NULL;
 	int ret = 0;
 
 	/* parse .n_voltages, and .volt_table */
@@ -415,7 +451,7 @@ static struct of_device_id of_hisi_regulator_match_tbl[] = {
 #ifdef CONFIG_HISI_PMIC_DEBUG
 extern void get_current_regulator_dev(struct seq_file *s);
 extern void set_regulator_state(char *ldo_name, int value);
-extern void get_regulator_state(char *ldo_name);
+extern void get_regulator_state(char *ldo_name, int length);
 extern int set_regulator_voltage(char *ldo_name, unsigned int vol_value);
 
 u32 pmu_atoi(char *s)
@@ -484,10 +520,16 @@ static ssize_t dbg_control_regulator_set_value(struct file *filp, const char __u
 	char *vol = NULL;
 	char num = 0;
 	unsigned int i;
+	unsigned int j;
 	int next_flag = 1;
 
 	if (count >= 128 || count == 0) {
 		pr_info("error! buffer size illegal!\n");
+		return -EFAULT;
+	}
+
+	if (NULL == buffer) {
+		pr_info("error! buffer is NULL!\n");
 		return -EFAULT;
 	}
 
@@ -497,34 +539,34 @@ static ssize_t dbg_control_regulator_set_value(struct file *filp, const char __u
 	}
 
 	if (tmp[0] == 'R' || tmp[0] == 'r') {
-		for (i = 2; i < (count - 1); i++) {
-			ptr[i - 2] = tmp[i];
+		for (i = 2, j = 0; i < (count - 1); i++, j++) {
+			ptr[j] = tmp[i];
 		}
-		ptr[i - 2] = '\0';
-		get_regulator_state(ptr);
+		ptr[j] = '\0';
+		get_regulator_state(ptr, 128);
 	} else if (tmp[0] == 'S' || tmp[0] == 's') {
-		for (i = 2; i < (count - 1); i++) {
+		for (i = 2, j = 0; i < (count - 1); i++, j++) {
 			if (tmp[i] == ' ') {
 				next_flag = 0;
-				ptr[i - 2] = '\0';
+				ptr[j] = '\0';
 				continue;
 			}
 			if (next_flag) {
-				ptr[i - 2] = tmp[i];
+				ptr[j] = tmp[i];
 			} else {
 				num = tmp[i] - 48;
 			}
 		}
 		set_regulator_state(ptr, num);
 	} else if (tmp[0] == 'V' || tmp[0] == 'v') {
-		for (i = 2; i < (count - 1); i++) {
+		for (i = 2, j = 0; i < (count - 1); i++, j++) {
 			if (tmp[i] == ' ') {
 				next_flag = 0;
-				ptr[i - 2] = '\0';
+				ptr[j] = '\0';
 				continue;
 			}
 			if (next_flag) {
-				ptr[i - 2] = tmp[i];
+				ptr[j] = tmp[i];
 			} else {
 				vol = &tmp[i];
 				break;
@@ -557,16 +599,16 @@ static int hisi_regulator_probe(struct spmi_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
-	struct regulator_desc *rdesc;
-	struct regulator_dev *rdev;
+	struct regulator_desc *rdesc = NULL;
+	struct regulator_dev *rdev = NULL;
 	struct hisi_regulator *sreg = NULL;
-	struct regulator_init_data *initdata;
+	struct regulator_init_data *initdata = NULL;
 	struct regulator_config config = { };
-	const struct of_device_id *match;
-	struct regulation_constraints *constraint;
+	const struct of_device_id *match = NULL;
+	struct regulation_constraints *constraint = NULL;
 	const char *supplyname = NULL;
 #ifdef CONFIG_HISI_PMIC_DEBUG
-	struct dentry *d;
+	struct dentry *d = NULL;
 	static int debugfs_flag;
 #endif
 	unsigned int temp_modes;
@@ -679,9 +721,22 @@ hisi_probe_end:
 
 static int hisi_regulator_remove(struct spmi_device *pdev)
 {
-	struct regulator_dev *rdev = dev_get_drvdata(&pdev->dev);
-	struct hisi_regulator *sreg = rdev_get_drvdata(rdev);
-
+	struct regulator_dev *rdev = NULL;
+	struct hisi_regulator *sreg = NULL;
+	if (pdev == NULL) {
+		pr_err("%s:pdev is NULL\n", __func__);
+		return -ENOMEM;
+	}
+	rdev = dev_get_drvdata(&pdev->dev);
+	if (rdev == NULL) {
+		pr_err("%s:rdev is NULL\n", __func__);
+		return -ENOMEM;
+	}
+	sreg = rdev_get_drvdata(rdev);
+	if (sreg == NULL) {
+		pr_err("%s:sreg is NULL\n", __func__);
+		return -ENOMEM;
+	}
 	regulator_unregister(rdev);
 
 	/* TODO: should i worry about that? devm_kzalloc */

@@ -131,11 +131,11 @@ enum DRV_RESET_CALLCBFUN_MOMENT {
 };
 
 /*Record information of callback functions*/
-typedef int (*pdrv_reset_cbfun)(enum DRV_RESET_CALLCBFUN_MOMENT eparam, int userdata);
+typedef int (*hifi_reset_cbfunc)(enum DRV_RESET_CALLCBFUN_MOMENT eparam, int userdata);
 struct sreset_mgr_callbackfunc {
 	char name[DRV_MODULE_NAME_LEN + 1];
 	int priolevel;
-	pdrv_reset_cbfun cbfun;
+	hifi_reset_cbfunc cbfun;
 	int userdata;
 };
 
@@ -246,7 +246,7 @@ void rdr_audio_soc_dump(u32 modid, char *pathname, pfn_cb_dump_done pfb);
 void rdr_audio_soc_reset(u32 modid, u32 etype, u64 coreid);
 
 /*HIFI复位前后的回调注册函数*/
-int hifireset_regcbfunc(const char *pname, pdrv_reset_cbfun pcbfun, int userdata, int priolevel);
+int hifireset_regcbfunc(const char *pname, hifi_reset_cbfunc pcbfun, int userdata, int priolevel);
 int hifireset_runcbfun(enum DRV_RESET_CALLCBFUN_MOMENT eparam);
 
 #ifdef __cplusplus

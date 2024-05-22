@@ -1217,7 +1217,7 @@ void mmc_trace_emmc_init_fail_reset(void)
 {
 	if (check_himntn(HIMNTN_MMC_TRACE) == 0) {
 		pr_err("%s:emmc init failed\n", __func__);
-		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_Storage, 0ull, 0ull);
+		rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
 	}
 
 	if (NULL == mmc_trace_fd) {

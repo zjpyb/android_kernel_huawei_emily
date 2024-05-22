@@ -31,19 +31,22 @@ struct usb3_core_ops {
 #ifdef CONFIG_HISI_DEBUG_FS
 	void (*link_state_print)(void);
 #endif
-#ifdef CONFIG_USB_DWC3_MAR
 	void (*logic_analyzer_trace_set)(u32 value);
-#endif
-#if defined(CONFIG_USB_DWC3_FEB) || defined(CONFIG_USB_DWC3_OCT) || defined(CONFIG_USB_DWC3_NOV)
-	void (*lscdtimer_set)(void);
-#endif
-
 };
 
 void set_hisi_dwc3_power_flag(int val);
 int get_hisi_dwc3_power_flag(void);
 struct usb3_core_ops * get_usb3_core_ops(void);
+void dwc3_lscdtimer_set(void);
+
+#if IS_ENABLED(CONFIG_USB_DWC3_GADGET) || IS_ENABLED(CONFIG_USB_DWC3_DUAL_ROLE)
 int dwc3_device_event_notifier_register(struct notifier_block *nb);
 int dwc3_device_event_notifier_unregister(struct notifier_block *nb);
+#else
+static inline int dwc3_device_event_notifier_register(struct notifier_block *nb)
+{ return 0; }
+static inline int dwc3_device_event_notifier_unregister(struct notifier_block *nb)
+{ return 0; }
+#endif
 
 #endif /* dwc3_usb_interface.h */

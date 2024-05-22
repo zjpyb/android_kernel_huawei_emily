@@ -1,3 +1,11 @@
+/*
+ * drivers/devfreq/hisi/l3c_devfreq.c - L3Cache dvfs driver
+ *
+ * Copyright (C) 2017 xueqiang
+ *
+ * This file is released under the GPLv2.
+ */
+
 #include <linux/devfreq.h>
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
@@ -9,7 +17,6 @@
 #include <linux/workqueue.h>
 #include <linux/version.h>
 #include "governor.h"
-
 #include <linux/hisi/hisi_mailbox.h>
 #include <linux/hisi/hisi_rproc.h>
 #include <linux/hisi/ipc_msg.h>
@@ -17,6 +24,7 @@
 #include <linux/cpufreq.h>
 #include <linux/hisi/hisi_devfreq.h>
 #include <trace/events/power.h>
+#include <securec.h>
 
 #ifdef CONFIG_HISI_DRG
 #include <linux/hisi/hisi_drg.h>
@@ -29,20 +37,17 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/l3c_devfreq.h>
 
-
-#define L3C_DEVFREQ_PLATFORM_DEVICE_NAME			"l3c_devfreq"
-#define L3C_DEVFREQ_GOVERNOR_NAME					"l3c_governor"
-
+#define L3C_DEVFREQ_PLATFORM_DEVICE_NAME		"l3c_devfreq"
+#define L3C_DEVFREQ_GOVERNOR_NAME			"l3c_governor"
 #define L3C_DEVFREQ_DEFAULT_POLLING_MS			60
-
-#define FREQ_MHZ									1000000
-#define FREQ_KHZ									1000
+#define FREQ_MHZ					1000000
+#define FREQ_KHZ					1000
+#define L3D_EV						0x2B
+#define BUS_ACCESS_EV					0x19
 
 enum ev_index {
 	L3D_IDX,
 	BUS_ACCESS_IDX,
-	ACP_IDX,
-	/* CYCLE_IDX, */
 	NUM_EVENTS
 };
 
@@ -53,18 +58,9 @@ enum cluster_idx {
 	NUM_CLUSTERS
 };
 
-#define L3D_EV			0x2B
-#define BUS_ACCESS_EV	0x19
-#define ACP_EV		0x119
-#define CYCLE_EV		0x11
-
-
-
 struct evt_count {
 	unsigned long l3_count;
 	unsigned long bus_access_count;
-	unsigned long acp_count;
-	/* unsigned long cycle_count; */
 };
 
 struct event_data {
@@ -75,6 +71,7 @@ struct event_data {
 struct l3c_hwmon_data {
 	struct event_data events[NUM_EVENTS];
 	bool active;
+	/* to protect operation of hw monitor */
 	struct mutex active_lock;
 };
 
@@ -108,8 +105,6 @@ struct l3c_devfreq {
 	struct work_struct update_handle;
 #endif
 
-	struct mutex lock;
-
 #ifdef L3C_DEVFREQ_HRTIMER_ENABLE
 	struct hrtimer poll_timer;
 #endif
@@ -135,10 +130,10 @@ struct l3c_devfreq {
 
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 	struct notifier_block l3c_trans_notify;
+	/* to protect operation of cpufreq link */
 	struct mutex allow_lock;
 #endif
 };
-
 
 static struct l3c_devfreq_data device_data;
 
@@ -151,20 +146,22 @@ static const struct of_device_id l3c_devfreq_id[] = {
 	{}
 };
 
-
 static int l3c_devfreq_set_target_freq_ipc(struct device *dev,
-					 unsigned long freq)
+					   unsigned long freq)
 {
 	u32 msg[8] = {0};
 	int rproc_id = HISI_RPROC_LPM3_MBX13;
-	int ret = 0;
+	int ret;
 
-	msg[0] = (OBJ_AP << 24) | (OBJ_L3 << 16) | (CMD_SETTING << 8) | TYPE_FREQ;
+	msg[0] = (OBJ_AP << 24) |
+		 (OBJ_L3 << 16) |
+		 (CMD_SETTING << 8) |
+		 TYPE_FREQ;
 	msg[1] = freq;
-	msg[1] = msg[1]/FREQ_MHZ;
+	msg[1] = msg[1] / FREQ_MHZ;
 
 	ret = RPROC_ASYNC_SEND((rproc_id_t)rproc_id, (mbox_msg_t *)msg, 8);
-	if(ret) {
+	if (ret) {
 		dev_err(dev, "mailbox send error\n");
 		return -1;
 	}
@@ -174,13 +171,13 @@ static int l3c_devfreq_set_target_freq_ipc(struct device *dev,
 
 #ifdef CONFIG_HISI_HW_VOTE_L3C_FREQ
 static int l3c_devfreq_set_target_freq_hv(struct device *dev,
-					 unsigned long freq)
+					  unsigned long freq)
 {
 	struct l3c_devfreq *l3c = dev_get_drvdata(dev);
-	int ret = 0;
+	int ret;
 
-	ret = hisi_hv_set_freq(l3c->l3c_hvdev, (freq/FREQ_KHZ));
-	if(ret) {
+	ret = hisi_hv_set_freq(l3c->l3c_hvdev, (freq / FREQ_KHZ));
+	if (ret) {
 		dev_err(dev, "failed to set freq by hw vote\n");
 		return -1;
 	}
@@ -194,16 +191,15 @@ static int l3c_devfreq_set_target_freq(struct device *dev, unsigned long freq)
 	struct l3c_devfreq *l3c = dev_get_drvdata(dev);
 
 #ifdef CONFIG_HISI_HW_VOTE_L3C_FREQ
-	if(l3c->hv_supported){
+	if (l3c->hv_supported) {
 		return l3c_devfreq_set_target_freq_hv(dev, freq);
-	}else{
+	} else {
 		return l3c_devfreq_set_target_freq_ipc(dev, freq);
 	}
 #else
 	return l3c_devfreq_set_target_freq_ipc(dev, freq);
 #endif
 }
-
 
 static inline void l3c_devfreq_rcu_read_lock(void)
 {
@@ -227,12 +223,12 @@ static inline void l3c_devfreq_opp_put(struct dev_pm_opp *opp)
 }
 
 static int l3c_devfreq_target(struct device *dev,
-				    unsigned long *_freq, u32 flags)
+			      unsigned long *_freq, u32 flags)
 {
 	struct l3c_devfreq *l3c = dev_get_drvdata(dev);
 	struct dev_pm_opp *opp = NULL;
 	unsigned long freq;
-	int ret = 0;
+	int ret;
 
 	l3c_devfreq_rcu_read_lock();
 	opp = devfreq_recommended_opp(dev, _freq, flags);
@@ -255,7 +251,7 @@ static int l3c_devfreq_target(struct device *dev,
 	/* Set requested freq */
 	ret = l3c_devfreq_set_target_freq(dev, freq);
 
-	if(!ret){
+	if (!ret) {
 		l3c->cur_freq = freq;
 	}
 
@@ -263,24 +259,25 @@ static int l3c_devfreq_target(struct device *dev,
 	return ret;
 }
 
-
 /* perf event counter */
-#define MAX_COUNT_LIM 0xFFFFFFFFFFFFFFFF
+#define MAX_COUNT_LIM		    0xFFFFFFFFFFFFFFFF
 static inline unsigned long l3c_devfreq_read_event(struct event_data *event)
 {
 	unsigned long ev_count;
 	u64 total, enabled, running;
 
-	if (IS_ERR_OR_NULL(event->pevent))
+	if (IS_ERR_OR_NULL(event->pevent)) {
 		return 0;
+	}
 
 	total = perf_event_read_value(event->pevent, &enabled, &running);
 	/* trace_l3c_devfreq_read_event(total); */
 
-	if (total >= event->prev_count)
+	if (total >= event->prev_count) {
 		ev_count = total - event->prev_count;
-	else
+	} else {
 		ev_count = (MAX_COUNT_LIM - event->prev_count) + total;
+	}
 
 	event->prev_count = total;
 
@@ -289,11 +286,11 @@ static inline unsigned long l3c_devfreq_read_event(struct event_data *event)
 
 static void l3c_devfreq_read_perf_counters(struct l3c_hwmon *hw)
 {
-	struct l3c_hwmon_data *hw_data = &(hw->l3c_hw_data);
+	struct l3c_hwmon_data *hw_data = &hw->l3c_hw_data;
 
-	mutex_lock(&(hw_data->active_lock));
-	if (false == hw_data->active){
-		mutex_unlock(&(hw_data->active_lock));
+	mutex_lock(&hw_data->active_lock);
+	if (hw_data->active == false) {
+		mutex_unlock(&hw_data->active_lock);
 		return;
 	}
 
@@ -303,14 +300,7 @@ static void l3c_devfreq_read_perf_counters(struct l3c_hwmon *hw)
 	hw->count.bus_access_count =
 			l3c_devfreq_read_event(&hw_data->events[BUS_ACCESS_IDX]);
 
-	hw->count.acp_count =
-			l3c_devfreq_read_event(&hw_data->events[ACP_IDX]);
-/*
-	hw->count.cycle_count =
-			l3c_devfreq_read_event(&hw_data->events[CYCLE_IDX]);
-*/
-
-	mutex_unlock(&(hw_data->active_lock));
+	mutex_unlock(&hw_data->active_lock);
 }
 
 static void l3c_devfreq_delete_events(struct l3c_hwmon_data *hw_data)
@@ -319,7 +309,7 @@ static void l3c_devfreq_delete_events(struct l3c_hwmon_data *hw_data)
 
 	for (i = 0; i < NUM_EVENTS; i++) {
 		hw_data->events[i].prev_count = 0;
-		if(hw_data->events[i].pevent){
+		if (hw_data->events[i].pevent) {
 			perf_event_release_kernel(hw_data->events[i].pevent);
 			hw_data->events[i].pevent = NULL;
 		}
@@ -328,11 +318,11 @@ static void l3c_devfreq_delete_events(struct l3c_hwmon_data *hw_data)
 
 static void l3c_devfreq_stop_hwmon(struct l3c_hwmon *hw)
 {
-	struct l3c_hwmon_data *hw_data = &(hw->l3c_hw_data);
+	struct l3c_hwmon_data *hw_data = &hw->l3c_hw_data;
 
-	mutex_lock(&(hw_data->active_lock));
-	if (false == hw_data->active){
-		mutex_unlock(&(hw_data->active_lock));
+	mutex_lock(&hw_data->active_lock);
+	if (hw_data->active == false) {
+		mutex_unlock(&hw_data->active_lock);
 		return;
 	}
 	hw_data->active = false;
@@ -340,21 +330,20 @@ static void l3c_devfreq_stop_hwmon(struct l3c_hwmon *hw)
 	l3c_devfreq_delete_events(hw_data);
 
 	hw->count.l3_count = 0;
-	hw->count.bus_access_count = 0;;
-	hw->count.acp_count = 0;
-	/* hw->count.cycle_count = 0; */
+	hw->count.bus_access_count = 0;
 
-	mutex_unlock(&(hw_data->active_lock));
+	mutex_unlock(&hw_data->active_lock);
 }
 
 /*lint -e429 */
 static struct perf_event_attr *l3c_devfreq_alloc_attr(void)
 {
-	struct perf_event_attr *attr;
+	struct perf_event_attr *attr = NULL;
 
-	attr = kzalloc(sizeof(struct perf_event_attr), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(attr))
+	attr = kzalloc(sizeof(*attr), GFP_KERNEL);
+	if (!attr) {
 		return ERR_PTR(-ENOMEM);
+	}
 /*lint -e613 */
 	attr->type = PERF_TYPE_DSU;
 	attr->size = sizeof(struct perf_event_attr);
@@ -366,21 +355,22 @@ static struct perf_event_attr *l3c_devfreq_alloc_attr(void)
 
 static int l3c_devfreq_set_events(struct l3c_hwmon_data *hw_data, int cpu)
 {
-	struct perf_event *pevent= NULL;
+	struct perf_event *pevent = NULL;
 	struct perf_event_attr *attr = NULL;
 	int err;
 
 	/* Allocate an attribute for event initialization */
 	attr = l3c_devfreq_alloc_attr();
-	if (IS_ERR(attr)){
+	if (IS_ERR(attr)) {
 		pr_debug("l3c_devfreq:alloc attr failed\n");
 		return PTR_ERR(attr);
 	}
 
 	attr->config = L3D_EV;
 	pevent = perf_event_create_kernel_counter(attr, cpu, NULL, NULL, NULL);
-	if (IS_ERR_OR_NULL(pevent)){
-		pr_debug("perf event create failed, config = 0x%x\n", (unsigned int)attr->config);
+	if (IS_ERR_OR_NULL(pevent)) {
+		pr_debug("perf event create failed, config = 0x%x\n",
+			 (unsigned int)attr->config);
 		goto err_out;
 	}
 	hw_data->events[L3D_IDX].pevent = pevent;
@@ -388,44 +378,17 @@ static int l3c_devfreq_set_events(struct l3c_hwmon_data *hw_data, int cpu)
 
 	attr->config = BUS_ACCESS_EV;
 	pevent = perf_event_create_kernel_counter(attr, cpu, NULL, NULL, NULL);
-	if (IS_ERR_OR_NULL(pevent)){
-		pr_debug("perf event create failed, config = 0x%x\n", (unsigned int)attr->config);
+	if (IS_ERR_OR_NULL(pevent)) {
+		pr_debug("perf event create failed, config = 0x%x\n",
+			 (unsigned int)attr->config);
 		goto err_l3d;
 	}
 	hw_data->events[BUS_ACCESS_IDX].pevent = pevent;
 	perf_event_enable(hw_data->events[BUS_ACCESS_IDX].pevent);
 
-	attr->config = ACP_EV;
-	pevent = perf_event_create_kernel_counter(attr, cpu, NULL, NULL, NULL);
-	if (IS_ERR_OR_NULL(pevent)){
-		pr_debug("perf event create failed, config = 0x%x\n", (unsigned int)attr->config);
-		goto err_buss_acc;
-	}
-	hw_data->events[ACP_IDX].pevent = pevent;
-	perf_event_enable(hw_data->events[ACP_IDX].pevent);
-/*
-	attr->config = CYCLE_EV;
-	pevent = perf_event_create_kernel_counter(attr, cpu, NULL, NULL, NULL);
-	if (IS_ERR_OR_NULL(pevent)){
-		pr_debug("perf event create failed, config = 0x%x\n", (unsigned int)attr->config);
-		goto err_acp;
-	}
-	hw_data->events[CYCLE_IDX].pevent = pevent;
-	perf_event_enable(hw_data->events[CYCLE_IDX].pevent);
-*/
 	kfree(attr);
 	return 0;
 
-/*
-err_acp:
-	perf_event_disable(hw_data->events[ACP_IDX].pevent);
-	perf_event_release_kernel(hw_data->events[ACP_IDX].pevent);
-	hw_data->events[ACP_IDX].pevent = NULL;
-*/
-err_buss_acc:
-	perf_event_disable(hw_data->events[BUS_ACCESS_IDX].pevent);
-	perf_event_release_kernel(hw_data->events[BUS_ACCESS_IDX].pevent);
-	hw_data->events[BUS_ACCESS_IDX].pevent = NULL;
 err_l3d:
 	perf_event_disable(hw_data->events[L3D_IDX].pevent);
 	perf_event_release_kernel(hw_data->events[L3D_IDX].pevent);
@@ -439,12 +402,12 @@ err_out:
 static int l3c_devfreq_start_hwmon(struct l3c_hwmon *hw)
 {
 	int ret = 0;
-	struct l3c_hwmon_data *hw_data = &(hw->l3c_hw_data);
+	struct l3c_hwmon_data *hw_data = &hw->l3c_hw_data;
 	/* cpu must be 0*/
 	int cpu = 0;
 
-	mutex_lock(&(hw_data->active_lock));
-	if (true == hw_data->active){
+	mutex_lock(&hw_data->active_lock);
+	if (hw_data->active) {
 		goto exit;
 	}
 
@@ -458,17 +421,16 @@ static int l3c_devfreq_start_hwmon(struct l3c_hwmon *hw)
 	hw_data->active = true;
 
 exit:
-	mutex_unlock(&(hw_data->active_lock));
+	mutex_unlock(&hw_data->active_lock);
 	return ret;
 }
 
-
 static int l3c_devfreq_get_dev_status(struct device *dev,
-					    struct devfreq_dev_status *stat)
+				      struct devfreq_dev_status *stat)
 {
 	struct l3c_devfreq *l3c = dev_get_drvdata(dev);
 	unsigned long const usec = ktime_to_us(ktime_get());
-	unsigned long delta = 0;
+	unsigned long delta;
 
 	l3c_devfreq_read_perf_counters(l3c->hw);
 
@@ -487,62 +449,63 @@ static int l3c_devfreq_get_dev_status(struct device *dev,
 	return 0;
 }
 
-
 static int l3c_get_freq_from_load(struct l3c_devfreq *l3c)
 {
 	struct devfreq_dev_profile *dev_profile = l3c->devfreq_profile;
-	int i = 0;
+	int i;
 
-	for(i = 0; i < l3c->load_map_len; i++) {
-		if (l3c->l3c_bw < l3c->load_map[i])
+	for (i = 0; i < l3c->load_map_len; i++) {
+		if (l3c->l3c_bw < l3c->load_map[i]) {
 			break;
+		}
 	}
 
-	if (i == l3c->load_map_len){
+	if (i == l3c->load_map_len) {
 		return l3c->l3c_data->freq_max;
 	}
 
-	if((unsigned int) i < dev_profile->max_state){
+	if ((unsigned int)i < dev_profile->max_state) {
 		return dev_profile->freq_table[i];
-	}else{
+	} else {
 		return l3c->l3c_data->freq_max;
 	}
 }
 
-
 static unsigned long l3c_devfreq_calc_next_freq(struct l3c_devfreq *l3c)
 {
-	unsigned long target_freq = l3c->cur_freq;
+	unsigned long target_freq;
 	struct l3c_devfreq_data *data = l3c->l3c_data;
 	unsigned long tmp_target = data->freq_min;
-	unsigned long l3c_bw = 0;
+	unsigned long l3c_bw;
 	unsigned long l3c_hit_bw = 0;
 
 	/*
-	* bw_rate = total_access_count / cycle / 2
-	* curr_freq = cycle / time
-	* normalized bw_rate = bw_rate X curr_freq / max_freq
-	*/
-	if (l3c->hw->count.l3_count > 0
-	&& l3c->hw->count.bus_access_count > 0
-	&& l3c->alg.usec_delta > 0
-	&& data->freq_max > 0) {
-		l3c_bw = ((l3c->hw->count.l3_count + l3c->hw->count.bus_access_count) >> 1) * 1000
-			  / l3c->alg.usec_delta * 1000 / (data->freq_max / 1000);
-	}
-	else {
+	 * bw_rate = total_access_count / cycle / 2
+	 * curr_freq = cycle / time
+	 * normalized bw_rate = bw_rate X curr_freq / max_freq
+	 */
+	if (l3c->hw->count.l3_count > 0 &&
+	    l3c->hw->count.bus_access_count > 0 &&
+	    l3c->alg.usec_delta > 0 &&
+	    data->freq_max > 0) {
+		l3c_bw = ((l3c->hw->count.l3_count +
+			   l3c->hw->count.bus_access_count) >> 1) * 1000 /
+			 l3c->alg.usec_delta * 1000 /
+			 (data->freq_max / 1000);
+	} else {
 		l3c_bw = 0;
 	}
 	l3c->l3c_bw = l3c_bw;
 
-	if(l3c->alg.usec_delta > 0 && data->freq_max > 0){
-		l3c_hit_bw = (l3c->hw->count.l3_count >> 1) * 1000
-		  / l3c->alg.usec_delta * 1000 / (data->freq_max / 1000);
+	if (l3c->alg.usec_delta > 0 && data->freq_max > 0) {
+		l3c_hit_bw = (l3c->hw->count.l3_count >> 1) * 1000 /
+			     l3c->alg.usec_delta * 1000 / (data->freq_max / 1000);
 	}
 
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 	/* check high L3 hit bw */
-	if (l3c->l3c_bw >= l3c->l3c_bw_max && l3c->hw->count.bus_access_count > 0) {
+	if (l3c->l3c_bw >= l3c->l3c_bw_max &&
+	    l3c->hw->count.bus_access_count > 0) {
 		mutex_lock(&l3c->allow_lock);
 		if (allow_fcm_boost) {
 			tmp_target = l3c->boost_freq;
@@ -551,25 +514,17 @@ static unsigned long l3c_devfreq_calc_next_freq(struct l3c_devfreq *l3c)
 	}
 #endif
 
-/*
-	trace_l3c_devfreq_calc_next_freq(l3c->hw->count.l3_count,
-			l3c->hw->count.bus_access_count,
-			l3c->hw->count.acp_count,
-			l3c->hw->count.cycle_count,
-			l3c->alg.usec_delta, l3c->cur_freq, l3c_bw, l3c_hit_bw);
-*/
 	trace_l3c_devfreq_counter_info(l3c->hw->count.l3_count,
-			l3c->hw->count.bus_access_count,
-			l3c->hw->count.acp_count);
+				       l3c->hw->count.bus_access_count);
 
 	trace_l3c_devfreq_bw_info(l3c->alg.usec_delta,
-			l3c->cur_freq, l3c_bw, l3c_hit_bw);
+				  l3c->cur_freq, l3c_bw, l3c_hit_bw);
 
 	target_freq = l3c_get_freq_from_load(l3c);
 	target_freq = max(target_freq, tmp_target);
 
 	/* bw is invalid by FCM idle, assign min freq to L3 */
-	if(l3c_bw > l3c->load_map_max || l3c_hit_bw > l3c->load_map_max){
+	if (l3c_bw > l3c->load_map_max || l3c_hit_bw > l3c->load_map_max) {
 		target_freq = data->freq_min;
 	}
 
@@ -577,15 +532,16 @@ static unsigned long l3c_devfreq_calc_next_freq(struct l3c_devfreq *l3c)
 }
 
 static int l3c_devfreq_governor_get_target_freq(struct devfreq *df,
-						  unsigned long *freq)
+						unsigned long *freq)
 {
-
 	struct l3c_devfreq *l3c = dev_get_drvdata(df->dev.parent);
 	struct l3c_devfreq_data *data = l3c->l3c_data;
 	int err;
+
 	err = devfreq_update_stats(df);
-	if (err)
+	if (err) {
 		return err;
+	}
 
 	*freq = l3c_devfreq_calc_next_freq(l3c);
 
@@ -599,7 +555,7 @@ static int l3c_devfreq_governor_get_target_freq(struct devfreq *df,
 }
 
 static void l3c_devfreq_governor_apply_limits(struct devfreq *df,
-						  unsigned long *freq)
+					      unsigned long *freq)
 {
 	struct l3c_devfreq *l3c = dev_get_drvdata(df->dev.parent);
 	struct l3c_devfreq_data *data = l3c->l3c_data;
@@ -612,7 +568,7 @@ static void l3c_devfreq_governor_apply_limits(struct devfreq *df,
 }
 
 static int l3c_devfreq_governor_event_handler(struct devfreq *devfreq,
-					    unsigned int event, void *data)
+					      unsigned int event, void *data)
 {
 	int ret = 0;
 
@@ -680,7 +636,7 @@ static int l3c_devfreq_reinit_device(struct device *dev)
 {
 	struct l3c_devfreq *l3c = dev_get_drvdata(dev);
 	/* Clean the algorithm statistics and start from scrach */
-	memset(&l3c->alg, 0, sizeof(l3c->alg));	/* unsafe_function_ignore: memset */
+	(void)memset_s(&l3c->alg, sizeof(l3c->alg), 0, sizeof(l3c->alg));
 	l3c->alg.last_update = ktime_to_us(ktime_get());
 
 	return 0;
@@ -689,10 +645,11 @@ static int l3c_devfreq_reinit_device(struct device *dev)
 static int l3c_devfreq_setup_devfreq_profile(struct platform_device *pdev)
 {
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
-	struct devfreq_dev_profile *df_profile;
+	struct devfreq_dev_profile *df_profile = NULL;
 
 	l3c->devfreq_profile = devm_kzalloc(&pdev->dev,
-			sizeof(struct devfreq_dev_profile), GFP_KERNEL);
+					    sizeof(struct devfreq_dev_profile),
+					    GFP_KERNEL);
 	if (IS_ERR_OR_NULL(l3c->devfreq_profile)) {
 		dev_err(&pdev->dev, "no memory.\n");
 		return PTR_ERR(l3c->devfreq_profile);
@@ -708,69 +665,18 @@ static int l3c_devfreq_setup_devfreq_profile(struct platform_device *pdev)
 	return 0;
 }
 
-
-static int l3c_devfreq_parse_algo_dt(struct platform_device *pdev, struct device_node *np)
+#ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
+static int __l3c_devfeq_parse_algo_dt(struct platform_device *pdev,
+				      struct device_node *np)
 {
-	const struct property *prop = NULL;
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
-#ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
-	u32 tmp_boost_freq = 0;
-	u32 tmp_lit_link_freq = 0;
-	u32 tmp_big_link_freq = 0;
-#endif
-	int i = 0;
-	int ret = 0;
+	u32 tmp_boost_freq;
+	u32 tmp_lit_link_freq;
+	u32 tmp_big_link_freq;
+	int ret;
 
-	prop = of_find_property(np, "load-map", NULL);
-	if (prop) {
-		l3c->load_map_len = ((unsigned int)prop->length) / sizeof(*l3c->load_map);
-		dev_dbg(&pdev->dev, "load_map_len = %d\n", l3c->load_map_len);
-
-		l3c->load_map = devm_kcalloc(&pdev->dev, l3c->load_map_len,
-						   sizeof(*l3c->load_map),
-						   GFP_KERNEL);
-		if (IS_ERR_OR_NULL(l3c->load_map)){
-			dev_err(&pdev->dev, "load_map alloc fail\n");
-			ret = -ENOMEM;
-			goto err;
-		}
-
-		if (of_property_read_u64_array(np, "load-map", l3c->load_map, l3c->load_map_len) < 0){
-			dev_err(&pdev->dev, "read load_map fail\n");
-			ret = -ENODEV;
-			goto err;
-		}
-	}else{
-		dev_err(&pdev->dev, "no load-map\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	l3c->load_map_max = l3c->load_map[l3c->load_map_len - 1];
-	dev_dbg(&pdev->dev, "load_map_max = %lu\n", (unsigned long)l3c->load_map_max);
-
-	for(i = 0; i < l3c->load_map_len; i++){
-		dev_dbg(&pdev->dev, "load_map[%d] = %lu\n", i, (unsigned long)l3c->load_map[i]);
-	}
-
-	ret = of_property_read_u64(np, "l3c-bw-max", &l3c->l3c_bw_max);
-	if(ret){
-		dev_err(&pdev->dev, "no l3c-bw-max\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	dev_dbg(&pdev->dev, "l3c_bw_max = %lu\n", (unsigned long)l3c->l3c_bw_max);
-
-	ret = of_property_read_u64(np, "l3-bus-ratio", &l3c->l3_bus_ratio);
-	if(ret){
-		dev_err(&pdev->dev, "no l3-bus-ratio\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	dev_dbg(&pdev->dev, "l3_bus_ratio = %lu\n", (unsigned long)l3c->l3_bus_ratio);
-
-#ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 	ret = of_property_read_u32(np, "boost-freq", &tmp_boost_freq);
-	if(ret){
+	if (ret) {
 		dev_err(&pdev->dev, "no boost-freq\n");
 		ret = -ENODEV;
 		goto err;
@@ -778,45 +684,125 @@ static int l3c_devfreq_parse_algo_dt(struct platform_device *pdev, struct device
 	l3c->boost_freq = (unsigned long)tmp_boost_freq * FREQ_KHZ;
 	dev_dbg(&pdev->dev, "boost_freq = %lu\n", l3c->boost_freq);
 
-	ret = of_property_read_u32(np, "little-link-freq", &tmp_lit_link_freq);
-	if(ret){
+	ret = of_property_read_u32(np, "little-link-freq",
+				   &tmp_lit_link_freq);
+	if (ret) {
 		dev_err(&pdev->dev, "no little-link-freq\n");
 		ret = -ENODEV;
 		goto err;
 	}
 	l3c->lit_link_freq = tmp_lit_link_freq;
-	dev_dbg(&pdev->dev, "lit_link_freq = %lu\n", l3c->lit_link_freq);
+	dev_dbg(&pdev->dev, "lit_link_freq = %lu\n",
+		l3c->lit_link_freq);
 
-	ret = of_property_read_u32(np, "big-link-freq", &tmp_big_link_freq);
-	if(ret){
+	ret = of_property_read_u32(np, "big-link-freq",
+				   &tmp_big_link_freq);
+	if (ret) {
 		dev_err(&pdev->dev, "no big-link-freq\n");
 		ret = -ENODEV;
 		goto err;
 	}
 	l3c->big_link_freq = tmp_big_link_freq;
-	dev_dbg(&pdev->dev, "big_link_freq = %lu\n", l3c->big_link_freq);
+	dev_dbg(&pdev->dev, "big_link_freq = %lu\n",
+		l3c->big_link_freq);
+
+err:
+	return ret;
+}
+#endif
+
+static int l3c_devfreq_parse_algo_dt(struct platform_device *pdev,
+				     struct device_node *np)
+{
+	const struct property *prop = NULL;
+	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
+	int i;
+	int ret;
+
+	prop = of_find_property(np, "load-map", NULL);
+	if (prop) {
+		l3c->load_map_len = ((unsigned int)prop->length) / sizeof(*l3c->load_map);
+		dev_dbg(&pdev->dev, "load_map_len = %d\n", l3c->load_map_len);
+
+		l3c->load_map = devm_kcalloc(&pdev->dev,
+					     l3c->load_map_len,
+					     sizeof(*l3c->load_map),
+					     GFP_KERNEL);
+		if (IS_ERR_OR_NULL(l3c->load_map)) {
+			dev_err(&pdev->dev, "load_map alloc fail\n");
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		if (of_property_read_u64_array(np, "load-map",
+					       l3c->load_map,
+					       l3c->load_map_len) < 0) {
+			dev_err(&pdev->dev, "read load_map fail\n");
+			ret = -ENODEV;
+			goto err;
+		}
+	} else {
+		dev_err(&pdev->dev, "no load-map\n");
+		ret = -ENODEV;
+		goto err;
+	}
+
+	l3c->load_map_max = l3c->load_map[l3c->load_map_len - 1];
+	dev_dbg(&pdev->dev, "load_map_max = %lu\n",
+		(unsigned long)l3c->load_map_max);
+
+	for (i = 0; i < l3c->load_map_len; i++) {
+		dev_dbg(&pdev->dev, "load_map[%d] = %lu\n",
+			i, (unsigned long)l3c->load_map[i]);
+	}
+
+	ret = of_property_read_u64(np, "l3c-bw-max", &l3c->l3c_bw_max);
+	if (ret) {
+		dev_err(&pdev->dev, "no l3c-bw-max\n");
+		ret = -ENODEV;
+		goto err;
+	}
+	dev_dbg(&pdev->dev, "l3c_bw_max = %lu\n",
+		(unsigned long)l3c->l3c_bw_max);
+
+	ret = of_property_read_u64(np, "l3-bus-ratio",
+				   &l3c->l3_bus_ratio);
+	if (ret) {
+		dev_err(&pdev->dev, "no l3-bus-ratio\n");
+		ret = -ENODEV;
+		goto err;
+	}
+	dev_dbg(&pdev->dev, "l3_bus_ratio = %lu\n",
+		(unsigned long)l3c->l3_bus_ratio);
+
+#ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
+	ret = __l3c_devfeq_parse_algo_dt(pdev, np);
+	if (ret) {
+		dev_err(&pdev->dev, "__l3c_devfeq_parse_algo_dt failed\n");
+		goto err;
+	}
 #endif
 
 err:
 	return ret;
 }
 
-
 static int l3c_devfreq_parse_dt(struct platform_device *pdev)
 {
 	struct device_node *np = NULL;
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
-	u32 tmp_init_freq = 0;
-	int ret = 0;
+	u32 tmp_init_freq;
+	int ret;
 
 	np = of_find_compatible_node(NULL, NULL, "hisi,l3c_devfreq");
 	if (!np) {
-		dev_err(&pdev->dev, "hisi,l3c_devfreq No compatible node found\n");
+		dev_err(&pdev->dev,
+			"hisi,l3c_devfreq No compatible node found\n");
 		return -ENODEV;
 	}
 
 	ret = of_property_read_u32(np, "init-freq", &tmp_init_freq);
-	if(ret){
+	if (ret) {
 		dev_err(&pdev->dev, "no init-freq\n");
 		ret = -ENODEV;
 		goto err;
@@ -825,8 +811,9 @@ static int l3c_devfreq_parse_dt(struct platform_device *pdev)
 	l3c->cur_freq = l3c->initial_freq;
 	dev_dbg(&pdev->dev, "initial_freq = %lu\n", l3c->initial_freq);
 
-	ret = of_property_read_u32(np, "hv-supported", &l3c->hv_supported);
-	if(ret){
+	ret = of_property_read_u32(np, "hv-supported",
+				   &l3c->hv_supported);
+	if (ret) {
 		dev_err(&pdev->dev, "no hv-supported\n");
 		ret = -ENODEV;
 		goto err;
@@ -834,13 +821,13 @@ static int l3c_devfreq_parse_dt(struct platform_device *pdev)
 	dev_err(&pdev->dev, "hv_supported = %u\n", l3c->hv_supported);
 
 	ret = of_property_read_u32(np, "polling", &l3c->polling_ms);
-	if (ret){
+	if (ret) {
 		l3c->polling_ms = L3C_DEVFREQ_DEFAULT_POLLING_MS;
 	}
 	dev_dbg(&pdev->dev, "polling_ms = %d\n", l3c->polling_ms);
 
 	ret = l3c_devfreq_parse_algo_dt(pdev, np);
-	if(ret){
+	if (ret) {
 		dev_err(&pdev->dev, "parse algo dt fail\n");
 		ret = -ENODEV;
 		goto err;
@@ -856,7 +843,7 @@ static int l3c_devfreq_setup(struct platform_device *pdev)
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
 	struct devfreq_dev_profile *df_profile = NULL;
 	struct l3c_devfreq_data *data = NULL;
-	int ret = 0;
+	int ret;
 
 #ifdef L3C_DEVFREQ_HRTIMER_ENABLE
 	l3c->update_wq = create_workqueue("hisi_l3c_devfreq_wq");
@@ -867,13 +854,11 @@ static int l3c_devfreq_setup(struct platform_device *pdev)
 	INIT_WORK(&l3c->update_handle, l3c_devfreq_handle_update);
 #endif
 
-	mutex_init(&l3c->lock);
-
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 	mutex_init(&l3c->allow_lock);
 #endif
 
-	if(dev_pm_opp_of_add_table(&pdev->dev)){
+	if (dev_pm_opp_of_add_table(&pdev->dev)) {
 		dev_err(&pdev->dev, "device add opp table failed.\n");
 		return -ENODEV;
 	}
@@ -897,13 +882,13 @@ static int l3c_devfreq_setup(struct platform_device *pdev)
 		goto remove_dev;
 	}
 
-	if(!df_profile->max_state || !df_profile->freq_table) {
+	if (!df_profile->max_state || !df_profile->freq_table) {
 		dev_err(&pdev->dev, "max_state or freq_table is invalid\n");
 		ret = -ENOMEM;
 		goto remove_dev;
 	}
 
-	if(df_profile->max_state != l3c->load_map_len){
+	if (df_profile->max_state != l3c->load_map_len) {
 		dev_err(&pdev->dev, "max_state not equal load_map_len\n");
 		ret = -EINVAL;
 		goto remove_dev;
@@ -931,7 +916,6 @@ free_opp_table:
 	return ret;
 }
 
-
 static void l3c_devfreq_unsetup(struct platform_device *pdev)
 {
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
@@ -943,7 +927,6 @@ static void l3c_devfreq_unsetup(struct platform_device *pdev)
 	devm_devfreq_remove_device(&pdev->dev, l3c->devfreq);
 	dev_pm_opp_of_remove_table(&pdev->dev);
 }
-
 
 static int l3c_devfreq_init_device(struct platform_device *pdev)
 {
@@ -967,18 +950,18 @@ static int l3c_devfreq_init_device(struct platform_device *pdev)
 static int l3c_devfreq_hwmon_setup(struct platform_device *pdev)
 {
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
-	struct l3c_hwmon *hw;
-	int ret = 0;
+	struct l3c_hwmon *hw = NULL;
+	int ret;
 
 	hw = devm_kzalloc(&pdev->dev, sizeof(*hw), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(hw)){
+	if (IS_ERR_OR_NULL(hw)) {
 		return -ENOMEM;
 	}
 
-	mutex_init(&(hw->l3c_hw_data.active_lock)); //lint !e613
+	mutex_init(&hw->l3c_hw_data.active_lock); //lint !e613
 
 	ret = l3c_devfreq_start_hwmon(hw);
-	if(ret){
+	if (ret) {
 		dev_dbg(&pdev->dev, "start hwmon failed in setup.\n");
 		return -ENODEV;
 	}
@@ -989,7 +972,7 @@ static int l3c_devfreq_hwmon_setup(struct platform_device *pdev)
 }
 /*lint +e429 */
 
-static void l3c_devfreq_hwmon_destory(struct platform_device *pdev)
+static void l3c_devfreq_hwmon_destroy(struct platform_device *pdev)
 {
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
 
@@ -999,11 +982,12 @@ static void l3c_devfreq_hwmon_destory(struct platform_device *pdev)
 static int l3c_devfreq_suspend(struct device *dev)
 {
 	struct l3c_devfreq *l3c = dev_get_drvdata(dev);
-	int ret = 0;
+	int ret;
 
 #ifdef L3C_DEVFREQ_HRTIMER_ENABLE
-	if (hrtimer_active(&l3c->poll_timer))
-	    hrtimer_cancel(&l3c->poll_timer);
+	if (hrtimer_active(&l3c->poll_timer)) {
+		hrtimer_cancel(&l3c->poll_timer);
+	}
 #endif
 
 	ret = devfreq_suspend_device(l3c->devfreq);
@@ -1019,26 +1003,27 @@ static int l3c_devfreq_suspend(struct device *dev)
 
 static int l3c_devfreq_resume(struct device *dev)
 {
-
 	struct l3c_devfreq *l3c = dev_get_drvdata(dev);
-	int ret = 0;
+	int ret;
 
 	l3c_devfreq_reinit_device(dev);
 
 	ret = l3c_devfreq_start_hwmon(l3c->hw);
-	if(ret){
+	if (ret) {
 		dev_dbg(dev, "start hwmon failed in resume.\n");
 		return -ENODEV;
 	}
 
 	ret = devfreq_resume_device(l3c->devfreq);
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(dev, "failed to resume devfreq device.\n");
+	}
 
 #ifdef L3C_DEVFREQ_HRTIMER_ENABLE
-	if (!hrtimer_active(&l3c->poll_timer))
-	    hrtimer_start(&l3c->poll_timer, ms_to_ktime(l3c->polling_ms),
-			  HRTIMER_MODE_REL);
+	if (!hrtimer_active(&l3c->poll_timer)) {
+		hrtimer_start(&l3c->poll_timer, ms_to_ktime(l3c->polling_ms),
+			      HRTIMER_MODE_REL);
+	}
 #endif
 
 	return ret;
@@ -1046,228 +1031,223 @@ static int l3c_devfreq_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(l3c_devfreq_pm, l3c_devfreq_suspend, l3c_devfreq_resume);
 
-
 #ifdef CONFIG_HISI_L3C_DEVFREQ_DEBUG
 #define LOCAL_BUF_MAX       (128)
-static ssize_t show_l3c_bw_max(struct device *dev, struct device_attribute *attr,
-							char *buf)
+static ssize_t show_l3c_bw_max(struct device *dev,
+			       struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
 
-	return snprintf(buf, PAGE_SIZE, "%lu\n", (unsigned long)l3c->l3c_bw_max);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%lu\n", (unsigned long)l3c->l3c_bw_max);
 }
 
 static ssize_t store_l3c_bw_max(struct device *dev, struct device_attribute *attr,
-                        const char *buf, size_t count)
+				const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
-	unsigned long value = 0;
-	int ret = 0;
+	unsigned int val;
+	int ret;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
-	if (ret != 1)
+	ret = kstrtouint(buf, 10, &val);
+	if (ret) {
 		return -EINVAL;
+	}
 
 	mutex_lock(&l3c->devfreq->lock);
-	if (value > 0) {
-		l3c->l3c_bw_max = value;
-		ret = count;
-	}else{
-		ret = -EINVAL;
-	}
+	l3c->l3c_bw_max = val;
+	ret = count;
 	mutex_unlock(&l3c->devfreq->lock);
 	return ret;
 }
-
 
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
-static ssize_t show_boost_freq(struct device *dev, struct device_attribute *attr,
-                        char *buf)
+static ssize_t show_boost_freq(struct device *dev,
+			       struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
 
-	return snprintf(buf, PAGE_SIZE, "%lu\n", (unsigned long)l3c->boost_freq);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%lu\n", (unsigned long)l3c->boost_freq);
 }
 
-static ssize_t store_boost_freq(struct device *dev,
-                        struct device_attribute *attr, const char *buf,
-                        size_t count)
+static ssize_t store_boost_freq(struct device *dev, struct device_attribute *attr,
+				const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
-	unsigned long value = 0;
-	int ret = 0;
+	unsigned long val;
+	int ret;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
-	if (ret != 1)
+	ret = kstrtouint(buf, 10, &val);
+	if (ret) {
 		return -EINVAL;
+	}
 
 	mutex_lock(&l3c->devfreq->lock);
-	if (value > 0) {
-		l3c->boost_freq = value;
-		ret = count;
-	}else{
-		ret = -EINVAL;
-	}
+	l3c->boost_freq = val;
+	ret = count;
 	mutex_unlock(&l3c->devfreq->lock);
 	return ret;
 }
 
-static ssize_t show_lit_link_freq(struct device *dev, struct device_attribute *attr,
-                        char *buf)
+static ssize_t show_lit_link_freq(struct device *dev,
+				  struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
 
-	return snprintf(buf, PAGE_SIZE, "%lu\n", (unsigned long)l3c->lit_link_freq);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%lu\n", (unsigned long)l3c->lit_link_freq);
 }
 
-static ssize_t store_lit_link_freq(struct device *dev,
-                        struct device_attribute *attr, const char *buf,
-                        size_t count)
+static ssize_t store_lit_link_freq(struct device *dev, struct device_attribute *attr,
+				   const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
-	unsigned long value = 0;
-	int ret = 0;
+	unsigned long val;
+	int ret;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
-	if (ret != 1)
+	ret = kstrtouint(buf, 10, &val);
+	if (ret) {
 		return -EINVAL;
+	}
 
 	mutex_lock(&l3c->devfreq->lock);
-	if (value > 0) {
-		l3c->lit_link_freq = value;
-		ret = count;
-	}else{
-		ret = -EINVAL;
-	}
+	l3c->lit_link_freq = val;
+	ret = count;
 	mutex_unlock(&l3c->devfreq->lock);
 	return ret;
 }
 
-static ssize_t show_big_link_freq(struct device *dev, struct device_attribute *attr,
-                        char *buf)
+static ssize_t show_big_link_freq(struct device *dev,
+				  struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
 
-	return snprintf(buf, PAGE_SIZE, "%lu\n", (unsigned long)l3c->big_link_freq);	/* unsafe_function_ignore: snprintf */
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%lu\n", (unsigned long)l3c->big_link_freq);
 }
 
-static ssize_t store_big_link_freq(struct device *dev,
-                        struct device_attribute *attr, const char *buf,
-                        size_t count)
+static ssize_t store_big_link_freq(struct device *dev, struct device_attribute *attr,
+				   const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
-	unsigned long value = 0;
-	int ret = 0;
+	unsigned int val;
+	int ret;
 
-	ret = sscanf(buf, "%lu", &value);	/* unsafe_function_ignore: sscanf */
-	if (ret != 1)
+	ret = kstrtouint(buf, 10, &val);
+	if (ret) {
 		return -EINVAL;
+	}
 
 	mutex_lock(&l3c->devfreq->lock);
-	if (value > 0) {
-		l3c->big_link_freq = value;
-		ret = count;
-	}else{
-		ret = -EINVAL;
-	}
+	l3c->big_link_freq = val;
+	ret = count;
 	mutex_unlock(&l3c->devfreq->lock);
 	return ret;
 }
 #endif
 
-static ssize_t show_load_map(struct device *dev, struct device_attribute *attr,
-                        char *buf)
+static ssize_t show_load_map(struct device *dev,
+			     struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
-	int count = 0;
-	int ret = 0;
-	int i = 0;
+	ssize_t count = 0;
+	int ret;
+	int i;
 
-	for(i = 0; i < l3c->load_map_len; i++){
-		ret = snprintf(buf + count, (size_t)(PAGE_SIZE - count), "load_map[%d] = %lu\n",	/* unsafe_function_ignore: snprintf */
+	for (i = 0; i < l3c->load_map_len; i++) {
+		ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1), "load_map[%d] = %lu\n",
 				i, (unsigned long)l3c->load_map[i]);
 
-		if (ret >= ((int)PAGE_SIZE - count) || ret < 0) {
-			break;
+		if (ret < 0) {
+			goto err;
 		}
 		count += ret;
+		if ((unsigned int)count >= PAGE_SIZE) {
+			goto err;
+		}
 	}
 
-    return count;
+err:
+	return count;
 }
 
 static int cmd_parse(char *para_cmd, char *argv[], int max_args)
 {
-    int para_id = 0;
+	int para_id = 0;
 
-	while (*para_cmd != '\0')
-	{
-		if (para_id >= max_args)
+	while (*para_cmd != '\0') {
+		if (para_id >= max_args) {
 			break;
-		while (*para_cmd == ' ')
+		}
+
+		while (*para_cmd == ' ') {
 			para_cmd++;
+		}
 
-		if ('\0' == *para_cmd)
+		if (*para_cmd == '\0') {
 			break;
+		}
 
 		argv[para_id] = para_cmd;
 		para_id++;
 
-		while ((*para_cmd != ' ') && (*para_cmd != '\0'))
+		while ((*para_cmd != ' ') && (*para_cmd != '\0')) {
 			para_cmd++;
+		}
 
-		if ('\0' == *para_cmd)
+		if (*para_cmd == '\0') {
 			break;
+		}
 
 		*para_cmd = '\0';
 		para_cmd++;
-
 	}
 
 	return para_id;
 }
 
-static ssize_t store_load_map(struct device *dev,
-                        struct device_attribute *attr, const char *buf,
-                        size_t count)
+static ssize_t store_load_map(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct l3c_devfreq *l3c = dev_get_drvdata(devfreq->dev.parent);
 	char local_buf[LOCAL_BUF_MAX] = {0};
 	char *argv[2] = {0};
-	unsigned int idx = 0, value = 0;
-	int argc = 0, ret = 0;
+	unsigned int idx, value;
+	int argc, ret;
 
 	if (count >= sizeof(local_buf)) {
 		return -ENOMEM;
 	}
 
-	strncpy(local_buf, buf, min_t(size_t, sizeof(local_buf) - 1, count)); /* unsafe_function_ignore: strncpy */
+	ret = strncpy_s(local_buf, LOCAL_BUF_MAX, buf, min_t(size_t, sizeof(local_buf) - 1, count));
+	if (ret != EOK) {
+		dev_err(dev, "copy string to local_buf failed\n");
+		ret = -EINVAL;
+		goto err_handle;
+	}
 
-	argc = cmd_parse(local_buf, argv, sizeof(argv) / sizeof(argv[0]));
-	if (2 != argc) {
+	argc = cmd_parse(local_buf, argv, ARRAY_SIZE(argv));
+	if (argc != 2) {
 		dev_err(dev, "error, only surport two para\n");
 		ret = -EINVAL;
 		goto err_handle;
 	}
 
-	ret = sscanf(argv[0], "%u", &idx); /* unsafe_function_ignore: sscanf */
+	ret = sscanf_s(argv[0], "%u", &idx);
 	if (ret != 1) {
 		dev_err(dev, "parse idx error %s\n", argv[0]);
 		ret = -EINVAL;
 		goto err_handle;
 	}
 
-	ret = sscanf(argv[1], "%u", &value);/* unsafe_function_ignore: sscanf */
+	ret = sscanf_s(argv[1], "%u", &value);
 	if (ret != 1) {
 		dev_err(dev, "parse value error %s\n", argv[1]);
 		ret = -EINVAL;
@@ -1278,21 +1258,19 @@ static ssize_t store_load_map(struct device *dev,
 	if (idx < (unsigned int)l3c->load_map_len) {
 		l3c->load_map[idx] = value;
 		ret = count;
-	}else{
-		dev_err(dev, "invalid idx %d\n",idx);
+	} else {
+		dev_err(dev, "invalid idx %u\n", idx);
 		ret = -EINVAL;
 	}
 	mutex_unlock(&l3c->devfreq->lock);
 
 err_handle:
-    return ret;
+	return ret;
 }
 
-#define L3C_DEVFREQ_ATTR_RW(_name) \
-	static DEVICE_ATTR(_name, 0640, show_##_name, store_##_name)
+#define L3C_DEVFREQ_ATTR_RW(_name) static DEVICE_ATTR(_name, 0640, show_##_name, store_##_name)
 
 L3C_DEVFREQ_ATTR_RW(l3c_bw_max);
-/* L3C_DEVFREQ_ATTR_RW(l3_bus_ratio); */
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 L3C_DEVFREQ_ATTR_RW(boost_freq);
 L3C_DEVFREQ_ATTR_RW(lit_link_freq);
@@ -1300,10 +1278,8 @@ L3C_DEVFREQ_ATTR_RW(big_link_freq);
 #endif
 L3C_DEVFREQ_ATTR_RW(load_map);
 
-
 static struct attribute *dev_entries[] = {
 	&dev_attr_l3c_bw_max.attr,
-	/* &dev_attr_l3_bus_ratio.attr, */
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 	&dev_attr_boost_freq.attr,
 	&dev_attr_lit_link_freq.attr,
@@ -1319,39 +1295,37 @@ static struct attribute_group dev_attr_group = {
 };
 #endif
 
-
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 /*
  * when CPUFREQ core post cpufreq change notify, we will check whether
  * big/little core's frequency exceed or equal link freq.
  * If so, set bit/little's bit in allow flag, which is used to boost
  * L3's frequency in next target freq evaluation.
-*/
+ */
 static int l3c_cpufreq_transition(struct notifier_block *nb,
-					unsigned long val, void *data)
+				  unsigned long val, void *data)
 {
-	struct cpufreq_freqs *freqs;
+	struct cpufreq_freqs *freqs = NULL;
 	struct l3c_devfreq *l3c = container_of(nb, struct l3c_devfreq,
-					     l3c_trans_notify);
+					       l3c_trans_notify);
 
-	u32 cluster = 0;
-	freqs = (struct cpufreq_freqs *) data;
+	u32 cluster;
+
+	freqs = (struct cpufreq_freqs *)data;
 
 	if (val == CPUFREQ_POSTCHANGE) {
 		mutex_lock(&l3c->allow_lock);
 		cluster = topology_physical_package_id(freqs->cpu);
-		if(BIG_CLUSTER == cluster){  // big core
+		if (cluster == BIG_CLUSTER) {
 			if (freqs->new >= l3c->big_link_freq) {
 				allow_fcm_boost |= BIT(BIG_CLUSTER);
-			}
-			else {
+			} else {
 				allow_fcm_boost &= ~BIT(BIG_CLUSTER);
 			}
-		}else if(LITTLE_CLUSTER == cluster){  // little core
+		} else if (cluster == LITTLE_CLUSTER) {
 			if (freqs->new >= l3c->lit_link_freq) {
 				allow_fcm_boost |= BIT(LITTLE_CLUSTER);
-			}
-			else {
+			} else {
 				allow_fcm_boost &= ~BIT(LITTLE_CLUSTER);
 			}
 		}
@@ -1364,56 +1338,56 @@ static int l3c_cpufreq_transition(struct notifier_block *nb,
 }
 #endif
 
-
 /*lint -e429*/
 static int l3c_devfreq_probe(struct platform_device *pdev)
 {
 	struct l3c_devfreq *l3c = NULL;
-	int ret = 0;
+	int ret;
 
 	dev_err(&pdev->dev, "registering l3c devfreq.\n");
 
 	l3c = devm_kzalloc(&pdev->dev, sizeof(*l3c), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(l3c))
+	if (IS_ERR_OR_NULL(l3c)) {
 		return -ENOMEM;
+	}
 
 	platform_set_drvdata(pdev, l3c);
 	l3c->pdev = pdev;	//lint !e613
 
 	ret = l3c_devfreq_parse_dt(pdev);
-	if (ret){
-		 dev_err(&pdev->dev, "devfreq parse dt failed %d\n", ret);
+	if (ret) {
+		dev_err(&pdev->dev, "devfreq parse dt failed %d\n", ret);
 		goto failed;
 	}
 
 	ret = l3c_devfreq_hwmon_setup(pdev);
-	if (ret){
+	if (ret) {
 		dev_err(&pdev->dev, "hwmon setup failed %d\n", ret);
 		goto failed;
 	}
 
 	ret = l3c_devfreq_setup(pdev);
-	if (ret){
+	if (ret) {
 		dev_err(&pdev->dev, "devfreq setup failed %d\n", ret);
 		goto err_hwmon;
 	}
 
 	ret = l3c_devfreq_init_device(pdev);
-	if (ret){
+	if (ret) {
 		dev_err(&pdev->dev, "devfreq init device failed %d\n", ret);
 		goto err_unsetup;
 	}
 
 /*lint -e613 */
 #ifdef CONFIG_HISI_HW_VOTE_L3C_FREQ
-	if(l3c->hv_supported){
+	if (l3c->hv_supported) {
 		l3c->l3c_hvdev = hisi_hvdev_register(&pdev->dev, "l3-freq", "vote-src-1");
 		if (IS_ERR_OR_NULL(l3c->l3c_hvdev)) {
 			dev_err(&pdev->dev, "register hvdev fail!\n");
 			ret = -ENODEV;
 			goto err_unsetup;
 		}
-	}else{
+	} else {
 		l3c->l3c_hvdev = NULL;
 	}
 #endif
@@ -1421,7 +1395,7 @@ static int l3c_devfreq_probe(struct platform_device *pdev)
 #ifdef CONFIG_HISI_CPUFREQ_LINK_L3CACHE
 	l3c->l3c_trans_notify.notifier_call = l3c_cpufreq_transition;
 	ret = cpufreq_register_notifier(&l3c->l3c_trans_notify, CPUFREQ_TRANSITION_NOTIFIER);
-	if (ret){
+	if (ret) {
 		dev_err(&pdev->dev, "cpufreq trans register failed %d\n", ret);
 		goto err_hvdev;
 	}
@@ -1446,12 +1420,12 @@ err_unreg_trans:
 err_hvdev:
 #endif
 #ifdef CONFIG_HISI_HW_VOTE_L3C_FREQ
-       hisi_hvdev_remove(l3c->l3c_hvdev);
+	(void)hisi_hvdev_remove(l3c->l3c_hvdev);
 #endif
 err_unsetup:
 	l3c_devfreq_unsetup(pdev);
 err_hwmon:
-	l3c_devfreq_hwmon_destory(pdev);
+	l3c_devfreq_hwmon_destroy(pdev);
 failed:
 	dev_err(&pdev->dev, "failed to register driver, err %d.\n", ret);
 	return ret;
@@ -1459,11 +1433,10 @@ failed:
 }
 /*lint +e429*/
 
-
 static int l3c_devfreq_remove(struct platform_device *pdev)
 {
 	struct l3c_devfreq *l3c = platform_get_drvdata(pdev);
-	int ret = 0;
+	int ret;
 
 	dev_err(&pdev->dev, "unregistering l3c devfreq device.\n");
 
@@ -1471,8 +1444,9 @@ static int l3c_devfreq_remove(struct platform_device *pdev)
 
 #ifdef L3C_DEVFREQ_HRTIMER_ENABLE
 	/* Cancel hrtimer */
-	if (hrtimer_active(&l3c->poll_timer))
+	if (hrtimer_active(&l3c->poll_timer)) {
 		hrtimer_cancel(&l3c->poll_timer);
+	}
 	/* Wait for pending work */
 	flush_workqueue(l3c->update_wq);
 	/* Destroy workqueue */
@@ -1487,7 +1461,7 @@ static int l3c_devfreq_remove(struct platform_device *pdev)
 	cpufreq_unregister_notifier(&l3c->l3c_trans_notify, CPUFREQ_TRANSITION_NOTIFIER);
 #endif
 	l3c_devfreq_unsetup(pdev);
-	l3c_devfreq_hwmon_destory(pdev);
+	l3c_devfreq_hwmon_destroy(pdev);
 
 	return ret;
 }
@@ -1507,7 +1481,7 @@ static struct platform_driver l3c_devfreq_driver = {
 
 static int __init l3c_devfreq_init(void)
 {
-	int ret = 0;
+	int ret;
 
 	ret = devfreq_add_governor(&l3c_devfreq_governor);
 	if (ret) {
@@ -1516,9 +1490,9 @@ static int __init l3c_devfreq_init(void)
 	}
 
 	ret = platform_driver_register(&l3c_devfreq_driver);
-	if (ret){
+	if (ret) {
 		ret = devfreq_remove_governor(&l3c_devfreq_governor);
-		if(ret){
+		if (ret) {
 			pr_err("%s: failed to remove governor: %d.\n", __func__, ret);
 		}
 	}
@@ -1528,17 +1502,17 @@ static int __init l3c_devfreq_init(void)
 
 static void __exit l3c_devfreq_exit(void)
 {
-	int ret = 0;
+	int ret;
 
 	ret = devfreq_remove_governor(&l3c_devfreq_governor);
-	if (ret)
+	if (ret) {
 		pr_err("%s: failed to remove governor: %d.\n", __func__, ret);
+	}
 
 	platform_driver_unregister(&l3c_devfreq_driver);
 }
 
 late_initcall(l3c_devfreq_init)
-
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("L3cache devfreq driver");

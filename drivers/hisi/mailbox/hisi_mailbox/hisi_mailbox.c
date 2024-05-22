@@ -16,7 +16,8 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/wait.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/semaphore.h>
 #include <linux/sched/rt.h>
 #include <linux/kthread.h>
@@ -25,24 +26,24 @@
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/hisi/hisi_log.h>
+#include <securec.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #include <uapi/linux/sched/types.h>
 #endif
 
 #define HISI_LOG_TAG	AP_MAILBOX_TAG
 
-#define MBOX_PR_ERR(fmt, args ...)	\
-	({				\
+#define MBOX_PR_ERR(fmt, args ...) \
+	do { \
 		pr_err(fmt "\n", ##args); \
-	})
-#define MBOX_PR_INFO(fmt, args ...)	\
-	({				\
+	} while (0)
+
+#define MBOX_PR_INFO(fmt, args ...) \
+	do { \
 		pr_info(fmt "\n", ##args); \
-	})
-#define MBOX_PR_DEBUG(fmt, args ...)	\
-	({				\
-		; \
-	})
+	} while (0)
+
+#define MBOX_PR_DEBUG(fmt, args ...)	do {} while (0)
 
 /*#define  HISI_MAILBOX_DBG */   /*open this only in every early phase*/
 
@@ -122,6 +123,7 @@ EXPORT_SYMBOL(hisi_mbox_task_free);
 struct hisi_mbox_task *hisi_mbox_task_alloc(struct hisi_mbox *mbox,
 						mbox_msg_t *tx_buffer, mbox_msg_len_t tx_buffer_len, int need_auto_ack)
 {
+	int ret;
 	struct hisi_mbox_task *tx_task = NULL;
 
 	if (!mbox || !mbox->tx || !tx_buffer) {
@@ -136,7 +138,12 @@ struct hisi_mbox_task *hisi_mbox_task_alloc(struct hisi_mbox *mbox,
 		MBOX_PR_ERR("tx task no mem");
 		goto out;
 	}
-	memcpy((void *)tx_task->tx_buffer, (void *)tx_buffer, tx_buffer_len * (sizeof(mbox_msg_t)));
+	ret = memcpy_s((void *)tx_task->tx_buffer, tx_buffer_len * (sizeof(mbox_msg_t)), (void *)tx_buffer, tx_buffer_len * (sizeof(mbox_msg_t)));
+	if(ret != EOK) {
+		hisi_mbox_task_free(&tx_task);
+		tx_task = NULL;
+		goto out;
+	}
 	tx_task->tx_buffer_len = tx_buffer_len;
 	tx_task->need_auto_ack = need_auto_ack;
 
@@ -158,11 +165,10 @@ static inline int set_status(struct hisi_mbox_device *mdev, int status)
 	if ((MDEV_DEACTIVATED & mdev->status)) {
 		spin_unlock_irqrestore(&mdev->status_lock, flags);
 		MBOX_PR_INFO("an unexpected ipc caused by %s", mdev->name);
-		/* WARN_ON(1); */
 		ret = -ENODEV;
 		goto out;
-	} else if ((MDEV_DEACTIVATED & status)) {
-		mdev->status |= status;
+	} else if ((MDEV_DEACTIVATED & (unsigned int)status)) {
+		mdev->status |= (unsigned int)status;
 
 		while ((MDEV_SYNC_SENDING & mdev->status) || (MDEV_ASYNC_ENQUEUE & mdev->status)) {
 			spin_unlock_irqrestore(&mdev->status_lock, flags);
@@ -170,7 +176,7 @@ static inline int set_status(struct hisi_mbox_device *mdev, int status)
 			spin_lock_irqsave(&mdev->status_lock, flags);
 		}
 	} else {
-		mdev->status |= status;
+		mdev->status |= (unsigned int)status;
 	}
 
 	spin_unlock_irqrestore(&mdev->status_lock, flags);
@@ -182,7 +188,7 @@ static inline void clr_status(struct hisi_mbox_device *mdev, int status)
 {
 	unsigned long flags = 0;
 	spin_lock_irqsave(&mdev->status_lock, flags);
-	mdev->status &= ~status;/*lint !e502*/
+	mdev->status &= ~(unsigned int)status;/*lint !e502*/
 	spin_unlock_irqrestore(&mdev->status_lock, flags);
 	return;
 }
@@ -361,9 +367,10 @@ int hisi_mbox_msg_send_sync(struct hisi_mbox *mbox,
 					mbox_msg_t *tx_buffer, mbox_msg_len_t tx_buffer_len,
 					int need_auto_ack, mbox_msg_t *ack_buffer, mbox_msg_len_t ack_buffer_len)
 {
-	struct hisi_mbox_device *mdev;
+	struct hisi_mbox_device *mdev = NULL;
 	struct hisi_mbox_task tx_task;
 	struct hisi_mbox_task *p_tx_task = NULL;
+	size_t src_len;
 	int ret = 0;
 
 	if (!mbox || !mbox->tx || !tx_buffer) {
@@ -374,7 +381,12 @@ int hisi_mbox_msg_send_sync(struct hisi_mbox *mbox,
 		ret = -EINVAL;
 		goto out;
 	}
-	memcpy((void *)tx_task.tx_buffer, (void *)tx_buffer, tx_buffer_len * (sizeof(mbox_msg_t)));
+	ret = memcpy_s((void *)tx_task.tx_buffer, tx_buffer_len * (sizeof(mbox_msg_t)), (void *)tx_buffer, tx_buffer_len * (sizeof(mbox_msg_t)));
+	if(ret != EOK) {
+		MBOX_PR_ERR("%s: memcpy_s failed", __func__);
+		ret = -EINVAL;
+		goto out;
+	}
 	tx_task.tx_buffer_len = tx_buffer_len;
 	tx_task.need_auto_ack = need_auto_ack;
 
@@ -394,7 +406,11 @@ int hisi_mbox_msg_send_sync(struct hisi_mbox *mbox,
 	mutex_lock(&mdev->dev_lock);
 	ret = hisi_mbox_task_send_sync(mdev, &tx_task);
 	if (!ret && ack_buffer) {
-		memcpy((void *)ack_buffer, (void *)tx_task.ack_buffer, sizeof(mbox_msg_t) / sizeof(u8) * ack_buffer_len);
+		src_len = sizeof(mbox_msg_t) / sizeof(u8) * (size_t)ack_buffer_len;/*lint !e647 !e571*/
+		ret = memcpy_s((void *)ack_buffer, src_len, (void *)tx_task.ack_buffer, src_len);
+		if(ret == -1) {
+			MBOX_PR_ERR("%s: memcpy_s failed", __func__);
+		}
 	}
 
 	PRINT_TTS(p_tx_task);
@@ -457,7 +473,9 @@ int hisi_mbox_msg_send_async(struct hisi_mbox *mbox, struct hisi_mbox_task *tx_t
 		}
 	}
 
-	kfifo_in(&mdev->fifo, &tx_task, TX_FIFO_CELL_SIZE);/*lint !e84*/
+	if (TX_FIFO_CELL_SIZE != kfifo_in(&mdev->fifo, &tx_task, TX_FIFO_CELL_SIZE)) {/*lint !e84*/
+		MBOX_PR_ERR("%s : no enough kfifo", __func__);
+	}
 
 	spin_unlock_irqrestore(&mdev->fifo_lock, flags);
 
@@ -597,7 +615,7 @@ static void hisi_mbox_rx_bh(unsigned long context)
 	return;
 }
 
-static int hisi_mbox_interrupt(int irq, void *p)
+static irqreturn_t hisi_mbox_interrupt(int irq, void *p)
 {
 	struct hisi_mbox_device *mdev = (struct hisi_mbox_device *)p;
 	mdev = mdev->ops->irq_to_mdev(mdev, &mdevices, irq);
@@ -660,6 +678,8 @@ static void hisi_mbox_shutdown(struct hisi_mbox_device *mdev, mbox_mail_type_t m
 		case TX_MAIL:
 			kthread_stop(mdev->tx_kthread);
 			kfifo_free(&mdev->fifo);
+			tasklet_kill(&mdev->rx_bh);
+			break;
 		case RX_MAIL:/*lint !e616*/
 			tasklet_kill(&mdev->rx_bh);
 			break;
@@ -772,7 +792,7 @@ static int hisi_mbox_startup(struct hisi_mbox_device *mdev, mbox_mail_type_t mai
 			goto deinit_work;
 		}
 
-		ret = mdev->ops->request_irq(mdev, (irq_handler_t) hisi_mbox_interrupt, (void *)mdev);
+		ret = mdev->ops->request_irq(mdev, hisi_mbox_interrupt, (void *)mdev);
 		if (ret) {
 			MBOX_PR_ERR("mdev %s request irq failed", mdev->name);
 			ret = -ENODEV;
@@ -788,8 +808,9 @@ shutdown:
 deinit_work:
 	switch (mail_type) {
 	case TX_MAIL:
-		/*flush_work(&mdev->tx_work);*/
 		kfifo_free(&mdev->fifo);
+		tasklet_kill(&mdev->rx_bh);
+		break;
 	case RX_MAIL:/*lint !e616*/
 		tasklet_kill(&mdev->rx_bh);
 		break;
@@ -863,7 +884,6 @@ struct hisi_mbox *hisi_mbox_get(int mdev_index, struct notifier_block *nb)
 	mdev[TX_MAIL] = hisi_mbox_device_get(list, TX_MAIL, mdev_index);
 	mdev[RX_MAIL] = hisi_mbox_device_get(list, RX_MAIL, mdev_index);
 	if ((!mdev[TX_MAIL]) && (!mdev[RX_MAIL])) {
-		/*MBOX_PR_ERR("neither tx nor rx mboxes were gotten, may get later\n");*/
 		goto out;
 	}
 
@@ -916,9 +936,6 @@ void hisi_mbox_device_deactivate(struct hisi_mbox_device **list)
 		}
 		mutex_unlock(&mdev->dev_lock);
 
-		/* flush tx work & tx task list synchronously */
-		/*flush_work(&mdev->tx_work);*/
-
 		mutex_lock(&mdev->dev_lock);
 		while ((tx_task = hisi_mbox_dequeue_task(mdev))) {
 			ret = hisi_mbox_task_send_sync(mdev, tx_task);
@@ -963,8 +980,6 @@ int hisi_mbox_device_unregister(struct hisi_mbox_device **list)
 		device_destroy(hisi_mbox_class, (dev_t) i);
 		list_del(&mdev->node);
 	}
-
-	list = NULL;
 
 	return 0;
 }

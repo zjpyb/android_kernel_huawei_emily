@@ -1,14 +1,19 @@
 /*
+ * hw_litehide_symbols.c
+ *
  * Huawei Hidden kernel symbols feature
  *
- * Copyright (c) 2017 Huawei.
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
  *
- * Authors:
- * Weilai Zhou <zhouweilai@huawei.com>
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 #include <linux/module.h>
 #include <linux/init.h>
@@ -21,11 +26,12 @@
 #include <linux/ctype.h>
 #include <linux/debugfs.h>
 
-#define MAX_HIDESYMS_NUM	10
-#define SYM_NAME_LEN		128
+#define MAX_HIDESYMS_NUM 10
+#define SYM_NAME_LEN     128
+#define CFI_FUNC_LEN     5
 
 static DEFINE_MUTEX(hidesyms_lock);
-LIST_HEAD(hidesyms_blacklist);
+static LIST_HEAD(hidesyms_blacklist);
 
 struct symbol_node {
 	char *sym;
@@ -39,18 +45,16 @@ static const char *hw_litehidesymbs_blacklist[MAX_HIDESYMS_NUM] = {
 
 static inline struct symbol_node *litehide_sym_node_alloc(void)
 {
-	struct symbol_node *node;
+	struct symbol_node *node = NULL;
 
-	node = (struct symbol_node *)kzalloc(sizeof(struct symbol_node), GFP_KERNEL);
+	node = kzalloc(sizeof(struct symbol_node), GFP_KERNEL);
 	if (!node)
 		return NULL;
-
 	node->sym = kzalloc(SYM_NAME_LEN, GFP_KERNEL);
 	if (!node->sym) {
 		kfree(node);
 		return NULL;
 	}
-
 	return node;
 }
 
@@ -62,10 +66,11 @@ static inline void litehide_sym_node_free(struct symbol_node *node)
 	}
 }
 
-/*Clear hidesyms_blacklist and free all buffer*/
+/* Clear hidesyms_blacklist and free all buffer */
 static void clear_blacklist(void)
 {
-	struct symbol_node *node, *tmp;
+	struct symbol_node *node = NULL;
+	struct symbol_node *tmp = NULL;
 
 	mutex_lock(&hidesyms_lock);
 	list_for_each_entry_safe(node, tmp, &hidesyms_blacklist, list) {
@@ -87,35 +92,28 @@ static inline struct symbol_node *find_sym_from_blacklist(const char *symbol)
 
 	if (!symbol)
 		return NULL;
-
 	list_for_each_entry(node, &hidesyms_blacklist, list) {
-		if (node->sym == NULL)
+		if (!node->sym)
 			continue;
 
 		if (!strcmp(symbol, node->sym))
 			return node;
 	}
-
 	return NULL;
 }
 
-/*
- * check if it's a hidden symbol in the blacklist
- */
+/* check if it's a hidden symbol in the blacklist */
 bool is_hide_symbols(const char *symbol)
 {
-	struct symbol_node *hidesym_node;
+	struct symbol_node *hidesym_node = NULL;
 
 	mutex_lock(&hidesyms_lock);
-
 	hidesym_node = find_sym_from_blacklist(symbol);
 	if (hidesym_node) {
 		mutex_unlock(&hidesyms_lock);
 		return true;
 	}
-
 	mutex_unlock(&hidesyms_lock);
-
 	return false;
 }
 EXPORT_SYMBOL(is_hide_symbols);
@@ -126,11 +124,10 @@ static struct dentry *hidesym_d;
 static int s_show(struct seq_file *file, void *v)
 {
 	const struct symbol_node *p = list_entry(v, struct symbol_node, list);
-	if (p == NULL || p->sym == NULL)
+
+	if (!p || !p->sym)
 		return -EINVAL;
-
 	seq_printf(file, "%s\n", p->sym);
-
 	return 0;
 }
 
@@ -157,28 +154,31 @@ static const struct seq_operations hide_syms_sops = {
 	.show = s_show,
 };
 
-static int parse_user_input(struct symbol_node *node, const char __user *ubuf,
-		size_t cnt)
+static int parse_user_input(struct symbol_node *node,
+			    const char __user *ubuf,
+			    size_t cnt)
 {
 	char ch;
-	size_t read = 0, index = 0;
-	int ret = -1;
+	size_t read = 1;
+	size_t index = 0;
+	int ret;
 
 	ret = get_user(ch, ubuf++);
 	if (ret)
 		goto out;
 
-	read++;
+	if (cnt == 0) {
+		ret = -EINVAL;
+		goto out;
+	}
 	cnt--;
-
 	while (cnt && !isspace(ch)) {
-		if (index < SYM_NAME_LEN - 1)
+		if (index < SYM_NAME_LEN - 1) {
 			node->sym[index++] = ch;
-		else {
+		} else {
 			ret = -EINVAL;
 			goto out;
 		}
-
 		ret = get_user(ch, ubuf++);
 		if (ret)
 			goto out;
@@ -187,13 +187,12 @@ static int parse_user_input(struct symbol_node *node, const char __user *ubuf,
 		cnt--;
 	}
 
-	if (isspace(ch) || cnt == 0)
+	if (isspace(ch) || cnt == 0) {
 		node->sym[index] = '\0';
-	else {
+	} else {
 		ret = -EINVAL;
 		goto out;
 	}
-
 	ret = read;
 
 out:
@@ -206,20 +205,18 @@ static int litehide_syms_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t litehide_syms_write(struct file *filp, const char __user *ubuf,
-	size_t cnt, loff_t *ppos)
+				   size_t cnt, loff_t *ppos)
 {
-	struct symbol_node *node;
+	struct symbol_node *node = NULL;
 	ssize_t write = 0;
+	char blacklist_cfi[SYM_NAME_LEN];
 
 	/* Clear the hidesym_blacklist by 'echo > litehide_syms' */
-	if (cnt == 1 && *ubuf == '\n') {
+	if (cnt == 1) {
 		clear_blacklist();
-
 		return cnt;
 	}
-
 	mutex_lock(&hidesyms_lock);
-
 	while (cnt > write) {
 		int count;
 
@@ -228,25 +225,35 @@ static ssize_t litehide_syms_write(struct file *filp, const char __user *ubuf,
 			mutex_unlock(&hidesyms_lock);
 			return -ENOMEM;
 		}
-
 		count = parse_user_input(node, ubuf + write, cnt - write);
-		if (count > 0) {
-			if (!find_sym_from_blacklist(node->sym))
-				list_add_tail(&node->list, &hidesyms_blacklist);
-
-			*ppos += count;
-			write += count;
-			count = 0;
-		} else {
+		if (count <= 0) {
 			litehide_sym_node_free(node);
 			mutex_unlock(&hidesyms_lock);
-
 			return -EINVAL;
 		}
+		if (!find_sym_from_blacklist(node->sym))
+			list_add_tail(&node->list, &hidesyms_blacklist);
+#ifdef CONFIG_HISI_CLANG
+		/* Add .cfi func support */
+		memset(blacklist_cfi, 0, SYM_NAME_LEN);
+		(void)strncpy(blacklist_cfi, node->sym, strlen(node->sym));
+		(void)strncat(blacklist_cfi, ".cfi", CFI_FUNC_LEN - 1);
+		node = litehide_sym_node_alloc();
+		if (!node) {
+			mutex_unlock(&hidesyms_lock);
+			return -ENOMEM;
+		}
+		(void)strncpy(node->sym, blacklist_cfi, strlen(blacklist_cfi));
+		if (!find_sym_from_blacklist(node->sym))
+			list_add_tail(&node->list, &hidesyms_blacklist);
+		else
+			litehide_sym_node_free(node);
+#endif
+		*ppos += count;
+		write += count;
+		count = 0;
 	}
-
 	mutex_unlock(&hidesyms_lock);
-
 	return write;
 }
 
@@ -263,38 +270,49 @@ static const struct file_operations hide_syms_fops = {
 static __init int initialize_blacklist(void)
 {
 	int i;
-	struct symbol_node *node;
+	char blacklist_cfi[SYM_NAME_LEN];
+	struct symbol_node *node = NULL;
 
 	for (i = 0; i < MAX_HIDESYMS_NUM; i++) {
 		if (!hw_litehidesymbs_blacklist[i])
 			continue;
-
 		node = litehide_sym_node_alloc();
 		if (!node)
 			return -ENOMEM;
-
-		if (strlen(hw_litehidesymbs_blacklist[i]) > SYM_NAME_LEN - 1) {
+		if (strlen(hw_litehidesymbs_blacklist[i]) >
+			   SYM_NAME_LEN - CFI_FUNC_LEN) {
 			litehide_sym_node_free(node);
 			return -EINVAL;
 		}
-		(void)strncpy(node->sym, hw_litehidesymbs_blacklist[i], strlen(hw_litehidesymbs_blacklist[i]));
-
+		(void)strncpy(node->sym, hw_litehidesymbs_blacklist[i],
+			      strlen(hw_litehidesymbs_blacklist[i]));
 		list_add_tail(&node->list, &hidesyms_blacklist);
+#ifdef CONFIG_HISI_CLANG
+		node = litehide_sym_node_alloc();
+                if (!node)
+			return -ENOMEM;
+                /* Add .cfi asm func support */
+		memset(blacklist_cfi, 0, SYM_NAME_LEN);
+		(void)strncpy(blacklist_cfi, hw_litehidesymbs_blacklist[i],
+			      strlen(hw_litehidesymbs_blacklist[i]));
+		(void)strncat(blacklist_cfi, ".cfi", CFI_FUNC_LEN - 1);
+		(void)strncpy(node->sym, blacklist_cfi, strlen(blacklist_cfi));
+		list_add_tail(&node->list, &hidesyms_blacklist);
+#endif
 	}
-
 	return 0;
 }
 
 static int __init hw_litehide_symbols_init(void)
 {
 #ifdef CONFIG_HUAWEI_HIDESYMS_DEBUGFS
-	/*create sys/kernel/debug/litehide_syms for debug*/
-	hidesym_d = debugfs_create_file("litehide_syms", 0644, NULL, NULL, &hide_syms_fops);
+	/* create sys/kernel/debug/litehide_syms for debug */
+	hidesym_d = debugfs_create_file("litehide_syms", 0644,
+					 NULL, NULL, &hide_syms_fops);
 	if (!hidesym_d)
-		return -ENOMEM;
+		return -ENODEV;
 #endif
 	initialize_blacklist();
-
 	return 0;
 }
 
@@ -302,6 +320,7 @@ static void __exit hw_litehide_symbols_exit(void)
 {
 #ifdef CONFIG_HUAWEI_HIDESYMS_DEBUGFS
 	debugfs_remove(hidesym_d);
+	hidesym_d = NULL;
 #endif
 	clear_blacklist();
 }
@@ -309,5 +328,6 @@ static void __exit hw_litehide_symbols_exit(void)
 module_init(hw_litehide_symbols_init);
 module_exit(hw_litehide_symbols_exit);
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Huawei hide symbols module");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

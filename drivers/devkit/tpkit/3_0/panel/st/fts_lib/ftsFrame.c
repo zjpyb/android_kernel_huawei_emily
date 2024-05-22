@@ -521,7 +521,7 @@ int readSyncDataHeader(u8 type, DataHeader *msHeader, DataHeader *ssHeader,
 int getSyncFrame(u8 type, MutualSenseFrame *msFrame, SelfSenseFrame *ssFrame)
 {
 	int res = 0;
-	u64 address = 0;
+	u64 offset = 0;
 
 	if(!msFrame || !ssFrame){
 		TS_LOG_ERR( "%s:input error!\n", __func__);
@@ -566,7 +566,7 @@ int getSyncFrame(u8 type, MutualSenseFrame *msFrame, SelfSenseFrame *ssFrame)
 	}
 
 	res = readSyncDataHeader(type, &(msFrame->header), &(ssFrame->header),
-				 &address);
+		&offset);
 	if (res < OK) {
 		TS_LOG_ERR("%s: error while reading Sync Frame header... ERROR %08X\n",
 			 __func__,  res | ERROR_GET_FRAME_DATA);
@@ -584,10 +584,10 @@ int getSyncFrame(u8 type, MutualSenseFrame *msFrame, SelfSenseFrame *ssFrame)
 		return ERROR_ALLOC | ERROR_GET_FRAME;
 	}
 
-	TS_LOG_INFO( "%s: Getting MS frame at %04llX...\n",  __func__,
-		 address);
-	res = getFrameData(address, (msFrame->node_data_size) * BYTES_PER_NODE,
-			   (msFrame->node_data));
+	TS_LOG_INFO("%s: Getting MS frame at %04llX\n", __func__, offset);
+	res = getFrameData((u16)offset,
+		msFrame->node_data_size * BYTES_PER_NODE,
+		msFrame->node_data);
 	if (res < OK) {
 		TS_LOG_ERR(" %s: error while getting MS data...ERROR %08X\n", __func__, res);
 		res |= ERROR_GET_FRAME_DATA | ERROR_GET_FRAME;
@@ -595,7 +595,7 @@ int getSyncFrame(u8 type, MutualSenseFrame *msFrame, SelfSenseFrame *ssFrame)
 	}
 
 	/* move the offset */
-	address += (msFrame->node_data_size) * BYTES_PER_NODE;
+	offset += (u64)(msFrame->node_data_size * BYTES_PER_NODE);
 
 	ssFrame->force_data = (short *)kmalloc(ssFrame->header.force_node * sizeof(short), GFP_KERNEL);
 	if (ssFrame->force_data == NULL) {
@@ -605,9 +605,10 @@ int getSyncFrame(u8 type, MutualSenseFrame *msFrame, SelfSenseFrame *ssFrame)
 		goto ERROR;
 	}
 
-	TS_LOG_INFO( "%s: Getting SS force frame at %04llX...\n", __func__,address);
-	res = getFrameData(address, (ssFrame->header.force_node) *
-			   BYTES_PER_NODE, (ssFrame->force_data));
+	TS_LOG_INFO("%s: Getting SS force frame at %04llX\n", __func__, offset);
+	res = getFrameData((u16)offset,
+		ssFrame->header.force_node * BYTES_PER_NODE,
+		ssFrame->force_data);
 	if (res < OK) {
 		TS_LOG_ERR( "%s: error while getting SS force data...ERROR %08X\n", __func__, res);
 		res |= ERROR_GET_FRAME_DATA | ERROR_GET_FRAME;
@@ -615,7 +616,7 @@ int getSyncFrame(u8 type, MutualSenseFrame *msFrame, SelfSenseFrame *ssFrame)
 	}
 
 	/* move the offset */
-	address += (ssFrame->header.force_node) * BYTES_PER_NODE;
+	offset += (u64)((ssFrame->header.force_node) * BYTES_PER_NODE);
 
 	ssFrame->sense_data = (short *)kmalloc(ssFrame->header.sense_node * sizeof(short), GFP_KERNEL);
 	if (ssFrame->sense_data == NULL) {
@@ -625,9 +626,10 @@ int getSyncFrame(u8 type, MutualSenseFrame *msFrame, SelfSenseFrame *ssFrame)
 		goto ERROR;
 	}
 
-	TS_LOG_INFO( " %s: Getting SS sense frame at %04llX...\n", __func__,address);
-	res = getFrameData(address, (ssFrame->header.sense_node) *
-			   BYTES_PER_NODE, (ssFrame->sense_data));
+	TS_LOG_INFO("%s: Getting SS sense frame at %04llX\n", __func__, offset);
+	res = getFrameData((u16)offset,
+		ssFrame->header.sense_node * BYTES_PER_NODE,
+		ssFrame->sense_data);
 	if (res < OK) {
 		TS_LOG_ERR("%s: error while getting SS sense data...ERROR %08X\n",__func__, res);
 		res |= ERROR_GET_FRAME_DATA | ERROR_GET_FRAME;

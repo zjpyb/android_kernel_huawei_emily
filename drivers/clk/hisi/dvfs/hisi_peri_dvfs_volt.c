@@ -68,7 +68,10 @@ static void __iomem *perivolt_get_base(struct device_node *np);
 #define PERI_DVFS_AVS_ID_SHIFT        (4)
 #define PERI_DVFS_HW_VOTE_MASK        (0x7FFF)
 static struct hvdev *peri_dvfs_hvdev = NULL;
-static unsigned int get_perivolt_hv_value(unsigned int dvfs_id, unsigned int avs_id, unsigned int volt)
+static unsigned int get_perivolt_hv_value(unsigned int dvfs_id,
+			unsigned int avs_id,
+			unsigned int volt,
+			unsigned int last_hv_val)
 {
 	unsigned int hv_val = 0;
 
@@ -80,10 +83,16 @@ static unsigned int get_perivolt_hv_value(unsigned int dvfs_id, unsigned int avs
 	hv_val = ((dvfs_id << PERI_DVFS_DVFS_ID_SHIFT) | (avs_id << PERI_DVFS_AVS_ID_SHIFT) | volt);
 	/* make sure that hv_value NOT exceed to 0x7FFF */
 	hv_val = (hv_val & PERI_DVFS_HW_VOTE_MASK);
+	/* Make sure that every hw vote can trigger interrupt to lpm
+	 * in order to shorten "AVS STATUS" waiting time,
+	 * and then improve pm and dvfs performance(such as NPU).
+	 */
+	if (hv_val * PERI_DVFS_HW_VOTE_RATIO == last_hv_val) {
+		/* make the adjacent same hw votes differ on BIT-3 */
+		hv_val = hv_val ^ BIT(PERI_DVFS_AVS_ID_SHIFT - 1);
+	}
 	/* hisi_hv_set_freq interface requirement: should multiply ratio(=1000) */
 	hv_val = (hv_val * PERI_DVFS_HW_VOTE_RATIO);
-	pr_debug("[%s] dvfs_id: %u, avs_id: %u volt: %u, hv_val: %u\n", __func__,
-			dvfs_id, avs_id, volt, hv_val);
 
 	return hv_val;
 }
@@ -107,7 +116,8 @@ static int peri_dvfs_hw_vote(struct peri_volt_poll *pvp, unsigned int target_vol
 	}
 
 	/* peri_volt hw vote */
-	hv_val = get_perivolt_hv_value(pvp->dev_id, pvp->perivolt_avs_ip, target_volt);
+	hv_val = get_perivolt_hv_value(pvp->dev_id, pvp->perivolt_avs_ip,
+				target_volt, last_hv_val);
 	ret = hisi_hv_set_freq(peri_dvfs_hvdev, hv_val);
 	if (ret) {
 		pr_err("[%s] set peri_hw_vote volt fail!\n", __func__);
@@ -126,9 +136,6 @@ static int peri_dvfs_hw_vote(struct peri_volt_poll *pvp, unsigned int target_vol
 		pr_err("[%s] get last peri_hw_vote volt fail!\n", __func__);
 	}
 
-	pr_debug("[%s] pvp_id:%d, last_hv_val: %d, hv_val: %d, hv_val_rb: %d, hv_result: %d\n",
-			__func__, pvp->dev_id, last_hv_val, hv_val, new_hv_val, hv_result);
-
 	return ret;
 }
 #endif
@@ -141,10 +148,10 @@ static int peri_fast_avs(struct peri_volt_poll *pvp, unsigned int target_volt)
 	u32 fast_avs_cmd[LPM3_CMD_LEN] = {LPM3_CMD_CLOCK_EN, FAST_AVS_ID};
 
 	if (target_volt > PERI_VOLT_0) {
-		val = (readl(pvp->addr_0) & PMCTRL_PERI_CTRL4_VDD_MASK);
+		val = ((unsigned int)readl(pvp->addr_0) & PMCTRL_PERI_CTRL4_VDD_MASK);
 		val = val >> PMCTRL_PERI_CTRL4_VDD_SHIFT;
 		if (val < target_volt) {
-			ret = hisi_clkmbox_send_msg(fast_avs_cmd);
+			ret = hisi_clkmbox_send_msg(fast_avs_cmd, LPM3_CMD_LEN);
 			if (ret < 0) {
 				pr_err("[%s]fail to send fast avs msg to LPM3!\n",
 					__func__);
@@ -163,7 +170,7 @@ static int peri_avs_ipc_notify_m3(struct peri_volt_poll *pvp, unsigned int targe
 	u32 avs_ipc_cmd[LPM3_CMD_LEN] = {LPM3_CMD_CLOCK_EN, FAST_AVS_ID};
 	/*send ipc for avs ip do not care scene*/
 	if (pvp->perivolt_avs_ip) {
-		ret = hisi_clkmbox_send_msg(avs_ipc_cmd);
+		ret = hisi_clkmbox_send_msg(avs_ipc_cmd, LPM3_CMD_LEN);
 		if (ret < 0) {
 			pr_err("[%s]fail to notify LPM3 for avs ip !\n",
 				__func__);
@@ -175,10 +182,10 @@ static int peri_avs_ipc_notify_m3(struct peri_volt_poll *pvp, unsigned int targe
 	 *volt down:volt will be change 5ms later by ddr dvfs
 	 */
 	if (target_volt > PERI_VOLT_0) {
-		val = (readl(pvp->addr_0) & PMCTRL_PERI_CTRL4_VDD_MASK);
+		val = ((unsigned int)readl(pvp->addr_0) & PMCTRL_PERI_CTRL4_VDD_MASK);
 		val = val >> PMCTRL_PERI_CTRL4_VDD_SHIFT;
 		if (val < target_volt) {
-			ret = hisi_clkmbox_send_msg(avs_ipc_cmd);
+			ret = hisi_clkmbox_send_msg(avs_ipc_cmd, LPM3_CMD_LEN);
 			if (ret < 0) {
 				pr_err("[%s]fail to notify LPM3 for non-avs  ip!\n",
 					__func__);
@@ -269,7 +276,7 @@ static int hisi_peri_set_volt(struct peri_volt_poll *pvp, unsigned int volt)
 
 #ifdef CONFIG_HISI_PERI_FAST_AVS
 	/*fast avs*/
-	if (!(readl(pvp->addr_0) & PMCTRL_PERI_CTRL4_ON_OFF_MASK))
+	if (!((unsigned int)readl(pvp->addr_0) & PMCTRL_PERI_CTRL4_ON_OFF_MASK))
 		ret = peri_fast_avs(pvp, volt);
 #endif
 
@@ -349,6 +356,61 @@ static unsigned int hisi_peri_poll_stat(struct peri_volt_poll *pvp)
 	return ret1;
 }
 
+static int peri_set_avs(struct peri_volt_poll *pvp, unsigned int avs)
+{
+	unsigned int val;
+
+	if (IS_ERR_OR_NULL(pvp))
+		return -EINVAL;
+
+	if (pvp->perivolt_avs_ip <= 0)
+		return 0;
+
+	if (hwspin_lock_timeout((struct hwspinlock *)pvp->priv,
+			HWLOCK_TIMEOUT)) {
+		pr_err("pvp hwspinlock timout!\n");
+		return -ENOENT;
+	}
+
+	val = readl(pvp->sysreg_base + SC_SCBAKDATA24_ADDR);
+	if (avs)
+		val = val | BIT(pvp->perivolt_avs_ip);
+	else
+		val = val & (~BIT(pvp->perivolt_avs_ip));
+	writel(val, pvp->sysreg_base + SC_SCBAKDATA24_ADDR);
+
+	hwspin_unlock((struct hwspinlock *)pvp->priv);
+
+	return 0;
+}
+
+static int peri_wait_avs_update(struct peri_volt_poll *pvp)
+{
+	int loop = 400;
+	unsigned int val = 0;
+
+	if (IS_ERR_OR_NULL(pvp))
+		return -EINVAL;
+
+	if (pvp->perivolt_avs_ip <= 0)
+		return 0;
+
+	do {
+		val = readl(pvp->sysreg_base + SC_SCBAKDATA24_ADDR);
+		val = val & BIT(AVS_BITMASK_FLAG);
+		if (!val) {
+			loop--;
+			usleep_range(80, 120);
+		} else {
+			return 0;
+		}
+	} while (!val && loop > 0);
+
+	pr_err("[%s] %s peri avs status update failed!\n", __func__, pvp->name);
+	return -EINVAL;
+}
+
+
 static void hisi_peri_dvfs_init(struct peri_volt_poll *pvp, unsigned int endis)
 {
 	if (count)
@@ -370,21 +432,23 @@ static struct peri_volt_ops hisi_peri_volt_ops = {
 	.get_volt = hisi_peri_get_volt,
 	.recalc_volt = hisi_peri_get_volt,
 	.get_poll_stat = hisi_peri_poll_stat,
+	.set_avs = peri_set_avs,
+	.wait_avs_update = peri_wait_avs_update,
 	.get_temperature = hisi_peri_get_temprature,
 	.init = hisi_peri_dvfs_init,
 };
 
 static void peri_volt_poll_init(struct device_node *np)
 {
-	struct peri_volt_poll *pvolt;
-	const char *poll_name;
-	void __iomem *reg_base;
+	struct peri_volt_poll *pvolt = NULL;
+	const char *poll_name = NULL;
+	void __iomem *reg_base = NULL;
 	u32 pdata[2] = {0};
 	u32 ctrl4_reg = 0;
 	u32 perivolt_id = 0;
 	u32 perivolt_avs_ip = 0;
 	int ret = 0;
-	struct device_node *dev_np;
+	struct device_node *dev_np = NULL;
 
 	reg_base = perivolt_get_base(np);
 	if (!reg_base) {
@@ -418,6 +482,10 @@ static void peri_volt_poll_init(struct device_node *np)
 		return;
 	}
 	pvolt->name = kstrdup(poll_name, GFP_KERNEL);
+	if (pvolt->name == NULL) {
+		pr_err("[%s] fail to kstrdup pvolt->name!\n", __func__);
+		goto err_pvp;
+	}
 	pvolt->dev_id = perivolt_id;
 	pvolt->perivolt_avs_ip = perivolt_avs_ip;
 	pvolt->addr = reg_base + pdata[0];
@@ -435,12 +503,15 @@ static void peri_volt_poll_init(struct device_node *np)
 	if (ret) {
 		pr_err("[%s] fail to reigister pvp %s!\n",
 			__func__, poll_name);
-		goto err_pvp;
+		goto err_pvp_name;
 	}
 	pr_info("[%s] peri dvfs node:%s\n", __func__, poll_name);
+
+err_pvp_name:
+	kfree(pvolt->name);
+	pvolt->name = NULL;
 err_pvp:
 	kfree(pvolt);
-	pvolt = NULL;
 	return;
 }
 
@@ -452,8 +523,8 @@ static const struct of_device_id perivolt_of_match[] = {
 };
 static void __iomem *perivolt_get_base(struct device_node *np)
 {
-	struct device_node *parent;
-	const struct of_device_id *match;
+	struct device_node *parent = NULL;
+	const struct of_device_id *match = NULL;
 	void __iomem *ret = NULL;
 
 	parent = of_get_parent(np);
@@ -491,7 +562,7 @@ static const struct of_device_id __perivolt_of_table_sentinel
 
 static int hisi_peri_volt_poll_probe(struct platform_device *pdev)
 {
-	struct device_node *np;
+	struct device_node *np = NULL;
 	struct device_node *parent = pdev->dev.of_node;
 	const struct of_device_id *matches = NULL;
 	of_perivolt_init_cb_t perivolt_init_cb = NULL;

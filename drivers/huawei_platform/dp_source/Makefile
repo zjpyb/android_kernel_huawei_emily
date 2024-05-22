@@ -1,11 +1,15 @@
 obj-$(CONFIG_HW_DP_SOURCE) += dp_source_switch.o
 
-obj-$(CONFIG_HUAWEI_DSM) += dp_dsm.o
+obj-$(CONFIG_HUAWEI_DSM) += dp_dsm.o dp_dsm_debug.o
+
+ifeq ($(CONFIG_HW_DP_SOURCE),y)
 ifeq ($(TARGET_VERSION_MODE),factory)
-EXTRA_CFLAGS += -DDP_FACTORY_MODE_ENABLE
+	ccflags-y += -DDP_FACTORY_MODE_ENABLE
 endif
 ifneq ($(TARGET_BUILD_VARIANT),user)
-EXTRA_CFLAGS += -DDP_DEBUG_ENABLE
+	ccflags-y += -DDP_DEBUG_ENABLE
 endif
-obj-$(CONFIG_HW_DP_SOURCE) += dp_factory.o
-obj-$(CONFIG_HW_DP_SOURCE) += dp_debug.o
+endif
+
+obj-y += dp_factory.o
+obj-y += dp_debug.o

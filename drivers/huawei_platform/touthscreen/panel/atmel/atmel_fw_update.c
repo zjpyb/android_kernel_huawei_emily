@@ -341,7 +341,7 @@ static int mxt_check_reg_init(struct mxt_data *data)
 	u8 *object_mem, *object_offset;
 #endif
 
-	if (!data->cfg_name) {
+	if (!data) {
 		TS_LOG_INFO("Skipping cfg download\n");
 		return 0;
 	}
@@ -522,7 +522,7 @@ static int mxt_check_reg_init(struct mxt_data *data)
 			byte_offset = reg + i - cfg_start_ofs;
 
 			if ((byte_offset >= 0)
-			    && (byte_offset <= config_mem_size)) {
+			    && (byte_offset < config_mem_size)) {
 				*(config_mem + byte_offset) = val;
 #if defined(CONFIG_MXT_UPDATE_BY_OBJECT)
 				*(object_offset++) = val;
@@ -914,8 +914,8 @@ int mxt_load_fw(struct mxt_data *data)
 	unsigned int frame = 0;
 	int ret;
 
-	if (!data->fw_name) {
-		TS_LOG_ERR("%s:data->fw_name is null\n", __func__);
+	if (!data) {
+		TS_LOG_ERR("%s:data is null\n", __func__);
 		return -EEXIST;
 	}
 	TS_LOG_INFO("mxt_load_fw %s\n", data->fw_name);

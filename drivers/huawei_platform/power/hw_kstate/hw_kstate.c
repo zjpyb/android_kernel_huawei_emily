@@ -5,7 +5,7 @@
  * Description: This file use to send kernel state
  * Author: gavin.yangsong@huawei.com
  * Version: 0.1
- * Date:  2014/07/17
+ * Date: 2014/07/17
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -14,18 +14,19 @@
 #include <linux/spinlock.h>
 #include <linux/kfifo.h>
 #include <linux/kthread.h>
+#include <securec.h>
 #include <huawei_platform/power/hw_kstate.h>
 #include <net/sock.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define KSTATE_FIFO_SIZE	4096 // kfifo buffer size
+#define KSTATE_FIFO_SIZE	4096
 #define KSTATE_THREAD_NAME	"hw_kstate"
 
 static struct task_struct *kstate_thread = NULL;
-static struct kfifo kstate_fifo; //fifo is full of pointer to struct ksmsg
+static struct kfifo kstate_fifo; /* fifo is full of pointer to struct ksmsg */
 static spinlock_t kstate_kfifo_lock;
-static spinlock_t kstate_hook_lock;
+DEFINE_MUTEX(kstate_hook_lock);
 static struct sock *nlfd = NULL;
 static int kstate_user_pid = 0;
 static struct list_head kstate_hooks;
@@ -35,38 +36,35 @@ static DECLARE_WAIT_QUEUE_HEAD(kstate_wait_queue);
 /*
  * Function: is_channel_valid
  * Description: check channel valid or not
- * Input:	@channel - channel to check
+ * Input: @channel - channel to check
  * Output:
- * Return:	false -- invalid
- *			true -- valid
+ * Return: false -- invalid, true -- valid
 */
 static inline bool is_channel_valid(int channel)
 {
-	return (channel > CHANNEL_ID_NONE && channel < CHANNEL_ID_END);
+	return ((channel > CHANNEL_ID_NONE) && (channel < CHANNEL_ID_END));
 }
 
 /*
  * Function: is_tag_valid
  * Description: check packet tag valid or not
- * Input:	@tag - tag to check
+ * Input: @tag - tag to check
  * Output:
- * Return:	false -- invalid
- *			true -- valid
+ * Return: false -- invalid, true -- valid
 */
 static inline bool is_tag_valid(int tag)
 {
-	return (tag > PACKET_TAG_NONE && tag < PACKET_TAG_END);
+	return ((tag > PACKET_TAG_NONE) && (tag < PACKET_TAG_END));
 }
 
 /*
  * Function: send_to_user
  * Description: send message to user space and msg
- *				must be alloced memory in calling func,
- *				and be freed here
- * Input:	@msg - source msg
+ * must be alloced memory in calling func,
+ * and be freed here
+ * Input: @msg - source msg
  * Output:
- * Return:	-1 -- failed
- *			0 -- successed
+ * Return: -1 -- failed, 0 -- successed
 */
 static int send_to_user(struct ksmsg *msg)
 {
@@ -79,15 +77,18 @@ static int send_to_user(struct ksmsg *msg)
 		pr_err("hw_kstate %s: msg is NULL!\n", __func__);
 		goto err;
 	}
+
 	if (kstate_user_pid <= 0) {
 		pr_err("hw_kstate %s: invalid pid:%d!\n", __func__, kstate_user_pid);
 		goto err;
 	}
+
 	len = sizeof(struct ksmsg) + msg->length;
-	if (len > 1024 * 1024) {
+	if (len > 1024 * 1024) { /* the default size */
 		pr_err("hw_kstate %s: invalid len: %d!\n", __func__, len);
 		goto err;
 	}
+
 	skb = alloc_skb(NLMSG_SPACE(len), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(skb)) {
 		pr_err("hw_kstate %s: alloc skb failed!\n", __func__);
@@ -95,13 +96,20 @@ static int send_to_user(struct ksmsg *msg)
 	}
 
 	nlh = nlmsg_put(skb, 0, 0, 0, len, 0);
-	memcpy(NLMSG_DATA(nlh), msg, len);
-	/*send up msg*/
-	if (netlink_unicast(nlfd, skb, kstate_user_pid, MSG_DONTWAIT) < 0) {
-		//pr_err("hw_kstate %s: netlink_unicast failed!\n", __func__);
+
+	if (memcpy_s(NLMSG_DATA(nlh), len, msg, len) != EOK) {
+		pr_err("hw_kstate %s: fail to memcpy_s!\n", __func__);
+		kfree_skb(skb);
 		goto err;
 	}
+
+	/* send up msg */
+	if (netlink_unicast(nlfd, skb, kstate_user_pid, MSG_DONTWAIT) < 0) {
+		goto err;
+	}
+
 	ret = 0;
+
 err:
 	return ret;
 }
@@ -109,21 +117,21 @@ err:
 /*
  * Function: fifo_out
  * Description: receive data from module and process it here
- * Input:	@data - source data
+ * Input: @data - source data
  * Output:
- * Return:	void
+ * Return: void
 */
 static int fifo_out(void *data) {
 	struct ksmsg *msg = NULL;
 
 	while (1) {
-		/*wait module data*/
+		/* wait module data */
 		wait_event_interruptible(kstate_wait_queue, !kfifo_is_empty(&kstate_fifo));
-		/*fifo has data*/
+		/* fifo has data */
 		while (0 != kfifo_out(&kstate_fifo, &msg, sizeof(struct ksmsg*))) {
-			/*send msg to user space*/
+			/* send msg to user space */
 			if (send_to_user(msg) < 0) {
-				//pr_err("hw_kstate %s: send msg to user failed!\n", __func__);
+				/* pr_err("hw_kstate %s: send msg to user failed!\n", __func__); */
 			}
 			kfree(msg);
 		}
@@ -134,10 +142,9 @@ static int fifo_out(void *data) {
 /*
  * Function: fifo_in
  * Description: receive data from module and save it to fifo
- * Input:	@msg - msg to save
+ * Input: @msg - msg to save
  * Output:
- * Return:	-1 -- failed
- *			0 -- successed
+ * Return: -1 -- failed, 0 -- successed
 */
 static int fifo_in(struct ksmsg *msg)
 {
@@ -148,9 +155,9 @@ static int fifo_in(struct ksmsg *msg)
 		goto err;
 	}
 
-	/*put data in kfifo*/
+	/* put data in kfifo */
 	spin_lock_bh(&kstate_kfifo_lock);
-	if (0 == kfifo_in(&kstate_fifo, &msg, sizeof(msg))) {
+	if (0 == kfifo_in(&kstate_fifo, &msg, sizeof(struct ksmsg*))) {
 		/*put data failed*/
 		if (kfifo_is_full(&kstate_fifo)) {
 			if (send_to_user(msg) < 0) {
@@ -162,10 +169,11 @@ static int fifo_in(struct ksmsg *msg)
 			kfree(msg);
 		}
 	} else {
-		/*put data successfully*/
+		/* put data successfully */
 		ret = 0;
 		wake_up_interruptible(&kstate_wait_queue);
 	}
+
 	spin_unlock_bh(&kstate_kfifo_lock);
 
 err:
@@ -173,13 +181,13 @@ err:
 }
 
 /*
- * Function: process_user_data
- * Description: receive data from user and process it here
- * Input:	@msg - source msg
+ * Function: process_us_data
+ * Description: receive data from user space and process it here
+ * Input: @msg - source msg
  * Output:
- * Return:	void
+ * Return: void
 */
-static void process_user_data(struct ksmsg *msg)
+static void process_us_data(struct ksmsg *msg)
 {
 	struct kstate_opt *elem = NULL;
 	struct ksmsg tmp_msg;
@@ -190,23 +198,23 @@ static void process_user_data(struct ksmsg *msg)
 	}
 
 	if (PACKET_TAG_VALIDATE_CHANNEL == msg->tag) {
-		/*confirm connection is still online*/
+		/* confirm connection is still online */
 		tmp_msg.tag = PACKET_TAG_VALIDATE_CHANNEL;
 		tmp_msg.src = CHANNEL_ID_NETLINK;
 		tmp_msg.dst = CHANNEL_ID_NONE;
 		tmp_msg.length= 0;
 
-		/*tmp_msg should be freed in this func*/
+		/* tmp_msg should be freed in this func */
 		send_to_user(&tmp_msg);
 	} else {
-		/*receive msg from user*/
+		/* receive msg from user */
 		if (CHANNEL_ID_NETLINK != msg->dst) {
 			pr_err("hw_kstate %s: channel=%u is not netlink!\n", __func__, msg->dst);
 			return;
 		}
 
-		/*calling corresponding hook func*/
-		spin_lock(&kstate_hook_lock);
+		/* calling corresponding hook func */
+		mutex_lock(&kstate_hook_lock);
 		list_for_each_entry(elem, &kstate_hooks, list) {
 			if (elem->tag == msg->tag) {
 				if (!IS_ERR_OR_NULL(elem->hook)) {
@@ -214,16 +222,16 @@ static void process_user_data(struct ksmsg *msg)
 				}
 			}
 		}
-		spin_unlock(&kstate_hook_lock);
+		mutex_unlock(&kstate_hook_lock);
 	}
 }
 
 /*
  * Function: recv_from_user
- * Description: receive data from user calling process_user_data() to process it
- * Input:	@skb - source data
+ * Description: receive command from user calling process_us_data() to process it
+ * Input: @skb - source command
  * Output:
- * Return:	void
+ * Return: void
 */
 static void recv_from_user(struct sk_buff *skb)
 {
@@ -231,7 +239,7 @@ static void recv_from_user(struct sk_buff *skb)
 	struct nlmsghdr *nlh = NULL;
 	struct ksmsg *msg = NULL;
 	struct ksmsg *data = NULL;
-	int len  = 0;
+	int len = 0;
 
 	if (IS_ERR_OR_NULL(skb)) {
 		pr_err("hw_kstate %s: skb is NULL!\n", __func__);
@@ -247,7 +255,7 @@ static void recv_from_user(struct sk_buff *skb)
 		data = (struct ksmsg*)NLMSG_DATA(nlh);
 
 		if ((len >= (sizeof(struct ksmsg) + data->length))
-			&& (len < 1024 * 1024)
+			&& (len < 1024 * 1024) /* default size */
 			&& (len > 0)
 			&& (tmp_skb->len >= nlh->nlmsg_len)) {
 			msg = (struct ksmsg*)kmalloc(len, GFP_ATOMIC);
@@ -255,9 +263,14 @@ static void recv_from_user(struct sk_buff *skb)
 				pr_err("hw_kstate %s: msg is NULL!\n", __func__);
 				return;
 			}
-			memcpy(msg, data, len);
 
-			process_user_data(msg);
+			if (memcpy_s(msg, len, data, len) != EOK) {
+				pr_err("hw_kstate %s: failed to memcpy_s!\n", __func__);
+				kfree(msg);
+				return;
+			}
+
+			process_us_data(msg);
 			kfree(msg);
 		} else {
 			pr_err("hw_kstate %s: length err, skb len:%d nlmsg_len:%u length in ksmsg: %u\n",\
@@ -269,13 +282,12 @@ static void recv_from_user(struct sk_buff *skb)
 /*
  * Function: kstate
  * Description: kernel information entry function
- * Input:	@dst - user to send
- *			@tag - packet tag
- *			@data - source data
- *			@len - data len
+ * Input: @dst - user to send
+ *        @tag - packet tag
+ *        @data - source data
+ *        @len - data len
  * Output:
- * Return:	-1 -- failed
- *			0 -- successed
+ * Return: -1 -- failed, 0 -- successed
 */
 int kstate(CHANNEL_ID dst, PACKET_TAG tag, const char *data, size_t len)
 {
@@ -297,34 +309,44 @@ int kstate(CHANNEL_ID dst, PACKET_TAG tag, const char *data, size_t len)
 		return -1;
 	}
 
-	/*msg will be freed in fifo_in() or send_to_user()*/
+	/* msg will be freed in fifo_in() or send_to_user() */
 	msg_len = sizeof(struct ksmsg) + len;
 	msg = (struct ksmsg*)kmalloc(msg_len, GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(msg)) {
 		pr_err("hw_kstate %s: msg is NULL!\n", __func__);
 		return -1;
 	}
-	memset(msg, 0, msg_len);
+
+	if (memset_s(msg, msg_len, 0, msg_len) != EOK) {
+		pr_err("hw_kstate %s: fail to memset_s!\n", __func__);
+		kfree(msg);
+		return -1;
+	}
+
 	msg->tag = tag;
 	msg->src = CHANNEL_ID_NETLINK;
 	msg->dst = dst;
 	msg->length = len;
-	memcpy(msg->buffer, data, len);
+	if (memcpy_s(msg->buffer, len, data, len) != EOK) {
+		pr_err("hw_kstate %s: fail to memcpy_s!\n", __func__);
+		kfree(msg);
+		return -1;
+	}
 
 	if (fifo_in(msg) < 0) {
 		pr_err("hw_kstate %s: save msg from module failed!\n", __func__);
 		return -1;
 	}
+
 	return 0;
 }
 
 /*
  * Function: kstate_register_hook
  * Description: register hook function to kstate
- * Input:	@opt - kstate_opt struct to register
+ * Input: @opt - kstate_opt struct to register
  * Output:
- * Return:	-1 -- failed
- *			0 -- successed
+ * Return: -1 -- failed, 0 -- successed
 */
 int kstate_register_hook(struct kstate_opt *opt)
 {
@@ -346,17 +368,19 @@ int kstate_register_hook(struct kstate_opt *opt)
 		goto err;
 	}
 
-	spin_lock(&kstate_hook_lock);
+	mutex_lock(&kstate_hook_lock);
 	list_for_each_entry(elem, &kstate_hooks, list) {
 		if (elem->tag == opt->tag) {
-			ret  = 0;
+			ret = 0;
 			goto out;
 		}
 	}
 	list_add_tail(&opt->list, &kstate_hooks);
 	ret = 0;
+
 out:
-	spin_unlock(&kstate_hook_lock);
+	mutex_unlock(&kstate_hook_lock);
+
 err:
 	return ret;
 }
@@ -364,9 +388,9 @@ err:
 /*
  * Function: kstate_unregister_hook
  * Description: unregister hook function from kstate
- * Input:	@opt - kstate_opt struct to unregister
+ * Input: @opt - kstate_opt struct to unregister
  * Output:
- * Return:	void
+ * Return: void
 */
 void kstate_unregister_hook(struct kstate_opt *opt)
 {
@@ -378,14 +402,14 @@ void kstate_unregister_hook(struct kstate_opt *opt)
 		return;
 	}
 
-	spin_lock(&kstate_hook_lock);
+	mutex_lock(&kstate_hook_lock);
 	list_for_each_entry_safe(elem, n, &kstate_hooks, list) {
 		if (opt == elem) {
 			list_del(&elem->list);
 			break;
 		}
 	}
-	spin_unlock(&kstate_hook_lock);
+	mutex_unlock(&kstate_hook_lock);
 }
 
 /*
@@ -393,7 +417,7 @@ void kstate_unregister_hook(struct kstate_opt *opt)
  * Description: release netlink sock from skb queue
  * Input:
  * Output:
- * Return:	void
+ * Return: void
 */
 static void release_netlink_sock(void)
 {
@@ -416,9 +440,8 @@ static int __init kstate_init(void)
 	INIT_LIST_HEAD(&kstate_hooks);
 
 	spin_lock_init(&kstate_kfifo_lock);
-	spin_lock_init(&kstate_hook_lock);
 
-	/*create netlink sock to receive data from user space*/
+	/* create netlink sock to receive command from user space */
 	nlfd = netlink_kernel_create(&init_net, NETLINK_HW_KSTATE, &cfg);
 	if (IS_ERR_OR_NULL(nlfd)) {
 		ret = PTR_ERR(nlfd);
@@ -426,26 +449,30 @@ static int __init kstate_init(void)
 		goto err_create_netlink;
 	}
 
-	/*init fifo*/
+	/* init fifo */
 	ret = kfifo_alloc(&kstate_fifo, KSTATE_FIFO_SIZE , GFP_ATOMIC);
 	if (0 != ret) {
 		pr_err("hw_kstate %s: error kfifo_alloc!\n", __func__);
 		goto err_alloc_kfifo;
 	}
 
-	/*run thread*/
+	/* run thread */
 	kstate_thread = kthread_run(fifo_out, NULL, KSTATE_THREAD_NAME);
 	if (IS_ERR_OR_NULL(kstate_thread)) {
 		pr_err("hw_kstate %s: error create thread!\n", __func__);
 		goto err_create_thread;
 	}
+
 	pr_info("hw_kstate %s: inited!\n", __func__);
+
 	return 0;
 
 err_create_thread:
 	kfifo_free(&kstate_fifo);
+
 err_alloc_kfifo:
 	release_netlink_sock();
+
 err_create_netlink:
 	return ret;
 }

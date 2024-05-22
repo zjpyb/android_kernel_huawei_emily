@@ -106,14 +106,14 @@ static struct snd_soc_dai_driver slimbus_dai = {
     .remove = slimbus_dai_remove,
     .playback = {
         .channels_min = 1,
-        .channels_max = 2,
+        .channels_max = 4,
         .rates = SNDRV_PCM_RATE_8000_384000,
         .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S16_BE |
                SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_BE,
     },
     .capture = {
         .channels_min = 1,
-        .channels_max = 6,
+        .channels_max = 8,
         .rates = SNDRV_PCM_RATE_8000_96000,
         .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
     },

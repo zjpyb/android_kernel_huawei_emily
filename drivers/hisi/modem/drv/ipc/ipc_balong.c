@@ -46,6 +46,7 @@
  *
  */
 /*lint --e{537,607,701,713,718,732,746}*/
+#ifdef __KERNEL__
 #include <linux/version.h>
 #include <linux/hwspinlock.h>
 #include <linux/printk.h>
@@ -58,6 +59,7 @@
 
 #define DRIVER_NAME "v7r2_ipc_device"
 
+#endif
 #include <osl_bio.h>
 #include <osl_types.h>
 #include <osl_module.h>
@@ -582,6 +584,7 @@ static void ipc_free_sem_taked(u32 core_id)
     }
 }
 
+#ifdef CONFIG_IPC_MSG
 static struct ipc_msg g_ipc_msg = {0};
 static int ipc_msg_init(void)
 {
@@ -620,6 +623,12 @@ static int ipc_msg_init(void)
     bsp_trace(BSP_LOG_LEVEL_ERROR,BSP_MODU_IPC,"ipc msg init success\n");
     return BSP_OK;
 }
+#else
+static int ipc_msg_init(void)
+{
+    return BSP_OK;
+}
+#endif
 
 static s32  bsp_ipc_probe(struct platform_device *dev)
 {
@@ -760,6 +769,7 @@ void ccore_ipc_enable(void)
 	spin_unlock_irqrestore(&ipc_ctrl.lock,flag);
 }
 
+#ifdef CONFIG_PM
 
 static void ipc_dpm_complete(struct device *dev)
 {
@@ -795,6 +805,9 @@ static const struct dev_pm_ops balong_ipc_pm_ops ={
 };
 
 #define BALONG_DEV_PM_OPS (&balong_ipc_pm_ops)
+#else
+#define BALONG_DEV_PM_OPS NULL
+#endif
 
 
 static struct platform_driver balong_ipc_driver = {

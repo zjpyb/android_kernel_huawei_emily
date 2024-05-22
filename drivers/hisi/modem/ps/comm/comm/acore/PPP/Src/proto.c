@@ -50,6 +50,7 @@
 #define    THIS_FILE_ID        PS_FILE_ID_PROTO_C
 
 
+#if(FEATURE_ON == FEATURE_PPP)
 
 
 VOS_INT32
@@ -125,4 +126,5 @@ PPP_ZC_STRU *proto_LayerPull(struct link *l, PPP_ZC_STRU *pstMem,
 struct layer protolayer =
   { LAYER_PROTO, "proto", proto_LayerPush, proto_LayerPull };
 
+#endif /* #if(FEATURE_ON == FEATURE_PPP) */
 

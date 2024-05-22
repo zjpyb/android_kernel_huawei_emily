@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2019. All rights reserved.
+ * Description: Contexthub share memory driver
+ * Author: Huawei
+ * Create: 2016-04-01
+ */
 #include <linux/version.h>
 #include <linux/init.h>
 #include <linux/notifier.h>
@@ -12,11 +18,12 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/workqueue.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include "shmem.h"
 #include "inputhub_api.h"
 #include "common.h"
-#include <libhwsecurec/securec.h>
+#include <securec.h>
 
 #define SHMEM_AP_RECV_PHY_ADDR            DDR_SHMEM_CH_SEND_ADDR_AP
 #define SHMEM_AP_RECV_PHY_SIZE            DDR_SHMEM_CH_SEND_SIZE
@@ -24,14 +31,13 @@
 #define SHMEM_AP_SEND_PHY_SIZE            DDR_SHMEM_AP_SEND_SIZE
 #define SHMEM_INIT_OK                     (0x0aaaa5555)
 #define MODULE_NAME                       "sharemem"
-#define SHMEM_SMALL_PIECE_SZ              128
+#define SHMEM_SMALL_PIECE_SZ              1024
 enum {
 	SHMEM_MSG_TYPE_NORMAL,
 	SHMEM_MSG_TYPE_SHORT,
 };
 
 #define SHMEM_IMPROVEMENT_SHORT_BLK
-
 
 static LIST_HEAD(shmem_client_list);
 static DEFINE_MUTEX(shmem_recv_lock); /*lint !e651 !e708 !e570 !e64 !e785*/
@@ -61,16 +67,26 @@ struct shmem {
 	struct semaphore send_sem;
 };
 
-static struct shmem shmem_gov;
-static struct wake_lock shmem_lock;
+struct receive_response_work_t {
+	struct shmem_ipc_data data;
+	struct work_struct worker;
+};
 
+struct workqueue_struct *g_receive_response_wq;
+struct receive_response_work_t g_receive_response_work;
+static struct shmem g_shmem_gov;
+static struct wakeup_source g_shmem_lock;
+
+/*
+ * IPC消息封装，调用inputhub的接口发送IPC消息
+ */
 static int shmem_ipc_send(unsigned char cmd, obj_tag_t module_id,
 			  unsigned int size, bool is_lock)
 {
 	struct shmem_ipc pkt;
 	write_info_t winfo;
 
-	if (memset_s(&pkt, sizeof(pkt), 0, sizeof(pkt))) {
+	if (memset_s(&pkt, sizeof(pkt), 0, sizeof(pkt)) != EOK) {
 		pr_err("%s memset_s fail\n", __func__);
 	}
 	pkt.data.module_id = module_id;
@@ -103,12 +119,16 @@ static int shmem_ipc_send(unsigned char cmd, obj_tag_t module_id,
 }
 
 #ifdef SHMEM_IMPROVEMENT_SHORT_BLK
+/*
+ * 计算数据包的checksum
+ */
 static int shmem_get_checksum(void *buf_addr, unsigned int buf_size)
 {
 	unsigned char *p = buf_addr;
 	unsigned int sum = 0;
-	if (!buf_addr || buf_size > 1024)
+	if (!buf_addr || buf_size > SHMEM_SMALL_PIECE_SZ) {
 		return -1;
+	}
 
 	while (buf_size) {
 		sum += *p;
@@ -119,18 +139,14 @@ static int shmem_get_checksum(void *buf_addr, unsigned int buf_size)
 }
 #endif
 
-struct workqueue_struct *receive_response_wq = NULL;
-struct receive_response_work_t {
-	struct shmem_ipc_data data;
-	struct work_struct worker;
-};
-
-struct receive_response_work_t receive_response_work;
+/*
+ * 消息回复的workqueue, 发送IPC消息确认sharemem消息已处理
+ */
 static void receive_response_work_handler(struct work_struct *work)
 {
 	struct receive_response_work_t *p =
 	    container_of(work, struct receive_response_work_t, worker); /*lint !e826*/
-	if (!p) {
+	if (p == NULL) {
 		pr_err("%s NULL pointer\n", __func__);
 		return;
 	}
@@ -139,17 +155,19 @@ static void receive_response_work_handler(struct work_struct *work)
 	pr_info("[%s]\n", __func__);
 }
 
+/*
+ * 将sharemem包中的数据从DDR中取出，如果是大数据包消息同时启动workqueue回复IPC确认
+ */
 const pkt_header_t *shmempack(const char *buf, unsigned int length)
 {
 	int ret;
-	struct shmem_ipc *msg;
+	struct shmem_ipc *msg = (struct shmem_ipc *)buf;
 	static char recv_buf[SHMEM_AP_RECV_PHY_SIZE] = { 0, };
 	const pkt_header_t *head = (const pkt_header_t *)recv_buf;
 
 	if (NULL == buf)
 		return NULL;
 
-	msg = (struct shmem_ipc *)buf;
 #ifdef SHMEM_IMPROVEMENT_SHORT_BLK
 	if (msg->data.offset > SHMEM_AP_RECV_PHY_SIZE ||\
 		msg->data.buf_size > SHMEM_AP_RECV_PHY_SIZE ||\
@@ -158,10 +176,10 @@ const pkt_header_t *shmempack(const char *buf, unsigned int length)
 		return NULL;
 	}
 
-	shmem_gov.recv_addr = shmem_gov.recv_addr_base + msg->data.offset;
+	g_shmem_gov.recv_addr = g_shmem_gov.recv_addr_base + msg->data.offset;
 
-	ret = memcpy_s(recv_buf, sizeof(recv_buf), shmem_gov.recv_addr, (size_t)msg->data.buf_size);
-	if (ret) {
+	ret = memcpy_s(recv_buf, sizeof(recv_buf), g_shmem_gov.recv_addr, (size_t)msg->data.buf_size);
+	if (ret != EOK) {
 		pr_err("[%s] memset_s fail[%d]\n", __func__, ret);
 	}
 	if (msg->data.module_id != head->tag) {
@@ -170,15 +188,15 @@ const pkt_header_t *shmempack(const char *buf, unsigned int length)
 
 	switch (msg->data.msg_type) {
 	case SHMEM_MSG_TYPE_NORMAL:
-		wake_lock_timeout(&shmem_lock, HZ / 2);
-		ret = memcpy_s(&receive_response_work.data, sizeof(receive_response_work.data), &msg->data, sizeof(receive_response_work.data));
-		if (ret) {
+		__pm_wakeup_event(&g_shmem_lock, jiffies_to_msecs(HZ / 2));
+		ret = memcpy_s(&g_receive_response_work.data, sizeof(g_receive_response_work.data), &msg->data, sizeof(g_receive_response_work.data));
+		if (ret != EOK) {
 			pr_err("[%s] memset_s fail[%d]\n", __func__, ret);
 		}
-		queue_work(receive_response_wq, &receive_response_work.worker);
+		queue_work(g_receive_response_wq, &g_receive_response_work.worker);
 		break;
 	case SHMEM_MSG_TYPE_SHORT:
-		if (msg->data.checksum != shmem_get_checksum(shmem_gov.recv_addr, msg->data.buf_size)) {
+		if (msg->data.checksum != shmem_get_checksum(g_shmem_gov.recv_addr, msg->data.buf_size)) {
 			pr_err("[%s] checksum is invalid; module %x, tag %x\n", __func__, (int)msg->data.module_id, (int)head->tag);
 			return NULL; /*git it up*/
 		}
@@ -188,45 +206,52 @@ const pkt_header_t *shmempack(const char *buf, unsigned int length)
 		return NULL; /*git it up*/
 	}
 #else
-	ret = memcpy_s(recv_buf, sizeof(recv_buf), shmem_gov.recv_addr_base, (size_t)msg->data.buf_size);
-	if (ret) {
+	ret = memcpy_s(recv_buf, sizeof(recv_buf), g_shmem_gov.recv_addr_base, (size_t)msg->data.buf_size);
+	if (ret != EOK) {
 		pr_err("[%s] memset_s fail[%d]\n", __func__, ret);
 	}
-	ret = memcpy_s(&receive_response_work.data, sizeof(receive_response_work.data), &msg->data, sizeof(receive_response_work.data));
-	if (ret) {
+	ret = memcpy_s(&g_receive_response_work.data, sizeof(g_receive_response_work.data), &msg->data, sizeof(g_receive_response_work.data));
+	if (ret != EOK) {
 		pr_err("[%s] memset_s fail[%d]\n", __func__, ret);
 	}
-	queue_work(receive_response_wq, &receive_response_work.worker);
+	queue_work(g_receive_response_wq, &g_receive_response_work.worker);
 #endif
 	return head;
 } /*lint !e715*/
 
+/*
+ * sharemem接收模块初始化
+ */
 static int shmem_recv_init(void)
 {
-	receive_response_wq = alloc_ordered_workqueue("sharemem_receive_response", __WQ_LEGACY | WQ_MEM_RECLAIM | WQ_FREEZABLE);
-	if (!receive_response_wq) {
+	g_receive_response_wq = alloc_ordered_workqueue("sharemem_receive_response", __WQ_LEGACY | WQ_MEM_RECLAIM | WQ_FREEZABLE);
+	if (g_receive_response_wq == NULL) {
 		pr_err("failed to create sharemem_receive_response workqueue\n");
 		return -1;
 	}
 
-	shmem_gov.recv_addr_base =
+	g_shmem_gov.recv_addr_base =
 	    ioremap_wc((ssize_t)SHMEM_AP_RECV_PHY_ADDR, (unsigned long)SHMEM_AP_RECV_PHY_SIZE);
-	if (!shmem_gov.recv_addr_base) {
+	if (g_shmem_gov.recv_addr_base == NULL) {
 		pr_err("[%s] ioremap err\n", __func__);
 		return -ENOMEM;
 	}
 
-	INIT_WORK(&receive_response_work.worker, receive_response_work_handler);
+	INIT_WORK(&g_receive_response_work.worker, receive_response_work_handler);
 
 	return 0;
 }
 
 #ifdef CONFIG_HISI_DEBUG_FS
 #define SHMEM_TEST_TAG (TAG_END-1)
+/*
+ * sharemem测试代码，不商用
+ */
 void shmem_recv_test(const void __iomem *buf_addr, unsigned int size)
 {
 	pr_info("%s: get size %d, send back;\n", __func__, size);
-	shmem_send(SHMEM_TEST_TAG, buf_addr, size);
+	if (shmem_send(SHMEM_TEST_TAG, buf_addr, size))
+		pr_info("%s: shmem send fail\n", __func__);
 }
 
 int shmem_notify_test(const pkt_header_t *head)
@@ -237,74 +262,98 @@ int shmem_notify_test(const pkt_header_t *head)
 
 int shmem_start_test(void)
 {
-	register_mcu_event_notifier(SHMEM_TEST_TAG, CMD_SHMEM_AP_RECV_REQ, shmem_notify_test);
-	pr_info("%s: ok;\n", __func__);
+	if (register_mcu_event_notifier(SHMEM_TEST_TAG, CMD_SHMEM_AP_RECV_REQ, shmem_notify_test))
+		pr_info("%s: fail;\n", __func__);
+	else
+		pr_info("%s: ok;\n", __func__);
+
 	return 0;
 }
-// late_initcall_sync(shmem_start_test); /* test only */
+// Add the following sentence here to enable test: late_initcall_sync(shmem_start_test);
 #endif
 
+/*
+ * sharemem消息发送接口，将数据复制到DDR中，并发送IPC通知contexthub处理
+ */
 int shmem_send(obj_tag_t module_id, const void *usr_buf,
 	       unsigned int usr_buf_size)
 {
 	int ret;
-	if ((NULL == usr_buf) || (usr_buf_size > SHMEM_AP_SEND_PHY_SIZE))
+	if ((NULL == usr_buf) || (usr_buf_size > SHMEM_AP_SEND_PHY_SIZE)) {
 		return -EINVAL;
-	if (SHMEM_INIT_OK != shmem_gov.init_flag)
+	}
+	if (SHMEM_INIT_OK != g_shmem_gov.init_flag) {
 		return -EPERM;
-	ret = down_timeout(&shmem_gov.send_sem, (long)msecs_to_jiffies(500));
-	if (ret)
+	}
+	ret = down_timeout(&g_shmem_gov.send_sem, (long)msecs_to_jiffies(500));
+	if (ret != 0) {
 		pr_warning("[%s]down_timeout 500\n", __func__);
-	ret = memcpy_s((void *)shmem_gov.send_addr_base, (size_t)SHMEM_AP_SEND_PHY_SIZE, usr_buf, (unsigned long)usr_buf_size);
-	if (ret) {
+	}
+	ret = memcpy_s((void *)g_shmem_gov.send_addr_base, (size_t)SHMEM_AP_SEND_PHY_SIZE, usr_buf, (unsigned long)usr_buf_size);
+	if (ret != EOK) {
 		pr_err("[%s] memset_s fail[%d]\n", __func__, ret);
 	}
 	return shmem_ipc_send(CMD_SHMEM_AP_SEND_REQ, module_id, usr_buf_size, true);
 }
 
+/*
+ * 获得sharemem数据发送的size上限
+ */
 unsigned int shmem_get_capacity(void)
 {
 	return (unsigned int)SHMEM_AP_SEND_PHY_SIZE;
 }
 
-int shmem_send_resp(const pkt_header_t * head)
+/*
+ * sharemem消息发送后，收到contexthub的回复确认后up信号量
+ */
+int shmem_send_resp(const pkt_header_t *head)
 {
-	if (!shmem_gov.send_sem.count) {
-		up(&shmem_gov.send_sem);
+	if (!g_shmem_gov.send_sem.count) {
+		up(&g_shmem_gov.send_sem);
 	} else {
-		pr_info("%s:%d\n", __func__, shmem_gov.send_sem.count);
+		pr_info("%s:%d\n", __func__, g_shmem_gov.send_sem.count);
 	}
 	return 0;
 } /*lint !e715*/
 
+/*
+ * sharemem发送模块初始化
+ */
 static int shmem_send_init(void)
 {
-	shmem_gov.send_addr_base =
+	g_shmem_gov.send_addr_base =
 	    ioremap_wc((ssize_t)SHMEM_AP_SEND_PHY_ADDR, (unsigned long)SHMEM_AP_SEND_PHY_SIZE);
-	if (!shmem_gov.send_addr_base) {
+	if (g_shmem_gov.send_addr_base == NULL) {
 		pr_err("[%s] ioremap err\n", __func__);
 		return -ENOMEM;
 	}
 
-	sema_init(&shmem_gov.send_sem, 1);
+	sema_init(&g_shmem_gov.send_sem, 1);
 	return 0;
 }
 
+/*
+ * Contexthub sharemem驱动初始化
+ */
 int contexthub_shmem_init(void)
 {
 	int ret;
 	ret = get_contexthub_dts_status();
-	if(ret)
+	if (ret != 0) {
 		return ret;
+	}
 
 	ret = shmem_recv_init();
-	if (ret)
+	if (ret != 0) {
 		return ret;
+	}
 	ret = shmem_send_init();
-	if (ret)
+	if (ret != 0) {
 		return ret;
-	shmem_gov.init_flag = SHMEM_INIT_OK;
-	wake_lock_init(&shmem_lock, WAKE_LOCK_SUSPEND, "ch_shmem_lock");
+	}
+	g_shmem_gov.init_flag = SHMEM_INIT_OK;
+	wakeup_source_init(&g_shmem_lock, "ch_shmem_lock");
 	return ret;
 }
 

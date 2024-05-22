@@ -1,4 +1,26 @@
-
+/*
+ *  Hisilicon K3 SOC camera driver source file
+ *
+ *  Copyright (C) Huawei Technology Co., Ltd.
+ *
+ * Author:
+ * Email:
+ * Date:	  2013-10-29
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version. *
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 
 #ifndef __HW_ALAN_MEDIA_CAMERA_H__
@@ -13,19 +35,10 @@
 #include <linux/compat.h>
 #define HWCAM_MODEL_USER                                "hwcam_userdev"
 #define HWCAM_MODEL_CFG                                 "hwcam_cfgdev"
+#define HWSWINGCAM_MODEL_CFG                            "hwswingcam_cfgdev"
 
-typedef struct _tag_hwcam_buf_info hwcam_buf_info_t;
-
-typedef struct _tag_hwcam_cfgreq_intf hwcam_cfgreq_intf_t;
-typedef struct _tag_hwcam_cfgreq hwcam_cfgreq_t;
-typedef struct _tag_hwcam_cfgreq2dev hwcam_cfgreq2dev_t;
-typedef struct _tag_hwcam_cfgreq2pipeline hwcam_cfgreq2pipeline_t;
-typedef struct _tag_hwcam_cfgreq2stream hwcam_cfgreq2stream_t;
-
-typedef struct _tag_hwcam_data_entry hwcam_data_entry_t;
-typedef struct _tag_hwcam_data_table hwcam_data_table_t;
-
-typedef struct _tag_hwcam_user_intf hwcam_user_intf_t;
+struct _tag_hwcam_cfgreq_intf;
+struct _tag_hwcam_user_intf;
 
 typedef enum _tag_hwcam_device_id_constants
 {
@@ -52,6 +65,7 @@ typedef enum _tag_hwcam_device_id_constants
     HWCAM_SUBDEV_FPGA                                   = 0x8110,
     HWCAM_SUBDEV_DRIVER_IC                              = 0x8120,
     HWCAM_SUBDEV_DOT_PROJECTOR                          = 0x8130,
+	HWCAM_SUBDEV_SWING                                  = 0x8140,
 } hwcam_device_id_constants_t;
 
 typedef enum _tag_hwcam_buf_kind
@@ -110,7 +124,7 @@ typedef struct _tag_hwcam_buf_status
     struct timeval tv;
 } hwcam_buf_status_t;
 
-enum 
+enum
 {
     HWCAM_DATA_TABLE_NAME_SIZE                          =   32,
     HWCAM_DATA_ALIGNMENT                                =   sizeof(uint32_t),
@@ -232,7 +246,7 @@ hwcam_data_table_entry_index(hwcam_data_table_t* tbl,
 {
     return tbl->entries <= cur
         && cur < tbl->entries + tbl->entry_count
-        ? cur - tbl->entries : -1ul;
+        ? cur - tbl->entries : -1u;
 }
 
 static inline bool
@@ -522,17 +536,17 @@ typedef enum _tag_hwcam_cfgreq2dev_kind
 typedef struct _tag_hwcam_cfgreq
 {
     union {
-		hwcam_user_intf_t*                              user;
+		struct _tag_hwcam_user_intf*                    user;
 		int64_t											_user;
 	};
 	union {
-		hwcam_cfgreq_intf_t*                             intf;
+		struct _tag_hwcam_cfgreq_intf*                  intf;
 		int64_t											_intf;
 	};
     uint32_t                                       		seq;
     int                                                 rc;
     uint32_t                                       		one_way : 1;
-} hwcam_cfgreq_t; 
+} hwcam_cfgreq_t;
 #else
 typedef struct _tag_hwcam_cfgreq
 {

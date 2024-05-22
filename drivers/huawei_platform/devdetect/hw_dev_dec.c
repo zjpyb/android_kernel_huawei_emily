@@ -1,273 +1,314 @@
-#include <linux/uaccess.h>
-#include <linux/module.h>
-#include <linux/interrupt.h>
-#include <linux/fs.h>
-#include <linux/slab.h>
-#include <linux/delay.h>
-#include <linux/string.h>
-#include <linux/crc-ccitt.h>
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/platform_device.h>
-#include <linux/workqueue.h>
-#include <linux/slab.h>
+/*
+ * hw_dev_dec.c
+ *
+ * device detect driver
+ *
+ * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <huawei_platform/devdetect/hw_dev_dec.h>
-#include <huawei_platform/devdetect/hw_dev_array.h>
 #include <linux/of.h>
+#include <linux/init.h>
+#include <linux/types.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/platform_device.h>
 #include <huawei_platform/log/hw_log.h>
 
-#ifndef false
-#define false 0
-#endif
-#ifndef true
-#define true 1
-#endif
-
-/* don't need to check */
-#define NO_CHECK 0
-/* check at bc step and running test */
-#define BC_CHECK 1
-/* check at the runnint test */
-#define RUNNING_TEST_CHECK 2
-
-/* the device check result's decimalization max length */
-#define PRINT_CHECK_MAX_LENGTH 22
-
-#define HWLOG_TAG devcheck
+#define HWLOG_TAG                  dev_detect
 HWLOG_REGIST();
 
-static DEFINE_MUTEX(devcheck_lock);
-
+#define FLAG_NOT_SET               '0'
+#define FLAG_SET                   '1'
+#define DEV_DETECT_PROBE_SUCCESS    1
+/* 64 devices need to detect */
+#define DEV_DETECT_NUMS             64
+#define PRINT_MAX_LEN               128
 /* the compatible name in the dts */
-#define DTS_COMP_DEVICE_CHECK_NAME "huawei,device_check"
-struct dev_flag_device {
+#define DEV_DETECT_NAME             "huawei,dev_detect"
+#define DEV_DETECT_DEFAULT          \
+"0000000000000000000000000000000000000000000000000000000000000000"
+
+struct detect_flag_device {
 	const char *name;
 	struct device *dev;
-	int index;
+	const unsigned int index;
+	const struct device_attribute attr;
 };
 
-static struct dev_flag_device dev_dct = {
-	.name = "dev_flag",
-	.index = 0,
+enum dec_detect_station {
+	NO_DETECT   = 0, /* no need to detect */
+	DBC_DETECT  = 1, /* dbc station detect */
+	RT_DETECT   = 2, /* rt station detect */
+	MMI1_DETECT = 4, /* mmi1 factory detect */
+	MMI2_DETECT = 8, /* mmi2 normal detect */
 };
 
-static struct dev_flag_device boardid_dev_dct = {
-	.name = "boardid_devcheck_flag",
-	.index = 0,
-};
+static size_t dev_index;
+static int dev_detect_probe_flag;
+static DEFINE_MUTEX(devdetect_lock);
+static unsigned long dev_node_create_flag;
+static unsigned long dev_file_create_flag;
 
-static struct dev_flag_device rt_dev_dct = {
-	.name = "rt_devcheck_flag",
-	.index = 0,
-};
-
-/* save the check result */
-static uint64_t dev_flag_long;
-/*
- * save the config message of device,
- * which need to check at board check and running test.
- */
-static uint64_t boardid_devcheck_flag_long;
-
-/* save the config message of device */
-static uint64_t rt_devcheck_flag_long;
-
-int dev_dct_probe_flag;
+/* set the detect result to '1', when devices have been detected successful */
+static char dev_detect_result[DEV_DETECT_NUMS + 1] = DEV_DETECT_DEFAULT;
+/* save the message of dts configs, which need to detect at different station */
+static char dbc_detect_flag[DEV_DETECT_NUMS + 1] = DEV_DETECT_DEFAULT;
+static char rt_detect_flag[DEV_DETECT_NUMS + 1] = DEV_DETECT_DEFAULT;
+static char mmi1_detect_flag[DEV_DETECT_NUMS + 1] = DEV_DETECT_DEFAULT;
+static char mmi2_detect_flag[DEV_DETECT_NUMS + 1] = DEV_DETECT_DEFAULT;
 
 /*
- * function:
- * set the device check flag named dev_flag_long.
- * It is used in the device's probe fundtion, which need to check.
- * input:
- * dev_id: choose the bit in device check table,
- * which define in the hw_dev_check.h.
+ * function: set the device detect flag in dev_detect_result[].
+ * input: dev_id: device flag set place in dev_detect_result[].
  */
 int set_hw_dev_flag(int dev_id)
 {
-	if ((dev_id >= 0) && (dev_id < DEV_I2C_MAX)) {
-		mutex_lock(&devcheck_lock);
-		dev_flag_long = dev_flag_long | ((uint64_t)1 << dev_id);
-		hwlog_info("set the dev_flag successfully in set dev_flag,and dev_id is :%d, dev_flag  is  :%lld !\n", dev_id, dev_flag_long);
-		mutex_unlock(&devcheck_lock);
-	} else {
-		hwlog_err("set the dev_flag fail in set dev_flag,and dev_id  is  :%d,and it is not in I2C array!\n", dev_id);
+	if (dev_id < 0 || dev_id >= (int)DEV_I2C_MAX) {
+		hwlog_err("%s: dev_id = %d is invalid\n", __func__, dev_id);
 		return false;
 	}
+
+	mutex_lock(&devdetect_lock);
+	dev_detect_result[dev_id] = FLAG_SET;
+	mutex_unlock(&devdetect_lock);
+	hwlog_info("%s: set dev_id = %d successful\n", __func__, dev_id);
 	return true;
 }
 EXPORT_SYMBOL(set_hw_dev_flag);
 
-/*
- * function: get the device check's attribute value.
- * input:
- * np: the device node .
- * dev_name: the attribute name.
- * output:
- * type: the dev_name's attribute value.
- * return:
- * return 0 if get the value successfully,or return the error code.
- */
-static int get_hw_dts_devcheck_value(struct device_node *np,
-				const char *dev_name, unsigned int *type)
+static ssize_t dev_detect_result_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
-	int result = of_property_read_u32(np, dev_name, type);
-
-	if (!result)
-		return 0;
-	hwlog_warn("Get the node's %s value fail and reason is %d\n",
-						dev_name, result);
-	return result;
-
+	hwlog_info("%s: detect result is:%s\n", __func__, dev_detect_result);
+	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", dev_detect_result);
 }
 
-/* show the device check result */
-static ssize_t dev_flag_show(struct device *dev,
-			struct device_attribute *attr, char *buf)
+static ssize_t dbc_detect_flag_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("now checking the device, and dev_flag is  :%lld !\n",
-							dev_flag_long);
-	return snprintf((char *)buf, PRINT_CHECK_MAX_LENGTH, "%llu\n",
-							dev_flag_long);
+	hwlog_info("%s: dbc_detect_flag is:%s\n", __func__, dbc_detect_flag);
+	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", dbc_detect_flag);
 }
 
-/*
- * show the config result which set in the dts,
- * when we need to  check at the board check and running test.
- */
-static ssize_t boardid_devcheck_flag_show(struct device *dev,
-			struct device_attribute *attr, char *buf)
+static ssize_t rt_detect_flag_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("now checking the device,and boardid_devcheck_flag_long is  :%lld !\n", boardid_devcheck_flag_long);
-	return snprintf((char *)buf, PRINT_CHECK_MAX_LENGTH, "%llu\n",
-			boardid_devcheck_flag_long);
+	hwlog_info("%s: rt_detect_flag is:%s\n", __func__, rt_detect_flag);
+	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", rt_detect_flag);
 }
 
-/*
- * show the config result which set in the dts,
- * when we need to check at the running test.
- */
-static ssize_t rt_devcheck_flag_show(struct device *dev,
-			struct device_attribute *attr, char *buf)
+static ssize_t mmi1_detect_flag_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("now checking the device,and rt_devcheck_flag_long is :%lld!\n", rt_devcheck_flag_long);
-	return snprintf((char *)buf, PRINT_CHECK_MAX_LENGTH, "%llu\n",
-				rt_devcheck_flag_long);
+	hwlog_info("%s: mmi1_detect_flag is:%s\n", __func__, mmi1_detect_flag);
+	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", mmi1_detect_flag);
 }
 
-static DEVICE_ATTR(dev_flag, S_IRUGO, dev_flag_show, NULL);
-
-static DEVICE_ATTR(boardid_devcheck_flag, S_IRUGO,
-		boardid_devcheck_flag_show, NULL);
-
-static DEVICE_ATTR(rt_devcheck_flag, S_IRUGO, rt_devcheck_flag_show, NULL);
-
-static int dev_dct_probe(struct platform_device *pdev)
+static ssize_t mmi2_detect_flag_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
-	int ret = 0;
-	int i;
-	int result;
-	unsigned int type = 0;
-	struct device *dev;
-	struct device_node *np;
-	struct class *myclass;
+	hwlog_info("%s: mmi2_detect_flag is:%s\n", __func__, mmi2_detect_flag);
+	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", mmi2_detect_flag);
+}
 
-	if (dev_dct_probe_flag) {
-		hwlog_info("dev_dct_probe is done. Can't enter again!\n");
-		return 0;
-	}
+static struct detect_flag_device dev_list[] = {
+	{ .name = "dev_detect_result_flag", .index = 0,
+	.attr = __ATTR(dev_detect_result_flag, 0444,
+			dev_detect_result_show, NULL) },
+	{ .name = "dev_detect_dbc_flag", .index = 0,
+	.attr = __ATTR(dev_detect_dbc_flag, 0444,
+			dbc_detect_flag_show, NULL) },
+	{ .name = "dev_detect_rt_flag", .index = 0,
+	.attr = __ATTR(dev_detect_rt_flag, 0444,
+			rt_detect_flag_show, NULL) },
+	{ .name = "dev_detect_mmi1_flag", .index = 0,
+	.attr = __ATTR(dev_detect_mmi1_flag, 0444,
+			mmi1_detect_flag_show, NULL) },
+	{ .name = "dev_detect_mmi2_flag", .index = 0,
+	.attr = __ATTR(dev_detect_mmi2_flag, 0444,
+			mmi2_detect_flag_show, NULL) },
+};
 
-	hwlog_info("Enter device check function!\n");
+static int create_dev_detect_sysfs(struct class *myclass)
+{
+	int ret;
 
-	dev = &pdev->dev;
-	np = dev->of_node;
-	if (np == NULL) {
-		hwlog_err("Unable to find %s device node\n", DTS_COMP_DEVICE_CHECK_NAME);
-		return -ENOENT;
-	}
+	dev_node_create_flag = 0;
+	dev_file_create_flag = 0;
+	hwlog_info("%s: function begin\n", __func__);
 
-	myclass = class_create(THIS_MODULE, "dev_dct");
-	dev_dct.dev = device_create(myclass, NULL, MKDEV(0, dev_dct.index),
-							NULL, dev_dct.name);
-	ret = device_create_file(dev_dct.dev, &dev_attr_dev_flag);
-	if (ret < 0)
-		hwlog_err("device_create_file fail at  dev_flag\n");
-
-	boardid_dev_dct.dev = device_create(myclass, NULL,
-		MKDEV(0, boardid_dev_dct.index), NULL, boardid_dev_dct.name);
-	ret = device_create_file(boardid_dev_dct.dev,
-		&dev_attr_boardid_devcheck_flag);
-	if (ret < 0)
-		hwlog_err("device_create_file fail at boardid_devcheck_flag\n");
-
-	rt_dev_dct.dev = device_create(myclass, NULL,
-		MKDEV(0, rt_dev_dct.index), NULL, rt_dev_dct.name);
-	ret = device_create_file(rt_dev_dct.dev, &dev_attr_rt_devcheck_flag);
-	if (ret < 0)
-		hwlog_err("device_create_file fail at  rt_devcheck_flag\n");
-
-	for (i = 0; i < ARRAY_SIZE(hw_dec_device_array); i++) {
-		if (!strncmp(hw_dec_device_array[i].devices_name,
-			"NULL", strlen("NULL") + 1))
-			continue;
-		result = get_hw_dts_devcheck_value(np,
-			hw_dec_device_array[i].devices_name, &type);
-		if (!result) {
-			if (type == NO_CHECK) {
-				continue;
-			} else if (type == BC_CHECK) {
-				boardid_devcheck_flag_long = boardid_devcheck_flag_long | (1ULL << hw_dec_device_array[i].devices_id);
-				if (hw_dec_device_array[i].devices_id >= DEV_I2C_START && hw_dec_device_array[i].devices_id < DEV_I2C_MAX)
-					rt_devcheck_flag_long = rt_devcheck_flag_long | (1ULL << hw_dec_device_array[i].devices_id);
-			} else if (type == RUNNING_TEST_CHECK) {
-				if (hw_dec_device_array[i].devices_id >= DEV_I2C_START && hw_dec_device_array[i].devices_id < DEV_I2C_MAX)
-					rt_devcheck_flag_long = rt_devcheck_flag_long | (1ULL << hw_dec_device_array[i].devices_id);
-			} else {
-				 hwlog_warn("device check type:%d is not support!", type);
-			}
+	for (dev_index = 0; dev_index < ARRAY_SIZE(dev_list); dev_index++) {
+		dev_list[dev_index].dev = device_create(myclass, NULL,
+			MKDEV(0, dev_list[dev_index].index),
+			NULL, dev_list[dev_index].name);
+		if (dev_list[dev_index].dev == NULL) {
+			hwlog_err("%s: failed to create %s device\n",
+				__func__, dev_list[dev_index].name);
+			return -1;
 		}
+		(void)test_and_set_bit(dev_index, &dev_node_create_flag);
+
+		ret = device_create_file(dev_list[dev_index].dev,
+					&dev_list[dev_index].attr);
+		if (ret < 0) {
+			hwlog_err("%s: failed to create %s file\n",
+				__func__, dev_list[dev_index].name);
+			return -1;
+		}
+		(void)test_and_set_bit(dev_index, &dev_file_create_flag);
 	}
 
-	dev_dct_probe_flag = 1;
-	hwlog_info("device check function end!\n");
-
+	hwlog_info("%s: dev_index:%zu, node_flag:%zu, file_flag:%zu", __func__,
+		dev_index, dev_node_create_flag, dev_file_create_flag);
 	return 0;
 }
 
-static const struct of_device_id device_check_match_table[] = {
+static void remove_dev_detect_sysfs(struct class *myclass)
+{
+	size_t j;
+
+	for (j = 0; j < dev_index; j++) {
+		if (test_and_clear_bit(j, &dev_file_create_flag))
+			device_remove_file(dev_list[j].dev, &dev_list[j].attr);
+
+		if (test_and_clear_bit(j, &dev_node_create_flag))
+			device_destroy(myclass, dev_list[j].dev->devt);
+	}
+
+	dev_index = 0;
+	dev_node_create_flag = 0;
+	dev_file_create_flag = 0;
+	class_destroy(myclass);
+	hwlog_info("%s: remove dev detect sysfs end\n", __func__);
+}
+
+static void get_dev_detect_dts_config(struct device_node *np)
+{
+	size_t i;
+	int result;
+	unsigned int type;
+
+	hwlog_info("%s: function begin\n", __func__);
+	for (i = 0; i < ARRAY_SIZE(dev_detect_table); i++) {
+		result = of_property_read_u32(np,
+			dev_detect_table[i].device_name, &type);
+		if (!result) {
+			dbc_detect_flag[i] =
+				((type != NO_DETECT) && (type & DBC_DETECT))
+				? FLAG_SET : FLAG_NOT_SET;
+			rt_detect_flag[i] =
+				((type != NO_DETECT) && (type & RT_DETECT))
+				? FLAG_SET : FLAG_NOT_SET;
+			mmi1_detect_flag[i] =
+				((type != NO_DETECT) && (type & MMI1_DETECT))
+				? FLAG_SET : FLAG_NOT_SET;
+			mmi2_detect_flag[i] =
+				((type != NO_DETECT) && (type & MMI2_DETECT))
+				? FLAG_SET : FLAG_NOT_SET;
+		} else {
+			dbc_detect_flag[i] = FLAG_NOT_SET;
+			rt_detect_flag[i] = FLAG_NOT_SET;
+			mmi1_detect_flag[i] = FLAG_NOT_SET;
+			mmi2_detect_flag[i] = FLAG_NOT_SET;
+			hwlog_err("get devid:%zu device name:%s value fail\n",
+				i, dev_detect_table[i].device_name);
+		}
+	}
+
+	hwlog_info("%s: function end\n", __func__);
+}
+
+static int dev_detect_probe(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct device_node *np = NULL;
+	struct class *myclass = NULL;
+
+	if (dev_detect_probe_flag) {
+		hwlog_err("%s: dev_detect_probe is done\n", __func__);
+		return 0;
+	}
+
+	hwlog_info("%s: function begin\n", __func__);
+	if (!pdev) {
+		hwlog_err("%s: none device\n", __func__);
+		return -ENODEV;
+	}
+
+	np = pdev->dev.of_node;
+	if (!np) {
+		hwlog_err("%s: unable to find device node\n", __func__);
+		return -ENODEV;
+	}
+
+	myclass = class_create(THIS_MODULE, "dev_detect");
+	if (IS_ERR(myclass)) {
+		hwlog_err("%s: failed to create dev_detect class\n", __func__);
+		return -1;
+	}
+
+	if (create_dev_detect_sysfs(myclass) < 0) {
+		hwlog_err("%s: create dev detect sysfs failed\n", __func__);
+		ret = -1;
+		goto free_dev_and_file;
+	}
+
+	get_dev_detect_dts_config(np);
+
+	dev_detect_probe_flag = DEV_DETECT_PROBE_SUCCESS;
+	hwlog_info("%s: function end!\n", __func__);
+	return 0;
+
+free_dev_and_file:
+	remove_dev_detect_sysfs(myclass);
+	return ret;
+}
+
+static const struct of_device_id device_detect_match_table[] = {
 	{
-		.compatible = DTS_COMP_DEVICE_CHECK_NAME,
+		.compatible = DEV_DETECT_NAME,
 		.data = NULL,
 	},
 	{
 	},
 };
-MODULE_DEVICE_TABLE(of, device_check_match_table);
+MODULE_DEVICE_TABLE(of, device_detect_match_table);
 
-static struct platform_driver dev_dct_driver = {
+static struct platform_driver dev_detect_driver = {
 	.driver = {
-	.name   = DTS_COMP_DEVICE_CHECK_NAME,
-	.of_match_table = of_match_ptr(device_check_match_table),
+		.name = DEV_DETECT_NAME,
+		.of_match_table = of_match_ptr(device_detect_match_table),
 	},
-	.probe  = dev_dct_probe,
+	.probe  = dev_detect_probe,
 	.remove = NULL,
 };
 
-static int __init hw_dev_dct_init(void)
+static int __init hw_dev_detect_init(void)
 {
-	return platform_driver_register(&dev_dct_driver);
+	return platform_driver_register(&dev_detect_driver);
 }
 
-static void __exit hw_dev_dct_exit(void)
+static void __exit hw_dev_detect_exit(void)
 {
-	platform_driver_unregister(&dev_dct_driver);
+	platform_driver_unregister(&dev_detect_driver);
 }
 
 /* priority is 7s */
-late_initcall_sync(hw_dev_dct_init);
+late_initcall_sync(hw_dev_detect_init);
+module_exit(hw_dev_detect_exit);
 
-module_exit(hw_dev_dct_exit);
-
-MODULE_AUTHOR("sjm");
-MODULE_DESCRIPTION("Device Detect Driver");
-MODULE_LICENSE("GPL");
-MODULE_ALIAS("platform:dev_dct");
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("device detect driver");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
+MODULE_ALIAS("platform:dev_detect");

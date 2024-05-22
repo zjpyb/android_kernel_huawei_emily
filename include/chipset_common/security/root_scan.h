@@ -69,4 +69,18 @@ static inline int root_scan_resume(unsigned int op_mask, void *reserved)
 }
 #endif
 
+/*
+ * tee_rootscan_run - for native kernel to init and start root scan
+ */
+
+#ifdef CONFIG_HW_ROOT_SCAN_RODATA_MEASUREMENT_API
+extern void tee_rootscan_run(void);
+#else
+static inline void tee_rootscan_run(void)
+{
+	return;
+}
+
+#endif
+
 #endif

@@ -12,6 +12,7 @@
 #include <linux/syscalls.h>
 #include <linux/slab.h>
 #include <linux/of.h>
+#include <securec.h>
 
 #include <linux/hisi/hisi_bootup_keypoint.h>
 #include <linux/hisi/rdr_pub.h>
@@ -25,11 +26,10 @@
 #include <hisi_partition.h>
 #include "rdr_print.h"
 #include "rdr_inner.h"
-#include <libhwsecurec/securec.h>
 
 int dfx_open(void)
 {
-	void *buf;
+	void *buf = NULL;
 	char p_name[BDEVNAME_SIZE + 12];
 	int ret, fd_dfx;
 
@@ -37,24 +37,23 @@ int dfx_open(void)
 
 	buf = kzalloc(SZ_4K, GFP_KERNEL);
 	if (!buf) {
-		BB_PRINT_ERR("%s():%d:kzalloc buf1 fail\n", __func__, __LINE__);
+		BB_PRINT_ERR("[%s:%d] kzalloc buf1 fail\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
-	ret = flash_find_ptn(PART_DFX, buf);
+	ret = flash_find_ptn_s(PART_DFX, buf, SZ_4K);
 	if (0 != ret) {
-		BB_PRINT_ERR("%s():%d:flash_find_ptn fail\n", __func__, __LINE__);
+		BB_PRINT_ERR("[%s:%d] flash_find_ptn_s fail\n", __func__, __LINE__);
 		kfree(buf);
 		return ret;
 	}
 
 	if (EOK != memset_s(p_name, sizeof(p_name), 0, sizeof(p_name))) {
-		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		BB_PRINT_ERR("[%s:%d] memset_s err\n", __func__, __LINE__);
 	}
 
-	if (EOK != strncpy_s(p_name, sizeof(p_name), buf, sizeof(p_name))) {
-		BB_PRINT_ERR("%s():%d:strncpy_s fail!\n", __func__, __LINE__);
+	if (EOK != strncpy_s(p_name, (sizeof(p_name) - 1), buf, (sizeof(p_name) - 1))) {
+		BB_PRINT_ERR("[%s:%d] strncpy_s err\n", __func__, __LINE__);
 	}
-
 	p_name[BDEVNAME_SIZE + 11] = '\0';
 	kfree(buf);
 

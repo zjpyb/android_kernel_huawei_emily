@@ -37,7 +37,7 @@ static void handle_message(struct hhee_msg *msg)
 		return;
 	}
 
-	pr_debug("process msg, seq=%llu, id=%u, len=%u\n",
+	pr_info("process msg, seq=%llu, id=%u, len=%u\n",
 		msg->seq, id, len);
 
 	msg_callbacks[id](len, (void *)msg->payload);
@@ -47,6 +47,7 @@ static void hhee_msg_handle(unsigned int start, unsigned int end)
 {
 	struct hhee_msg *msg = NULL;
 
+	pr_err("hhee irq handler.\n");
 	while (start != end) {
 		msg = (struct hhee_msg *)(uintptr_t)((uintptr_t)msg_state +
 			HHEE_MSG_SIZE * ((uintptr_t)start + 1));
@@ -57,6 +58,8 @@ static void hhee_msg_handle(unsigned int start, unsigned int end)
 	}
 }
 
+#define MAX_IRQ_COUNT    0x3
+static int g_irq_counters;
 irqreturn_t hhee_irq_handle(int irq, void *data)
 {
 	unsigned int start, end;
@@ -72,10 +75,19 @@ irqreturn_t hhee_irq_handle(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
+	if (g_irq_counters >= MAX_IRQ_COUNT)
+		return IRQ_HANDLED;
+
 	hhee_msg_handle(start, end);
 	msg_state->read_pos = end;
+	g_irq_counters += 1;
 
 	return IRQ_HANDLED;
+}
+
+void reset_hkip_irq_counters(void)
+{
+	g_irq_counters = 0;
 }
 
 int hhee_msg_init(void)
@@ -83,7 +95,7 @@ int hhee_msg_init(void)
 	struct arm_smccc_res ret_res;
 	uintptr_t buf_base;
 	uint64_t buf_size;
-	void *addr;
+	void *addr = NULL;
 
 	int ret;
 

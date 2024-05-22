@@ -84,10 +84,14 @@ const RNIC_RCV_TI_EXPRIED_PROC_STRU g_astRnicTiExpriedProcTab[]=
     {TI_RNIC_DSFLOW_STATS_0,                RNIC_RcvTiDsflowStatsExpired},
     {TI_RNIC_DSFLOW_STATS_1,                RNIC_RcvTiDsflowStatsExpired},
     {TI_RNIC_DSFLOW_STATS_2,                RNIC_RcvTiDsflowStatsExpired},
+#if (MULTI_MODEM_NUMBER >= 2)
     {TI_RNIC_DSFLOW_STATS_3,                RNIC_RcvTiDsflowStatsExpired},
     {TI_RNIC_DSFLOW_STATS_4,                RNIC_RcvTiDsflowStatsExpired},
+#if  (MULTI_MODEM_NUMBER == 3)
     {TI_RNIC_DSFLOW_STATS_5,                RNIC_RcvTiDsflowStatsExpired},
     {TI_RNIC_DSFLOW_STATS_6,                RNIC_RcvTiDsflowStatsExpired},
+#endif /* #if (MULTI_MODEM_NUMBER == 3) */
+#endif
     {TI_RNIC_DEMAND_DIAL_DISCONNECT,        RNIC_RcvTiDemandDialDisconnectExpired},
     {TI_RNIC_DEMAND_DIAL_PROTECT,           RNIC_RcvTiDemandDialProtectExpired}
  };
@@ -211,6 +215,7 @@ RNIC_TIMER_ID_ENUM_UINT16 RNIC_GetDsflowTimerIdByNetId(VOS_UINT8 ucRmNetId)
             enTimerId = TI_RNIC_DSFLOW_STATS_2;
             break;
 
+#if (MULTI_MODEM_NUMBER >= 2)
         case RNIC_RMNET_ID_3 :
             enTimerId = TI_RNIC_DSFLOW_STATS_3;
             break;
@@ -218,6 +223,7 @@ RNIC_TIMER_ID_ENUM_UINT16 RNIC_GetDsflowTimerIdByNetId(VOS_UINT8 ucRmNetId)
         case RNIC_RMNET_ID_4 :
             enTimerId = TI_RNIC_DSFLOW_STATS_4;
             break;
+#if (MULTI_MODEM_NUMBER == 3)
         case RNIC_RMNET_ID_5 :
             enTimerId = TI_RNIC_DSFLOW_STATS_5;
             break;
@@ -225,6 +231,8 @@ RNIC_TIMER_ID_ENUM_UINT16 RNIC_GetDsflowTimerIdByNetId(VOS_UINT8 ucRmNetId)
         case RNIC_RMNET_ID_6 :
             enTimerId = TI_RNIC_DSFLOW_STATS_6;
             break;
+#endif
+#endif
 
         default :
             enTimerId = TI_RNIC_TIMER_BUTT;
@@ -253,6 +261,7 @@ VOS_UINT8 RNIC_GetNetIdByTimerId(VOS_UINT32 ulMsgId)
             ucRmNedId = RNIC_RMNET_ID_2;
             break;
 
+#if (MULTI_MODEM_NUMBER >= 2)
         case TI_RNIC_DSFLOW_STATS_3 :
             ucRmNedId = RNIC_RMNET_ID_3;
             break;
@@ -260,6 +269,7 @@ VOS_UINT8 RNIC_GetNetIdByTimerId(VOS_UINT32 ulMsgId)
         case TI_RNIC_DSFLOW_STATS_4 :
             ucRmNedId = RNIC_RMNET_ID_4;
             break;
+#if  (MULTI_MODEM_NUMBER == 3)
         case TI_RNIC_DSFLOW_STATS_5 :
             ucRmNedId = RNIC_RMNET_ID_5;
             break;
@@ -267,6 +277,8 @@ VOS_UINT8 RNIC_GetNetIdByTimerId(VOS_UINT32 ulMsgId)
         case TI_RNIC_DSFLOW_STATS_6 :
             ucRmNedId = RNIC_RMNET_ID_6;
             break;
+#endif /* #if (MULTI_MODEM_NUMBER == 3) */
+#endif
 
         case TI_RNIC_DEMAND_DIAL_DISCONNECT :
         case TI_RNIC_DEMAND_DIAL_PROTECT :
@@ -293,6 +305,7 @@ VOS_UINT32 RNIC_BuildRabIdByModemId(
         /* Modem0的RABID的高两位用00表示 */
         *pucRabId = ucRabId;
     }
+#if (MULTI_MODEM_NUMBER >= 2)
     else if (MODEM_ID_1 == enModemId)
     {
         /* Modem1的RABID的高两位用01表示 */
@@ -303,6 +316,7 @@ VOS_UINT32 RNIC_BuildRabIdByModemId(
         /* Modem2的RABID的高两位用10表示 */
         *pucRabId = ucRabId | RNIC_RABID_TAKE_MODEM_2_MASK;
     }
+#endif
     else
     {
         /* 既不是Modem0也不是Modem1的，返回失败 */
@@ -312,6 +326,7 @@ VOS_UINT32 RNIC_BuildRabIdByModemId(
     return VOS_OK;
 }
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
 
 VOS_VOID RNIC_RegNapiSchedualCallback(
     VOS_UINT8                           ucRabId,
@@ -327,6 +342,7 @@ VOS_VOID RNIC_RegNapiSchedualCallback(
 
     return;
 }
+#endif
 
 
 VOS_UINT32 RNIC_RcvAtIpv4PdpActInd(
@@ -382,8 +398,10 @@ VOS_UINT32 RNIC_RcvAtIpv4PdpActInd(
     ADS_DL_RegDlDataCallback(ucRabid, RNIC_RcvAdsDlData, ucRmNetId);
 
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /* RNIC网卡Napi schedule回调函数注册 */
     RNIC_RegNapiSchedualCallback(ucRabid, ucRmNetId);
+#endif
 
     return VOS_OK;
 }
@@ -440,10 +458,12 @@ VOS_UINT32 RNIC_RcvAtIpv6PdpActInd(
 
 
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /* RNIC网卡Napi schedule回调函数注册 */
     RNIC_RegNapiSchedualCallback(ucRabid, ucRmNetId);
 
     RNIC_UpdateIpv6RmnetNapiRcvIfDefault(ucRmNetId);
+#endif
 
     return VOS_OK;
 
@@ -501,8 +521,10 @@ VOS_UINT32 RNIC_RcvAtIpv4v6PdpActInd(
     ADS_DL_RegDlDataCallback(ucRabid, RNIC_RcvAdsDlData, ucRmNetId);
 
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /* RNIC网卡Napi schedule回调函数注册 */
     RNIC_RegNapiSchedualCallback(ucRabid, ucRmNetId);
+#endif
 
     return VOS_OK;
 
@@ -551,7 +573,9 @@ VOS_UINT32 RNIC_RcvAtPdpDeactInd(
     {
         /* 清空IPV6 PDP上下文信息 */
         RNIC_InitIpv6PdpCtx(&pstPdpCtxAddr->stIpv6PdpInfo);
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
         RNIC_UpdateIpv6RmnetNapiRcvIfDefault(ucRmNetId);
+#endif
     }
 
     if ((pstPdpCtxAddr->stIpv4v6PdpInfo.ucRabId == pstRcvInd->ucRabId)
@@ -753,8 +777,10 @@ VOS_UINT32 RNIC_RcvAtPdnInfoCfgInd(
     /* 注册下行过滤回调函数，ADS调用注册的函数发送下行数据 */
     ADS_DL_RegFilterDataCallback(ucRabid, &stFilterIpAddr, (RCV_DL_DATA_FUNC)RNIC_RcvAdsDlData);
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /* RNIC网卡Napi schedule回调函数注册 */
     RNIC_RegNapiSchedualCallback(ucRabid, ucRmNetId);
+#endif
 
     return VOS_OK;
 }
@@ -824,6 +850,7 @@ VOS_UINT32 RNIC_RcvAtUsbTetherInfoInd(
     MsgBlock                           *pstMsg
 )
 {
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     AT_RNIC_USB_TETHER_INFO_IND_STRU   *pstRnicUsbTetherInd;
     VOS_UINT32                          ulIndex;
     VOS_UINT32                          ulRet;
@@ -858,6 +885,7 @@ VOS_UINT32 RNIC_RcvAtUsbTetherInfoInd(
     {
         RNIC_InitUsbTetherInfo();
     }
+#endif
 
     return VOS_OK;
 }
@@ -1072,6 +1100,7 @@ VOS_UINT32 RNIC_RcvCcpuResetStartInd(
     return VOS_OK;
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_UINT32 RNIC_ProcImsaPdnActInd_Wifi(
     IMSA_RNIC_PDN_INFO_CONFIG_STRU     *pstPdnInfo
@@ -1169,8 +1198,10 @@ VOS_UINT32 RNIC_ProcImsaPdnActInd_Lte(
     ucExRabId = RNIC_BUILD_EXRABID(pstPdnInfo->enModemId, pstPdnInfo->ucRabId);
     ADS_DL_RegDlDataCallback(ucExRabId, RNIC_RcvAdsDlData, ucRmNetId);
 
+#if (FEATURE_ON == FEATURE_RNIC_NAPI_GRO)
     /* RNIC网卡Napi schedule回调函数注册 */
     RNIC_RegNapiSchedualCallback(ucExRabId, ucRmNetId);
+#endif
 
     return VOS_OK;
 }
@@ -1492,11 +1523,13 @@ VOS_UINT8 RNIC_GetImsEmcBearRmnetId(
         return RNIC_RMNET_ID_R_IMS01;
     }
 
+#if (FEATURE_ON == FEATURE_MULTI_MODEM)
     if ((IMSA_RNIC_IMS_RAT_TYPE_WIFI == enRatType)
      && (MODEM_ID_1 == enModemId))
     {
         return RNIC_RMNET_ID_R_IMS11;
     }
+#endif
 
     return RNIC_RMNET_ID_BUTT;
 }
@@ -1520,6 +1553,7 @@ VOS_UINT8 RNIC_GetImsNormalBearRmnetId(
         return RNIC_RMNET_ID_R_IMS00;
     }
 
+#if (MULTI_MODEM_NUMBER >= 2)
     if ((MODEM_ID_1 == enModemId)
      && (IMSA_RNIC_IMS_RAT_TYPE_LTE == enRatType))
     {
@@ -1531,10 +1565,12 @@ VOS_UINT8 RNIC_GetImsNormalBearRmnetId(
     {
         return RNIC_RMNET_ID_R_IMS10;
     }
+#endif
 
     return RNIC_RMNET_ID_BUTT;
 }
 
+#endif
 
 
 
@@ -1627,6 +1663,7 @@ VOS_UINT32 RNIC_RcvTimerMsg(MsgBlock *pstMsg)
 
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_VOID RNIC_ProcImsData(MsgBlock *pMsg)
 {
@@ -1651,6 +1688,7 @@ VOS_VOID RNIC_ProcImsData(MsgBlock *pMsg)
 
     return;
 }
+#endif
 
 
 VOS_UINT32 RNIC_RcvRnicMsg(MsgBlock *pstMsg)
@@ -1672,9 +1710,11 @@ VOS_UINT32 RNIC_RcvRnicMsg(MsgBlock *pstMsg)
             RNIC_NORMAL_LOG(ACPU_PID_RNIC, "RNIC_RcvRnicMsg: rcv ID_CCPU_RNIC_RESET_END_IND");
             break;
 
+#if (FEATURE_ON == FEATURE_IMS)
         case ID_RNIC_IMS_DATA_PROC_IND:
             RNIC_ProcImsData(pstMsg);
             break;
+#endif
 
         default:
             RNIC_NORMAL_LOG1(ACPU_PID_RNIC, "RNIC_RcvRnicMsg: rcv error msg id %d\r\n", pstMsgHeader->ulMsgName);
@@ -1684,6 +1724,7 @@ VOS_UINT32 RNIC_RcvRnicMsg(MsgBlock *pstMsg)
     return VOS_OK;
 }
 
+#if (FEATURE_ON == FEATURE_IMS)
 
 VOS_UINT32 RNIC_RcvImsaMsg(MsgBlock *pstMsg)
 {
@@ -1811,6 +1852,7 @@ VOS_UINT32 RNIC_RcvCdsMsg(MsgBlock *pstMsg)
 
     return VOS_OK;
 }
+#endif
 
 
 VOS_VOID RNIC_ProcMsg (MsgBlock *pstMsg)
@@ -1842,6 +1884,7 @@ VOS_VOID RNIC_ProcMsg (MsgBlock *pstMsg)
             RNIC_RcvRnicMsg(pstMsg);
             break;
 
+#if (FEATURE_ON == FEATURE_IMS)
         case I0_PS_PID_IMSA:
         case I1_PS_PID_IMSA:
 
@@ -1854,6 +1897,7 @@ VOS_VOID RNIC_ProcMsg (MsgBlock *pstMsg)
             /* 接收CDS的消息*/
             RNIC_RcvCdsMsg(pstMsg);
             break;
+#endif
 
         default:
             RNIC_INFO_LOG1(ACPU_PID_RNIC, "RNIC_ProcMsg:SendPid", pstMsg->ulSenderPid);

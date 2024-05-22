@@ -17,7 +17,8 @@
 #ifndef _LINUX_FTS_I2C_H_
 #define _LINUX_FTS_I2C_H_
 
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include "fts_lib/ftsSoftware.h"
 #include "fts_lib/ftsHardware.h"
 #include "../../huawei_ts_kit.h"
@@ -171,6 +172,12 @@ extern char tag[8];
 #define FTS_BARCODE_SIZE 39
 #define LOCKDOWN_2D_BAR_INFO_HEAD_LEN 2
 #define NOT_HANDLE_EVENT 0xEFFE
+#define FTS_LOCK_ID 0x70
+#define FTS_LOCK_ID_MAX 0x77
+#define FTS_FOUND_ID_SIZE 50
+#define FTS_CRC_HEAD_SIZE 3
+#define FTS_TEMP_DATA_SIZE 100
+#define FTS_DATA_LEN_SIZE 2
 
 /*
  * Dispatch event handler
@@ -224,8 +231,7 @@ struct fts_ts_info {
 	int avdd_value;
 	int iovdd_value;
 	int st_raw_limit_buf[RAWDATA_LIMIT_NUM];
-	char *fake_project_id;
-	int check_MutualRawGap_after_callibrate;
+	int check_mutual_raw;
 	const struct firmware *fw ;
 	struct mutex wrong_touch_lock;
 };
@@ -237,6 +243,6 @@ int st_get_rawdata_aftertest(struct ts_rawdata_info *info,u8 signature);
 
 extern struct fts_ts_info* fts_get_info(void);
 extern int fts_mode_handler(struct fts_ts_info *info, int force);
-//extern int fts_proc_init(void);
-//extern int fts_proc_remove(void);
+int fts_proc_init(void);
+int fts_proc_remove(void);
 #endif

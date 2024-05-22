@@ -3,7 +3,7 @@
  *
  * bq2429x driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -102,160 +102,160 @@ static const int bq2429x_watchdog_values[] = {
 };
 
 /*************************marco define area***************************/
-#define BQ2429X_REG_NUM                              (11)
+#define BQ2429X_REG_NUM                              11
 
 /* Input Source Control */
 #define BQ2429X_REG_ISC                              0x00
 
-#define BQ2429X_REG_ISC_EN_HIZ_MASK                  (BIT(7))
-#define BQ2429X_REG_ISC_EN_HIZ_SHIFT                 (7)
+#define BQ2429X_REG_ISC_EN_HIZ_MASK                  BIT(7)
+#define BQ2429X_REG_ISC_EN_HIZ_SHIFT                 7
 #define BQ2429X_REG_ISC_VINDPM_MASK                  (BIT(6) | BIT(5) | \
 	BIT(4) | BIT(3))
-#define BQ2429X_REG_ISC_VINDPM_SHIFT                 (3)
+#define BQ2429X_REG_ISC_VINDPM_SHIFT                 3
 #define BQ2429X_REG_ISC_IINLIM_MASK                  (BIT(2) | BIT(1) | BIT(0))
-#define BQ2429X_REG_ISC_IINLIM_SHIFT                 (0)
+#define BQ2429X_REG_ISC_IINLIM_SHIFT                 0
 
 /* Power-On Configuration */
 #define BQ2429X_REG_POC                              0x01
 
-#define BQ2429X_REG_POC_RESET_MASK                   (BIT(7))
-#define BQ2429X_REG_POC_RESET_SHIFT                  (7)
-#define BQ2429X_REG_POC_WDT_RESET_MASK               (BIT(6))
-#define BQ2429X_REG_POC_WDT_RESET_SHIFT              (6)
+#define BQ2429X_REG_POC_RESET_MASK                   BIT(7)
+#define BQ2429X_REG_POC_RESET_SHIFT                  7
+#define BQ2429X_REG_POC_WDT_RESET_MASK               BIT(6)
+#define BQ2429X_REG_POC_WDT_RESET_SHIFT              6
 #define BQ2429X_REG_POC_CHG_CONFIG_MASK              (BIT(5) | BIT(4))
-#define BQ2429X_REG_POC_CHG_CONFIG_SHIFT             (4)
+#define BQ2429X_REG_POC_CHG_CONFIG_SHIFT             4
 #define BQ2429X_REG_POC_SYS_MIN_MASK                 (BIT(3) | BIT(2) | BIT(1))
-#define BQ2429X_REG_POC_SYS_MIN_SHIFT                (1)
-#define BQ2429X_REG_POC_BOOST_LIM_MASK               (BIT(0))
-#define BQ2429X_REG_POC_BOOST_LIM_SHIFT              (0)
+#define BQ2429X_REG_POC_SYS_MIN_SHIFT                1
+#define BQ2429X_REG_POC_BOOST_LIM_MASK               BIT(0)
+#define BQ2429X_REG_POC_BOOST_LIM_SHIFT              0
 
 /* Charge Current Control */
 #define BQ2429X_REG_CCC                              0x02
 
 #define BQ2429X_REG_CCC_ICHG_MASK                    (BIT(7) | BIT(6) | \
 	BIT(5) | BIT(4) | BIT(3) | BIT(2))
-#define BQ2429X_REG_CCC_ICHG_SHIFT                   (2)
-#define BQ2429X_REG_CCC_BCOLD_MASK                   (BIT(1))
-#define BQ2429X_REG_CCC_BCOLD_SHIFT                  (1)
-#define BQ2429X_REG_CCC_FORCE_20PCT_MASK             (BIT(0))
-#define BQ2429X_REG_CCC_FORCE_20PCT_SHIFT            (0)
+#define BQ2429X_REG_CCC_ICHG_SHIFT                   2
+#define BQ2429X_REG_CCC_BCOLD_MASK                   BIT(1)
+#define BQ2429X_REG_CCC_BCOLD_SHIFT                  1
+#define BQ2429X_REG_CCC_FORCE_20PCT_MASK             BIT(0)
+#define BQ2429X_REG_CCC_FORCE_20PCT_SHIFT            0
 
 /* Pre-charge/Termination Current Cntl */
 #define BQ2429X_REG_PCTCC                            0x03
 
 #define BQ2429X_REG_PCTCC_IPRECHG_MASK               (BIT(7) | BIT(6) | \
 	BIT(5) | BIT(4))
-#define BQ2429X_REG_PCTCC_IPRECHG_SHIFT              (4)
+#define BQ2429X_REG_PCTCC_IPRECHG_SHIFT              4
 #define BQ2429X_REG_PCTCC_ITERM_MASK                 (BIT(3) | BIT(2) | \
 	BIT(1) | BIT(0))
-#define BQ2429X_REG_PCTCC_ITERM_SHIFT                (0)
+#define BQ2429X_REG_PCTCC_ITERM_SHIFT                0
 
 /* Charge Voltage Control */
 #define BQ2429X_REG_CVC                              0x04
 
 #define BQ2429X_REG_CVC_VREG_MASK                    (BIT(7) | BIT(6) | \
 	BIT(5) | BIT(4) | BIT(3) | BIT(2))
-#define BQ2429X_REG_CVC_VREG_SHIFT                   (2)
-#define BQ2429X_REG_CVC_BATLOWV_MASK                 (BIT(1))
-#define BQ2429X_REG_CVC_BATLOWV_SHIFT                (1)
-#define BQ2429X_REG_CVC_VRECHG_MASK                  (BIT(0))
-#define BQ2429X_REG_CVC_VRECHG_SHIFT                 (0)
+#define BQ2429X_REG_CVC_VREG_SHIFT                   2
+#define BQ2429X_REG_CVC_BATLOWV_MASK                 BIT(1)
+#define BQ2429X_REG_CVC_BATLOWV_SHIFT                1
+#define BQ2429X_REG_CVC_VRECHG_MASK                  BIT(0)
+#define BQ2429X_REG_CVC_VRECHG_SHIFT                 0
 
 /* Charge Term/Timer Control */
 #define BQ2429X_REG_CTTC                             0x05
 
-#define BQ2429X_REG_CTTC_EN_TERM_MASK                (BIT(7))
-#define BQ2429X_REG_CTTC_EN_TERM_SHIFT               (7)
-#define BQ2429X_REG_CTTC_TERM_STAT_MASK              (BIT(6))
-#define BQ2429X_REG_CTTC_TERM_STAT_SHIFT             (6)
+#define BQ2429X_REG_CTTC_EN_TERM_MASK                BIT(7)
+#define BQ2429X_REG_CTTC_EN_TERM_SHIFT               7
+#define BQ2429X_REG_CTTC_TERM_STAT_MASK              BIT(6)
+#define BQ2429X_REG_CTTC_TERM_STAT_SHIFT             6
 #define BQ2429X_REG_CTTC_WATCHDOG_MASK               (BIT(5) | BIT(4))
-#define BQ2429X_REG_CTTC_WATCHDOG_SHIFT              (4)
-#define BQ2429X_REG_CTTC_EN_TIMER_MASK               (BIT(3))
-#define BQ2429X_REG_CTTC_EN_TIMER_SHIFT              (3)
+#define BQ2429X_REG_CTTC_WATCHDOG_SHIFT              4
+#define BQ2429X_REG_CTTC_EN_TIMER_MASK               BIT(3)
+#define BQ2429X_REG_CTTC_EN_TIMER_SHIFT              3
 #define BQ2429X_REG_CTTC_CHG_TIMER_MASK              (BIT(2) | BIT(1))
-#define BQ2429X_REG_CTTC_CHG_TIMER_SHIFT             (1)
-#define BQ2429X_REG_CTTC_JEITA_ISET_MASK             (BIT(0))
-#define BQ2429X_REG_CTTC_JEITA_ISET_SHIFT            (0)
+#define BQ2429X_REG_CTTC_CHG_TIMER_SHIFT             1
+#define BQ2429X_REG_CTTC_JEITA_ISET_MASK             BIT(0)
+#define BQ2429X_REG_CTTC_JEITA_ISET_SHIFT            0
 
 /* Boost Voltage/Thermal Regulation Control */
 #define BQ2429X_REG_BVTRC                            0x06
 
 #define BQ2429X_REG_BVTRC_BOOSTV_MASK                (BIT(7) | BIT(6) | \
 	BIT(5) | BIT(4))
-#define BQ2429X_REG_BVTRC_BOOSTV_SHIFT               (4)
+#define BQ2429X_REG_BVTRC_BOOSTV_SHIFT               4
 #define BQ2429X_REG_BVTRC_BHOT_MASK                  (BIT(3) | BIT(2))
-#define BQ2429X_REG_BVTRC_BHOT_SHIFT                 (2)
+#define BQ2429X_REG_BVTRC_BHOT_SHIFT                 2
 #define BQ2429X_REG_BVTRC_TREG_MASK                  (BIT(1) | BIT(0))
-#define BQ2429X_REG_BVTRC_TREG_SHIFT                 (0)
+#define BQ2429X_REG_BVTRC_TREG_SHIFT                 0
 
 /* Misc. Operation Control */
 #define BQ2429X_REG_MOC                              0x07
 
-#define BQ2429X_REG_MOC_DPDM_EN_MASK                 (BIT(7))
-#define BQ2429X_REG_MOC_DPDM_EN_SHIFT                (7)
-#define BQ2429X_REG_MOC_TMR2X_EN_MASK                (BIT(6))
-#define BQ2429X_REG_MOC_TMR2X_EN_SHIFT               (6)
-#define BQ2429X_REG_MOC_BATFET_DISABLE_MASK          (BIT(5))
-#define BQ2429X_REG_MOC_BATFET_DISABLE_SHIFT         (5)
-#define BQ2429X_REG_MOC_JEITA_VSET_MASK              (BIT(4))
-#define BQ2429X_REG_MOC_JEITA_VSET_SHIFT             (4)
+#define BQ2429X_REG_MOC_DPDM_EN_MASK                 BIT(7)
+#define BQ2429X_REG_MOC_DPDM_EN_SHIFT                7
+#define BQ2429X_REG_MOC_TMR2X_EN_MASK                BIT(6)
+#define BQ2429X_REG_MOC_TMR2X_EN_SHIFT               6
+#define BQ2429X_REG_MOC_BATFET_DISABLE_MASK          BIT(5)
+#define BQ2429X_REG_MOC_BATFET_DISABLE_SHIFT         5
+#define BQ2429X_REG_MOC_JEITA_VSET_MASK              BIT(4)
+#define BQ2429X_REG_MOC_JEITA_VSET_SHIFT             4
 #define BQ2429X_REG_MOC_INT_MASK_MASK                (BIT(1) | BIT(0))
-#define BQ2429X_REG_MOC_INT_MASK_SHIFT               (0)
+#define BQ2429X_REG_MOC_INT_MASK_SHIFT               0
 
 /* System Status */
 #define BQ2429X_REG_SS                               0x08
 
 #define BQ2429X_REG_SS_VBUS_STAT_MASK                (BIT(7) | BIT(6))
-#define BQ2429X_REG_SS_VBUS_PLUGGED                  (BIT(6))
-#define BQ2429X_REG_SS_VBUS_STAT_SHIFT               (6)
+#define BQ2429X_REG_SS_VBUS_PLUGGED                  BIT(6)
+#define BQ2429X_REG_SS_VBUS_STAT_SHIFT               6
 #define BQ2429X_REG_SS_CHRG_STAT_MASK                (BIT(5) | BIT(4))
-#define BQ2429X_REG_SS_CHRG_STAT_SHIFT               (4)
-#define BQ2429X_REG_SS_DPM_STAT_MASK                 (BIT(3))
-#define BQ2429X_REG_SS_DPM_STAT_SHIFT                (3)
-#define BQ2429X_REG_SS_PG_STAT_MASK                  (BIT(2))
-#define BQ2429X_REG_SS_PG_STAT_SHIFT                 (2)
-#define BQ2429X_REG_SS_THERM_STAT_MASK               (BIT(1))
-#define BQ2429X_REG_SS_THERM_STAT_SHIFT              (1)
-#define BQ2429X_REG_SS_VSYS_STAT_MASK                (BIT(0))
-#define BQ2429X_REG_SS_VSYS_STAT_SHIFT               (0)
+#define BQ2429X_REG_SS_CHRG_STAT_SHIFT               4
+#define BQ2429X_REG_SS_DPM_STAT_MASK                 BIT(3)
+#define BQ2429X_REG_SS_DPM_STAT_SHIFT                3
+#define BQ2429X_REG_SS_PG_STAT_MASK                  BIT(2)
+#define BQ2429X_REG_SS_PG_STAT_SHIFT                 2
+#define BQ2429X_REG_SS_THERM_STAT_MASK               BIT(1)
+#define BQ2429X_REG_SS_THERM_STAT_SHIFT              1
+#define BQ2429X_REG_SS_VSYS_STAT_MASK                BIT(0)
+#define BQ2429X_REG_SS_VSYS_STAT_SHIFT               0
 
 /* Fault */
 #define BQ2429X_REG_F                                0x09
 
-#define BQ2429X_REG_F_WATCHDOG_FAULT_MASK            (BIT(7))
-#define BQ2429X_REG_F_WATCHDOG_FAULT_SHIFT           (7)
-#define BQ2429X_REG_F_BOOST_FAULT_MASK               (BIT(6))
-#define BQ2429X_REG_F_BOOST_FAULT_SHIFT              (6)
+#define BQ2429X_REG_F_WATCHDOG_FAULT_MASK            BIT(7)
+#define BQ2429X_REG_F_WATCHDOG_FAULT_SHIFT           7
+#define BQ2429X_REG_F_BOOST_FAULT_MASK               BIT(6)
+#define BQ2429X_REG_F_BOOST_FAULT_SHIFT              6
 #define BQ2429X_REG_F_CHRG_FAULT_MASK                (BIT(5) | BIT(4))
-#define BQ2429X_REG_F_CHRG_FAULT_SHIFT               (4)
-#define BQ2429X_REG_F_BAT_FAULT_MASK                 (BIT(3))
-#define BQ2429X_REG_F_BAT_FAULT_SHIFT                (3)
+#define BQ2429X_REG_F_CHRG_FAULT_SHIFT               4
+#define BQ2429X_REG_F_BAT_FAULT_MASK                 BIT(3)
+#define BQ2429X_REG_F_BAT_FAULT_SHIFT                3
 #define BQ2429X_REG_F_NTC_FAULT_MASK                 (BIT(2) | BIT(1) | BIT(0))
-#define BQ2429X_REG_F_NTC_FAULT_SHIFT                (0)
+#define BQ2429X_REG_F_NTC_FAULT_SHIFT                0
 
 /* Vendor/Part/Revision Status */
 #define BQ2429X_REG_VPRS                             0x0A
 
 #define BQ2429X_REG_VPRS_PN_MASK                     (BIT(7) | BIT(6) | BIT(5))
 #define BQ2419X_REG_VPRS_PN_MASK                     (BIT(5) | BIT(4) | BIT(3))
-#define BQ2429X_REG_VPRS_PN_SHIFT                    (5)
+#define BQ2429X_REG_VPRS_PN_SHIFT                    5
 #define BQ2429X_REG_VPRS_REV_MASK                    (BIT(2) | BIT(1) | BIT(0))
 #define BQ2419X_REG_VPRS_DEV_REG_MASK                (BIT(1) | BIT(0))
-#define BQ2429X_REG_VPRS_REV_SHIFT                   (0)
+#define BQ2429X_REG_VPRS_REV_SHIFT                   0
 
-#define BQ2429X_REG_VPRS_PN_24296                    (0x1)
-#define BQ2429X_REG_VPRS_PN_24297                    (0x3)
-#define BQ2419X_REG_VPRS_PN_24192                    (0x5) /* Also 24193 */
+#define BQ2429X_REG_VPRS_PN_24296                    0x1
+#define BQ2429X_REG_VPRS_PN_24297                    0x3
+#define BQ2419X_REG_VPRS_PN_24192                    0x5 /* Also 24193 */
 
 /* Options For Setting */
-#define BQ2429X_REG_SS_CHRGDONE                      (0x30)
-#define BQ2429X_REG_SS_DPM                           (0x08)
-#define BQ2429X_REG_SS_PG                            (0x04)
-#define BQ2429X_REG_SS_NOTPG                         (0x00)
+#define BQ2429X_REG_SS_CHRGDONE                      0x30
+#define BQ2429X_REG_SS_DPM                           0x08
+#define BQ2429X_REG_SS_PG                            0x04
+#define BQ2429X_REG_SS_NOTPG                         0x00
 
-#define BQ2429X_REG_F_WDT_TIMEOUT                    (0x80)
-#define BQ2429X_REG_F_BOOST_OCP                      (0x40)
-#define BQ2429X_REG_F_VBUS_OVP                       (0x10)
-#define BQ2429X_REG_F_BATT_OVP                       (0x08)
+#define BQ2429X_REG_F_WDT_TIMEOUT                    0x80
+#define BQ2429X_REG_F_BOOST_OCP                      0x40
+#define BQ2429X_REG_F_VBUS_OVP                       0x10
+#define BQ2429X_REG_F_BATT_OVP                       0x08
 
-#endif /* end of _BQ2429X_CHARGER_H_ */
+#endif /* _BQ2429X_CHARGER_H_ */

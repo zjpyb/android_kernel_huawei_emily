@@ -48,20 +48,20 @@
 #define HI6555V100_CUR_FIFO_BASE          PMIC_CURRENT0_PRE0_ADDR(0)
 #define HI6555V100_COUL_ECO_MASK          PMIC_COUL_ECO_MASK_ADDR(0)
 
-#define HI6555V100_FIFO_CLEAR             PMIC_CLJ_CTRL_REGS2_ADDR(0)         //use bit 1
+#define HI6555V100_FIFO_CLEAR             PMIC_CLJ_CTRL_REGS2_ADDR(0)         // use bit 1
 #define HI6555V100_OFFSET_CUR_MODIFY_BASE PMIC_OFFSET_CURRENT_MOD_0_ADDR(0)
 
-/*coul reserverd regs use */
+/* coul reserverd regs use */
 #define HI6555V100_BATTERY_MOVE_ADDR      PMIC_HRST_REG9_ADDR(0)
 #define BATTERY_MOVE_MAGIC_NUM            0xc3
 #define BATTERY_PLUGOUT_SHUTDOWN_MAGIC_NUM 0x18
 
-#define HI6555V100_OCV_CHOOSE             PMIC_HRST_REG10_ADDR(0) /*use bit5*/
-#define HI6555V100_COUL_TEMP_PROTECT      PMIC_HRST_REG10_ADDR(0) /*use bit 4*/
-#define HI6555V100_DELTA_RC_SCENE         PMIC_HRST_REG10_ADDR(0) /*use bit 3*/
-#define HI6555V100_PD_BY_OCV_WRONG        PMIC_HRST_REG10_ADDR(0) /*use bit 2*/
-#define HI6555V100_NV_READ_SUCCESS        PMIC_HRST_REG10_ADDR(0) /*use bit 1*/
-#define HI6555V100_NV_SAVE_SUCCESS        PMIC_HRST_REG10_ADDR(0) /*use bit 0*/
+#define HI6555V100_OCV_CHOOSE             PMIC_HRST_REG10_ADDR(0) /* use bit5 */
+#define HI6555V100_COUL_TEMP_PROTECT      PMIC_HRST_REG10_ADDR(0) /* use bit 4 */
+#define HI6555V100_DELTA_RC_SCENE         PMIC_HRST_REG10_ADDR(0) /* use bit 3 */
+#define HI6555V100_PD_BY_OCV_WRONG        PMIC_HRST_REG10_ADDR(0) /* use bit 2 */
+#define HI6555V100_NV_READ_SUCCESS        PMIC_HRST_REG10_ADDR(0) /* use bit 1 */
+#define HI6555V100_NV_SAVE_SUCCESS        PMIC_HRST_REG10_ADDR(0) /* use bit 0 */
 #define USE_SAVED_OCV_FLAG                BIT(5)
 #define TEMP_PROTECT_BITMASK              BIT(4)
 #define DELTA_RC_SCENE_BITMASK            BIT(3)
@@ -69,21 +69,21 @@
 #define NV_READ_BITMASK                   BIT(1)
 #define NV_SAVE_BITMASK                   BIT(0)
 
-#define HI6555V100_SAVE_OCV_ADDR          PMIC_HRST_REG11_ADDR(0) /*saved OCV use 2bytes*/
+#define HI6555V100_SAVE_OCV_ADDR          PMIC_HRST_REG11_ADDR(0) /* saved OCV use 2bytes */
 #define HI6555V100_SAVE_OCV_RESERVED      PMIC_HRST_REG12_ADDR(0)
 #define INVALID_TO_UPDATE_FCC             (0x8000)
 
-#define HI6555V100_SAVE_OCV_TEMP_ADDR      PMIC_HRST_REG13_ADDR(0)/*OCV TEMP saved use 2bytes*/
+#define HI6555V100_SAVE_OCV_TEMP_ADDR      PMIC_HRST_REG13_ADDR(0) /* OCV TEMP saved use 2bytes */
 #define HI6555V100_SAVE_OCV_TEMP_RESERVED  PMIC_HRST_REG14_ADDR(0)
 
-/*record last soc*/
-#define HI6555V100_SAVE_LAST_SOC  PMIC_HRST_REG8_ADDR(0)/*last soc 0-6bit */
-#define HI6555V100_SAVE_LAST_SOC_VAILD  PMIC_HRST_REG8_ADDR(0)/*last soc vaild 7bit */
+/* record last soc */
+#define HI6555V100_SAVE_LAST_SOC  PMIC_HRST_REG8_ADDR(0) /* last soc 0-6bit */
+#define HI6555V100_SAVE_LAST_SOC_VAILD  PMIC_HRST_REG8_ADDR(0) /* last soc vaild 7bit */
 #define SAVE_LAST_SOC              (BIT(6) | BIT(5) | BIT(4) | BIT(3) | BIT(2) | BIT(1) | BIT(0))
-#define SAVE_LAST_SOC_FALG         BIT(7)
-#define CLEAR_LAST_SOC_FALG         0x7F
+#define SAVE_LAST_SOC_FLAG         BIT(7)
+#define CLEAR_LAST_SOC_FLAG         0x7F
 
-#define HI6555V100_OCV_LEVEL_ADDR  PMIC_HRST_REG6_ADDR(0)/*last soc 0-3bit */
+#define HI6555V100_OCV_LEVEL_ADDR  PMIC_HRST_REG6_ADDR(0) /* last soc 0-3bit */
 #define SAVE_OCV_LEVEL            (BIT(3) | BIT(2) | BIT(1) | BIT(0))
 #define OCV_LEVEL_SHIFT           (0)
 /************************************************************
@@ -113,8 +113,9 @@
 #define COUL_32K_CLK_MODE                BIT(2)
 #define NO_32K_MODE                      0
 
-#define HI6555V100_COUL_IRQ_REG          PMIC_COUL_IRQ_ADDR(0)//SOC_SMART_COUL_IRQ_ADDR(0)
-#define HI6555V100_COUL_IRQ_MASK_REG     PMIC_COUL_IRQ_MASK_ADDR(0)//SOC_SMART_COUL_IRQ_MASK_ADDR(0)
+#define HI6555V100_COUL_IRQ_REG          PMIC_COUL_IRQ_ADDR(0) // SOC_SMART_COUL_IRQ_ADDR(0)
+#define COUL_CLEAR_IRQ                           0x0F
+#define HI6555V100_COUL_IRQ_MASK_REG     PMIC_COUL_IRQ_MASK_ADDR(0) // SOC_SMART_COUL_IRQ_MASK_ADDR(0)
 #define COUL_VBAT_INT_MASK               BIT(3)
 #define COUL_CL_IN_MASK                  BIT(2)
 #define COUL_CL_OUT_MASK                 BIT(1)
@@ -127,10 +128,10 @@
 #define HI6555V100_CHIP_ID               PMIC_VERSION5_ADDR(0)
 #define COUL_HI6555V100                  0x0
 
-#define HI6555V100_COUL_STATE_REG         PMIC_STATE_TEST_ADDR(0)   //Warning: bit change
+#define HI6555V100_COUL_STATE_REG         PMIC_STATE_TEST_ADDR(0)   // Warning: bit change
 #define COUL_CALI_ING                    (BIT(0) | BIT(1))
 
-/*bit uah*/
+/* bit uah */
 #define BIT_FOR_UAH_32K                  143127
 #define BIT_FOR_UAH_DCXO_586             143153
 
@@ -138,7 +139,7 @@
 #define IRQ_MAX                          4
 #define R_COUL_MOHM                      10      /* resisitance mohm */
 
-/* vol offset a/b value*/
+/* vol offset a/b value */
 #define VOL_OFFSET_A_STEP                100
 #define VOL_OFFSET_B_STEP                500
 #define VOL_OFFSET_A_BASE                974400
@@ -156,29 +157,28 @@ extern bool g_ec_6555v100;
 
 
 #define HI6555V100_REG_READ(regAddr)             hisi_pmic_reg_read(regAddr)
-#define HI6555V100_REG_WRITE(regAddr,regval)     hisi_pmic_reg_write((int)(regAddr),(int)regval)
-#define HI6555V100_REGS_READ(regAddr,buf,size)   \
+#define HI6555V100_REG_WRITE(regAddr, regval)     hisi_pmic_reg_write((int)(regAddr), (int)regval)
+#define HI6555V100_REGS_READ(regAddr, buf,size)   \
 do{\
     if (!g_ec_6555v100 && (regAddr > HI6555_COUL_REGS_UNLOCK_START)){\
         HI6555V100_REG_READ(((int)regAddr + (int)size - 1) & HI6555_COUL_REGS_UNLOCK_START);\
         udelay(32);HI6555V100_REG_READ((int)regAddr & HI6555_COUL_REGS_UNLOCK_START);\
     }\
     hisi_pmic_array_read((int)(regAddr),(char*)(buf),(int)(size));\
-}while(0)
-#define HI6555V100_REGS_WRITE(regAddr,buf,size)  hisi_pmic_array_write((int)(regAddr),(char*)(buf),(int)(size))
+} while(0)
+#define HI6555V100_REGS_WRITE(regAddr, buf, size)  hisi_pmic_array_write((int)(regAddr), (char *)(buf), (int)(size))
 
 #define HI6555V100_COUL_INFO
 #ifndef HI6555V100_COUL_INFO
-#define HI6555V100_COUL_ERR(fmt,args...)              do {} while (0)
-#define HI6555V100_COUL_EVT(fmt,args...)              do {} while (0)
-#define HI6555V100_COUL_INF(fmt,args...)              do {} while (0)
+#define HI6555V100_COUL_ERR(fmt, args...)              do {} while (0)
+#define HI6555V100_COUL_EVT(fmt, args...)              do {} while (0)
+#define HI6555V100_COUL_INF(fmt, args...)              do {} while (0)
 #else
-#define HI6555V100_COUL_ERR(fmt,args...) do { printk(KERN_ERR    "[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
-#define HI6555V100_COUL_EVT(fmt,args...) do { printk(KERN_WARNING"[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
-#define HI6555V100_COUL_INF(fmt,args...) do { printk(KERN_INFO   "[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
+#define HI6555V100_COUL_ERR(fmt, args...) do { printk(KERN_ERR    "[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
+#define HI6555V100_COUL_EVT(fmt, args...) do { printk(KERN_WARNING"[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
+#define HI6555V100_COUL_INF(fmt, args...) do { printk(KERN_INFO   "[hisi_HI6555V100_coul]" fmt, ## args); } while (0)
 #endif
-struct hi6555v100_coul_device_info
-{
+struct hi6555v100_coul_device_info {
     struct device *dev;
     struct delayed_work irq_work;
     int irq;

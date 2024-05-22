@@ -373,7 +373,6 @@ static int hl7019_sysfs_create_group(struct hl7019_device_info *di)
 		return -EINVAL;
 
 	hl7019_sysfs_init_attrs();
-
 	return sysfs_create_group(&di->dev->kobj, &g_hl7019_sysfs_attr_group);
 }
 
@@ -384,9 +383,7 @@ static void hl7019_sysfs_remove_group(struct hl7019_device_info *di)
 
 	sysfs_remove_group(&di->dev->kobj, &g_hl7019_sysfs_attr_group);
 }
-
 #else
-
 static inline int hl7019_sysfs_create_group(struct hl7019_device_info *di)
 {
 	return 0;
@@ -821,7 +818,7 @@ static int hl7019_check_input_idpm_state(void)
 	return hl7019_check_input_dpm_state();
 }
 
-static int hl7019_dump_register(char *reg_value)
+static int hl7019_dump_register(char *reg_value, int size)
 {
 	u8 reg[HL7019_REG_NUM] = {0};
 	char buff[BUF_LEN] = {0};
@@ -831,7 +828,7 @@ static int hl7019_dump_register(char *reg_value)
 	if (!reg_value)
 		return 0;
 
-	memset(reg_value, 0, CHARGELOG_SIZE);
+	memset(reg_value, 0, size);
 
 	for (i = 0; i < HL7019_REG_NUM; i++) {
 		ret = hl7019_read_byte(i, &reg[i]);
@@ -840,14 +837,14 @@ static int hl7019_dump_register(char *reg_value)
 
 		snprintf(buff, BUF_LEN, "0x%-8.2x", reg[i]);
 		len += strlen(buff);
-		if (len < CHARGELOG_SIZE)
+		if (len < size)
 			strncat(reg_value, buff, strlen(buff));
 	}
 
 	return 0;
 }
 
-static int hl7019_get_register_head(char *reg_head)
+static int hl7019_get_register_head(char *reg_head, int size)
 {
 	char buff[BUF_LEN] = {0};
 	int i;
@@ -856,12 +853,12 @@ static int hl7019_get_register_head(char *reg_head)
 	if (!reg_head)
 		return 0;
 
-	memset(reg_head, 0, CHARGELOG_SIZE);
+	memset(reg_head, 0, size);
 
 	for (i = 0; i < HL7019_REG_NUM; i++) {
 		snprintf(buff, BUF_LEN, "Reg[0x%x]  ", i);
 		len += strlen(buff);
-		if (len < CHARGELOG_SIZE)
+		if (len < size)
 			strncat(reg_head, buff, strlen(buff));
 	}
 
@@ -989,6 +986,15 @@ struct charge_device_ops g_hl7019_ops = {
 	.stop_charge_config = hl7019_stop_charge_config,
 };
 
+static struct charger_otg_device_ops hl7019_otg_ops = {
+	.chip_name = "hl7019",
+	.otg_set_charger_enable = hl7019_set_charge_enable,
+	.otg_set_enable = hl7019_set_otg_enable,
+	.otg_set_current = hl7019_set_boost_current,
+	.otg_set_watchdog_timer = hl7019_set_watchdog_timer,
+	.otg_reset_watchdog_timer = hl7019_reset_watchdog_timer,
+};
+
 static void hl7019_irq_work(struct work_struct *work)
 {
 	struct hl7019_device_info *di = NULL;
@@ -1056,6 +1062,7 @@ static int hl7019_probe(struct i2c_client *client,
 	struct hl7019_device_info *di = NULL;
 	struct device_node *np = NULL;
 	struct class *power_class = NULL;
+	struct power_devices_info_data *power_dev_info = NULL;
 
 	if (!client || !client->dev.of_node || !id)
 		return -ENODEV;
@@ -1161,6 +1168,12 @@ static int hl7019_probe(struct i2c_client *client,
 		goto err_irq_int;
 	}
 
+	ret = charger_otg_ops_register(&hl7019_otg_ops);
+	if (ret) {
+		hwlog_err("hl7019 charger_otg ops register fail\n");
+		goto err_irq_int;
+	}
+
 	ret = hl7019_sysfs_create_group(di);
 	if (ret) {
 		hwlog_err("sysfs group create failed\n");
@@ -1190,6 +1203,13 @@ static int hl7019_probe(struct i2c_client *client,
 	ret = hl7019_set_boost_voltage(BOOSTV_5000);
 	if (ret < 0)
 		hwlog_err("set hl7019 boost voltage fail\n");
+
+	power_dev_info = power_devices_info_register();
+	if (power_dev_info) {
+		power_dev_info->dev_name = di->dev->driver->name;
+		power_dev_info->dev_id = 0;
+		power_dev_info->ver_id = 0;
+	}
 
 	hwlog_info("hl7019 probe success\n");
 	return 0;

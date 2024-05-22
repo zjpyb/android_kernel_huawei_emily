@@ -500,12 +500,12 @@ static bool mptcp_skb_entail(struct sock *sk, struct sk_buff *skb, int reinject)
 		 * skb->len = 0 will force tso_segs to 1.
 		 */
 		tcp_init_tso_segs(subskb, 1);
-
-		/* Empty data-fins are sent immediately on the subflow */
+		/* Empty data-fins are sent immediatly on the subflow */
 		err = tcp_transmit_skb(sk, subskb, 1, GFP_ATOMIC);
 
 		/* It has not been queued, we can free it now. */
 		kfree_skb(subskb);
+
 		if (err)
 			return false;
 	}
@@ -625,14 +625,21 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib)
 		TCP_SKB_CB(skb)->tcp_flags |= TCPHDR_PSH;
 		if (!mptcp_skb_entail(subsk, skb, 0))
 			return -1;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 		skb_mstamp_get(&skb->skb_mstamp);
+#endif
 
 		mptcp_check_sndseq_wrap(meta_tp, TCP_SKB_CB(skb)->end_seq -
 						 TCP_SKB_CB(skb)->seq);
 		tcp_event_new_data_sent(meta_sk, skb);
 
 		__tcp_push_pending_frames(subsk, mss, TCP_NAGLE_PUSH);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		skb->skb_mstamp = meta_tp->tcp_mstamp;
+		meta_tp->lsndtime = tcp_jiffies32;
+#else
 		meta_tp->lsndtime = tcp_time_stamp;
+#endif
 
 		return 0;
 	} else {
@@ -670,6 +677,10 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	int reinject = 0;
 	unsigned int sublimit;
 	__u32 path_mask = 0;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	tcp_mstamp_refresh(meta_tp);
+#endif
 
 	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk,
 						    &sublimit))) {
@@ -721,10 +732,16 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * to reinjection to recover from a window-stall or reduce latency.
 		 * Therefore, Nagle check should be disabled in that case.
 		 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		if (unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
+					     (tcp_skb_is_last(meta_sk, skb) ?
+					      nonagle : TCP_NAGLE_PUSH))))
+#else
 		if (!reinject &&
 		    unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
 					     (tcp_skb_is_last(meta_sk, skb) ?
 					      nonagle : TCP_NAGLE_PUSH))))
+#endif
 			break;
 
 		limit = mss_now;
@@ -759,11 +776,15 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * always push on the subflow
 		 */
 		__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		skb->skb_mstamp = meta_tp->tcp_mstamp;
+		meta_tp->lsndtime = tcp_jiffies32;
+#else
 		meta_tp->lsndtime = tcp_time_stamp;
 
 		path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
 		skb_mstamp_get(&skb->skb_mstamp);
-
+#endif
 		if (!reinject) {
 			mptcp_check_sndseq_wrap(meta_tp,
 						TCP_SKB_CB(skb)->end_seq -
@@ -1345,6 +1366,9 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 		return;
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	tcp_mstamp_refresh(meta_tp);
+#endif
 
 	tcp_sk(sk)->send_mp_fclose = 1;
 	/** Reset all other subflows */
@@ -1383,8 +1407,12 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
 		goto out; /* Routing failure or similar */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	tcp_mstamp_refresh(tp);
+#else
 	if (!tp->retrans_stamp)
 		tp->retrans_stamp = tcp_time_stamp ? : 1;
+#endif
 
 	if (tcp_write_timeout(sk)) {
 		MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_JOINACKRTO);
@@ -1418,12 +1446,20 @@ static void mptcp_ack_retransmit_timer(struct sock *sk)
 		return;
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (!tp->retrans_stamp)
+		tp->retrans_stamp = tcp_time_stamp(tp) ? : 1;
+#endif
 
 	icsk->icsk_retransmits++;
 	icsk->icsk_rto = min(icsk->icsk_rto << 1, TCP_RTO_MAX);
 	sk_reset_timer(sk, &tp->mptcp->mptcp_ack_timer,
 		       jiffies + icsk->icsk_rto);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (retransmits_timed_out(sk, net->ipv4.sysctl_tcp_retries1 + 1, 0))
+#else
 	if (retransmits_timed_out(sk, net->ipv4.sysctl_tcp_retries1 + 1, 0, 0))
+#endif
 		__sk_dst_reset(sk);
 
 out:;
@@ -1475,8 +1511,13 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	 *
 	 * This is a meta-retransmission thus we check on the meta-socket.
 	 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (refcount_read(&meta_sk->sk_wmem_alloc) >
+	    min(meta_sk->sk_wmem_queued + (meta_sk->sk_wmem_queued >> 2), meta_sk->sk_sndbuf)) {
+#else
 	if (atomic_read(&meta_sk->sk_wmem_alloc) >
 	    min(meta_sk->sk_wmem_queued + (meta_sk->sk_wmem_queued >> 2), meta_sk->sk_sndbuf)) {
+#endif
 		return -EAGAIN;
 	}
 
@@ -1521,7 +1562,10 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 
 	if (!mptcp_skb_entail(subsk, skb, -1))
 		goto failed;
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 	skb_mstamp_get(&skb->skb_mstamp);
+#endif
 
 	/* Update global TCP statistics. */
 	MPTCP_INC_STATS(sock_net(meta_sk), MPTCP_MIB_RETRANSSEGS);
@@ -1529,11 +1573,22 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 	/* Diff to tcp_retransmit_skb */
 
 	/* Save stamp of the first retransmit. */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (!meta_tp->retrans_stamp) {
+		tcp_mstamp_refresh(meta_tp);
+		meta_tp->retrans_stamp = tcp_time_stamp(meta_tp);
+	}
+
+	__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
+	skb->skb_mstamp = meta_tp->tcp_mstamp;
+	meta_tp->lsndtime = tcp_jiffies32;
+#else
 	if (!meta_tp->retrans_stamp)
 		meta_tp->retrans_stamp = tcp_skb_timestamp(skb);
 
 	__tcp_push_pending_frames(subsk, mss_now, TCP_NAGLE_PUSH);
 	meta_tp->lsndtime = tcp_time_stamp;
+#endif
 
 	return 0;
 
@@ -1584,7 +1639,11 @@ void mptcp_meta_retransmit_timer(struct sock *meta_sk)
 					    meta_tp->snd_nxt);
 		}
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		if (tcp_jiffies32 - meta_tp->rcv_tstamp > TCP_RTO_MAX) {
+#else
 		if (tcp_time_stamp - meta_tp->rcv_tstamp > TCP_RTO_MAX) {
+#endif
 			tcp_write_err(meta_sk);
 			return;
 		}

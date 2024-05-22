@@ -99,13 +99,13 @@ static int hisi_hwspinlock_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = pdev->dev.of_node;
-	struct hwspinlock_device *bank;
-	struct hwspinlock *hwlock;
+	struct hwspinlock_device *bank = NULL;
+	struct hwspinlock *hwlock = NULL;
 	void __iomem *hwspinlock_base;
-	struct device_node *np_pctrl;
+	struct device_node *np_pctrl = NULL;
 	int i, ret, num_lock, register_width, lock_groups, locks_per_register;
-	unsigned int *addr;
-	struct hisi_hwspinlock *hwspinlock_info;
+	unsigned int *addr = NULL;
+	struct hisi_hwspinlock *hwspinlock_info = NULL;
 
 	np_pctrl = of_find_compatible_node(NULL, NULL, "hisilicon,pctrl");
 	if (!np_pctrl) {
@@ -204,7 +204,7 @@ bank_err:
 static int hisi_hwspinlock_remove(struct platform_device *pdev)
 {
 	struct hwspinlock_device *bank = platform_get_drvdata(pdev);
-	struct hisi_hwspinlock *lock_temp;
+	struct hisi_hwspinlock *lock_temp = NULL;
 	void __iomem *hwspinlock_base;
 	int ret;
 
@@ -254,4 +254,3 @@ module_exit(hisi_hwspinlock_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Hardware Spinlock driver for hisi");
-MODULE_AUTHOR("w00221409 <hw.wangxiaoyin@huawei.com>");

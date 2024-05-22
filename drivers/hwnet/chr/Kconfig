@@ -9,3 +9,10 @@ config CHR_MTK_NETLINK
     default n
     help
 	  This module adds support for data speed slow detecting funtion based on.
+
+config HW_CHR_TCP_SMALL_WIN_MONITOR
+    bool "tcp small window monitor."
+    default n
+    help
+        This adds CHR support for tcp small window monitor.
+

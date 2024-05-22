@@ -9,10 +9,27 @@
 extern void workingset_pagecache_record(struct file *file,
 	pgoff_t start_offset, unsigned count, bool is_pagefault);
 
+static inline void workingset_pagecache_on_ptefault(
+	struct vm_fault *vmf)
+{
+	struct vm_area_struct *vma;
+	pgoff_t pgoff;
+
+	if (likely(!(current->flags & PF_WSCG_MONITOR)))
+		return;
+	if (!vmf || (vmf->flags & FAULT_FLAG_WRITE)
+		|| PageSwapBacked(pte_page(vmf->orig_pte)))
+		return;
+
+	vma = vmf->vma;
+	pgoff = linear_page_index(vma, vmf->address);
+	workingset_pagecache_record(vma->vm_file, pgoff, 1, true);
+}
+
 static inline void workingset_pagecache_on_pagefault(struct file *file,
 	pgoff_t start_offset)
 {
-	if (likely(task_css_is_root(current, workingset_cgrp_id)))
+	if (likely(!(current->flags & PF_WSCG_MONITOR)))
 		return;
 
 	workingset_pagecache_record(file, start_offset, 1, true);
@@ -23,13 +40,13 @@ static inline void workingset_pagecache_on_readfile(struct file *file,
 {
 	pgoff_t start_offset, end_offset;
 
-	if (likely(task_css_is_root(current, workingset_cgrp_id)))
+	if (likely(!(current->flags & PF_WSCG_MONITOR)))
 		return;
 
 	if (!pos || *pos >= ((loff_t)index << PAGE_SHIFT) + offset)
 		return;
 
-	start_offset = *pos >> PAGE_SHIFT;
+	start_offset = ((unsigned long)*pos) >> PAGE_SHIFT;
 	end_offset = index + (offset >> PAGE_SHIFT);
 	workingset_pagecache_record(file, start_offset,
 			end_offset - start_offset + 1, false);

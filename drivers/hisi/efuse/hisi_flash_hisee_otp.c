@@ -1,36 +1,25 @@
 /*
- * hisi_flash_hisee_otp.c
- *
- * provides interfaces for writing hisee otp, set hisee_otp secure when
- * writing securitydebug value
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
- *
- * chenli <chenli24@huawei.com>
- *
+ *  Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ *  Description: hisee flash driver
+ *  Author : security-ap
+ *  Create : 2017/9/15
  */
 
-#include <linux/semaphore.h>
+#include <linux/completion.h>
 #include <linux/sched.h>
 #include <linux/err.h>
 #include <linux/kthread.h>
 #include <linux/hisi/hisi_efuse.h>
 #include "hisi_flash_hisee_otp.h"
 
-static struct task_struct *flash_hisee_otp_task = NULL;
-int (*g_write_hisee_otp_fn) (void) = NULL;
-static struct semaphore g_hisee_sem;
-static efuse_log_level_t g_efuse_print_level = log_level_error;
-
-#define efuse_print_info(level, fmt, ...) do {\
-    if (level <= g_efuse_print_level) { \
-        printk(KERN_ERR fmt, ##__VA_ARGS__); \
-    } \
-} while (0)
+static struct task_struct *g_flash_hisee_otp_task;
+int (*g_write_hisee_otp_fn)(void);
+static DECLARE_COMPLETION(g_hisee_complete);
+static enum tag_efuse_log_level g_efuse_print_level = LOG_LEVEL_ERROR;
 
 static int flash_hisee_otp_value(void)
 {
-	if (NULL != g_write_hisee_otp_fn)
+	if (g_write_hisee_otp_fn)
 		return g_write_hisee_otp_fn();
 	else
 		return OK;
@@ -38,56 +27,55 @@ static int flash_hisee_otp_value(void)
 
 static int flash_otp_task(void *arg)
 {
-	int ret = OK;
+	int ret;
 
-	ret = down_timeout(&g_hisee_sem, MAX_SCHEDULE_TIMEOUT);
-	if (-ETIME == ret) {
-		efuse_print_info(log_level_error, "wait hisee factory test finished semphore timeout.\n");
-	} else {
-		ret = flash_hisee_otp_value();
-	}
-	flash_hisee_otp_task = NULL;
+	wait_for_completion(&g_hisee_complete);
+	ret = flash_hisee_otp_value();
+
+	g_flash_hisee_otp_task = NULL;
 	return ret;
 }
 
-void release_hisee_semphore(void)
+/* resets the complete->done field to 0 ("not done") */
+void reinit_hisee_complete(void)
 {
-	up(&g_hisee_sem);
-	return;
+	reinit_completion(&g_hisee_complete);
+}
+
+/* signals a thread waiting on this completion */
+void release_hisee_complete(void)
+{
+	complete(&g_hisee_complete);
 }
 
 bool flash_otp_task_is_started(void)
 {
-	if (NULL == flash_hisee_otp_task) {
+	if (!g_flash_hisee_otp_task)
 		return false;
-	}
 
-	if (IS_ERR(flash_hisee_otp_task)) {
+	if (IS_ERR(g_flash_hisee_otp_task))
 		return false;
-	}
 
 	return true;
 }
 
 void register_flash_hisee_otp_fn(int (*fn_ptr) (void))
 {
-	if (NULL != fn_ptr)
+	if (fn_ptr)
 		g_write_hisee_otp_fn = fn_ptr;
-	return;
 }
 
 void creat_flash_otp_thread(void)
 {
-	if (!flash_hisee_otp_task) {
-		flash_hisee_otp_task = kthread_run(flash_otp_task, NULL, "flash_otp_task");
-		if (IS_ERR(flash_hisee_otp_task)) {
-			flash_hisee_otp_task = NULL;
-			efuse_print_info(log_level_error, "%s:create flash_otp_task failed\n", __func__);
+	if (!g_flash_hisee_otp_task) {
+		g_flash_hisee_otp_task = kthread_run(flash_otp_task,
+						     NULL, "flash_otp_task");
+		if (IS_ERR(g_flash_hisee_otp_task)) {
+			g_flash_hisee_otp_task = NULL;
+			if (g_efuse_print_level >= LOG_LEVEL_ERROR)
+				pr_err("%s:create flash_otp_task failed\n",
+				       __func__);
 		}
 	}
 }
 
-void creat_flash_otp_init(void)
-{
-	sema_init(&g_hisee_sem, 0);
-}

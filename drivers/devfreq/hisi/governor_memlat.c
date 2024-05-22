@@ -31,6 +31,7 @@
 #include <linux/slab.h>
 #include <linux/cpu_pm.h>
 #include <linux/cpufreq.h>
+#include <securec.h>
 #include "governor.h"
 #include "governor_memlat.h"
 
@@ -127,7 +128,7 @@ static unsigned int *get_tokenized_data(const char *buf, int *num_tokens)
 	const char *cp;
 	int i;
 	int ntokens = 1;
-	unsigned int *tokenized_data;
+	unsigned int *tokenized_data = NULL;
 	int err = -EINVAL;
 
 	cp = buf;
@@ -146,7 +147,7 @@ static unsigned int *get_tokenized_data(const char *buf, int *num_tokens)
 	cp = buf;
 	i = 0;
 	while (i < ntokens) {
-		if (sscanf(cp, "%u", &tokenized_data[i++]) != 1) /* [false alarm]:fortify */
+		if (sscanf_s(cp, "%u", &tokenized_data[i++]) != 1)
 			goto err_kfree;
 
 		cp = strpbrk(cp, " :");
@@ -176,10 +177,10 @@ static ssize_t show_target_ratios(struct device *dev, struct device_attribute *a
 
 	mutex_lock(&n->mon_mutex_lock);
 	for (i = 0; i < n->ntarget_ratios; i++) /*lint !e574*/
-		ret += sprintf(buf + ret, "%u%s", n->target_ratios[i],
+		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%u%s", n->target_ratios[i], /*lint !e737*/
 			       i & 0x1 ? ":" : " "); /*lint !e421*/
 
-	sprintf(buf + ret - 1, "\n"); /*lint !e421*/
+	scnprintf(buf + ret - 1, PAGE_SIZE - ret + 1, "\n"); /*lint !e421 !e737*/
 	mutex_unlock(&n->mon_mutex_lock);
 
 	return ret;
@@ -290,7 +291,8 @@ static unsigned long get_max_possible_freq(struct memlat_node *node, unsigned in
 
 static struct memlat_node *find_memlat_node(struct devfreq *df)
 {
-	struct memlat_node *node, *found = NULL;
+	struct memlat_node *node = NULL;
+	struct memlat_node *found = NULL;
 
 	mutex_lock(&list_lock);
 	list_for_each_entry(node, &memlat_list, list)
@@ -306,8 +308,9 @@ static struct memlat_node *find_memlat_node(struct devfreq *df)
 
 unsigned long get_max_target_freq(int cpu, unsigned long cur_cpu_freq)
 {
-	struct memlat_node *node;
-	struct memlat_hwmon *hw, *found = NULL;
+	struct memlat_node *node = NULL;
+	struct memlat_hwmon *hw = NULL;
+	struct memlat_hwmon *found = NULL;
 	unsigned long freq = 0;
 
 	mutex_lock(&list_lock);
@@ -338,9 +341,10 @@ unsigned long get_max_target_freq(int cpu, unsigned long cur_cpu_freq)
 
 unsigned int get_min_core_freq(int cpu, unsigned long cur_dev_freq)
 {
-	struct memlat_node *node;
-	struct memlat_hwmon *hw, *found = NULL;
-	struct core_dev_map *map;
+	struct memlat_node *node = NULL;
+	struct memlat_hwmon *hw = NULL;
+	struct memlat_hwmon *found = NULL;
+	struct core_dev_map *map = NULL;
 	unsigned long freq = 0;
 
 	if (!mutex_trylock(&list_lock))
@@ -366,7 +370,7 @@ unsigned int get_min_core_freq(int cpu, unsigned long cur_dev_freq)
 	if (!found)
 		goto out;
 
-	map = hw->freq_map;
+	map = found->freq_map;
 	if (unlikely(!map))
 		goto out;
 
@@ -386,9 +390,9 @@ out:
 static int event_idle_notif(struct notifier_block *nb, unsigned long action,
                                                         void *data)
 {
-	bool cores_pwrdn;
+	bool cores_pwrdn = false;
 	struct memlat_node *d = container_of(nb, struct memlat_node, perf_event_idle_nb);
-	struct memlat_hwmon *hw;
+	struct memlat_hwmon *hw = NULL;
 	int cpu = smp_processor_id();
 	struct devfreq *df = NULL;
 
@@ -489,11 +493,11 @@ static int cpufreq_notifier_trans(struct notifier_block *nb,
 {
 	struct cpufreq_freqs *freq = (struct cpufreq_freqs *)data;
 	unsigned int cpu = freq->cpu, new_freq = freq->new;
-	struct memlat_node *d;
+	struct memlat_node *d = NULL;
 	unsigned long max_target_freq;
 	unsigned int min_core_freq;
 	struct devfreq *df = NULL;
-	struct memlat_hwmon *hw;
+	struct memlat_hwmon *hw = NULL;
 
 	if (val != CPUFREQ_POSTCHANGE || !new_freq)
 		return 0;
@@ -611,8 +615,8 @@ static DEVICE_ATTR(monitor_enable, 0660, show_monitor_enable, store_monitor_enab
 int start_monitor(struct devfreq *df)
 {
 	struct memlat_node *node = df->data;
-	struct memlat_hwmon *hw;
-	struct device *dev;
+	struct memlat_hwmon *hw = NULL;
+	struct device *dev = NULL;
 	int ret;
 
 	if (!node || !node->monitor_enable || node->mon_started) {
@@ -641,8 +645,8 @@ int start_monitor(struct devfreq *df)
 
 void stop_monitor(struct devfreq *df)
 {
-	struct memlat_node *node;
-	struct memlat_hwmon *hw;
+	struct memlat_node *node = NULL;
+	struct memlat_hwmon *hw = NULL;
 
 	if (!df)
 		return ;
@@ -672,8 +676,8 @@ static int gov_start(struct devfreq *df)
 {
 	int ret = -ENODEV;
 	struct device *dev = df->dev.parent;
-	struct memlat_node *node;
-	struct memlat_hwmon *hw;
+	struct memlat_node *node = NULL;
+	struct memlat_hwmon *hw = NULL;
 
 	node = find_memlat_node(df);
 	if (!node) {
@@ -878,7 +882,7 @@ static struct core_dev_map *init_core_dev_map(struct device *dev,
 {
 	int len, nf, i, j;
 	u32 data;
-	struct core_dev_map *tbl;
+	struct core_dev_map *tbl = NULL;
 	int ret;
 
 	if (!of_find_property(dev->of_node, prop_name, &len))
@@ -919,7 +923,7 @@ int register_memlat(struct device *dev, struct memlat_hwmon *hw)
 {
 	int ret = 0;
 	u32 temp = 0;
-	struct memlat_node *node;
+	struct memlat_node *node = NULL;
 
 	if (!hw->dev && !hw->of_node)
 		return -EINVAL;
@@ -942,7 +946,9 @@ int register_memlat(struct device *dev, struct memlat_hwmon *hw)
 
 	node->idle_vote_enabled = of_property_read_bool(dev->of_node, "idle-vote-enabled");
 
-	if (of_property_read_u32(dev->of_node, "hisi,switch-on-cpufreq", &temp)) {
+	ret = of_property_read_u32(dev->of_node, "hisi,switch-on-cpufreq", &temp);
+
+	if (ret) {
 		dev_err(dev, "[%s] node %s doesn't have hisi,switch-on-cpufreq property!\n",
 				__func__, hw->of_node->name);
 		return -EINVAL;

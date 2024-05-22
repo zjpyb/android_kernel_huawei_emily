@@ -36,7 +36,7 @@
 #include <linux/spinlock.h>
 #include <linux/reboot.h>
 #include <linux/clk.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/of_device.h>
@@ -62,7 +62,7 @@ HWLOG_REGIST();
 
 /*lint -save -e528 -e529*/
 static bool ven_felica_status;
-static struct wake_lock wlock_read;
+static struct wakeup_source wlock_read;
 static int firmware_update;
 static int nfc_switch_state;
 static int nfc_at_result;
@@ -80,6 +80,7 @@ static int g_nfcservice_lock;
 /*0 -- close nfcservice normally; 1 -- close nfcservice with enable CE */
 static int g_nfc_close_type;
 static int g_nfc_single_channel;
+static int g_nfc_delaytime_set;
 static int g_nfc_card_num;
 static int g_nfc_ese_num;
 static int g_wake_lock_timeout = WAKE_LOCK_TIMEOUT_DISABLE;
@@ -551,6 +552,28 @@ void set_nfc_single_channel(void)
 	return;
 }
 
+void get_nfc_delaytime_set(void)
+{
+	int ret;
+	char delaytime_set_dts_str[MAX_CONFIG_NAME_SIZE];
+
+	memset(delaytime_set_dts_str, 0, MAX_CONFIG_NAME_SIZE);
+	ret = nfc_get_dts_config_string("nfc_delaytime_set", "nfc_delaytime_set",
+		delaytime_set_dts_str, sizeof(delaytime_set_dts_str));
+
+	if (ret != 0) {
+		memset(delaytime_set_dts_str, 0, MAX_CONFIG_NAME_SIZE);
+		hwlog_err("%s: can't get nfc delaytime set dts config\n", __func__);
+		g_nfc_delaytime_set = 0;
+		return;
+	}
+	if (!strcasecmp(delaytime_set_dts_str, "true"))
+		g_nfc_delaytime_set = 1;
+
+	hwlog_info("%s: nfc delaytime set:%d\n", __func__, g_nfc_delaytime_set);
+	return;
+}
+
 void set_nfc_chip_type_name(void)
 {
 	int ret = -1;
@@ -783,9 +806,9 @@ static irqreturn_t pn547_dev_irq_handler(int irq, void *dev_id)
 
 	/*set a wakelock to avoid entering into suspend */
 	if (WAKE_LOCK_TIMEOUT_ENALBE == g_wake_lock_timeout) {
-		wake_lock_timeout(&wlock_read, 5 * HZ);
+		__pm_wakeup_event(&wlock_read, jiffies_to_msecs(5 * HZ));
 	} else {
-		wake_lock_timeout(&wlock_read, 1 * HZ);
+		__pm_wakeup_event(&wlock_read, jiffies_to_msecs(1 * HZ));
 	}
 
 	/* Wake up waiting readers */
@@ -797,7 +820,7 @@ static irqreturn_t pn547_dev_irq_handler(int irq, void *dev_id)
 // hide bank card number
 uint16_t nfc_check_number(const char *string, uint16_t len)
 {
-	uint16_t i;
+	uint16_t i = 0;
 	if (string == NULL)
 		return 0;
 	for (i = 0; i < len; i++) {
@@ -818,8 +841,7 @@ static ssize_t pn547_dev_read(struct file *filp, char __user *buf,
 	int i;
 	int retry;
 	bool isSuccess = false;
-	uint16_t buffer_count;
-	uint16_t tmp_length;
+	uint16_t buffer_count = 0;
 
 	if (count > MAX_BUFFER_SIZE) {
 		count = MAX_BUFFER_SIZE;
@@ -864,18 +886,24 @@ static ssize_t pn547_dev_read(struct file *filp, char __user *buf,
 		}
 
 		// hide bank card number,'6'&'2' means card number head
-		buffer_count = count * 2 + 1; // 2 means ascii length of char, 1 means '\0'
-		tmp_length = sizeof(tmp) * 2 + 1; // 2 means ascii length of char, 1 means '\0'
+		buffer_count = count * 3 + 1; // 3 means count triple, 1 means count add 1 bit
 		if (buffer_count > MIN_NCI_CMD_LEN_WITH_BANKCARD_NUM) {
 			for (i = NCI_CMD_HEAD_OFFSET; i < buffer_count - BANKCARD_NUM_LEN; i += BANKCARD_NUM_HEAD_LEN) {
 				if ((*(tmpStr + i) == '6') && (*(tmpStr + i + 1) == '2') &&
-					((i + BANKCARD_NUM_OVERRIDE_OFFSET) < tmp_length) &&
 					nfc_check_number(tmpStr + i + BANKCARD_NUM_HEAD_LEN, BANKCARD_NUM_VALUE_LEN)) {
 					memcpy(tmpStr + i + BANKCARD_NUM_OVERRIDE_OFFSET, "XXXXXXXX", BANKCARD_NUM_OVERRIDE_LEN);
 				}
 			}
 		}
 		// end
+		/*
+		 * hide cplc
+		 * 4 is start pos of 9F7F and length of 9F7F
+		 * 18 is length of cplc and 2 is trans byte "9F" into two char
+		 * 13 is length of print info and \0
+		 */
+		if ((2 * count > 18) && (strncmp(tmpStr + 4, "9F7F", 4) == 0))
+			snprintf(tmpStr, 13, "%s", "xxxx9F7Fxxxx");
 		hwlog_info("%s : retry = %d, ret = %d, count = %3d > %s\n", __func__, retry, ret, (int)count, tmpStr);
 
 		if (ret == (int)count) {
@@ -1663,6 +1691,11 @@ static ssize_t nfc_single_channel_show(struct device *dev, struct device_attribu
 	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d", g_nfc_single_channel));
 }
 
+static ssize_t nfc_delaytime_set_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE - 1, "%d", g_nfc_delaytime_set));
+}
+
 static ssize_t nfc_wired_ese_info_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return (ssize_t)(snprintf(buf, MAX_ATTRIBUTE_BUFFER_SIZE-1, "%d", g_nfc_ese_type));
@@ -1901,14 +1934,15 @@ static struct device_attribute pn547_attr[] = {
 	__ATTR(rd_nfc_sim_status, 0444, rd_nfc_sim_status_show, NULL),
 	__ATTR(nfc_enable_status, 0664, nfc_enable_status_show, nfc_enable_status_store),
 	__ATTR(nfc_card_num, 0444, nfc_card_num_show, NULL),
-    __ATTR(nfc_ese_num, 0444, nfc_ese_num_show, NULL),
-    __ATTR(nfc_chip_type, 0664, nfc_chip_type_show, nfc_chip_type_store),
+	__ATTR(nfc_ese_num, 0444, nfc_ese_num_show, NULL),
+	__ATTR(nfc_chip_type, 0664, nfc_chip_type_show, nfc_chip_type_store),
 	__ATTR(nfc_fw_version, 0444, nfc_fw_version_show, NULL),
 	__ATTR(nfcservice_lock, 0664, nfcservice_lock_show, nfcservice_lock_store),
 	__ATTR(nfc_svdd_sw, 0664, nfc_svdd_sw_show, nfc_svdd_sw_store),
 	__ATTR(nfc_close_type, 0664, nfc_close_type_show, nfc_close_type_store),
 	__ATTR(nfc_single_channel, 0444, nfc_single_channel_show, NULL),
-    __ATTR(nfc_wired_ese_type, 0664, nfc_wired_ese_info_show, nfc_wired_ese_info_store),
+	__ATTR(nfc_delaytime_set, 0444, nfc_delaytime_set_show, NULL),
+	__ATTR(nfc_wired_ese_type, 0664, nfc_wired_ese_info_show, nfc_wired_ese_info_store),
 	__ATTR(nfc_activated_se_info, 0664, nfc_activated_se_info_show, nfc_activated_se_info_store),
 	__ATTR(nfc_hal_dmd, 0664, nfc_hal_dmd_info_show, nfc_hal_dmd_info_store),
 	__ATTR(nfc_calibration, 0444, nfc_calibration_show, NULL),
@@ -2383,7 +2417,7 @@ static int pn547_probe(struct i2c_client *client,
 
 	mutex_init(&pn547_dev->irq_mutex_lock);
 	/* Initialize wakelock*/
-	wake_lock_init(&wlock_read, WAKE_LOCK_SUSPEND, "nfc_read");
+	wakeup_source_init(&wlock_read, "nfc_read");
 	/*register pn544 char device*/
 	pn547_dev->pn547_device.minor = MISC_DYNAMIC_MINOR;
 	pn547_dev->pn547_device.name = "pn544";
@@ -2448,8 +2482,9 @@ static int pn547_probe(struct i2c_client *client,
 	set_nfc_brcm_config_name();
 	set_nfc_chip_type_name();
 	set_nfc_single_channel();
+	get_nfc_delaytime_set();
 	set_nfc_card_num();
-    set_nfc_ese_num();
+	set_nfc_ese_num();
 
 	hwlog_info("[%s,%d]: probe end !\n", __func__, __LINE__);
 
@@ -2459,7 +2494,7 @@ err_request_irq_failed:
 	gpio_free(pn547_dev->irq_gpio);
 err_misc_register:
 	misc_deregister(&pn547_dev->pn547_device);
-	wake_lock_destroy(&wlock_read);
+	wakeup_source_trash(&wlock_read);
 	mutex_destroy(&pn547_dev->read_mutex);
 err_check_pn547:
 	ret = pn547_bulk_disable(pn547_dev);
@@ -2506,7 +2541,7 @@ static int pn547_remove(struct i2c_client *client)
 	}
 	free_irq(client->irq, pn547_dev);
 	misc_deregister(&pn547_dev->pn547_device);
-	wake_lock_destroy(&wlock_read);
+	wakeup_source_trash(&wlock_read);
 	mutex_destroy(&pn547_dev->read_mutex);
 	gpio_free(pn547_dev->irq_gpio);
 	gpio_free(pn547_dev->firm_gpio);

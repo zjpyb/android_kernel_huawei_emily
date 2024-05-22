@@ -91,8 +91,12 @@ void *scm_UnCacheMemAlloc(u32 ulSize, unsigned long *pulRealAddr)
     *pulRealAddr = 0;
     pVirtAdd     = 0;
 
+#ifdef CONFIG_ARM64
 
     pVirtAdd = dma_alloc_coherent(&modem_socp_pdev->dev, ulSize, &ulAddress, GFP_KERNEL);
+#else
+    pVirtAdd = dma_alloc_coherent(NULL, ulSize, &ulAddress, GFP_KERNEL);
+#endif
 
     *pulRealAddr = (unsigned long)ulAddress;
 

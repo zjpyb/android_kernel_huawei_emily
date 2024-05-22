@@ -284,6 +284,7 @@ enum MAILBOX_MAILCODE_ENUM
     MAILBOX_MAILCODE_ACPU_TO_HIFI_USBAUDIO,
     MAILBOX_MAILCODE_ACPU_TO_HIFI_USB_RT,
     MAILBOX_MAILCODE_ACPU_TO_HIFI_CCORE_RESET_ID,
+    MAILBOX_MAILCODE_ACPU_TO_HIFI_VIRTUAL_VOICE,
     MAILBOX_MAILCODE_ITEM_END(ACPU, HIFI, MSG),
 
     /* ACPU->CCPU MSG号定义在这里 */
@@ -331,6 +332,7 @@ enum MAILBOX_MAILCODE_ENUM
     MAILBOX_MAILCODE_HIFI_TO_ACPU_CCORE_RESET_ID,
     MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO,
     MAILBOX_MAILCODE_HIFI_TO_ACPU_USB,
+    MAILBOX_MAILCODE_HIFI_TO_ACPU_VIRTUAL_VOICE,
     MAILBOX_MAILCODE_ITEM_END(HIFI, ACPU, MSG),
 
     /* HIFI->BBE16 邮编号定义在这里 */
@@ -733,6 +735,14 @@ typedef struct
 	unsigned int uwReserved[2];
 }CARM_HIFI_DYN_ADDR_SHARE_STRU;
 
+struct mb_queue
+{
+	unsigned long base;
+	unsigned int  length;
+	unsigned long front; /* write pointer */
+	unsigned long rear; /* read pointer */
+	unsigned int  size;
+};
 
 /*****************************************************************************
   7 UNION定义
@@ -753,10 +763,8 @@ typedef struct
 *****************************************************************************/
 
 
-typedef void (*mb_msg_cb)(
-                void                   *user_handle,
-                void                   *mail_handle,
-                unsigned int           mail_len);
+typedef void (*mb_msg_cb)(const void *user_handle,
+		struct mb_queue *mail_handle, unsigned int mail_len);
 
 
 unsigned int DRV_MAILBOX_SENDMAIL(
@@ -772,7 +780,7 @@ unsigned int DRV_MAILBOX_REGISTERRECVFUNC(
 
 
 unsigned int DRV_MAILBOX_READMAILDATA(
-                void                   *MailHandle,
+                struct mb_queue *MailHandle,
                 unsigned char          *pData,
                 unsigned int          *pSize);
 

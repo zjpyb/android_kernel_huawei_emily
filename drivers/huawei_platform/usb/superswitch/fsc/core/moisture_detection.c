@@ -21,7 +21,7 @@
 #include <asm/irq.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/workqueue.h>
 #include "port.h"

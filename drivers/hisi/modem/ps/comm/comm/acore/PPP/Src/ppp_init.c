@@ -36,6 +36,7 @@
    2 外部函数变量声明
 ******************************************************************************/
 #include "product_config.h"
+#if(FEATURE_ON == FEATURE_PPP)
 /******************************************************************************
    1 头文件包含
 ******************************************************************************/
@@ -57,6 +58,9 @@
 #include "PPP/Inc/ppp_input.h"
 #include "PPP/Inc/ppp_atcmd.h"
 #include "NVIM_Interface.h"
+#if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+#include "PPP/Inc/hdlc_hardware_service.h"
+#endif
 #include "acore_nv_id_gucttf.h"
 #include "acore_nv_stru_gucttf.h"
 #include "nv_stru_gucnas.h"
@@ -448,6 +452,9 @@ VOS_VOID PppMsgTimerProc( struct MsgCB * pMsg )
 {
     REL_TIMER_MSG  *pPsMsg  = (REL_TIMER_MSG *)pMsg;
     VOS_UINT16      usPppId = (VOS_UINT16)(pPsMsg->ulPara);
+#if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+    VOS_ULONG       ulFlags = 0UL;
+#endif
 
     if (TIMER_PPP_LCP_ECHO_MSG == pPsMsg->ulName)
     {
@@ -498,6 +505,25 @@ VOS_VOID PppMsgTimerProc( struct MsgCB * pMsg )
         PPP_LINK(usPppId)->lcp.hLcpCloseTimer = VOS_NULL_PTR;
         PPP_ProcPppDisconnEvent(usPppId);
     }
+#if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+    else if (TIMER_HDLC_FRM_OUTPUT_SPACE_ALLOC_FAIL == pPsMsg->ulName)
+    {
+        if (VOS_NULL_PTR != g_hHdlcFrmTimerHandle)
+        {
+            (VOS_VOID)VOS_StopRelTimer(&g_hHdlcFrmTimerHandle);
+            g_hHdlcFrmTimerHandle = VOS_NULL_PTR;
+        }
+        VOS_SpinLockIntLock(&g_stPppASpinLock, ulFlags);  /*lint !e571*/
+        if ((VOS_NO == g_PppDataQCtrl.ulNotifyMsg) && (0 < PPP_ZC_GET_QUEUE_LEN(&(g_PppDataQCtrl.stDataQ))))
+        {
+            g_PppDataQCtrl.ulNotifyMsg = VOS_YES;
+            g_PppDataQCtrl.stStat.ulSndMsgCnt++;
+        }
+        VOS_SpinUnlockIntUnlock(&g_stPppASpinLock , ulFlags);
+
+        PPP_Snd1stDataNotify();
+    }
+#endif
     else
     {
         PPP_MNTN_LOG1(PS_PID_APP_PPP, 0, PS_PRINT_WARNING,"Unknow Timer!\n", pPsMsg->ulName);
@@ -563,6 +589,13 @@ VOS_UINT32    APP_PPP_PidInit(enum VOS_INIT_PHASE_DEFINE InitPhase )
 
             PPP_EntInit();
 
+            #if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+            /* 初始化HDLC */
+            if (VOS_OK != PPP_HDLC_HARD_Init())
+            {
+                return VOS_ERR;
+            }
+            #endif
 
             break;
 
@@ -587,12 +620,18 @@ VOS_UINT32    APP_PPP_PidInit(enum VOS_INIT_PHASE_DEFINE InitPhase )
 
 VOS_VOID APP_PPP_EventProc(VOS_UINT32 ulEvent)
 {
+#if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+    PPP_Service_HdlcHardOpenClk();
+#endif
 
     if (ulEvent & PPP_RCV_DATA_EVENT)
     {
         PPP_ProcDataNotify();
     }
 
+#if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+    PPP_Service_HdlcHardCloseClk();
+#endif
 
     return;
 }
@@ -608,12 +647,18 @@ VOS_VOID APP_PPP_MsgProc( struct MsgCB * pMsg )
         return;
     }
 
+    #if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+    PPP_Service_HdlcHardOpenClk();
+    #endif
 
     /*如果是定时器发来的消息*/
     if (VOS_PID_TIMER == pMsg->ulSenderPid)
     {
         PppMsgTimerProc(pMsg);
 
+        #if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+        PPP_Service_HdlcHardCloseClk();
+        #endif
 
         return ;
     }
@@ -621,6 +666,7 @@ VOS_VOID APP_PPP_MsgProc( struct MsgCB * pMsg )
     /*如果是接收到从TE发送来的数据帧*/
     switch(pPsMsg->ulMsgType)
     {
+        #if (PPP_FEATURE == PPP_FEATURE_PPP)
         case PPP_DATA_PROC_NOTIFY:
             PPP_ProcDataNotify();
             break;
@@ -633,12 +679,16 @@ VOS_VOID APP_PPP_MsgProc( struct MsgCB * pMsg )
             PPP_ProcAsFrmDataInd(pMsg);
             break;
 
+        #endif
 
 
         default:
             break;
     }
 
+    #if (FEATURE_ON == FEATURE_HARDWARE_HDLC_FUNC)
+    PPP_Service_HdlcHardCloseClk();
+    #endif
 
     return;
 }
@@ -759,5 +809,22 @@ VOS_UINT32 APP_PPP_FidInit(enum VOS_INIT_PHASE_DEFINE ip)
 
     return VOS_OK;
 }
+#else
+/*****************************************************************************
+  1 头文件包含
+*****************************************************************************/
+#include "AtPppInterface.h"
+
+/*****************************************************************************
+  2 函数实现
+*****************************************************************************/
+
+
+VOS_VOID PPP_UpdateWinsConfig(VOS_UINT8 ucWins)
+{
+    return;
+}
+
+#endif /*#if(FEATURE_ON == FEATURE_PPP)*/
 
 

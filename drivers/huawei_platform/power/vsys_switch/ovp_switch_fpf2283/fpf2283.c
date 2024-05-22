@@ -3,7 +3,7 @@
  *
  * vsys ovp switch fpf2283 driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -67,16 +67,16 @@ struct fpf2283_device_info {
 
 static struct fpf2283_device_info *g_fpf2283_dev;
 
-#define MSG_LEN                      (2)
+#define MSG_LEN                      2
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
 static int fpf2283_write_block(struct fpf2283_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[1];
-	int ret = 0;
+	int ret;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
@@ -98,13 +98,10 @@ static int fpf2283_write_block(struct fpf2283_device_info *di,
 	/* i2c_transfer returns number of messages transferred */
 	if (ret != 1) {
 		hwlog_err("write_block failed[%x]\n", reg);
-		if (ret < 0)
-			return ret;
-		else
-			return -EIO;
-	} else {
-		return 0;
+		return -EIO;
 	}
+
+	return 0;
 }
 #endif /* CONFIG_HUAWEI_POWER_DEBUG */
 
@@ -112,10 +109,10 @@ static int fpf2283_read_block(struct fpf2283_device_info *di,
 	u8 *value, u8 reg, unsigned int num_bytes)
 {
 	struct i2c_msg msg[MSG_LEN];
-	u8 buf = 0;
-	int ret = 0;
+	u8 buf;
+	int ret;
 
-	if (di == NULL || value == NULL) {
+	if (!di || !di->client || !value) {
 		hwlog_err("di or value is null\n");
 		return -EIO;
 	}
@@ -142,13 +139,10 @@ static int fpf2283_read_block(struct fpf2283_device_info *di,
 	/* i2c_transfer returns number of messages transferred */
 	if (ret != MSG_LEN) {
 		hwlog_err("read_block failed[%x]\n", reg);
-		if (ret < 0)
-			return ret;
-		else
-			return -EIO;
-	} else {
-		return 0;
+		return -EIO;
 	}
+
+	return 0;
 }
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
@@ -174,7 +168,7 @@ static int fpf2283_read_byte(u8 reg, u8 *value)
 #ifdef POWER_MODULE_DEBUG_FUNCTION
 static int fpf2283_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = fpf2283_read_byte(reg, &val);
@@ -184,14 +178,12 @@ static int fpf2283_write_mask(u8 reg, u8 mask, u8 shift, u8 value)
 	val &= ~mask;
 	val |= ((value << shift) & mask);
 
-	ret = fpf2283_write_byte(reg, val);
-
-	return ret;
+	return fpf2283_write_byte(reg, val);
 }
 
 static int fpf2283_read_mask(u8 reg, u8 mask, u8 shift, u8 *value)
 {
-	int ret = 0;
+	int ret;
 	u8 val = 0;
 
 	ret = fpf2283_read_byte(reg, &val);
@@ -207,8 +199,8 @@ static int fpf2283_read_mask(u8 reg, u8 mask, u8 shift, u8 *value)
 
 static void fpf2283_dump_register(void)
 {
-	int ret = 0;
-	u8 i = 0;
+	int ret;
+	u8 i;
 	u8 val = 0;
 
 	for (i = 0; i < FPF2283_MAX_REGS; ++i) {
@@ -224,10 +216,10 @@ static void fpf2283_dump_register(void)
 static int fpf2283_get_device_id(int *id)
 {
 	u8 id_info = 0;
-	int ret = 0;
+	int ret;
 	struct fpf2283_device_info *di = g_fpf2283_dev;
 
-	if (di == NULL || id == NULL) {
+	if (!di || !id) {
 		hwlog_err("di or id is null\n");
 		return -1;
 	}
@@ -250,7 +242,6 @@ static int fpf2283_get_device_id(int *id)
 	case FPF2283_DEVICE_ID_FPF2283:
 		di->device_id = VSYS_OVP_SWITCH_FPF2283;
 		break;
-
 	default:
 		di->device_id = -1;
 		ret = -1;
@@ -266,7 +257,7 @@ static int fpf2283_set_state(int enable)
 {
 	struct fpf2283_device_info *di = g_fpf2283_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -295,7 +286,7 @@ static int fpf2283_get_state(void)
 {
 	struct fpf2283_device_info *di = g_fpf2283_dev;
 
-	if (di == NULL) {
+	if (!di) {
 		hwlog_err("di is null\n");
 		return -1;
 	}
@@ -312,7 +303,6 @@ static void fpf2283_para_init(struct fpf2283_device_info *di)
 
 static struct vsys_ovp_switch_device_ops fpf2283_ops = {
 	.chip_name = "fpf2283",
-
 	.set_state = fpf2283_set_state,
 	.get_state = fpf2283_get_state,
 	.get_id = fpf2283_get_device_id,
@@ -322,16 +312,16 @@ static struct vsys_ovp_switch_device_ops fpf2283_ops = {
 static ssize_t fpf2283_dbg_show_reg_value(void *dev_data,
 	char *buf, size_t size)
 {
-	u8 val = 0;
-	int ret = 0;
-	int i = 0;
+	u8 val;
+	int ret;
+	int i;
 	char rd_buf[FPF2283_RD_BUF_SIZE] = {0};
-	struct fpf2283_device_info *dev_p;
+	struct fpf2283_device_info *dev_p = NULL;
 
 	dev_p = (struct fpf2283_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
-		return scnprintf(buf, size, "dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
+		return scnprintf(buf, size, "buf or dev_p is null\n");
 	}
 
 	for (i = 0; i < FPF2283_MAX_REGS; i++) {
@@ -356,12 +346,12 @@ static ssize_t fpf2283_dbg_store_reg_value(void *dev_data,
 {
 	int regaddr = 0;
 	int regval = 0;
-	int ret = 0;
-	struct fpf2283_device_info *dev_p;
+	int ret;
+	struct fpf2283_device_info *dev_p = NULL;
 
 	dev_p = (struct fpf2283_device_info *)dev_data;
-	if (dev_p == NULL) {
-		hwlog_err("dev_p is null\n");
+	if (!buf || !dev_p) {
+		hwlog_err("buf or dev_p is null\n");
 		return -EINVAL;
 	}
 
@@ -371,8 +361,8 @@ static ssize_t fpf2283_dbg_store_reg_value(void *dev_data,
 	}
 
 	/* maximum value of 8-bit num is 255 */
-	if (regaddr < 0 || regaddr >= FPF2283_MAX_REGS
-		|| regval < 0 || regval > 255) {
+	if (regaddr < 0 || regaddr >= FPF2283_MAX_REGS ||
+		regval < 0 || regval > 255) {
 		hwlog_err("regaddr 0x%x or regval 0x%x invalid\n",
 			regaddr, regval);
 		return -EINVAL;
@@ -391,25 +381,17 @@ static ssize_t fpf2283_dbg_store_reg_value(void *dev_data,
 static int fpf2283_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret = 0;
+	int ret;
 	struct fpf2283_device_info *di = NULL;
 	struct device_node *np = NULL;
 
 	hwlog_info("probe begin\n");
 
-	if (client == NULL || id == NULL) {
-		hwlog_err("client or id is null\n");
-		return -ENOMEM;
-	}
-
-	if (!i2c_check_functionality(client->adapter,
-		I2C_FUNC_SMBUS_WORD_DATA)) {
-		hwlog_err("i2c_check failed\n");
+	if (!client || !client->dev.of_node || !id)
 		return -ENODEV;
-	}
 
 	di = devm_kzalloc(&client->dev, sizeof(*di), GFP_KERNEL);
-	if (di == NULL)
+	if (!di)
 		return -ENOMEM;
 
 	g_fpf2283_dev = di;
@@ -422,36 +404,34 @@ static int fpf2283_probe(struct i2c_client *client,
 	hwlog_info("gpio_en=%d\n", di->gpio_en);
 
 	if (!gpio_is_valid(di->gpio_en)) {
-		hwlog_err("gpio(gpio_en) is not valid\n");
+		hwlog_err("gpio is not valid\n");
 		ret = -EINVAL;
 		goto fpf2283_fail_0;
 	}
 
 	ret = gpio_request(di->gpio_en, "gpio_en");
 	if (ret) {
-		hwlog_err("gpio(gpio_en) request fail\n");
+		hwlog_err("gpio request fail\n");
 		goto fpf2283_fail_0;
 	}
 
 	ret = gpio_direction_output(di->gpio_en, FPF2283_CHIP_DISABLE);
 	if (ret) {
-		hwlog_err("gpio(gpio_en) set output fail\n");
+		hwlog_err("gpio set output fail\n");
 		goto fpf2283_fail_1;
 	}
 
 	fpf2283_para_init(di);
 
 	ret = vsys_ovp_switch_ops_register(&fpf2283_ops);
-	if (ret) {
-		hwlog_err("register fpf2283 ops failed\n");
+	if (ret)
 		goto fpf2283_fail_1;
-	}
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
 	power_dbg_ops_register("fpf2283_regval", i2c_get_clientdata(client),
-		(power_dgb_show)fpf2283_dbg_show_reg_value,
-		(power_dgb_store)fpf2283_dbg_store_reg_value);
-#endif
+		(power_dbg_show)fpf2283_dbg_show_reg_value,
+		(power_dbg_store)fpf2283_dbg_store_reg_value);
+#endif /* CONFIG_HUAWEI_POWER_DEBUG */
 
 	hwlog_info("probe end\n");
 	return 0;
@@ -461,6 +441,7 @@ fpf2283_fail_1:
 fpf2283_fail_0:
 	devm_kfree(&client->dev, di);
 	g_fpf2283_dev = NULL;
+
 	return ret;
 }
 
@@ -470,11 +451,16 @@ static int fpf2283_remove(struct i2c_client *client)
 
 	hwlog_info("remove begin\n");
 
+	if (!di)
+		return -ENODEV;
+
 	/* reset fpf2283 */
 	gpio_set_value(di->gpio_en, FPF2283_CHIP_DISABLE);
 
 	if (di->gpio_en)
 		gpio_free(di->gpio_en);
+
+	g_fpf2283_dev = NULL;
 
 	hwlog_info("remove end\n");
 	return 0;
@@ -490,7 +476,7 @@ static const struct of_device_id fpf2283_of_match[] = {
 };
 
 static const struct i2c_device_id fpf2283_i2c_id[] = {
-	{"fpf2283_vsys", 0}, {}
+	{ "fpf2283_vsys", 0 }, {}
 };
 
 static struct i2c_driver fpf2283_driver = {
@@ -506,13 +492,7 @@ static struct i2c_driver fpf2283_driver = {
 
 static int __init fpf2283_init(void)
 {
-	int ret = 0;
-
-	ret = i2c_add_driver(&fpf2283_driver);
-	if (ret)
-		hwlog_err("i2c_add_driver error\n");
-
-	return ret;
+	return i2c_add_driver(&fpf2283_driver);
 }
 
 static void __exit fpf2283_exit(void)

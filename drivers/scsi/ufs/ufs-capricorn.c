@@ -42,10 +42,10 @@ void ufs_soc_init(struct ufs_hba *hba)
 
 	dev_info(hba->dev, "%s ++\n", __func__);
 
-	/* CS LOW TEMP 232M */
+	/* CS LOW TEMP 162M */
 	writel(BIT(SOC_SCTRL_SCPERDIS4_gt_clk_ufs_subsys_START),
 		SOC_SCTRL_SCPERDIS4_ADDR(host->sysctrl));
-	writel(0x003F0006, SOC_SCTRL_SCCLKDIV9_ADDR(host->sysctrl));
+	writel(0x003F0009, SOC_SCTRL_SCCLKDIV9_ADDR(host->sysctrl));
 	writel(BIT(SOC_SCTRL_SCPEREN4_gt_clk_ufs_subsys_START),
 		SOC_SCTRL_SCPEREN4_ADDR(host->sysctrl));
 
@@ -255,8 +255,23 @@ static void mphy_amplitude_glitch_workaround(struct ufs_hba *hba)
 	uint16_t value3 = 0;
 	uint16_t value4 = 0;
 	uint32_t reg;
-	uint16_t table[11][2] = {
+	struct ufs_kirin_host *host = hba->priv;
+	uint16_t (*table)[2] = NULL;
+	uint16_t table_0DB[11][2] = {
 			/* tx_ana_ctrl_leg_pull_en, tx_ana_ctrl_post */
+			{252, 0},
+			{252, 0},
+			{252, 0},
+			{255, 0},
+			{255, 0},
+			{1020, 0},
+			{1020, 0},
+			{1023, 0},
+			{1023, 0},
+			{4092, 0},
+			{4092, 0}
+	};
+	uint16_t table_35DB[11][2] = {
 			{252, 3},
 			{252, 3},
 			{252, 3},
@@ -269,10 +284,30 @@ static void mphy_amplitude_glitch_workaround(struct ufs_hba *hba)
 			{4092, 6},
 			{4092, 7}
 	};
+	uint16_t table_60DB[11][2] = {
+			{252, 6},
+			{252, 7},
+			{252, 7},
+			{255, 7},
+			{255, 14},
+			{1020, 14},
+			{1020, 14},
+			{1023, 14},
+			{1023, 15},
+			{4092, 15},
+			{4092, 15}
+	};
+
+	table = &table_35DB[0];
+	if (0 == host->tx_equalizer) {
+		table = &table_0DB[0];
+	} else if (60 == host->tx_equalizer) {
+		table = &table_60DB[0];
+	}
 
 	reg = ufs_kirin_mphy_read(hba, 0x200C);
 	reg = reg & 0xF; /* RAWCMN_DIG_TX_CAL_CODE[3:0] */
-	if (reg >= sizeof(table)/sizeof(table[0]))
+	if (reg >= sizeof(table_35DB) / sizeof(table_35DB[0]))
 		reg = 0;
 	value3 = table[reg][0]<<1;
 	value4 = table[reg][1];
@@ -460,8 +495,13 @@ int ufs_kirin_link_startup_pre_change(struct ufs_hba *hba)
 		/* Ensure close success */
 		pr_warn("Warring!!! close VS_Mk2ExtnSupport failed\n");
 	}
-	/*for hisi MPHY*/
-	hisi_mphy_busdly_config(hba, host);
+
+	if (host->caps & USE_HISI_MPHY_TC)
+		/*for hisi MPHY*/
+		hisi_mphy_busdly_config(hba, host);
+	else
+		/* set bus delay 0x22 for ASIC */
+		ufshcd_rmwl(hba, UFS_BUS_DELAY_MASK, UFS_BUS_DELAY_VALUE, UFS_REG_OCPTHRTL);
 
 	pr_info("%s --\n", __func__);
 
@@ -496,9 +536,6 @@ void set_device_clk(struct ufs_hba *hba)
 {
 	/* 0: 19.2M, 1: 38.4M */
 	int ufs_refclk_val = 0;
-
-	if (hba->ufs_device_spec_version >= 0x0300)
-		ufs_refclk_val = 1;
 
 	dev_info(hba->dev, "ref clk %s\n", ufs_refclk_val ? "38.4M" : "19.2M");
 
@@ -542,25 +579,37 @@ int ufs_kirin_link_startup_post_change(struct ufs_hba *hba)
 	return 0;
 }
 
-void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
+void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba, struct ufs_pa_layer_attr *dev_req_params)
 {
 	uint32_t value;
+	u32 equalizer;
+	struct ufs_kirin_host *host = hba->priv;
+
 	pr_info("%s ++\n", __func__);
 #ifdef CONFIG_HISI_DEBUG_FS
 	pr_info("device manufacturer_id is 0x%x\n", hba->manufacturer_id);
 #endif
+
+	equalizer = (dev_req_params->gear_tx == 4) ? 0 : 35;
+	sel_equalizer_by_device(hba, &equalizer);
+	if (host->tx_equalizer != equalizer) {
+		host->tx_equalizer = equalizer;
+		if (likely(!hba->host->is_emulator))
+			mphy_amplitude_glitch_workaround(hba);
+	}
+
 	/*ARIES platform need to set SaveConfigTime to 0x13, and change sync length to maximum value */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xD0A0), 0x13); /* VS_DebugSaveConfigTime */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1552), 0x4f); /* g1 sync length */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1554), 0x4f); /* g2 sync length */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x1556), 0x4f); /* g3 sync length */
-	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a7), 0xA); /* PA_Hibern8Time */
+
+	ufshcd_dme_get(hba, UIC_ARG_MIB(0x15A7), &value);
+	if (value < 0xA)
+		ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a7),
+			0xA); /* PA_Hibern8Time */
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0x15a8), 0xA); /* PA_Tactivate */
 	ufshcd_dme_set(hba, UIC_ARG_MIB_SEL(0xd085, 0x0), 0x01);
-
-	ufshcd_dme_get(hba, UIC_ARG_MIB(0x15A8), &value);
-	if (value < 0x7)
-		ufshcd_dme_set(hba, UIC_ARG_MIB(0x15A8), 0x7); /* update PaTactive */
 
 	ufshcd_dme_set(hba, UIC_ARG_MIB(0x155c), 0x0); /* PA_TxSkip */
 
@@ -588,7 +637,6 @@ void ufs_kirin_pwr_change_pre_change(struct ufs_hba *hba)
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xd045), 65535);
 	/*DME_AFC1ReqTimeOutVal = 32767, default is 0*/
 	ufshcd_dme_set(hba, UIC_ARG_MIB((u32)0xd046), 32767);
-
 
 	pr_info("%s --\n", __func__);
 	return;

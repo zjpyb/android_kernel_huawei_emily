@@ -815,8 +815,8 @@ static inline void print_state(
 static void pd_pe_state_change(
 	pd_port_t *pd_port, pd_event_t *pd_event, bool vdm_evt)
 {
-	pe_state_action_fcn_t prev_exit_action;
-	pe_state_action_fcn_t next_entry_action;
+	pe_state_action_fcn_t prev_exit_action = NULL;
+	pe_state_action_fcn_t next_entry_action = NULL;
 
 	uint8_t old_state = pd_port->pe_state_curr;
 	uint8_t new_state = pd_port->pe_state_next;

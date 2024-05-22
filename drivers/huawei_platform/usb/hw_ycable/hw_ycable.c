@@ -3,7 +3,7 @@
  *
  * huawei ycable driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -33,6 +33,7 @@
 #include <linux/hisi/usb/hisi_usb.h>
 #include <linux/hisi/hisi_adc.h>
 #include <huawei_platform/usb/hw_ycable.h>
+#include <huawei_platform/power/power_dts.h>
 #include "../otg_gpio_id/hw_otg_id.h"
 
 #ifdef HWLOG_TAG
@@ -44,7 +45,7 @@ HWLOG_REGIST();
 
 static struct ycable_info *g_ycable;
 
-static const char * const ycable_id_status_table[] = {
+static const char * const ycable_id_status_table[YCABLE_ID_END] = {
 	[YCABLE_ID_HIGH] = "id_high",
 	[YCABLE_ID_LOW_OTG] = "id_low_otg",
 	[YCABLE_ID_LOW_WITH_CHARGE] = "id_low_with_charge",
@@ -90,11 +91,6 @@ static int ycable_event_notifier_call(struct ycable_info *di,
 {
 	int ret = -1;
 	unsigned long y_event = CHARGER_TYPE_NONE;
-
-	if (!di) {
-		hwlog_err("di is null\n");
-		return ret;
-	}
 
 	if ((event < YCABLE_STATUS_BEGIN) || (event >= YCABLE_STATUS_END)) {
 		hwlog_err("ycable event is invalid\n");
@@ -166,11 +162,6 @@ int ycable_get_gpio_adc_min(void)
 
 static bool ycable_start_charging(struct ycable_info *di)
 {
-	if (!di) {
-		hwlog_err("di is null\n");
-		return false;
-	}
-
 	if (di->ycable_status == YCABLE_CHARGER)
 		return false;
 
@@ -196,11 +187,6 @@ static bool ycable_start_charging(struct ycable_info *di)
 
 static bool ycable_start_otg(struct ycable_info *di)
 {
-	if (!di) {
-		hwlog_err("di is null\n");
-		return false;
-	}
-
 	if (di->ycable_status == YCABLE_OTG)
 		return false;
 
@@ -225,11 +211,6 @@ static bool ycable_start_otg(struct ycable_info *di)
 
 static void ycable_stop_charging_and_otg(struct ycable_info *di)
 {
-	if (!di) {
-		hwlog_err("di is null\n");
-		return;
-	}
-
 	di->ycable_status = YCABLE_UNKNOW;
 	di->ycable_otg_enable_flag = false;
 	di->ycable_charger_enable_flag = false;
@@ -354,7 +335,7 @@ static void ycable_monitor_work(struct work_struct *work)
 		msecs_to_jiffies(YCABLE_WORK_TIMEOUT));
 }
 
-static int ycable_usb_notifier_call(struct notifier_block *usb_nb,
+static int ycable_usb_notifier_call(struct notifier_block *nb,
 	unsigned long event, void *data)
 {
 	struct ycable_info *di = g_ycable;
@@ -371,7 +352,6 @@ static int ycable_usb_notifier_call(struct notifier_block *usb_nb,
 		di->ycable_otg_enable_flag = false;
 		di->ycable_charger_enable_flag = false;
 		break;
-
 	/* fall through: SDP,CDP,DCP,UNKNOWN all are charging event */
 	case CHARGER_TYPE_SDP:
 	case CHARGER_TYPE_CDP:
@@ -379,14 +359,11 @@ static int ycable_usb_notifier_call(struct notifier_block *usb_nb,
 	case CHARGER_TYPE_UNKNOWN:
 		di->ycable_charger_enable_flag = true;
 		break;
-
 	case PLEASE_PROVIDE_POWER:
 		complete(&di->dev_off_completion);
-
 		if (di->ycable_status == YCABLE_UNKNOW)
 			di->ycable_otg_enable_flag = true;
 		break;
-
 	default:
 		hwlog_err("ignore other type %ld\n", event);
 		break;
@@ -424,7 +401,7 @@ int ycable_handle_otg_event(enum otg_dev_event_type event_type, bool need_wait)
 			timeout = wait_for_completion_timeout(
 				&di->dev_off_completion,
 				msecs_to_jiffies(YCABLE_WAIT_COMPLETE_TIMEOUT));
-			hwlog_info("dev_off timeout(%ld)\n", timeout);
+			hwlog_info("dev_off timeout=%ld\n", timeout);
 		}
 
 		if (di->ycable_status == YCABLE_UNKNOW)
@@ -432,12 +409,10 @@ int ycable_handle_otg_event(enum otg_dev_event_type event_type, bool need_wait)
 
 		reinit_completion(&di->dev_off_completion);
 		break;
-
 	case ID_RISE_EVENT:
 		cancel_delayed_work(&di->ycable_work);
 		ycable_stop_charging_and_otg(di);
 		break;
-
 	default:
 		hwlog_info("no valid event for ycable\n");
 		cancel_delayed_work(&di->ycable_work);
@@ -449,49 +424,21 @@ int ycable_handle_otg_event(enum otg_dev_event_type event_type, bool need_wait)
 
 static int ycable_parse_dts(struct ycable_info *di, struct device_node *np)
 {
-	int ret = -1;
-
-	if (!di || !np) {
-		hwlog_err("di or np is null\n");
-		return ret;
-	}
-
 	if (!of_property_read_bool(np, "ycable_support")) {
 		hwlog_err("ycable_support dts read failed\n");
-		return ret;
+		return -EINVAL;
 	}
 	di->ycable_support = true;
 
-	/* ycable input current  */
-	ret = of_property_read_u32(np, "ycable_iin_curr",
-		&(di->ycable_iin_curr));
-	if (ret) {
-		hwlog_err("ycable_iin_curr dts read failed\n");
-		di->ycable_iin_curr = YCABLE_CURR_DEFAULT;
-	}
+	(void)power_dts_read_u32(np, "ycable_iin_curr",
+		(u32 *)&di->ycable_iin_curr, YCABLE_CURR_DEFAULT);
+	(void)power_dts_read_u32(np, "ycable_ichg_curr",
+		(u32 *)&di->ycable_ichg_curr, YCABLE_CURR_DEFAULT);
+	if (power_dts_read_u32(np, "ycable_adc_channel",
+		&di->otg_adc_channel, 0))
+		return -EINVAL;
 
-	hwlog_info("ycable_iin_curr=%d\n", di->ycable_iin_curr);
-
-	/* ycable charge current */
-	ret = of_property_read_u32(np, "ycable_ichg_curr",
-		&(di->ycable_ichg_curr));
-	if (ret) {
-		hwlog_err("ycable_ichg_curr dts read failed\n");
-		di->ycable_ichg_curr = YCABLE_CURR_DEFAULT;
-	}
-
-	hwlog_info("ycable_ichg_curr=%d\n", di->ycable_ichg_curr);
-
-	ret = of_property_read_u32(np, "ycable_adc_channel",
-		&(di->otg_adc_channel));
-	if (ret) {
-		hwlog_err("ycable_adc_channel dts read failed\n");
-		return ret;
-	}
-
-	hwlog_info("ycable_adc_channel=%d\n", di->otg_adc_channel);
-
-	return ret;
+	return 0;
 }
 
 static int ycable_probe(struct platform_device *pdev)
@@ -503,13 +450,15 @@ static int ycable_probe(struct platform_device *pdev)
 
 	hwlog_info("probe begin\n");
 
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
 	di = devm_kzalloc(&pdev->dev, sizeof(*di), GFP_KERNEL);
 	if (!di)
 		return -ENOMEM;
 
 	g_ycable = di;
 	platform_set_drvdata(pdev, di);
-
 	di->pdev = pdev;
 	dev = &pdev->dev;
 	np = dev->of_node;
@@ -521,7 +470,7 @@ static int ycable_probe(struct platform_device *pdev)
 	di->usb_nb.notifier_call = ycable_usb_notifier_call;
 	ret = hisi_charger_type_notifier_register(&di->usb_nb);
 	if (ret) {
-		hwlog_err("notifier register failed\n");
+		hwlog_err("charger_type_notifier register failed\n");
 		goto fail_register_notifier;
 	}
 
@@ -546,6 +495,9 @@ static int ycable_remove(struct platform_device *pdev)
 	struct ycable_info *di = platform_get_drvdata(pdev);
 
 	hwlog_info("remove begin\n");
+
+	if (!di)
+		return -ENODEV;
 
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);

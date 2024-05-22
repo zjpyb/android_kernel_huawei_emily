@@ -16,7 +16,7 @@
 #include <linux/kthread.h>
 #include <linux/semaphore.h>
 #include <linux/sched/rt.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/fs.h>
 #include <linux/syscalls.h>
 #include <linux/kernel.h>
@@ -26,6 +26,7 @@
 #include <linux/time.h>
 #include <linux/stat.h>
 #include <linux/version.h>
+#include <linux/types.h>
 #include <linux/hisi/hi64xx/hi6403_dsp_regs.h>
 #include <hi64xx_hifi_interface.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
@@ -159,7 +160,7 @@ struct hook_runtime {
 	unsigned short channel;                     /* dma channel number */
 	struct semaphore hook_proc_sema;
 	struct semaphore hook_stop_sema;
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 	struct task_struct *kthread;
 	unsigned int kthread_should_stop;
 	unsigned int verify_state;
@@ -242,7 +243,7 @@ static unsigned int _get_idle_buffer_id(struct hook_runtime *runtime)
 	unsigned int used_dma_addr = 0;
 	unsigned int src_addr_a = 0;
 
-	src_addr_a = (unsigned int)((unsigned long)runtime->buffer_phy[PCM_SWAP_BUFF_A]);
+	src_addr_a = (unsigned int)((uintptr_t)runtime->buffer_phy[PCM_SWAP_BUFF_A]);
 
 	used_dma_addr = asp_dma_get_des(runtime->channel);
 
@@ -498,12 +499,15 @@ out:
 void hi64xx_hifi_dump_to_file(const char *buf, unsigned int size, char *path)
 {
 	struct file *fp = NULL;
-	int file_flag = O_RDWR;
+	unsigned int file_flag = O_RDWR;
 	struct kstat file_stat;
 	mm_segment_t fs = 0;
 	struct hi64xx_om_priv *priv = om_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		HI64XX_DSP_ERROR("priv is null\n");
+		return;
+	}
 
 	if (!path) {
 		HI64XX_DSP_ERROR("path is null.\n");
@@ -610,8 +614,6 @@ static void _dump_dsp_data(hook_pos pos,
 	char path[HOOK_PATH_MAX_LENGTH + HOOK_FILE_NAME_MAX_LENGTH] = {0};
 	struct hi64xx_om_priv *priv = om_priv;
 
-	WARN_ON(NULL == priv);
-
 	if (HOOK_POS_LOG == pos) {
 		//todo:print dsp log
 		return;
@@ -636,8 +638,6 @@ static void _parse_dsp_data(void *data, struct hook_runtime *runtime)
 	struct pos_infos *pos_infos = NULL;
 	unsigned int data_size = 0;
 	unsigned int i = 0;
-
-	WARN_ON(NULL == priv);
 
 	if (VERIFY_FRAME_HEAD_MAGIC_NUM == *buffer) {
 		HI64XX_DSP_WARNING("throw away verify data.\n");
@@ -843,7 +843,7 @@ static int _left_data_parse_thread(void *p)
 			continue;
 		}
 
-		wake_lock(&runtime->wake_lock);
+		__pm_stay_awake(&runtime->wake_lock);
 
 		_add_data_to_list(runtime);
 
@@ -852,7 +852,7 @@ static int _left_data_parse_thread(void *p)
 		if (runtime->cookie != _get_idle_buffer_id(runtime))
 			HI64XX_DSP_WARNING("dma buffer is changed.\n");
 
-		wake_unlock(&runtime->wake_lock);
+		__pm_relax(&runtime->wake_lock);
 
 		up(&runtime->hook_stop_sema);
 
@@ -890,7 +890,7 @@ static int _right_data_parse_thread(void *p)
 			continue;
 		}
 
-		wake_lock(&runtime->wake_lock);
+		__pm_stay_awake(&runtime->wake_lock);
 
 		_add_data_to_list(runtime);
 
@@ -899,7 +899,7 @@ static int _right_data_parse_thread(void *p)
 		if (runtime->cookie != _get_idle_buffer_id(runtime))
 			HI64XX_DSP_WARNING("dma buffer is changed.\n");
 
-		wake_unlock(&runtime->wake_lock);
+		__pm_relax(&runtime->wake_lock);
 
 		up(&runtime->hook_stop_sema);
 	}
@@ -950,7 +950,10 @@ int hi64xx_hifi_om_set_bw(unsigned short bandwidth)
 {
 	struct hi64xx_om_priv *priv = om_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		HI64XX_DSP_ERROR("priv is null\n");
+		return -EINVAL;
+	}
 
 	if (bandwidth >= OM_BANDWIDTH_BUTT) {
 		HI64XX_DSP_ERROR("err om bw:%d.\n", bandwidth);
@@ -973,7 +976,10 @@ int hi64xx_hifi_om_set_sponsor(unsigned short sponsor)
 {
 	struct hi64xx_om_priv *priv = om_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		HI64XX_DSP_ERROR("priv is null\n");
+		return -EINVAL;
+	}
 
 	if (sponsor >= OM_SPONSOR_BUTT) {
 		HI64XX_DSP_ERROR("err om sponsor:%d.\n", sponsor);
@@ -996,7 +1002,10 @@ int hi64xx_hifi_om_set_hook_path(char *path, unsigned int size)
 {
 	struct hi64xx_om_priv *priv = om_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		HI64XX_DSP_ERROR("priv is null\n");
+		return -EINVAL;
+	}
 
 	if (!path || size > (HOOK_PATH_MAX_LENGTH - 2)) {
 		HI64XX_DSP_ERROR("err para.\n");
@@ -1017,7 +1026,10 @@ int hi64xx_hifi_om_set_dir_count(unsigned int count)
 {
 	struct hi64xx_om_priv *priv = om_priv;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		HI64XX_DSP_ERROR("priv is null\n");
+		return -EINVAL;
+	}
 
 	if (priv->started || !priv->standby) {
 		HI64XX_DSP_ERROR("om is running, forbid set dir count:%d.\n", count);
@@ -1040,7 +1052,10 @@ void hi64xx_hifi_om_hook_stop(void)
 	struct hi64xx_om_priv *priv = om_priv;
 	int ret = 0;
 
-	WARN_ON(NULL == priv);
+	if (priv == NULL) {
+		HI64XX_DSP_ERROR("priv is null\n");
+		return;
+	}
 
 	if (!priv->started || priv->standby)
 		return;
@@ -1090,7 +1105,7 @@ int hi64xx_hifi_om_init(struct hi64xx_irq *irqmgr, unsigned int codec_type)
 	priv->codec_type = codec_type;
 	if (HI64XX_CODEC_TYPE_6403 == codec_type)	{
 		priv->slimbus_device_type = SLIMBUS_DEVICE_HI6403;
-		priv->slimbus_track_type =  SLIMBUS_TRACK_DEBUG;
+		priv->slimbus_track_type = (unsigned int)SLIMBUS_TRACK_DEBUG;
 	}
 	else {
 		HI64XX_DSP_ERROR("do not support codec_type %d\n", codec_type);
@@ -1115,8 +1130,8 @@ int hi64xx_hifi_om_init(struct hi64xx_irq *irqmgr, unsigned int codec_type)
 		INIT_LIST_HEAD(&priv->runtime[i].info_list.node);
 		INIT_LIST_HEAD(&priv->runtime[i].data_list.node);
 
-		wake_lock_init(&priv->runtime[i].wake_lock,
-					WAKE_LOCK_SUSPEND, "hi64xx_hifi_om");
+		wakeup_source_init(&priv->runtime[i].wake_lock,
+					"hi64xx_hifi_om");
 
 		sema_init(&priv->runtime[i].hook_proc_sema, 0);
 
@@ -1181,9 +1196,10 @@ void hi64xx_hifi_om_deinit(void)
 			priv->runtime[i].kthread_should_stop = 1;
 			up(&priv->runtime[i].hook_proc_sema);
 			kthread_stop(priv->runtime[i].kthread);
+			priv->runtime[i].kthread = NULL;
 		}
 
-		wake_lock_destroy(&priv->runtime[i].wake_lock);
+		wakeup_source_trash(&priv->runtime[i].wake_lock);
 	}
 
 	kfree(priv);

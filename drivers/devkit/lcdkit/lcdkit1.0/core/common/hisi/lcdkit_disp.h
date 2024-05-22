@@ -64,6 +64,9 @@
 #define JSN_product_id (4000)
 #define JKM_product_id (5000)
 
+#define LCDKIT_FP_HBM_ENTER 1
+#define LCDKIT_FP_HBM_EXIT 2
+
 struct lcdkit_private_info {
     u32 platform_esd_support;
     u32 platform_esd_reg;
@@ -82,9 +85,7 @@ extern struct lcdkit_private_info g_lcdkit_pri_info;
 extern bool gesture_func;
 extern uint8_t g_last_fps_scence;
 extern uint8_t g_project_id[LCD_DDIC_INFO_LEN];
-extern int g_record_project_id_err;
-
-//extern void ts_kit_check_bootup_upgrade(void);
+extern unsigned int g_record_project_id_err;
 
 //This macros are for reading project id
 #define Hx83112A 1
@@ -100,6 +101,8 @@ extern int g_record_project_id_err;
 
 #define BACKLIGHT_HIGH_LEVEL (1)
 #define BACKLIGHT_LOW_LEVEL  (2)
+#define BL_WEIGHT_MIN_TIMES 10
+#define BL_POSITIVE_SYMBOL_FLAG 1
 
 /*extern fun*/
 extern int mipi_dsi_ulps_cfg(struct hisi_fb_data_type* hisifd, int enable);
@@ -113,6 +116,12 @@ void read_himax83112_project_id(struct hisi_fb_data_type* hisifd, uint8_t read_v
 void read_td4336_project_id(struct hisi_fb_data_type* hisifd, uint8_t g_project_id[], uint8_t start_position, uint8_t length);
 void read_ddic_reg_parse(uint32_t input[], uint8_t inputlen, uint8_t output[], uint8_t start_position, uint8_t length);
 extern void lcdkit_mipi_check(void* pdata);
+int lcdkit_hbm_dim_enable(struct hisi_fb_data_type *hisifd);
+int lcdkit_hbm_dim_disable(struct hisi_fb_data_type *hisifd);
+int lcdkit_hbm_enable_no_dimming(struct hisi_fb_data_type *hisifd);
+int lcdkit_hbm_enable(struct hisi_fb_data_type *hisifd);
+int lcdkit_hbm_disable(struct hisi_fb_data_type *hisifd);
+
 
 struct lcdkit_vsp_vsn_voltage{
     u32 voltage;
@@ -364,7 +373,6 @@ static struct pinctrl_cmd_desc lcdkit_pinctrl_finit_cmds[] =
 #define GPIO_LCDKIT_IOVCC_NAME       "gpio_lcdkit_iovcc"
 #define GPIO_LCDKIT_VCI_NAME       "gpio_lcdkit_vci"
 #define GPIO_LCDKIT_VBAT_NAME       "gpio_lcdkit_vbat"
-#define GPIO_LCDKIT_TP_RESET_NAME	"gpio_lcdkit_tp_reset"
 
 
 /*******************************************************************************
@@ -388,31 +396,6 @@ static struct gpio_desc lcdkit_gpio_reset_free_cmds[] =
     },
 };
 
-/*
-* tp lcd reset gpio
-*/
-static struct gpio_desc g_lcdkit_gpio_rst_gesture_low_cmds[] = {
-    /* tp reset */
-    {
-        DTYPE_GPIO_OUTPUT, WAIT_TYPE_MS, 8,
-        GPIO_LCDKIT_TP_RESET_NAME, &lcdkit_info.panel_infos.gpio_tp_reset, 0
-    },
-    /* lcd reset */
-    {
-        DTYPE_GPIO_OUTPUT, WAIT_TYPE_MS, 8,
-        GPIO_LCDKIT_RESET_NAME, &lcdkit_info.panel_infos.gpio_lcd_reset, 0
-    },
-};
-/*
-* tp reset gpio high
-*/
-static struct gpio_desc g_lcdkit_tp_rst_gesture_high_cmds[] = {
-    /* tp reset */
-    {
-        DTYPE_GPIO_OUTPUT, WAIT_TYPE_MS, 1,
-        GPIO_LCDKIT_TP_RESET_NAME, &lcdkit_info.panel_infos.gpio_tp_reset, 1
-    },
-};
 static struct gpio_desc lcdkit_gpio_reset_normal_cmds[] =
 {
     /* reset */

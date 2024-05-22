@@ -10,7 +10,7 @@
 #include <./../hisi_soh_core.h>
 #include <linux/power/hisi/coul/hisi_coul_drv.h>
 #include <linux/power/hisi/hisi_bci_battery.h>
-#include "securec.h"
+#include <securec.h>
 
 #ifndef STATIC
 #define STATIC  static
@@ -463,7 +463,7 @@ STATIC int soh_hi6531_acr_get_chip_temp(void)
     u16 reg_val_h = 0;
     int v_acr;
     int t_acr = INVALID_TEMP;
-
+	u8 reg_status = 0;
     /*start arc temp adc*/
     hi6531_write_byte(ACR_CHIP_TEMP_CFG_ADDR, ACR_CHIP_TEMP_CFG);
     hi6531_write_byte(ACR_CHIP_TEMP_EN_ADDR, ACR_CHIP_TEMP_EN);
@@ -477,10 +477,10 @@ STATIC int soh_hi6531_acr_get_chip_temp(void)
             goto reset_temp_adc;
         }
         udelay(ACR_ADC_WAIT_US);/*chip requires 12.5us*/
-        hi6531_read_byte(ACR_CHIP_TEMP_ADC_STATUS_ADDR, (u8 *)&reg_value);
+        hi6531_read_byte(ACR_CHIP_TEMP_ADC_STATUS_ADDR, (u8 *)&reg_status);
         hi6531_soh_err("[%s] retry = [%d]\n", __func__, ACR_GET_TEMP_RETRY - retry);
         retry--;
-    } while (!(reg_value & ACR_CHIP_TEMP_ADC_READY));
+    } while (!(reg_status & ACR_CHIP_TEMP_ADC_READY));
 
     hi6531_read_byte(ACR_CHIP_TEMP_ADC_DATA0_ADDR, (u8 *)&reg_val_l);
     hi6531_read_byte(ACR_CHIP_TEMP_ADC_DATA1_ADDR, (u8 *)&reg_val_h);
@@ -539,7 +539,7 @@ static int __soh_hi6531_check_chip_version(void)
 static int parse_hi6531_acr_dts(struct hi6531_device_info *di)
 {
     int ret = 0;
-    struct device_node* np;
+    struct device_node* np = NULL;
 
     if (!di)
         return -1;
@@ -658,8 +658,8 @@ static struct hi6531_sysfs_field_info *hi6531_sysfs_field_lookup(const char *nam
 static ssize_t hi6531_sysfs_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
-	struct hi6531_sysfs_field_info *info;
-	struct hi6531_sysfs_field_info *info2;
+	struct hi6531_sysfs_field_info *info = NULL;
+	struct hi6531_sysfs_field_info *info2 = NULL;
 	u8 v = 0;
 
 	info = hi6531_sysfs_field_lookup(attr->attr.name);
@@ -697,8 +697,8 @@ static ssize_t hi6531_sysfs_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
-	struct hi6531_sysfs_field_info *info;
-	struct hi6531_sysfs_field_info *info2;
+	struct hi6531_sysfs_field_info *info = NULL;
+	struct hi6531_sysfs_field_info *info2 = NULL;
 	int ret;
 	u8 v = 0;
 

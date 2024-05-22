@@ -15,6 +15,9 @@
  *		(usb_device_id matching changes by Adam J. Richter)
  *	(C) Copyright Greg Kroah-Hartman 2002-2003
  *
+ * Released under the GPLv2 only.
+ * SPDX-License-Identifier: GPL-2.0
+ *
  * NOTE! This is not actually a driver at all, rather this is
  * just a collection of helper routines that implement the
  * matching, probing, releasing, suspending and resuming for
@@ -28,7 +31,6 @@
 #include <linux/usb.h>
 #include <linux/usb/quirks.h>
 #include <linux/usb/hcd.h>
-#include <linux/hisi/usb/hisi_usb.h>
 
 #include "usb.h"
 
@@ -510,6 +512,7 @@ int usb_driver_claim_interface(struct usb_driver *driver,
 	struct device *dev;
 	struct usb_device *udev;
 	int retval = 0;
+	int lpm_disable_error = -ENODEV;
 
 	if (!iface)
 		return -ENODEV;
@@ -530,6 +533,16 @@ int usb_driver_claim_interface(struct usb_driver *driver,
 
 	iface->condition = USB_INTERFACE_BOUND;
 
+	/* See the comment about disabling LPM in usb_probe_interface(). */
+	if (driver->disable_hub_initiated_lpm) {
+		lpm_disable_error = usb_unlocked_disable_lpm(udev);
+		if (lpm_disable_error) {
+			dev_err(&iface->dev, "%s Failed to disable LPM for driver %s\n.",
+					__func__, driver->name);
+			return -ENOMEM;
+		}
+	}
+
 	/* Claimed interfaces are initially inactive (suspended) and
 	 * runtime-PM-enabled, but only if the driver has autosuspend
 	 * support.  Otherwise they are marked active, to prevent the
@@ -547,6 +560,10 @@ int usb_driver_claim_interface(struct usb_driver *driver,
 	 */
 	if (device_is_registered(dev))
 		retval = device_bind_driver(dev);
+
+	/* Attempt to re-enable USB3 LPM, if the disable was successful. */
+	if (!lpm_disable_error)
+		usb_unlocked_enable_lpm(udev);
 
 	if (retval) {
 		dev->driver = NULL;
@@ -796,7 +813,7 @@ const struct usb_device_id *usb_match_id(struct usb_interface *interface,
 }
 EXPORT_SYMBOL_GPL(usb_match_id);
 
-static int do_usb_device_match(struct device *dev, struct device_driver *drv)
+static int usb_device_match(struct device *dev, struct device_driver *drv)
 {
 	/* devices and interfaces are handled separately */
 	if (is_usb_device(dev)) {
@@ -830,19 +847,6 @@ static int do_usb_device_match(struct device *dev, struct device_driver *drv)
 	}
 
 	return 0;
-}
-
-static int usb_device_match(struct device *dev, struct device_driver *drv)
-{
-	int ret = do_usb_device_match(dev, drv);
-
-	if (ret) {
-		hw_usb_host_abnormal_event_notify(USB_HOST_EVENT_NORMAL);
-	} else {
-		hw_usb_host_abnormal_event_notify(USB_HOST_EVENT_UNKNOW_DEVICE);
-	}
-
-	return ret;
 }
 
 static int usb_uevent(struct device *dev, struct kobj_uevent_env *env)
@@ -1167,6 +1171,16 @@ static int usb_suspend_device(struct usb_device *udev, pm_message_t msg)
 		udriver = &usb_generic_driver;
 	}
 	status = udriver->suspend(udev, msg);
+
+#ifdef CONFIG_PM
+	/*
+	 * - Change autosuspend delay of hub can avoid unnecessary auto
+	 *   suspend timer for hub, also may decrease power consumption
+	 *   of USB bus.
+	 */
+	if (!status && USB_CLASS_HUB == udev->descriptor.bDeviceClass)
+		pm_runtime_set_autosuspend_delay(&udev->dev, 0);
+#endif
 
  done:
 	dev_vdbg(&udev->dev, "%s: status %d\n", __func__, status);

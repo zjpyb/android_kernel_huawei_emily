@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/cgroup.h>
 #include <linux/slab.h>
 #include <linux/percpu.h>
@@ -101,9 +102,7 @@ static void cpuacct_css_free(struct cgroup_subsys_state *css)
 	struct cpuacct *ca = css_ca(css);
 
 	free_percpu(ca->cpustat);
-	ca->cpustat = NULL;
 	free_percpu(ca->cpuusage);
-	ca->cpuusage = NULL;
 	kfree(ca);
 }
 
@@ -299,7 +298,7 @@ static int cpuacct_stats_show(struct seq_file *sf, void *v)
 	for (stat = 0; stat < CPUACCT_STAT_NSTATS; stat++) {
 		seq_printf(sf, "%s %lld\n",
 			   cpuacct_stat_desc[stat],
-			   cputime64_to_clock_t(val[stat]));
+			   (long long)nsec_to_clock_t(val[stat]));
 	}
 
 	return 0;

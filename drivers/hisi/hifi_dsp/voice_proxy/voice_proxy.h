@@ -1,6 +1,6 @@
 /*
- * Hifi_voice_proxy.h - HW voice proxy in kernel, it is used for pass through voice
- * data between AP and hifi.
+ * voice_proxy.h - HW voice proxy in kernel, it is used for pass through
+ * voice data between AP and hifi.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,7 +29,6 @@
 #include <linux/semaphore.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <linux/wakelock.h>
 #include <linux/errno.h>
 #include <linux/unistd.h>
 #include <linux/delay.h>
@@ -46,9 +45,9 @@
 
 #include "drv_mailbox_cfg.h"
 #include "audio_hifi.h"
-#include "hifi_om.h"
+#include "audio_log.h"
 
-/* The size limit for the in and out parameters of read/write/mailbox*/
+/* The size limit for the in and out parameters of read/write/mailbox */
 #define VOICE_PROXY_LIMIT_PARAM_SIZE (300)
 /* QUEUE_SIZE_MUST_GREATER_THAN_SECRET_KEY_NEGOTIATION_SIZE(500) */
 #define VOICE_PROXY_QUEUE_SIZE_MAX 600
@@ -63,9 +62,9 @@ enum send_tfagent_data_type {
 };
 
 enum voice_modem_no {
-    VOICE_MC_MODEM0 = 0,
-    VOICE_MC_MODEM1,
-    VOICE_MC_MODEM_NUM_BUTT
+	VOICE_MC_MODEM0 = 0,
+	VOICE_MC_MODEM1,
+	VOICE_MC_MODEM_NUM_BUTT
 };
 
 struct send_tfagent_data {
@@ -100,7 +99,7 @@ struct voice_proxy_data_node {
 };
 
 typedef void (*register_mailbox_cb)(mb_msg_cb mail_cb);
-typedef int32_t (*read_mailbox_msg_cb)(void *mail_handle, int8_t *buf, int32_t *size);
+typedef int32_t (*read_mailbox_msg_cb)(struct mb_queue *mail_handle, int8_t *buf, int32_t *size);
 typedef int32_t (*mailbox_send_msg_cb)(uint32_t mailcode, uint16_t msg_id, const void *buf, uint32_t size);
 
 typedef void (*voice_proxy_sign_init_cb)(void);
@@ -123,7 +122,6 @@ struct voice_proxy_cmd_handle {
 	voice_proxy_cmd_cb callback;
 };
 
-int64_t voice_proxy_get_timems(void);
 int32_t voice_proxy_add_work_queue_cmd(uint16_t msg_id, uint16_t modem_no, uint32_t channel_id);
 int32_t voice_proxy_create_data_node(struct voice_proxy_data_node **node, int8_t *data, int32_t size);
 void voice_proxy_register_msg_callback(uint16_t msg_id, voice_proxy_msg_cb callback);
@@ -136,5 +134,5 @@ void voice_proxy_set_send_sign(bool first, bool *cnf, int64_t *timestamp);
 int32_t voice_proxy_add_cmd(uint16_t msg_id);
 int32_t voice_proxy_add_data(voice_proxy_add_data_cb callback, int8_t *data, uint32_t size, uint16_t msg_id);
 int64_t voice_proxy_get_time_ms(void);
+int32_t voice_proxy_mailbox_send_msg_cb(uint32_t mailcode, uint16_t msg_id, const void *buf, uint32_t size);
 #endif /* end of voice_proxy.h */
-

@@ -5,6 +5,7 @@
 /*****************************************************************************
 1 头文件包含
 *****************************************************************************/
+#include <linux/types.h>
 #include "drv_mailbox_platform.h"
 
 #ifdef __cplusplus
@@ -54,7 +55,7 @@ extern "C" {
 #define mailbox_logerro_p0(ErrorId)                 mailbox_log_erro((unsigned int)ErrorId, (unsigned int)0,(unsigned int)0,\
                                                     (unsigned int)_MAILBOX_LINE_, (char*)_MAILBOX_FILE_)
 
-#define mailbox_logerro_p1(ErrorId, Param)          mailbox_log_erro((unsigned int)ErrorId, (unsigned long)Param,(unsigned long)0, \
+#define mailbox_logerro_p1(ErrorId, Param)          mailbox_log_erro((unsigned int)ErrorId, (uintptr_t)Param,(unsigned long)0, \
                                                     (unsigned int)_MAILBOX_LINE_, (char*)_MAILBOX_FILE_)
 
 #define mailbox_logerro_p2(ErrorId, Param1,Param2)  mailbox_log_erro((unsigned int)ErrorId, (unsigned long)Param1,Param2, \

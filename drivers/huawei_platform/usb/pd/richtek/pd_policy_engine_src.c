@@ -35,6 +35,7 @@ void pe_src_startup_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 	pd_set_product_type(PD_DPM_INVALID_VAL);
 	pd_reset_protocol_layer(pd_port);
 	pd_set_rx_enable(pd_port, PD_RX_CAP_PE_STARTUP);
+	pd_port->dpm_flags &= ~DPM_FLAGS_CHECK_CABLE_ID_DFP;
 
 #ifdef CONFIG_USB_PD_RESET_CABLE
 	pd_port->reset_cable = false;

@@ -30,12 +30,14 @@
 #include "../core/core.h"                                                       // GetDeviceTypeCStatus
 #include "../core/TypeC.h"
 //#endif // FSC_DEBUG
+#include "../core/TypeC.h"
 
 #include "fusb30x_driver.h"
 #include <huawei_platform/usb/hw_pd_dev.h>
+#include <huawei_platform/power/power_devices_info.h>
 
 #ifdef CONFIG_POGO_PIN
-#include <huawei_platform/usb/huawei_pogopin.h>
+#include <huawei_platform/usb/hw_pogopin.h>
 #endif
 /******************************************************************************
 * Driver functions
@@ -48,11 +50,11 @@ static int pd_dpm_wake_lock_call(struct notifier_block *fsc_nb, unsigned long ev
 	switch (event) {
 	case PD_WAKE_LOCK:
 		FSC_PRINT("FUSB %s - wake lock node called\n", __func__);
-		wake_lock(&chip->fusb302_wakelock);
+		__pm_stay_awake(&chip->fusb302_wakelock);
 		break;
 	case PD_WAKE_UNLOCK:
 		FSC_PRINT("FUSB %s - wake unlock node called\n", __func__);
-		wake_unlock(&chip->fusb302_wakelock);
+		__pm_relax(&chip->fusb302_wakelock);
 		break;
 	default:
 		FSC_PRINT("FUSB %s - unknown event: %ld\n", __func__, event);
@@ -136,29 +138,21 @@ int fusb30x_get_cc_mode(void)
 }
 
 #ifdef CONFIG_POGO_PIN
-static int fusb30x_typec_detect_disable(FSC_BOOL disable)
+static int fusb30x_typec_detect_disable(bool disable)
 {
 	return core_cc_disable(disable);
 }
 
-struct cc_detect_ops fusb30x_cc_detect_ops = {
-	.typec_detect_disable = fusb30x_typec_detect_disable,
-};
-#endif
-
-#ifdef FSC_HAVE_CUSTOM_SRC2
-int fusb302_is_cust_src2_cable(void)
+static int fusb30x_vbus_is_on(void)
 {
-	if (pd_dpm_smart_holder_without_emark()) {
-		pr_info("%s:this is smart holder without emark\n", __func__);
-		return 1;
-	}
-	return get_emarker_detect_status();
+	return isVSafe5V();
 }
-struct cable_vdo_ops fusb302_cable_vdo_ops = {
-	.is_cust_src2_cable = fusb302_is_cust_src2_cable,
+
+struct pogopin_cc_ops fusb30x_cc_detect_ops = {
+	.typec_detect_disable = fusb30x_typec_detect_disable,
+	.typec_detect_vbus = fusb30x_vbus_is_on,
 };
-#endif /* FSC_HAVE_CUSTOM_SRC2 */
+#endif /* CONFIG_POGO_PIN */
 
 static struct cc_check_ops cc_check_ops = {
 	.is_cable_for_direct_charge = is_cable_for_direct_charge,
@@ -170,6 +164,7 @@ static int fusb30x_probe (struct i2c_client* client,
     int ret = 0;
     struct fusb30x_chip* chip;
     struct i2c_adapter* adapter;
+	struct power_devices_info_data *power_dev_info = NULL;
     int need_not_config_extra_pmic=0;
     if (of_property_read_u32(of_find_compatible_node(NULL,NULL, "huawei,pd_dpm"),"need_not_config_extra_pmic", &need_not_config_extra_pmic)) {
 	pr_err("get need_not_config_extra_pmic fail!\n");
@@ -262,12 +257,8 @@ static int fusb30x_probe (struct i2c_client* client,
     pr_debug("FUSB  %s - Timers initialized!\n", __func__);
 
 #ifdef CONFIG_POGO_PIN
-	cc_detect_register_ops(&fusb30x_cc_detect_ops);
-#endif
-#ifdef FSC_HAVE_CUSTOM_SRC2
-	if (pd_dpm_get_is_support_smart_holder())
-		pd_dpm_cable_vdo_ops_register(&fusb302_cable_vdo_ops);
-#endif /* FSC_HAVE_CUSTOM_SRC2 */
+	pogopin_cc_register_ops(&fusb30x_cc_detect_ops);
+#endif /* CONFIG_POGO_PIN */
 #ifdef FSC_DEBUG
     /* Initialize debug sysfs file accessors */
     fusb_Sysfs_Init();
@@ -319,6 +310,14 @@ static int fusb30x_probe (struct i2c_client* client,
 		pr_info("cc_check_ops register failed!\n");
 		return -1;
 	}
+
+	power_dev_info = power_devices_info_register();
+	if (power_dev_info) {
+		power_dev_info->dev_name = client->dev.driver->name;
+		power_dev_info->dev_id = 0;
+		power_dev_info->ver_id = 0;
+	}
+
 	pr_info("%s cc_check register OK!\n", __func__);
 	pr_info("%s probe OK!\n", __func__);
 	return ret;

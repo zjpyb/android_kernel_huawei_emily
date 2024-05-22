@@ -17,7 +17,9 @@ DEFINE_SEMAPHORE(hw_lock_semaphore);
 DEFINE_SEMAPHORE(hisi_sensorhub_aod_blank_sem);
 
 static int sh_aod_blank_refcount = 0;
+#if CONFIG_SH_AOD_ENABLE
 extern int get_aod_support(void);
+#endif
 
 bool hisi_sensorhub_aod_hw_lock(struct hisi_fb_data_type *hisifd)
 {
@@ -31,13 +33,14 @@ bool hisi_sensorhub_aod_hw_lock(struct hisi_fb_data_type *hisifd)
 		return hw_lock_succ;
 	}
 
+#if CONFIG_SH_AOD_ENABLE
 	if (get_aod_support() != 1) {
 		if (g_dump_sensorhub_aod_hwlock) {
 			HISI_FB_INFO("sensorhub aod no support!\n");
 		}
 		return false;
 	}
-
+#endif
 	down(&hw_lock_semaphore);
 
 	while (1) {
@@ -46,7 +49,6 @@ bool hisi_sensorhub_aod_hw_lock(struct hisi_fb_data_type *hisifd)
 
 		if (((lock_status & 0x70000000) == 0x30000000) || (delay_count > 1000)) {
 			is_timeout = (delay_count > 1000) ? true : false;
-			delay_count = 0;
 			break;
 		} else {
 			mdelay(1);
@@ -78,12 +80,14 @@ bool hisi_sensorhub_aod_hw_unlock(struct hisi_fb_data_type *hisifd)
 		return hw_unlock_succ;
 	}
 
+#if CONFIG_SH_AOD_ENABLE
 	if (get_aod_support() != 1) {
 		if (g_dump_sensorhub_aod_hwlock) {
 			HISI_FB_INFO("sensorhub aod no support!\n");
 		}
 		return true;
 	}
+#endif
 
 	down(&hw_lock_semaphore);
 	set_reg(hisifd->pctrl_base + PCTRL_RESOURCE3_UNLOCK, 0x30000000, 32, 0);
@@ -98,7 +102,7 @@ bool hisi_sensorhub_aod_hw_unlock(struct hisi_fb_data_type *hisifd)
 	return hw_unlock_succ;
 }
 
-int hisi_sensorhub_aod_unblank(void)
+int hisi_sensorhub_aod_unblank(uint32_t msg_no)
 {
 	int ret = 0;
 	uint64_t pxl_clk_rate;
@@ -109,7 +113,7 @@ int hisi_sensorhub_aod_unblank(void)
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("fb%d, +.\n", hisifd->index);
+	HISI_FB_INFO("fb%d,msg_no is %d +\n", hisifd->index, msg_no);
 
 	down(&hisi_sensorhub_aod_blank_sem);
 	if (!hisi_sensorhub_aod_hw_lock(hisifd)) {
@@ -119,6 +123,9 @@ int hisi_sensorhub_aod_unblank(void)
 	sh_aod_blank_refcount++;
 	HISI_FB_INFO("fb%d +, sh_aod_blank_refcount=%d!\n", hisifd->index, sh_aod_blank_refcount);
 	HISI_FB_INFO("Power State Reg is 0x%x\n", inp32(hisifd->sctrl_base + SCBAKDATA0));
+
+	// high 16bit indicate msg no
+	set_reg(hisifd->sctrl_base + SCBAKDATA0, msg_no & 0xFFFF, 16, 16);
 
 	if (sh_aod_blank_refcount != 1) {
 		HISI_FB_ERR("fb%d, sh_aod_blank_refcount=%d is error\n", hisifd->index, sh_aod_blank_refcount);
@@ -195,7 +202,7 @@ up_blank_sem:
 	return ret;
 }
 
-int hisi_sensorhub_aod_blank(void)
+int hisi_sensorhub_aod_blank(uint32_t msg_no)
 {
 	int ret = 0;
 	struct hisi_fb_data_type *hisifd = hisifd_list[PRIMARY_PANEL_IDX];
@@ -205,12 +212,17 @@ int hisi_sensorhub_aod_blank(void)
 		return -EINVAL;
 	}
 
-	HISI_FB_INFO("fb%d, +.\n", hisifd->index);
+	HISI_FB_INFO("fb%d,msg_no is %d +\n", hisifd->index, msg_no);
 
 	down(&hisi_sensorhub_aod_blank_sem);
+
 	sh_aod_blank_refcount--;
 	HISI_FB_INFO("fb%d +, sh_aod_blank_refcount=%d!\n", hisifd->index, sh_aod_blank_refcount);
 	HISI_FB_INFO("Power State Reg is 0x%x\n", inp32(hisifd->sctrl_base + SCBAKDATA0));
+
+	// high 16bit indicate msg no
+	set_reg(hisifd->sctrl_base + SCBAKDATA0, msg_no & 0xFFFF, 16, 16);
+
 	if (sh_aod_blank_refcount != 0) {
 		set_reg(hisifd->sctrl_base + SCBAKDATA0, 0x3, 2, 6);
 		HISI_FB_ERR("fb%d, sh_aod_blank_refcount=%d is error\n", hisifd->index, sh_aod_blank_refcount);

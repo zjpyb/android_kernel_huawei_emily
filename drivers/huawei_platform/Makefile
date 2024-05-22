@@ -4,12 +4,10 @@
 obj-$(CONFIG_HW_ANTENNA_BOARD_MATCH)  += antenna_board_match/
 obj-$(CONFIG_ANTENNA_FPGA) += antenna_fpga/
 obj-$(CONFIG_HUAWEI_AUDIO) += audio/
-obj-$(CONFIG_CHR_NETLINK_MODULE)   += chr/
 obj-$(CONFIG_RIL_NETLINK_MODULE)   += riltcp/
 obj-$(CONFIG_RIL_SIM_NETLINK_MODULE)   += rilsim/
 obj-y   += connectivity/
 obj-$(CONFIG_HUAWEI_HW_DEV_DCT)  += devdetect/
-obj-$(CONFIG_HUAWEI_DEV_SELFCHECK)  += dev_selfcheck/
 #obj-${CONFIG_HUAWEI_DSM} += dsm/
 ifneq ($(strip $(OBB_SEPARATE)),true)
 obj-$(CONFIG_VIACBP82D_3RD_MODEM) += ext_modem/
@@ -47,3 +45,8 @@ obj-$(CONFIG_DP_AUX_SWITCH) += dp_aux_switch/
 obj-$(CONFIG_HW_DP_SOURCE) += dp_source/
 obj-$(CONFIG_HUAWEI_VENDOR_EXCEPTION) += vendor_exception/
 obj-$(CONFIG_HWAA) += hwaa/
+obj-$(CONFIG_CARD_TRAY_GPIO_DETECT) += card_tray/
+obj-$(CONFIG_MEM_INSPECT) += rmeminspect/
+obj-$(CONFIG_HUAWEI_MEMINFO_DUMP) += pmeminfo/
+obj-$(CONFIG_WAKEUP) += wakeup/
+obj-$(CONFIG_MULTICHIP_SKYTONE) += multichip_skytone/

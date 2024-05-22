@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM thermal_power_allocator
 
@@ -6,7 +7,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(thermal_power_allocator,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(thermal_power_allocator,/* [false alarm]:ԭ���궨�� */
 	TP_PROTO(struct thermal_zone_device *tz, u32 *req_power,
 		 u32 total_req_power, u32 *granted_power,
 		 u32 total_granted_power, size_t num_actors,
@@ -52,7 +53,7 @@ TRACE_EVENT(thermal_power_allocator,/* [false alarm]:原生宏定义 */
 		__entry->delta_temp)
 );
 
-TRACE_EVENT(thermal_power_allocator_pid,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(thermal_power_allocator_pid,/* [false alarm]:ԭ���궨�� */
 	TP_PROTO(struct thermal_zone_device *tz, s32 err, s32 err_integral,
 		 s64 p, s64 i, s64 d, s32 output),
 	TP_ARGS(tz, err, err_integral, p, i, d, output),
@@ -80,7 +81,7 @@ TRACE_EVENT(thermal_power_allocator_pid,/* [false alarm]:原生宏定义 */
 		  __entry->p, __entry->i, __entry->d, __entry->output)
 );
 
-TRACE_EVENT(thermal_power_actor_cpu_limit,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(thermal_power_actor_cpu_limit,/* [false alarm]:ԭ���궨�� */
 	TP_PROTO(const struct cpumask *cpus, unsigned int freq,
 		unsigned long cdev_state, u32 power),
 
@@ -370,7 +371,7 @@ TRACE_EVENT(IPA_actor_gpu_get_power,
 );/* [false alarm]:fortify */
 
 
-TRACE_EVENT(IPA_get_tsens_value,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(IPA_get_tsens_value,/* [false alarm]:ԭ���궨�� */
 	TP_PROTO(u32 tsens_num, int *tsens_value, int tsens_value_max),
 
 	TP_ARGS(tsens_num, tsens_value, tsens_value_max),
@@ -392,7 +393,7 @@ TRACE_EVENT(IPA_get_tsens_value,/* [false alarm]:原生宏定义 */
 		 sizeof(int)), __entry->tsens_value_max)
 ); /* [false alarm]:fortify */
 
-TRACE_EVENT(IPA_hot_plug,
+TRACE_EVENT(IPA_cpu_hot_plug,
 	TP_PROTO(bool cpu_downed, long sensor_val, int up_threshold,
 		int down_threshold),
 
@@ -415,6 +416,31 @@ TRACE_EVENT(IPA_hot_plug,
 	TP_printk("thermal hotplug: %u,%ld,%d,%d",
 		 __entry->cpu_downed, __entry->sensor_val, __entry->up_threshold,
 		 __entry->down_threshold)
+); /* [false alarm]:fortify */
+
+TRACE_EVENT(IPA_gpu_hot_plug,
+	TP_PROTO(bool gpu_downed, long sensor_val, int gpu_up_threshold,
+		int gpu_down_threshold),
+
+	TP_ARGS(gpu_downed, sensor_val, gpu_up_threshold, gpu_down_threshold),
+
+	TP_STRUCT__entry(
+		__field(bool, gpu_downed)
+		__field(long, sensor_val)
+		__field(int, gpu_up_threshold)
+		__field(int, gpu_down_threshold)
+	),
+
+	TP_fast_assign(
+		__entry->gpu_downed = gpu_downed;
+		__entry->sensor_val = sensor_val;
+		__entry->gpu_up_threshold = gpu_up_threshold;
+		__entry->gpu_down_threshold = gpu_down_threshold;
+	),
+
+	TP_printk("thermal gpu hotplug: %u,%ld,%d,%d",
+		 __entry->gpu_downed, __entry->sensor_val, __entry->gpu_up_threshold,
+		 __entry->gpu_down_threshold)
 ); /* [false alarm]:fortify */
 #endif /* _TRACE_THERMAL_POWER_ALLOCATOR_H */
 

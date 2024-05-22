@@ -23,7 +23,7 @@
 
 int kcode_scan(uint8_t *hash);
 size_t kcode_get_size(void);
-void kcode_copy(char *buffer);
 int kcode_syscall_scan(uint8_t *hash);
 
 #endif
+

@@ -58,10 +58,23 @@
 #include "PsLogFilterInterface.h"
 #include "AtImsaInterface.h"
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+#include "MsgImsaInterface.h"
+#include "Nasrrcinterface.h"
+#include "UsimPsInterface.h"
+#include "TafSpmSndInternalMsg.h"
+#include "MmSsInterface.h"
+#include "NasMmlCtx.h"
+#include "NasMmlLib.h"
+#include "MnComm.h"
+#include "NasMultiInstanceApi.h"
+#endif
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
 #include "AtInternalMsg.h"
 #include "AtParse.h"
 #include "AtCtx.h"
+#endif
 
 
 
@@ -90,7 +103,9 @@ typedef struct
 
 GUNAS_MSG_FILTER_PROC_TBL_FUNC              g_astGuNasMsgFilterProcFuncTbl[] =
 {
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     {WUEPS_PID_AT,          WUEPS_PID_AT,       GUNAS_FilterAtToAtMsg},
+#endif
 
     {I0_WUEPS_PID_TAF,      WUEPS_PID_AT,       GUNAS_FilterTafToAtMsg},
     {WUEPS_PID_AT,          I0_WUEPS_PID_TAF,   GUNAS_FilterAtToTafMsg},
@@ -98,20 +113,45 @@ GUNAS_MSG_FILTER_PROC_TBL_FUNC              g_astGuNasMsgFilterProcFuncTbl[] =
     {WUEPS_PID_AT,          I0_UEPS_PID_MTA,    GUNAS_FilterAtToMtaMsg},
     {WUEPS_PID_AT,          I0_MAPS_PIH_PID,    GUNAS_FilterAtToPihMsg},
 
+#if ( 1 < MULTI_MODEM_NUMBER )
     {I1_WUEPS_PID_TAF,      WUEPS_PID_AT,       GUNAS_FilterTafToAtMsg},
     {WUEPS_PID_AT,          I1_WUEPS_PID_TAF,   GUNAS_FilterAtToTafMsg},
     {WUEPS_PID_AT,          I1_WUEPS_PID_MMA,   GUNAS_FilterAtToMmaMsg},
     {WUEPS_PID_AT,          I1_UEPS_PID_MTA,    GUNAS_FilterAtToMtaMsg},
     {WUEPS_PID_AT,          I1_MAPS_PIH_PID,    GUNAS_FilterAtToPihMsg},
 
+#if ( 2 < MULTI_MODEM_NUMBER )
     {I2_WUEPS_PID_TAF,      WUEPS_PID_AT,       GUNAS_FilterTafToAtMsg},
     {WUEPS_PID_AT,          I2_WUEPS_PID_TAF,   GUNAS_FilterAtToTafMsg},
     {WUEPS_PID_AT,          I2_WUEPS_PID_MMA,   GUNAS_FilterAtToMmaMsg},
     {WUEPS_PID_AT,          I2_UEPS_PID_MTA,    GUNAS_FilterAtToMtaMsg},
     {WUEPS_PID_AT,          I2_MAPS_PIH_PID,    GUNAS_FilterAtToPihMsg},
+#endif
+#endif
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    {WUEPS_PID_WRR,         WUEPS_PID_GMM,      GUNAS_FilterWrrToGmmMmMsg},
+    {WUEPS_PID_WRR,         WUEPS_PID_MM,       GUNAS_FilterWrrToGmmMmMsg},
+    {UEPS_PID_GAS,          WUEPS_PID_MM,       GUNAS_FilterGasToMmMsg},
+
+    {TPS_PID_RRC,           WUEPS_PID_GMM,      GUNAS_FilterWrrToGmmMmMsg},
+    {TPS_PID_RRC,           WUEPS_PID_MM,       GUNAS_FilterWrrToGmmMmMsg},
+
+    {WUEPS_PID_TAF,         WUEPS_PID_SS,       GUNAS_FilterTafToSsMsg},
+    {WUEPS_PID_MMA,         WUEPS_PID_USIM,     GUNAS_FilterMmaToUsimMsg},
+    {WUEPS_PID_TAF,         WUEPS_PID_TAF,      GUNAS_FilterTafToTafMsg},
+    {WUEPS_PID_SS,          WUEPS_PID_MM,       GUNAS_FilterSsToMmMsg},
+
+    {WUEPS_PID_MM,          WUEPS_PID_WRR,       GUNAS_FilterGmmMmToRrcMsg},
+    {WUEPS_PID_MM,          TPS_PID_RRC,         GUNAS_FilterGmmMmToRrcMsg},
+    {WUEPS_PID_MM,          UEPS_PID_GAS,        GUNAS_FilterGmmMmToRrcMsg},
+    {WUEPS_PID_GMM,         WUEPS_PID_WRR,       GUNAS_FilterGmmMmToRrcMsg},
+    {WUEPS_PID_GMM,         TPS_PID_RRC,         GUNAS_FilterGmmMmToRrcMsg},
+
+#endif
 };
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
 VOS_CHAR*                                       g_apcATFileterTable[]=
 {
         /* USIM相关 */
@@ -176,16 +216,136 @@ VOS_CHAR*                                       g_apcATFileterTable[]=
         "AT^SIMLOCKUNLOCK"  ,
         "AT^CMLCK"          ,
 
+#if (FEATURE_ON == FEATURE_PHONE_SC)
         "AT^SILENTPININFO"  ,
+#endif
 
 };
+#endif
 
 
 /*****************************************************************************
   3 函数实现
 *****************************************************************************/
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
 
+VOS_VOID* GUNAS_FilterWrrToGmmMmMsg(
+    PS_MSG_HEADER_STRU                 *pstMsg
+)
+{
+    if (VOS_TRUE == NAS_MML_IsNeedFiltrateL3RcvMsg((RRMM_DATA_IND_STRU *)pstMsg))
+    {
+        return VOS_NULL_PTR;
+    }
+
+    return pstMsg;
+}
+
+
+VOS_VOID* GUNAS_FilterGmmMmToRrcMsg(
+    PS_MSG_HEADER_STRU                 *pstMsg
+)
+{
+    if (VOS_TRUE == NAS_MML_IsNeedFiltrateL3ReqMsg((RRMM_DATA_REQ_STRU *)pstMsg))
+    {
+        return VOS_NULL_PTR;
+    }
+
+    return pstMsg;
+}
+
+
+
+VOS_VOID* GUNAS_FilterGasToMmMsg(
+    PS_MSG_HEADER_STRU                 *pstMsg
+)
+{
+    if (VOS_TRUE == NAS_MML_IsNeedFiltrateL3RcvMsg((RRMM_DATA_IND_STRU *)pstMsg))
+    {
+        return VOS_NULL_PTR;
+    }
+
+    return pstMsg;
+}
+
+
+VOS_VOID* GUNAS_FilterTafToSsMsg(
+    PS_MSG_HEADER_STRU                 *pstMsg
+)
+{
+    switch (pstMsg->ulMsgName)
+    {
+        /* 补充业务相关的信息 */
+        case TAF_MSG_ACTIVATESS_MSG:
+        case TAF_MSG_DEACTIVATESS_MSG:
+        case TAF_MSG_REGPWD_MSG:
+            MN_NORM_LOG1("GUNAS_FilterTafToSsMsg: TRUE ulMsgName ", pstMsg->ulMsgName);
+            return VOS_NULL_PTR;
+
+        default:
+            return pstMsg;
+    }
+}
+
+
+VOS_VOID* GUNAS_FilterMmaToUsimMsg(
+    PS_MSG_HEADER_STRU                 *pstMsg
+)
+{
+    switch (pstMsg->ulMsgName)
+    {
+        case USIMM_PINHANDLE_REQ:
+            MN_NORM_LOG1("GUNAS_FilterMmaToUsimMsg: TRUE ulMsgName ", pstMsg->ulMsgName);
+            return VOS_NULL_PTR;
+
+        default:
+            return pstMsg;
+    }
+}
+
+
+VOS_VOID* GUNAS_FilterTafToTafMsg(
+    PS_MSG_HEADER_STRU                 *pstMsg
+)
+{
+    switch (pstMsg->ulMsgName)
+    {
+        case TAF_SPM_INTERNAL_SERVICE_CTRL_RESULT_IND:
+            MN_NORM_LOG1("GUNAS_FilterTafToTafMsg: TRUE ulMsgName ", pstMsg->ulMsgName);
+            return VOS_NULL_PTR;
+
+        default:
+            return pstMsg;
+    }
+}
+
+
+VOS_VOID* GUNAS_FilterSsToMmMsg(
+    PS_MSG_HEADER_STRU                 *pstMsg
+)
+{
+    MMSS_DATA_REQ_STRU                 *pstDataReq = VOS_NULL_PTR;
+
+    if (MMSS_DATA_REQ != pstMsg->ulMsgName)
+    {
+        return pstMsg;
+    }
+
+    pstDataReq = (MMSS_DATA_REQ_STRU *)pstMsg;
+
+    if (VOS_TRUE == NAS_MML_IsSsFacilityGetPassWdMsg(pstDataReq->SsMsg.aucSsMsg,
+                                                     pstDataReq->SsMsg.ulSsMsgSize))
+    {
+        return VOS_NULL_PTR;
+    }
+
+    return pstMsg;
+}
+
+#endif
+
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
 
 
 VOS_UINT32 GUNAS_ATCmdFilter(
@@ -280,6 +440,7 @@ VOS_VOID* GUNAS_FilterAtToAtMsg(
         }
     }
 }
+#endif
 
 
 VOS_VOID* GUNAS_FilterAtToMmaMsg(
@@ -415,11 +576,30 @@ VOS_VOID* GUNAS_FilterLayerMsg(
     ulSenderPid   = pstMsg->ulSenderPid;
     ulReceiverPid = pstMsg->ulReceiverPid;
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
     if (VOS_FALSE == AT_GetPrivacyFilterEnableFlg())
     {
         return pstMsg;
     }
+#endif
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+    if (VOS_FALSE == NAS_MML_GetPrivacyFilterFlag())
+    {
+        return pstMsg;
+    }
+
+    ulSenderPid   = NAS_MULTIINSTANCE_GetModem0Pid(pstTempMsg->ulSenderPid);
+    ulReceiverPid = NAS_MULTIINSTANCE_GetModem0Pid(pstTempMsg->ulReceiverPid);
+
+    /* SMS消息过滤 */
+    if ((WUEPS_PID_SMS == ulSenderPid)
+     || (WUEPS_PID_SMS == ulReceiverPid))
+    {
+        MN_NORM_LOG("GUNAS_FilterLayerMsg: SMS filter");
+        return VOS_NULL_PTR;
+    }
+#endif
 
     for (i = 0; i < (sizeof(g_astGuNasMsgFilterProcFuncTbl)/sizeof(GUNAS_MSG_FILTER_PROC_TBL_FUNC)); i++)
     {
@@ -450,6 +630,7 @@ VOS_VOID* GUNAS_OM_LayerMsgFilter(
     return GUNAS_FilterLayerMsg(pstMsg);
 }
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
 
 VOS_VOID  *NAS_OM_LogFilterImsaAtMtStatesIndMsgAcpu(VOS_VOID *pMsg)
 {
@@ -586,7 +767,9 @@ VOS_VOID *NAS_OM_LogFilterImsaAtMsgAcpu(
 
     return pReturnTraceMsg;
 }
+#endif
 
+#if (OSA_CPU_ACPU == VOS_OSA_CPU)
 
 VOS_VOID GUNAS_OM_LayerMsgReplaceCBRegACore(VOS_VOID)
 {
@@ -601,5 +784,49 @@ VOS_VOID GUNAS_OM_LayerMsgReplaceCBRegACore(VOS_VOID)
     PS_OM_LayerMsgReplaceCBReg(I0_PS_PID_IMSA, NAS_OM_LogFilterImsaAtMsgAcpu);
     PS_OM_LayerMsgReplaceCBReg(I1_PS_PID_IMSA, NAS_OM_LogFilterImsaAtMsgAcpu);
 }
+#endif
 
+#if (OSA_CPU_CCPU == VOS_OSA_CPU)
+
+VOS_VOID I0_GUNAS_OM_LayerMsgReplaceCBRegCcore(VOS_VOID)
+{
+    PS_OM_LayerMsgReplaceCBReg(WUEPS_PID_AT, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_WUEPS_PID_TAF, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_WUEPS_PID_SMS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_WUEPS_PID_WRR, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_UEPS_PID_GAS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(TPS_PID_RRC, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_WUEPS_PID_MMA, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_WUEPS_PID_SS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_WUEPS_PID_GMM, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_WUEPS_PID_MM, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I0_PS_PID_MM, GUNAS_OM_LayerMsgFilter);
+}
+
+
+VOS_VOID I1_GUNAS_OM_LayerMsgReplaceCBRegCcore(VOS_VOID)
+{
+    PS_OM_LayerMsgReplaceCBReg(I1_WUEPS_PID_TAF, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_WUEPS_PID_SMS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_WUEPS_PID_WRR, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_UEPS_PID_GAS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_WUEPS_PID_MMA, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_WUEPS_PID_SS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_WUEPS_PID_GMM, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_WUEPS_PID_MM, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I1_PS_PID_MM, GUNAS_OM_LayerMsgFilter);
+}
+
+
+VOS_VOID I2_GUNAS_OM_LayerMsgReplaceCBRegCcore(VOS_VOID)
+{
+    PS_OM_LayerMsgReplaceCBReg(I2_WUEPS_PID_TAF, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I2_WUEPS_PID_SMS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I2_UEPS_PID_GAS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I2_WUEPS_PID_MMA, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I2_WUEPS_PID_SS, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I2_WUEPS_PID_GMM, GUNAS_OM_LayerMsgFilter);
+    PS_OM_LayerMsgReplaceCBReg(I2_WUEPS_PID_MM, GUNAS_OM_LayerMsgFilter);
+}
+#endif
 

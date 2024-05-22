@@ -35,6 +35,7 @@
 #include <linux/clk-provider.h>
 #include <linux/hisi/util.h>
 #include <linux/hwspinlock.h>
+#include <linux/mfd/hisi_pmic.h>
 
 #include "dw_mmc.h"
 #include "dw_mmc-pltfm.h"
@@ -45,7 +46,7 @@
 
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
-
+#define LOG_BUF_SIZE 1024
 static struct dsm_dev dsm_dw_mmc = {
 	.name = "dsm_sdio",
 	.device_name = NULL,
@@ -56,8 +57,8 @@ static struct dsm_dev dsm_dw_mmc = {
 };
 
 static struct dsm_client *dclient = NULL;
+static struct dsm_client *wifi_client = NULL;
 #endif
-
 
 #define MMC_CLOCK_FREQUENCY_137 137
 #define MMC_CLOCK_FREQUENCY_192 192
@@ -73,13 +74,20 @@ static int hs_timing_config_libra_sd_ppll2[TUNING_INIT_CONFIG_NUM] = {960000000,
 static int hs_timing_config_libra_sdio_ppll2[TUNING_INIT_CONFIG_NUM] = {960000000, 4, 3, 2, 9, 0, 192000000};
 static int hs_timing_config_taurus_sd_ppll2[TUNING_INIT_CONFIG_NUM] = {960000000, 4, 2, 3, 9, 0, 192000000};
 static int hs_timing_config_taurus_sdio_ppll2[TUNING_INIT_CONFIG_NUM] = {1572000000, 7, 7, 6, 15, 0, 196500000};
-static int hs_timing_config_capricorn_sd_ppll2[TUNING_INIT_CONFIG_NUM] = {960000000, 4, 3, 2, 9, 0, 192000000};
-static int hs_timing_config_capricorn_sdio_ppll2[TUNING_INIT_CONFIG_NUM] = {960000000, 4, 3, 2, 9, 0, 192000000};
-
+static int hs_timing_960_clock_source_capricorn[TUNING_INIT_CONFIG_NUM] = {960000000, 4, 3, 2, 9, 0, 192000000};
+#else
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+static int hs_timing_960_clock_source_capricorn[TUNING_INIT_CONFIG_NUM] = {960000000, 4, 3, 2, 9, 0, 192000000};
+static int hs_timing_1920_clock_source_capricorn[TUNING_INIT_CONFIG_NUM] = {1920000000, 9, 7, 4, 19, 0, 192000000};
 #endif
-
+#endif
 #define ENABLE_CLK 0x10000
 #define IS_CS_TIMING_CONFIG 0x1
+
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+#define TUNING_FLAG_ALL_PASS 0x1
+#define TUNING_ERR_ALL_PHASE_PASS -2
+#endif
 
 #ifdef CONFIG_SD_TIMEOUT_RESET
 #define VOLT_HOLD_CLK_08V 0x1
@@ -364,7 +372,11 @@ static int hs_timing_config_libra[][TUNING_INIT_TIMING_MODE][TUNING_INIT_CONFIG_
                 {1623000000, 8, 6, 4, 17, 0, 180000000},        /* 6: SDR104 */
                 {0},                                    /* 7: DDR50 */
                 {0},                                    /* 8: DDR52 */
+#ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
+                {1623000000, 8, 6, 4, 17, 0, 180000000}, /* 9: HS200 */
+#else
                 {0},                                    /* 9: HS200 */
+#endif
         },
         { /*SDIO*/
                 {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
@@ -485,13 +497,13 @@ static int hs_timing_config_taurus[][TUNING_INIT_TIMING_MODE][TUNING_INIT_CONFIG
                 {960000000, 4, 2, 3, 9, 0, 192000000},        /* 6: SDR104 */
                 {0},                                    /* 7: DDR50 */
                 {0},                                    /* 8: DDR52 */
-                {0},                                    /* 9: HS200 */
+		{960000000, 4, 3, 3, 9, 0, 192000000}, /* 9: HS200 */
         },
         { /*SDIO*/
                 {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
                 {0},                                    /* 1: MMC_HS */
                 {0}, /* 2: SD_HS */
-                {19700000, 7, 8, 0, 15, 15, 25000000}, /* 3: SDR12 */
+                {197000000, 7, 8, 0, 15, 15, 25000000}, /* 3: SDR12 */
                 {394000000, 7, 7, 0, 15, 15, 49000000},           /* 4: SDR25 */
                 {787000000, 7, 5, 0, 8, 0,  98000000}, /* 5: SDR50 */
                 {1573000000, 7, 7, 6, 15, 0, 197000000},        /* 6: SDR104 */
@@ -535,6 +547,86 @@ static int hs_timing_config_capricorn[][TUNING_INIT_TIMING_MODE][TUNING_INIT_CON
                 {240000000, 4, 3, 0, 0, 0, 48000000},    /* 4: SDR25 */
                 {480000000, 4, 2, 0, 5, 0, 96000000}, /* 5: SDR50 */
                 {960000000, 4, 3, 2, 9, 0, 192000000},        /* 6: SDR104 */
+                {0},                                    /* 7: DDR50 */
+                {0},                                    /* 8: DDR52 */
+                {0},                                    /* 9: HS200 */
+        }
+};
+
+static int hs_timing_config_taurus_cs[][TUNING_INIT_TIMING_MODE][TUNING_INIT_CONFIG_NUM] = {
+        /* bus_clk,    div, drv_phase, sam_dly, sam_phase_max, sam_phase_min, input_clk */
+        { /*MMC*/
+                {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
+                {480000000, 9, 7, 0, 19, 19, 48000000},   /* 1: MMC_HS */ /* ES 400M, 8div 50M */
+                {200000000, 7, 6, 0, 15, 15, 25000000}, /* 2: SD_HS */
+                {200000000, 7, 6, 0, 15, 15, 25000000}, /* 3: SDR12 */
+                {400000000, 7, 6, 0, 15, 15, 50000000}, /* 4: SDR25 */
+                {800000000, 7, 4, 0, 12, 0, 100000000}, /* 5: SDR50 */
+                {1600000000, 7, 5, 4, 15, 0, 200000000},        /* 6: SDR104 */
+                {800000000, 7, 6, 0, 7, 0, 100000000},  /* 7: DDR50 */
+                {800000000, 7, 6, 0, 7, 0, 100000000},  /* 8: DDR52 */
+                {1920000000, 9, 7, 4, 19, 0, 192000000},        /* 9: HS200 */ /* ES 960M, 8div 120M */
+        },
+        { /*SD*/
+                {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
+                {120000000, 4, 3, 0, 9, 9, 24000000},           /* 1: MMC_HS */
+                {240000000, 4, 2, 0, 0, 0, 48000000},           /* 2: SD_HS */
+                {120000000, 4, 3, 0, 4, 4, 24000000}, /* 3: SDR12 */
+                {240000000, 4, 2, 0, 0, 0, 48000000},           /* 4: SDR25 */
+                {480000000, 4, 2, 0, 5, 0, 96000000}, /* 5: SDR50 */
+                {960000000, 4, 3, 3, 9, 0, 192000000},        /* 6: SDR104 */
+                {0},                                    /* 7: DDR50 */
+                {0},                                    /* 8: DDR52 */
+		{960000000, 4, 3, 3, 9, 0, 192000000},  /* 9: HS200 */
+        },
+        { /*SDIO*/
+                {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
+                {0},                                    /* 1: MMC_HS */
+                {0}, /* 2: SD_HS */
+                {197000000, 7, 8, 0, 15, 15, 25000000}, /* 3: SDR12 */
+                {394000000, 7, 7, 0, 1, 1, 49000000},           /* 4: SDR25 */
+                {787000000, 7, 5, 0, 8, 0,  98000000}, /* 5: SDR50 */
+                {1573000000, 7, 5, 6, 15, 0, 197000000},        /* 6: SDR104 */
+                {0},                                    /* 7: DDR50 */
+                {0},                                    /* 8: DDR52 */
+                {0},                                    /* 9: HS200 */
+        }
+};
+
+static int hs_timing_config_taurus_cs2[][TUNING_INIT_TIMING_MODE][TUNING_INIT_CONFIG_NUM] = {
+        /* bus_clk,    div, drv_phase, sam_dly, sam_phase_max, sam_phase_min, input_clk */
+        { /*MMC*/
+                {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
+                {480000000, 9, 7, 0, 19, 19, 48000000},   /* 1: MMC_HS */ /* ES 400M, 8div 50M */
+                {200000000, 7, 6, 0, 15, 15, 25000000}, /* 2: SD_HS */
+                {200000000, 7, 6, 0, 15, 15, 25000000}, /* 3: SDR12 */
+                {400000000, 7, 6, 0, 15, 15, 50000000}, /* 4: SDR25 */
+                {800000000, 7, 4, 0, 12, 0, 100000000}, /* 5: SDR50 */
+                {1600000000, 7, 5, 4, 15, 0, 200000000},        /* 6: SDR104 */
+                {800000000, 7, 6, 0, 7, 0, 100000000},  /* 7: DDR50 */
+                {800000000, 7, 6, 0, 7, 0, 100000000},  /* 8: DDR52 */
+                {1920000000, 9, 7, 4, 19, 0, 192000000},        /* 9: HS200 */ /* ES 960M, 8div 120M */
+        },
+        { /*SD*/
+                {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
+                {120000000, 4, 3, 0, 4, 4, 24000000},           /* 1: MMC_HS */
+                {240000000, 4, 2, 0, 0, 0, 48000000},           /* 2: SD_HS */
+                {120000000, 4, 3, 0, 9, 9, 24000000}, /* 3: SDR12 */
+                {240000000, 4, 2, 0, 0, 0, 48000000},           /* 4: SDR25 */
+                {480000000, 4, 2, 0, 5, 0, 96000000}, /* 5: SDR50 */
+                {960000000, 4, 3, 3, 9, 0, 192000000},        /* 6: SDR104 */
+                {0},                                    /* 7: DDR50 */
+                {0},                                    /* 8: DDR52 */
+                {960000000, 4, 3, 3, 9, 0, 192000000},  /* 9: HS200 */
+        },
+        { /*SDIO*/
+                {3200000, 7, 7, 0, 15, 15, 400000},             /* 0: LEGACY 400k */
+                {0},                                    /* 1: MMC_HS */
+                {0}, /* 2: SD_HS */
+                {197000000, 7, 8, 0, 2, 2, 25000000}, /* 3: SDR12 */
+                {394000000, 7, 7, 0, 1, 1, 49000000},           /* 4: SDR25 */
+                {787000000, 7, 5, 0, 8, 0,  98000000}, /* 5: SDR50 */
+                {1573000000, 7, 5, 6, 15, 0, 197000000},        /* 6: SDR104 */
                 {0},                                    /* 7: DDR50 */
                 {0},                                    /* 8: DDR52 */
                 {0},                                    /* 9: HS200 */
@@ -779,7 +871,6 @@ static void dw_mci_hs_set_timing(struct dw_mci *host, int id, int timing, int sa
 	}
 
 	/* first disabl clk */
-	/* mci_writel(host, GPIO, ~GPIO_CLK_ENABLE); */
 	mci_writel(host, GPIO, 0x0);
 	udelay(50);
 
@@ -807,77 +898,35 @@ void dw_mci_dsm_dump(struct dw_mci *host, int err_num)
 {
 	/*no need to dump message, use hisi dump */
 	return;
-/*
-	if (dclient == NULL) {
-		printk(KERN_ERR "dclient is not initialization\n");
-		return;
-	}
-	if (host == NULL || host->dev == NULL) {
-		printk(KERN_ERR "sdio host NULL.\n");
-		return;
-	}
-	dev_err(host->dev, "dsm_sido err_num = %d \n", err_num);
-	if (!dsm_client_ocuppy(dclient)) {
-		dsm_client_record(dclient, "CTRL:0x%x\n", mci_readl(host, CTRL));
-		dsm_client_record(dclient, "PWREN:0x%x\n", mci_readl(host, PWREN));
-		dsm_client_record(dclient, "CLKDIV:0x%x\n", mci_readl(host, CLKDIV));
-		dsm_client_record(dclient, "CLKSRC:0x%x\n", mci_readl(host, CLKSRC));
-		dsm_client_record(dclient, "CLKENA:0x%x\n", mci_readl(host, CLKENA));
-		dsm_client_record(dclient, "TMOUT:0x%x\n", mci_readl(host, TMOUT));
-		dsm_client_record(dclient, "CTYPE:0x%x\n", mci_readl(host, CTYPE));
-		dsm_client_record(dclient, "BLKSIZ:0x%x\n", mci_readl(host, BLKSIZ));
-		dsm_client_record(dclient, "BYTCNT:0x%x\n", mci_readl(host, BYTCNT));
-		dsm_client_record(dclient, "INTMSK:0x%x\n", mci_readl(host, INTMASK));
-		dsm_client_record(dclient, "CMDARG:0x%x\n", mci_readl(host, CMDARG));
-		dsm_client_record(dclient, "CMD:0x%x\n", mci_readl(host, CMD));
-		dsm_client_record(dclient, "MINTSTS:0x%x\n", mci_readl(host, MINTSTS));
-		dsm_client_record(dclient, "RINTSTS:0x%x\n", mci_readl(host, RINTSTS));
-		dsm_client_record(dclient, "STATUS:0x%x\n", mci_readl(host, STATUS));
-		dsm_client_record(dclient, "FIFOTH:0x%x\n", mci_readl(host, FIFOTH));
-		dsm_client_record(dclient, "CDETECT:0x%x\n", mci_readl(host, CDETECT));
-		dsm_client_record(dclient, "WRTPRT:0x%x\n", mci_readl(host, WRTPRT));
-		dsm_client_record(dclient, "GPIO:0x%x\n", mci_readl(host, GPIO));
-		dsm_client_record(dclient, "TCBCNT:0x%x\n", mci_readl(host, TCBCNT));
-		dsm_client_record(dclient, "TBBCNT:0x%x\n", mci_readl(host, TBBCNT));
-		dsm_client_record(dclient, "DEBNCE:0x%x\n", mci_readl(host, DEBNCE));
-		dsm_client_record(dclient, "USRID:0x%x\n", mci_readl(host, USRID));
-		dsm_client_record(dclient, "VERID:0x%x\n", mci_readl(host, VERID));
-		dsm_client_record(dclient, "HCON:0x%x\n", mci_readl(host, HCON));
-		dsm_client_record(dclient, "UHS_REG:0x%x\n", mci_readl(host, UHS_REG));
-		dsm_client_record(dclient, "BMOD:0x%x\n", mci_readl(host, BMOD));
-		dsm_client_record(dclient, "PLDMND:0x%x\n", mci_readl(host, PLDMND));
-		dsm_client_record(dclient, "DBADDR:0x%x\n", mci_readl(host, DBADDR));
-		dsm_client_record(dclient, "IDSTS:0x%x\n", mci_readl(host, IDSTS));
-		dsm_client_record(dclient, "IDINTEN:0x%x\n", mci_readl(host, IDINTEN));
-		dsm_client_record(dclient, "DSCADDR:0x%x\n", mci_readl(host, DSCADDR));
-		dsm_client_record(dclient, "BUFADDR:0x%x\n", mci_readl(host, BUFADDR));
-		dsm_client_record(dclient, "CDTHRCTL:0x%x\n", mci_readl(host, CDTHRCTL));
-		dsm_client_record(dclient, "UHS_REG_EXT:0x%x\n", mci_readl(host, UHS_REG_EXT));
-		dsm_client_record(dclient, "cmd_status:0x%x\n", host->cmd_status);
-		dsm_client_record(dclient, "data_status:0x%x\n", host->data_status);
-		dsm_client_record(dclient, "pending_events:0x%x\n", host->pending_events);
-		dsm_client_record(dclient, "completed_events:0x%x\n", host->completed_events);
-		dsm_client_record(dclient, "state:%d\n", host->state);
-		dsm_client_record(dclient, "MINTSTS = %d\n", mci_readl(host, MINTSTS));
-		dsm_client_record(dclient, "STATUS = %d\n", mci_readl(host, STATUS));
-		dsm_client_record(dclient, "CMD=%d\n", mci_readl(host, CMD));
-		dsm_client_record(dclient, "ARG=0x%x \n", mci_readl(host, CMDARG));
-		dsm_client_record(dclient, "RESP0:0x%x\n", mci_readl(host, RESP0));
-		dsm_client_record(dclient, "RESP1:0x%x\n", mci_readl(host, RESP1));
-		dsm_client_record(dclient, "RESP2:0x%x\n", mci_readl(host, RESP2));
-		dsm_client_record(dclient, "RESP3:0x%x\n", mci_readl(host, RESP3));
-		dsm_client_record(dclient, "host :cmd_status=0x%x.\n", host->cmd_status);
-		dsm_client_record(dclient, "data_status=0x%x.\n", host->data_status);
-		dsm_client_record(dclient, "host:pending_events=0x%x\n", host->pending_events);
-		dsm_client_record(dclient, "completed_events=0x%x.\n", host->completed_events);
-
-		dsm_client_notify(dclient, err_num);
-	} else
-		printk("DSM CALL FAIL, MCI  ID: %d\n", host->hw_mmc_id);
-*/
 }
 
 EXPORT_SYMBOL(dw_mci_dsm_dump);
+
+void dsm_wifi_client_notify(int dsm_id, const char *format, ...)
+{
+	char buf[LOG_BUF_SIZE] = {0};
+	char client_name[] = "dsm_wifi";
+	int size;
+	va_list args;
+	if (wifi_client == NULL) {
+		wifi_client = dsm_find_client((char *)client_name);
+		if (wifi_client == NULL)
+			return;
+	}
+	if (format) {
+		va_start(args, format);
+		size = vsnprintf(buf, LOG_BUF_SIZE, format, args);
+		va_end(args);
+		if (size < 0)
+			return;
+	}
+	if (!dsm_client_ocuppy(wifi_client)) {
+		dsm_client_record(wifi_client, buf);
+		dsm_client_notify(wifi_client, dsm_id);
+	} else {
+		printk(KERN_ERR "dsm client notify failed, dsm id is %d.\n", dsm_id);
+	}
+}
 #endif
 
 #define	SD_HWLOCK_ID	11
@@ -918,9 +967,46 @@ static inline void dw_mci_hs_check_result(struct dw_mci *host, int ret, char* lo
 		dev_warn(host->dev, "%s", log);
 }
 
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+/*Try to pull up gpio to set gpio for sim card
+*/
+void dw_mci_set_sd_gpio_to_high(struct dw_mci *host)
+{
+	struct dw_mci_hs_priv_data *priv = host->priv;
+	int ret = 0;
+
+	/*0 and -1 means we dont need to operate gpio*/
+	if ((0 != priv->set_sd_io) && (-1 != priv->set_sd_io)) {
+		/*set GPIO169 to High */
+		ret = gpio_request(priv->set_sd_io, "set_sd_io");
+		if (ret < 0) {
+			dev_err(host->dev,"get set_sd_io error");
+			return;
+		}
+		gpio_direction_output(priv->set_sd_io, 1);
+		dev_info(host->dev, "set set_sd_to 1\n");
+		gpio_free(priv->set_sd_io);
+	}
+
+	/*0 and -1 means we dont need to operate gpio*/
+	if ((0 != priv->set_sd_io2) && (-1 != priv->set_sd_io2) && (0 == priv->set_sd_gpio167_low)) {
+		/*set GPIO167 to High */
+		ret = gpio_request(priv->set_sd_io2, "set_sd_io2");
+		if (ret < 0) {
+			dev_err(host->dev,"get set_sd_io2 error");
+			return;
+		}
+		gpio_direction_output(priv->set_sd_io2, 1);
+		dev_info(host->dev, "set set_sd_to2 1\n");
+		gpio_free(priv->set_sd_io2);
+	}
+}
+#endif
+
 static void dw_mci_hs_power_off(struct dw_mci *host, struct mmc_ios *ios)
 {
 	int ret;
+
 #ifdef CONFIG_MMC_DW_MUX_SDSIM
 	struct dw_mci_hs_priv_data *priv = host->priv;
 
@@ -1009,7 +1095,47 @@ static void dw_mci_hs_power_off(struct dw_mci *host, struct mmc_ios *ios)
 		dw_mci_hs_check_result(host, ret, "egulator_disable vmmc failed\n");
 	}
 #endif
+
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+	dw_mci_set_sd_gpio_to_high(host);
+#endif
 }
+
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+/*Try to pull down gpio to set gpio for sd card
+*/
+void dw_mci_set_sd_gpio_to_low(struct dw_mci *host)
+{
+	struct dw_mci_hs_priv_data *priv = host->priv;
+	int ret = 0;
+
+	/*0 and -1 means we dont need to operate gpio*/
+	if ((0 != priv->set_sd_io) && (-1 != priv->set_sd_io)) {
+		/*set GPIO169 to Low */
+		ret = gpio_request(priv->set_sd_io, "set_sd_io");
+		if (ret < 0) {
+			dev_err(host->dev,"get set_sd_io error");
+			return;
+		}
+		gpio_direction_output(priv->set_sd_io, 0);
+		dev_info(host->dev, "set set_sd_to 0\n");
+		gpio_free(priv->set_sd_io);
+	}
+
+	/*0 and -1 means we dont need to operate gpio*/
+	if ((0 != priv->set_sd_io2) && (-1 != priv->set_sd_io2)) {
+		/*set GPIO169 to Low */
+		ret = gpio_request(priv->set_sd_io2, "set_sd_io2");
+		if (ret < 0) {
+			dev_err(host->dev,"get set_sd_io2 error");
+			return;
+		}
+		gpio_direction_output(priv->set_sd_io2, 0);
+		dev_info(host->dev, "set set_sd_to2 0\n");
+		gpio_free(priv->set_sd_io2);
+	}
+}
+#endif
 
 static void dw_mci_hs_power_up(struct dw_mci *host, struct mmc_ios *ios)
 {
@@ -1032,6 +1158,10 @@ static void dw_mci_hs_power_up(struct dw_mci *host, struct mmc_ios *ios)
 			}
 		}
 	}
+#endif
+
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+	dw_mci_set_sd_gpio_to_low(host);
 #endif
 
 	if (HI3660_FPGA == priv->hi3660_fpga_sd_ioset) {
@@ -1212,6 +1342,64 @@ static void dw_mci_hs_power_up(struct dw_mci *host, struct mmc_ios *ios)
 
 }
 
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+/*free vmmc operate for sim card
+*/
+void dw_mci_put_regulator(struct dw_mci *host)
+{
+	if (host->hw_mmc_id == DWMMC_SD_ID) {
+		devm_regulator_put(host->vqmmc);
+		host->vqmmc = NULL;
+
+		devm_regulator_put(host->vmmc);
+		host->vmmc = NULL;
+
+		if (1 == host->sd_vmmcmosen_switch)
+			devm_regulator_put(host->vmmcmosen);
+
+		host->vmmcmosen = NULL;
+
+		host->need_get_mmc_regulator = 1;
+		dev_info(host->dev, "regulator put\n");
+	}
+}
+
+/*get vmmc operate for sd card
+*/
+void dw_mci_get_regulator(struct dw_mci *host)
+{
+	if ((host->hw_mmc_id == DWMMC_SD_ID) &&
+	    (host->need_get_mmc_regulator == 1)) {
+		host->vmmc = devm_regulator_get(host->dev, "vmmc");
+		if (IS_ERR(host->vmmc)) {
+			dev_info(host->dev, "no vmmc regulator found\n");
+			host->vmmc = NULL;
+		}
+
+		host->vqmmc = devm_regulator_get(host->dev, "vqmmc");
+		if (IS_ERR(host->vqmmc)) {
+			dev_info(host->dev, "no vqmmc regulator found\n");
+			host->vqmmc = NULL;
+		}
+
+		if (1 == host->sd_vmmcmosen_switch) {
+			host->vmmcmosen =
+				devm_regulator_get(host->dev, "vmmcmosen");
+			if (IS_ERR(host->vmmcmosen)) {
+				dev_info(host->dev,
+					 "no vmmcmosen regulator found\n");
+				host->vmmcmosen = NULL;
+			}
+		} else {
+			host->vmmcmosen = NULL;
+		}
+
+		host->need_get_mmc_regulator = 0;
+		dev_info(host->dev, "regulator get\n");
+	}
+}
+#endif
+
 static void dw_mci_hs_set_power(struct dw_mci *host, struct mmc_ios *ios)
 {
 	struct dw_mci_hs_priv_data *priv = host->priv;
@@ -1230,8 +1418,14 @@ static void dw_mci_hs_set_power(struct dw_mci *host, struct mmc_ios *ios)
 			dw_mci_hi3xxx_work_fail_reset(host);
 #endif
 
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+		dw_mci_put_regulator(host);
+#endif
 		break;
 	case MMC_POWER_UP:
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+		dw_mci_get_regulator(host);
+#endif
 		dev_info(host->dev, "set io to normal\n");
 		dw_mci_hs_power_up(host, ios);
 		break;
@@ -1416,7 +1610,18 @@ static int dw_mci_hs_get_dt_taurus_pltfm_resource(struct dw_mci *host, struct de
 	host->sdio_rst |= BIT_RST_SDIO_TAURUS;
 	host->odio_sd_mask_bit = BIT_VOLT_VALUE_18_MASK_TAURUS;
 
-	memcpy(hs_timing_config, hs_timing_config_taurus, sizeof(hs_timing_config)); /* unsafe_function_ignore: memcpy */
+	if (of_find_property(of_node, "cs_sd_timing_config_taurus",
+			     (int *)NULL)) {
+		memcpy(hs_timing_config, hs_timing_config_taurus_cs,
+		       sizeof(hs_timing_config)); /* unsafe_function_ignore: memcpy */
+	} else if (of_find_property(of_node, "cs2_sd_timing_config_taurus",
+			     (int *)NULL)){
+		memcpy(hs_timing_config, hs_timing_config_taurus_cs2,
+		       sizeof(hs_timing_config)); /* unsafe_function_ignore: memcpy */
+	} else {
+		memcpy(hs_timing_config, hs_timing_config_taurus,
+		       sizeof(hs_timing_config)); /* unsafe_function_ignore: memcpy */
+	}
 
 	if (get_resource_hsdt_crg_base() || get_resource_mmc0_crg_base())
 		return -ENODEV;
@@ -1634,21 +1839,24 @@ static void dw_mci_hs_set_rst_m(struct dw_mci *host, bool set)
 		dev_err(host->dev, "pericrg_base is null, can't rst! \n");
 		return;
 	}
-
+	if (DW_MCI_SD_ID != id) {
+		dev_info(host->dev, "other rest_m or unrest_m need to add! \n");
+		return;
+	}
 	if (set) {
-		if (DW_MCI_SD_ID == id) {
+		if (mmc0_crg_base)
+			writel(BIT_RST_SD_TAURUS,
+				mmc0_crg_base + MMC0_CRG_SD_HRST);
+		else
 			writel(BIT_RST_SD_M, pericrg_base + PERI_CRG_RSTEN4);
-			dev_info(host->dev, "rest_m for sd \n");
-		} else {
-			dev_info(host->dev, "other rest_m need to add \n");
-		}
+		dev_info(host->dev, "rest_m for sd \n");
 	} else {
-		if (DW_MCI_SD_ID == id) {
+		if (mmc0_crg_base)
+			writel(BIT_RST_SD_TAURUS,
+				mmc0_crg_base + MMC0_CRG_SD_HURST);
+		else
 			writel(BIT_RST_SD_M, pericrg_base + PERI_CRG_RSTDIS4);
-			dev_info(host->dev, "unrest_m for sd \n");
-		} else {
-			dev_info(host->dev, "other unrest_m need to add \n");
-		}
+		dev_info(host->dev, "unrest_m for sd \n");
 	}
 }
 
@@ -1664,7 +1872,7 @@ void dw_mci_hs_reset(struct dw_mci *host, int id)
 		dev_info(host->dev, "rest emmc \n");
 	} else if (1 == id) {
 		if (mmc0_crg_base)
-			writel(BIT_RST_SD_TAURUS, mmc0_crg_base + MMC0_CRG_SD_HRST);
+			writel(BIT_HRST_SD_TAURUS, mmc0_crg_base + MMC0_CRG_SD_HRST);
 		else
 			writel(BIT_RST_SD, pericrg_base + PERI_CRG_RSTEN4);
 		dev_info(host->dev, "rest sd \n");
@@ -1691,7 +1899,7 @@ void dw_mci_hs_unreset(struct dw_mci *host, int id)
 		dev_info(host->dev, "unrest emmc \n");
 	} else if (1 == id) {
 		if (mmc0_crg_base)
-			writel(BIT_URST_SD_TAURUS, mmc0_crg_base + MMC0_CRG_SD_HURST);
+			writel(BIT_HRST_SD_TAURUS, mmc0_crg_base + MMC0_CRG_SD_HURST);
 		else
 			writel(BIT_RST_SD, pericrg_base + PERI_CRG_RSTDIS4);
 
@@ -1756,7 +1964,7 @@ struct dw_mci *host_from_sd_module = NULL;
 
 static int dw_mci_hs_priv_init(struct dw_mci *host)
 {
-	struct dw_mci_hs_priv_data *priv;
+	struct dw_mci_hs_priv_data *priv = NULL;
 	struct platform_device *pdev = NULL;
 #ifdef CONFIG_MMC_DW_EMMC_USED_AS_MODEM
 	static const char *const hi_mci0 = "hi_mci.3";
@@ -1991,6 +2199,30 @@ static int dw_mci_hs_parse_dt(struct dw_mci *host)
 	if (of_property_read_u32(np, "is-resetable", &host->is_reset_after_retry))
 		dev_info(host->dev, "is-resetable get value failed \n");
 
+	if (of_find_property(np, "enable_hpd_irq", NULL)) {
+		dev_info(host->dev, "hpd_irq enable\n");
+		host->flags |= DWMMC_HPD_IRQ;
+	}
+
+#ifdef CONFIG_MMC_SIM_GPIO_EXCHANGE
+	priv->set_sd_io = of_get_named_gpio(np, "set_sd_io", 0);
+	if (!gpio_is_valid(priv->set_sd_io)) {
+		dev_info(host->dev, "set_sd_io not available\n");
+		priv->set_sd_io = -1;
+	}
+
+	priv->set_sd_io2 = of_get_named_gpio(np, "set_sd_io2", 0);
+	if (!gpio_is_valid(priv->set_sd_io2)) {
+		dev_info(host->dev, "set_sd_io2 not available\n");
+		priv->set_sd_io2 = -1;
+	}
+
+	if (of_find_property(np, "caps2-mmc-gpio167-low", NULL)) {
+		priv->set_sd_gpio167_low = 1;
+		dev_info(host->dev, "caps2-mmc-gpio167-low is %d", priv->set_sd_gpio167_low);
+	}
+#endif
+
 	if (of_property_read_u32(np, "debug_percrg_sd_sdio_reg_print", &value))
 	{
 		dev_info(host->dev, "debug_percrg_sd_sdio_reg_print get value failed \n");
@@ -2093,6 +2325,10 @@ static int dw_mci_hs_parse_dt(struct dw_mci *host)
 			host->sd_vmmcmosen_switch = 0;
 		}
 
+		if (of_find_property(np, "pins_detect_enable", NULL)) {
+			dev_info(host->dev,"pins_detect_enable found\n");
+			host->flags |= PINS_DETECT_ENABLE;
+		}
 
 		value = SD_CLK_DRIVER_DEFAULT;
 		if (of_property_read_u32(np, "driverstrength_clk", &value)) {
@@ -2187,10 +2423,18 @@ static int dw_mci_hs_parse_dt(struct dw_mci *host)
 static irqreturn_t dw_mci_hs_card_detect(int irq, void *data)
 {
 	struct dw_mci *host = (struct dw_mci *)data;
+	struct mmc_host *mmc_host_temp = NULL;
+	struct dw_mci_slot *cur_slot = NULL;
+
 	host->sd_reinit = 0;
 	host->sd_hw_timeout = 0;
 	host->flags &= ~DWMMC_IN_TUNING;
 	host->flags &= ~DWMMC_TUNING_DONE;
+
+	cur_slot = host->slot[0];
+	mmc_host_temp = cur_slot->mmc;
+	mmc_host_temp->init_cnt = 0;
+	mmc_host_temp->reset_count = 0;
 
 	queue_work(host->card_workqueue, &host->card_work);
 	return IRQ_HANDLED;
@@ -2214,7 +2458,7 @@ static int dw_mci_hs_get_cd(struct dw_mci *host, u32 slot_id)
 	dev_info(host->dev, " sd status = %d from gpio_get_value(gpio_cd).\n", status);
 
 	/*If sd to jtag func enabled, make the SD always not present */
-	if ((host->hw_mmc_id == DWMMC_SD_ID) && (dw_mci_check_himntn(HIMNTN_SD2JTAG) || dw_mci_check_himntn(HIMNTN_SD2DJTAG))) {
+	if ((host->hw_mmc_id == DWMMC_SD_ID) && (dw_mci_check_himntn(HIMNTN_SD2JTAG) || dw_mci_check_himntn(HIMNTN_SD2DJTAG) || dw_mci_check_himntn(HIMNTN_SD2UART6))) {
 		dev_info(host->dev, " sd status set to 1 here because jtag is enabled.\n");
 		status = 1;
 	}
@@ -2238,14 +2482,28 @@ static int dw_mci_hs_get_cd(struct dw_mci *host, u32 slot_id)
 	return status;
 }
 
+static irqreturn_t dw_mci_hs_hpd_detect(int irq, void *data)
+{
+	return IRQ_HANDLED;
+}
+
 static int dw_mci_hs_cd_detect_init(struct dw_mci *host)
 {
 	struct device_node *np = host->dev->of_node;
 	int gpio;
 	int err;
+	int hpd_irq;
 
 	if (host->pdata->quirks & DW_MCI_QUIRK_BROKEN_CARD_DETECTION)
 		return 0;
+
+	if (host->flags & DWMMC_HPD_IRQ) {
+		hpd_irq = hisi_get_pmic_irq_byname(SIM1_HPD_F);
+		err = request_irq(hpd_irq, dw_mci_hs_hpd_detect,
+					IRQF_SHARED | IRQF_NO_SUSPEND, "sd_hpd", host);
+		if (err)
+			pr_err("%s: request hpd irq error err %d\n", __func__, err);
+	}
 
 	gpio = of_get_named_gpio(np, "cd-gpio", 0);
 	if (gpio_is_valid(gpio)) {
@@ -2415,7 +2673,7 @@ static int dw_mci_1_8v_signal_voltage_switch(struct dw_mci_slot *slot)
 	} while (loop_count);
 
 	if (!loop_count)
-		dev_err(host->dev, " poll cd failed in voltage_switch\n");
+		dev_err(host->dev, " voltage_switch exceed loop_count\n");
 
 	/* enable interrupt */
 	mci_writel(host, CTRL, (mci_readl(host, CTRL) | SDMMC_CTRL_INT_ENABLE));
@@ -2548,7 +2806,7 @@ void dw_mci_hi3xxx_work_fail_reset(struct dw_mci *host)
 	}
 
 	dev_err(host->dev, "Start to reset SDIO IP\n");
-	mci_writel(host, CTRL, (mci_readl(host, CTRL) & (~INT_ENABLE)));
+	mci_writel(host, CTRL, (mci_readl(host, CTRL) & (~(unsigned int)INT_ENABLE)));
 	mci_writel(host, INTMASK, 0);
 
 	mci_writel(host, RINTSTS, INTMSK_ALL);
@@ -2665,10 +2923,141 @@ void dw_mci_hi3xxx_work_fail_reset(struct dw_mci *host)
 static void dw_mci_hs_tuning_set_flags(struct dw_mci *host, int sample, int ok)
 {
 	if (ok)
-		host->tuning_sample_flag |= (1 << sample);
+		host->tuning_sample_flag |= (1 << (unsigned int)sample);
 	else
 		host->tuning_sample_flag &= ~((unsigned)(1 << (unsigned int)sample));
 }
+
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+void dw_mci_hs_get_timing_config_normal(struct dw_mci *host)
+{
+	struct device_node *np = host->dev->of_node;
+	int ret;
+
+	ret = of_property_read_u32_array(np, "use_samdly_range", &(host->use_samdly_range[0]), 2);
+	if (ret) {
+		dev_info(host->dev, "%s:get use_sample_dly range range failed!\n", __func__);
+		host->use_samdly_range[0] = 4;
+		host->use_samdly_range[1] = 8;
+	} else {
+		dev_info(host->dev, "%s:use_samdly_range_min:%d,use_samdly_range_max:%d!\n",
+			__func__, host->use_samdly_range[0], host->use_samdly_range[1]);
+	}
+
+	ret = of_property_read_u32_array(np, "enable_shift_range", &(host->enable_shift_range[0]), 2);
+	 if (ret) {
+		dev_info(host->dev, "%s:get enable_shift range range failed!\n", __func__);
+		host->enable_shift_range[0] = 4;
+		host->enable_shift_range[1] = 8;
+	} else {
+		dev_info(host->dev, "%s:ena_shift_range_min:%d,ena_shift_range_max:%d!\n",
+			__func__, host->enable_shift_range[0], host->enable_shift_range[1]);
+	}
+
+}
+
+void dw_mci_hs_get_timing_config_high_speed_clk(struct dw_mci *host)
+{
+	struct device_node *np = host->dev->of_node;
+	int ret;
+
+	ret = of_property_read_u32_array(np, "use_samdly_range_hi", &(host->use_samdly_range[0]), 2);
+	if (ret) {
+		dev_info(host->dev, "%s:get use_samdly_range_hi range range failed!\n", __func__);
+		host->use_samdly_range[0] = 9;
+		host->use_samdly_range[1] = 18;
+	} else {
+		dev_info(host->dev, "%s:use_samdly_range_hi_min:%d,use_samdly_range_hi_max:%d!\n",
+			__func__, host->use_samdly_range[0], host->use_samdly_range[1]);
+	}
+
+	ret = of_property_read_u32_array(np, "enable_shift_range_hi", &(host->enable_shift_range[0]), 2);
+	 if (ret) {
+		dev_info(host->dev, "%s:get enable_shift_range_hi range range failed!\n", __func__);
+		host->enable_shift_range[0] = 8;
+		host->enable_shift_range[1] = 17;
+	} else {
+		dev_info(host->dev, "%s:ena_shift_range_hi_min:%d,ena_shift_range_hi_max:%d!\n",
+			__func__, host->enable_shift_range[0], host->enable_shift_range[1]);
+	}
+
+}
+
+/* Use 960M clock to work
+ * clean tuning flag
+ * switch clock to 960M
+*/
+void dw_mci_hs_960_clock_source_retuning(struct dw_mci *host)
+{
+	struct dw_mci_hs_priv_data *priv = host->priv;
+
+	memcpy(hs_timing_config[DWMMC_SDIO_ID][MMC_TIMING_UHS_SDR104],
+		hs_timing_960_clock_source_capricorn, sizeof(hs_timing_960_clock_source_capricorn));
+
+	host->tuning_init_sample = host->tuning_init_sample / 2;
+	priv->old_timing = -1;
+	priv->in_resume = STATE_KEEP_PWR;
+	host->sd_reinit = 0;
+
+	dw_mci_hs_get_timing_config_normal(host);
+	dw_mci_hs_set_clk(host, &host->cur_slot->mmc->ios);
+
+	if (!IS_ERR(host->volt_hold_sdio_clk))
+		clk_disable_unprepare(host->volt_hold_sdio_clk);
+}
+
+/* Use 1920M clock to work
+ * clean tuning flag
+ * switch clock to 1920M
+*/
+void dw_mci_hs_1920_clock_source_retuning(struct dw_mci *host)
+{
+	struct dw_mci_hs_priv_data *priv = host->priv;
+
+	memcpy(hs_timing_config[DWMMC_SDIO_ID][MMC_TIMING_UHS_SDR104],
+		hs_timing_1920_clock_source_capricorn, sizeof(hs_timing_1920_clock_source_capricorn));
+
+	priv->old_timing = -1;
+	priv->in_resume = STATE_KEEP_PWR;
+	host->sd_reinit = 0;
+
+	dw_mci_hs_get_timing_config_high_speed_clk(host);
+	dw_mci_hs_set_clk(host, &host->cur_slot->mmc->ios);
+
+	if (!IS_ERR(host->volt_hold_sdio_clk)) {
+		if (clk_prepare_enable(host->volt_hold_sdio_clk))
+			dev_err(host->dev, "volt_hold_sdio_clk clk_prepare_enable failed\n");
+	}
+}
+#endif
+
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+static void dw_mci_hs_tuning_all_pass(struct dw_mci *host, int *ret, int sample_max,  int timing)
+{
+	if ((TUNING_FLAG_ALL_PASS == host->tuning_flag_all_pass) &&
+		(host->hw_mmc_id == DWMMC_SDIO_ID)) {
+
+		if (1 == host->data_crc_flag) {
+			host->tuning_init_sample = 0;
+			host->data_crc_flag = 0;
+		} else if (((2 << (unsigned int)sample_max) - 1) == host->tuning_sample_flag) {
+			host->all_pass_flag = 1;
+		}
+
+		dw_mci_hs_960_clock_source_retuning(host);
+		host->tuning_flag_all_pass = 0;
+		dev_info(host->dev, "tuning OK using high speed clk: timing is " "%d, \
+			tuning sample = " "%d, tuning_flag = 0x%x\n",
+			timing, host->tuning_init_sample, host->tuning_sample_flag);
+	} else if (((2 << (unsigned int)sample_max) - 1) == host->tuning_sample_flag &&
+		(host->hw_mmc_id == DWMMC_SDIO_ID)) {
+		host->tuning_flag_all_pass = TUNING_FLAG_ALL_PASS;
+		dw_mci_hs_1920_clock_source_retuning(host);
+		dev_info(host->dev, "all tuning sample return ok,try to retuning\n");
+		*ret = TUNING_ERR_ALL_PHASE_PASS;
+	}
+}
+#endif
 
 /* By tuning, find the best timing condition
  *  1 -- tuning is not finished. And this function should be called again
@@ -2684,7 +3073,8 @@ static int dw_mci_hs_tuning_find_condition(struct dw_mci *host, int timing)
 	int sample_min, sample_max;
 	int i, j;
 	int ret = 0;
-	int mask, mask_lenth;
+	unsigned int mask;
+	int mask_lenth;
 	int d_value = 0;
 
 	if (host->hw_mmc_id == DWMMC_SD_ID) {
@@ -2729,13 +3119,13 @@ static int dw_mci_hs_tuning_find_condition(struct dw_mci *host, int timing)
 		host->tuning_current_sample = -1;
 
 		host->tuning_init_sample = -1;
-		for (mask_lenth = (((sample_max - sample_min) >> 1) << 1) + 1; mask_lenth >= 1; mask_lenth -= 2) {
+		for (mask_lenth = (((unsigned int)(sample_max - sample_min) >> 1) << 1) + 1; mask_lenth >= 1; mask_lenth -= 2) {
 
 			mask = (1 << (unsigned int)mask_lenth) - 1;
 			for (i = (sample_min + sample_max - mask_lenth + 1) / 2, j = 1;
 					(i <= sample_max - mask_lenth + 1) && (i >= sample_min);
 						i = ((sample_min + sample_max - mask_lenth + 1) / 2) + ((j % 2) ? -1 : 1) * (j / 2)) {
-				if ((host->tuning_sample_flag & ((unsigned int)mask << (unsigned int)i)) == ((unsigned int)mask << (unsigned int)i)) {
+				if ((host->tuning_sample_flag & (mask << (unsigned int)i)) == (mask << (unsigned int)i)) {
 					host->tuning_init_sample = i + mask_lenth / 2;
 					break;
 				}
@@ -2751,7 +3141,13 @@ static int dw_mci_hs_tuning_find_condition(struct dw_mci *host, int timing)
 				} else {
 					dev_info(host->dev, "tuning OK: timing is " "%d, tuning sample = " "%d, tuning_flag = 0x%x",
 							timing, host->tuning_init_sample, host->tuning_sample_flag);
+
 					ret = 0;
+
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+		dw_mci_hs_tuning_all_pass(host, &ret, sample_max, timing);
+#endif
+
 #ifdef CONFIG_SD_TIMEOUT_RESET
 					host->set_sd_data_tras_timeout = 0;
 					host->set_sdio_data_tras_timeout = 0;
@@ -2768,6 +3164,10 @@ static int dw_mci_hs_tuning_find_condition(struct dw_mci *host, int timing)
 			if (host->hw_mmc_id == DWMMC_EMMC_ID) {
 				DSM_EMMC_LOG(host->cur_slot->mmc, DSM_EMMC_TUNING_ERROR, "%s:eMMC tuning error: timing is %d, tuning_flag = 0x%x\n", __FUNCTION__, timing, host->tuning_sample_flag);
 			}
+#endif
+#ifdef CONFIG_HUAWEI_DSM
+			if (host->hw_mmc_id == DWMMC_SDIO_ID)
+				dsm_wifi_client_notify(DSM_SDIO_TUNNING_ERR, "sdio tuning error: timing %d, flag 0x%x\n", timing, host->tuning_sample_flag);
 #endif
 			ret = -1;
 		}
@@ -2862,13 +3262,13 @@ static void dw_mci_hisi_change_timing_config_cancer(struct dw_mci *host)
 static void dw_mci_hisi_change_timing_config_capricorn(struct dw_mci *host)
 {
 	if (DWMMC_SD_ID == host->hw_mmc_id) {
-		memcpy(hs_timing_config[DWMMC_SD_ID][MMC_TIMING_UHS_SDR104], hs_timing_config_capricorn_sd_ppll2, sizeof(hs_timing_config_capricorn_sd_ppll2));/* unsafe_function_ignore: memcpy */
+		memcpy(hs_timing_config[DWMMC_SD_ID][MMC_TIMING_UHS_SDR104], hs_timing_960_clock_source_capricorn, sizeof(hs_timing_960_clock_source_capricorn));/* unsafe_function_ignore: memcpy */
 		host->use_samdly_range[0] = 4;
 		host->use_samdly_range[1] = 8;
 		host->enable_shift_range[0] = 4;
 		host->enable_shift_range[1] = 8;
 	} else if (DWMMC_SDIO_ID == host->hw_mmc_id) {
-		memcpy(hs_timing_config[DWMMC_SDIO_ID][MMC_TIMING_UHS_SDR104], hs_timing_config_capricorn_sdio_ppll2, sizeof(hs_timing_config_capricorn_sdio_ppll2));/* unsafe_function_ignore: memcpy */
+		memcpy(hs_timing_config[DWMMC_SDIO_ID][MMC_TIMING_UHS_SDR104], hs_timing_960_clock_source_capricorn, sizeof(hs_timing_960_clock_source_capricorn));/* unsafe_function_ignore: memcpy */
 		host->use_samdly_range[0] = 4;
 		host->use_samdly_range[1] = 8;
 		host->enable_shift_range[0] = 4;
@@ -2998,18 +3398,30 @@ static int dw_mci_hs_tuning_move(struct dw_mci *host, int timing, int start)
 #define EMMC_PATTERN_ADDRESS (384*2)
 int dw_mci_priv_execute_tuning(struct dw_mci_slot *slot, u32 opcode, struct dw_mci_tuning_data *tuning_data)
 {
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+	int retry_num = 1;
+#endif
 	struct mmc_host *mmc = slot->mmc;
 	struct dw_mci *host = slot->host;
 	const struct dw_mci_drv_data *drv_data = host->drv_data;
 	unsigned int tuning_loop = MAX_TUNING_LOOP;
-	const u8 *tuning_blk_pattern;
+	const u8 *tuning_blk_pattern = NULL;
 	int ret = 0;
-	u8 *tuning_blk;
+	u8 *tuning_blk = NULL;
 	int blksz;
 
 	int id = host->hw_mmc_id;
 	u32 arg = 0;
 	unsigned int flags = MMC_RSP_R1 | MMC_CMD_ADTC;
+
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+retry:
+	arg = 0;
+	tuning_loop = MAX_TUNING_LOOP;
+	ret = 0;
+	arg = 0;
+	flags = MMC_RSP_R1 | MMC_CMD_ADTC;
+#endif
 
 	if (opcode == MMC_SEND_TUNING_BLOCK_HS200) {
 		if (mmc->ios.bus_width == MMC_BUS_WIDTH_8) {
@@ -3086,6 +3498,10 @@ int dw_mci_priv_execute_tuning(struct dw_mci_slot *slot, u32 opcode, struct dw_m
 			}
 		} else if (0 == ret)
 			break;
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+		else if (TUNING_ERR_ALL_PHASE_PASS == ret)
+			break;
+#endif
 
 		mmc_wait_for_req(mmc, &mrq);
 
@@ -3109,6 +3525,13 @@ out:
 
 	pm_runtime_mark_last_busy(mmc_dev(mmc));
 	pm_runtime_put_autosuspend(mmc_dev(mmc));
+
+#ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
+	if ((TUNING_ERR_ALL_PHASE_PASS == ret) && retry_num) {
+		retry_num = 0;
+		goto retry;
+	}
+#endif
 
 	return ret;
 }
@@ -3639,7 +4062,7 @@ void dw_mci_ciu_reset(struct device *dev, struct dw_mci *host)
 		if(!dw_mci_wait_reset(dev, host, SDMMC_CTRL_RESET))
 			dev_info(dev,"dw_mci_wait_reset failed\n");
 
-		mci_send_cmd(slot, SDMMC_CMD_UPD_CLK |
+		(void)mci_send_cmd(slot, SDMMC_CMD_UPD_CLK |
 			SDMMC_CMD_PRV_DAT_WAIT, 0);
 	}
 }
@@ -3648,7 +4071,7 @@ bool dw_mci_fifo_reset(struct device *dev, struct dw_mci *host)
 {
 	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
 	unsigned int ctrl;
-	bool result;
+	bool result = false;
 
 	do {
 		result = dw_mci_wait_reset(host->dev, host, SDMMC_CTRL_FIFO_RESET);
@@ -3733,7 +4156,7 @@ bool dw_mci_wait_data_busy(struct dw_mci *host, struct mmc_request *mrq)
 
 	/* After CTRL Reset, Should be needed clk val to CIU */
 	if (host->cur_slot)
-		mci_send_cmd(host->cur_slot,
+		(void)mci_send_cmd(host->cur_slot,
 			SDMMC_CMD_UPD_CLK | SDMMC_CMD_PRV_DAT_WAIT, 0);
 
 	timeout = jiffies + msecs_to_jiffies(500);
@@ -3831,7 +4254,7 @@ void dw_mci_set_clk_peri_08v(struct dw_mci *host)
 void dw_mci_timeout_timer(unsigned long data)
 {
 	struct dw_mci *host = (struct dw_mci *)data;
-	struct mmc_request *mrq;
+	struct mmc_request *mrq = NULL;
 
 
 	if (host) {
@@ -3843,6 +4266,10 @@ void dw_mci_timeout_timer(unsigned long data)
 			dev_err(host->dev,
 				"Timeout waiting for hardware interrupt."
 				" state = %d\n", host->state);
+#ifdef CONFIG_HUAWEI_DSM
+			if (host->hw_mmc_id == DWMMC_SDIO_ID)
+				dsm_wifi_client_notify(DSM_SDIO_DATA_TIMEOUT, "sdio data timeout state is %d\n", host->state);
+#endif
 			dw_mci_reg_dump(host);
 
 #ifdef CONFIG_SD_TIMEOUT_RESET
@@ -3883,9 +4310,6 @@ void dw_mci_timeout_timer(unsigned long data)
 		spin_unlock(&host->lock);
 	}
 
-	/*if(NULL != host)
-		dw_mci_hi3xxx_work_fail_reset(host);*/
-
 }
 
 extern int dw_mci_get_cd(struct mmc_host *mmc);
@@ -3898,7 +4322,7 @@ void dw_mci_work_routine_card(struct work_struct *work)
 	for (i = 0; i < host->num_slots; i++) {
 		struct dw_mci_slot *slot = host->slot[i];
 		struct mmc_host *mmc = slot->mmc;
-		struct mmc_request *mrq;
+		struct mmc_request *mrq = NULL;
 		int present;
 
 		present = dw_mci_get_cd(mmc);
@@ -3989,7 +4413,6 @@ void dw_mci_work_routine_card(struct work_struct *work)
 			}
 
 			spin_unlock_bh(&host->lock);
-
 			present = dw_mci_get_cd(mmc);
 		}
 

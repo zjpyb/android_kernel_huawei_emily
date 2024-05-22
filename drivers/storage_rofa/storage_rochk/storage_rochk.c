@@ -34,6 +34,11 @@
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_host.h>
 
+#include <linux/mmc/mmc.h>
+#include <linux/mmc/card.h>
+#include <linux/mmc/core.h>
+#include <linux/mmc/host.h>
+
 #include <chipset_common/bfmr/bfm/core/bfm_core.h>
 #include <chipset_common/storage_rofa/storage_rofa.h>
 #include "storage_rochk.h"
@@ -63,6 +68,28 @@
 #define UFSHCD "ufshcd"
 #endif
 
+#define STR_MANUFACTURER_TOSHIBA     "tx"
+#define STR_MANUFACTURER_HYNIX       "hy"
+#define STR_MANUFACTURER_SAMSUNG     "ss"
+#define STR_MANUFACTURER_MICRON      "mt"
+#define STR_MANUFACTURER_SANDISK     "sd"
+#define STR_MANUFACTURER_HISI        "hi"
+#define STR_MANUFACTURER_UNKNOWN     "xx"
+
+#define EMMC_CID_MANFID_SANDISK      0x02
+#define EMMC_CID_MANFID_SANDISK_V2   0x45
+#define EMMC_CID_MANFID_TOSHIBA      0x11
+#define EMMC_CID_MANFID_MICRON       0x13
+#define EMMC_CID_MANFID_SAMSUNG      0x15
+#define EMMC_CID_MANFID_KINGSTON     0x70
+#define EMMC_CID_MANFID_HYNIX        0x90
+
+#define EMMC_CSD_WP_BYTE         14
+#define EMMC_CSD_PWRON_WP_MASK   0x10
+#define EMMC_CSD_CRC_BYTE        15
+
+#define MMC_RSP_R1_RO_ERROR_MASK (R1_WP_VIOLATION | R1_ILLEGAL_COMMAND)
+
 #define BOOTDEVICE_DISK_NAME BFMR_SIZE_DISK_NAME
 
 #define BOOTDEVICE_MODEL_SIZE   32
@@ -79,6 +106,8 @@
 #define PRE_EOL_NORMAL    1
 #define PRE_EOL_SERIOUS   2
 #define PRE_EOL_CRITICAL  3
+
+#define MONITOR_WRITE_REQ_TIMES     50
 
 struct bootdevice_info {
 	int type;   /* 0 for emmc and 1 for ufs */
@@ -102,15 +131,20 @@ static LIST_HEAD(g_bootdev_disks);
 static DEFINE_MUTEX(g_bootdev_disks_mutex);
 static struct bootdevice_info g_bootdev_info = {
 	.type = -1,
-	.model = { 0 },
-	.fwrev = { 0 },
+	.model = {0},
+	.fwrev = {0},
 };
 
 static atomic_t g_monitor_enabled = ATOMIC_INIT(0);
-static atomic_t g_monitor_times = ATOMIC_INIT(10);
+static atomic_t g_monitor_times = ATOMIC_INIT(MONITOR_WRITE_REQ_TIMES);
 static atomic_t g_action_once = ATOMIC_INIT(0); /* check sense once */
 
 static DEFINE_SPINLOCK(g_crbroi_lock);
+
+static inline const char *str_match_result(int result)
+{
+	return result ? "[matched]" : "[unmatched]";
+}
 
 /*
  * routines to match and statistic storage read only write-fail with
@@ -182,24 +216,19 @@ static inline int match_ufs_rofault_hisi(const char *model,
 static const char *get_ufs_manf_str(unsigned int manfid)
 {
 	if (manfid == UFS_MANUFACTURER_ID_TOSHIBA)
-		return "tx";
+		return STR_MANUFACTURER_TOSHIBA;
 	else if (manfid == UFS_MANUFACTURER_ID_HYNIX)
-		return "hy";
+		return STR_MANUFACTURER_HYNIX;
 	else if (manfid == UFS_MANUFACTURER_ID_SAMSUNG)
-		return "ss";
+		return STR_MANUFACTURER_SAMSUNG;
 	else if (manfid == UFS_MANUFACTURER_ID_MICRON)
-		return "mt";
+		return STR_MANUFACTURER_MICRON;
 	else if (manfid == UFS_MANUFACTURER_ID_SANDISK)
-		return "sd";
+		return STR_MANUFACTURER_SANDISK;
 	else if (manfid == UFS_MANUFACTURER_ID_HI1861)
-		return "hi";
+		return STR_MANUFACTURER_HISI;
 	else
-		return "xx";
-}
-
-static inline const char *str_match_result(int result)
-{
-	return result ? "[matched]" : "[unmatched]";
+		return STR_MANUFACTURER_UNKNOWN;
 }
 
 static int match_ufs_rofault(unsigned int eol,
@@ -233,6 +262,44 @@ static int match_ufs_rofault(unsigned int eol,
 	return res;
 }
 
+static const char *get_emmc_manf_str(unsigned int manfid)
+{
+	if (manfid == EMMC_CID_MANFID_TOSHIBA)
+		return STR_MANUFACTURER_TOSHIBA;
+	else if (manfid == EMMC_CID_MANFID_HYNIX)
+		return STR_MANUFACTURER_HYNIX;
+	else if (manfid == EMMC_CID_MANFID_SAMSUNG)
+		return STR_MANUFACTURER_SAMSUNG;
+	else if (manfid == EMMC_CID_MANFID_MICRON)
+		return STR_MANUFACTURER_MICRON;
+	else if (manfid == EMMC_CID_MANFID_SANDISK ||
+			manfid == EMMC_CID_MANFID_SANDISK_V2)
+		return STR_MANUFACTURER_SANDISK;
+	else
+		return STR_MANUFACTURER_UNKNOWN;
+}
+
+static bool match_mmc_rofault(unsigned int eol, unsigned int resp)
+{
+	bool res = false;
+
+	if (g_bootdev_info.manfid == EMMC_CID_MANFID_TOSHIBA)
+		res = ((resp & (R1_WP_VIOLATION | R1_ILLEGAL_COMMAND)) != 0);
+	else if (g_bootdev_info.manfid == EMMC_CID_MANFID_SAMSUNG)
+		res = ((resp & R1_WP_VIOLATION) != 0);
+	else if (g_bootdev_info.manfid == EMMC_CID_MANFID_MICRON)
+		res = ((resp & R1_WP_VIOLATION) != 0);
+	else if (g_bootdev_info.manfid == EMMC_CID_MANFID_SANDISK ||
+			g_bootdev_info.manfid == EMMC_CID_MANFID_SANDISK_V2)
+		res = ((resp & R1_WP_VIOLATION) != 0);
+
+	PRINT_INFO("%s emmc rofault response - %u %s\n",
+		get_emmc_manf_str(g_bootdev_info.manfid), resp,
+		str_match_result(res));
+
+	return res;
+}
+
 /*
  * External interfaces to kernel
  */
@@ -246,23 +313,21 @@ void storage_rochk_record_bootdevice_manfid(unsigned int manfid)
 	g_bootdev_info.manfid = manfid;
 }
 
-void storage_rochk_record_bootdevice_model(char *model)
+void storage_rochk_record_bootdevice_model(const char *model)
 {
 	if (model != NULL && strlen(model) < BOOTDEVICE_MODEL_SIZE) {
 		PRINT_INFO("%s: record the device model %c***\n",
 			__func__, model[0]);
-		strncpy(g_bootdev_info.model, model,
-			BOOTDEVICE_MODEL_SIZE - 1);
+		strncpy(g_bootdev_info.model, model, BOOTDEVICE_MODEL_SIZE - 1);
 	}
 }
 
-void storage_rochk_record_bootdevice_fwrev(char *rev)
+void storage_rochk_record_bootdevice_fwrev(const char *rev)
 {
 	if (rev != NULL && strlen(rev) < BOOTDEVICE_FWREV_SIZE) {
 		PRINT_INFO("%s: record the device rev %c***\n",
 			__func__, rev[0]);
-		strncpy(g_bootdev_info.fwrev, rev,
-			BOOTDEVICE_FWREV_SIZE - 1);
+		strncpy(g_bootdev_info.fwrev, rev, BOOTDEVICE_FWREV_SIZE - 1);
 	}
 }
 
@@ -271,41 +336,36 @@ void storage_rochk_record_bootdevice_pre_eol_info(int eol)
 	g_bootdev_info.pre_eol_info = eol;
 }
 
-/*
- * filter out the ufs scsi_disk
- */
-static unsigned int bootdevice_sd_is_ufssd(const struct scsi_device *sdp)
+bool storage_rochk_filter_sd(const struct scsi_device *sdp)
 {
 	struct Scsi_Host *shost = sdp->host;
 
 	if (shost != NULL && shost->hostt != NULL &&
 	    shost->hostt->name != NULL &&
 	    strncmp(shost->hostt->name, UFSHCD, strlen(UFSHCD) + 1) == 0)
-		return 1;
+		return true;
 	else
-		return 0;
+		return false;
 }
 
-unsigned int storage_rochk_filter_sd(const struct scsi_device *sdp)
+bool storage_rochk_is_mmc_card(const struct mmc_card *card)
 {
-	return bootdevice_sd_is_ufssd(sdp);
+	if (card == NULL)
+		return false;
+
+	return mmc_card_mmc(card);
 }
 
 /*
- * MUST called with filtered scsi_disk.
- * So, secondly guard it with internal storage_rochk_filter_sd.
+ * MUST called with filtered scsi_disk or mmc_card.
  */
-int storage_rochk_record_sd(const struct scsi_device *sdp,
-	const char *name, int major, int minor)
+int storage_rochk_record_disk(const char *name, int major, int minor)
 {
 	struct bootdevice_disk_info *dinfo = NULL;
 	struct bootdevice_disk_info *next = NULL;
 	int res = 0;
 
-	PRINT_INFO("%s: add scsi_disk %s\n", __func__, name);
-
-	if (storage_rochk_filter_sd(sdp) == 0)
-		return 0;
+	PRINT_INFO("%s: add disk %s\n", __func__, name);
 
 	mutex_lock(&g_bootdev_disks_mutex);
 
@@ -351,7 +411,7 @@ static atomic_t g_sd_rev_got = ATOMIC_INIT(0);
 
 void storage_rochk_record_sd_rev_once(const struct scsi_device *sdev)
 {
-	char rev[8] = { 0 };
+	char rev[8] = {0};
 
 	if (sdev && sdev->inquiry_len >= 36 && sdev->inquiry != NULL) {
 		if (atomic_cmpxchg(&g_sd_rev_got, 0, 1) == 0) {
@@ -366,8 +426,7 @@ void storage_rochk_record_sd_rev_once(const struct scsi_device *sdev)
  * for ufs, record the status of device write-protect field from mode sense.
  * for emmc, record status read from csd[12|13].
  */
-void storage_rochk_record_disk_wp_status(const struct scsi_device *sdp,
-	const char *name, unsigned char wp)
+void storage_rochk_record_disk_wp_status(const char *name, unsigned char wp)
 {
 	struct bootdevice_disk_info *dinfo = NULL;
 	struct bootdevice_disk_info *next = NULL;
@@ -391,8 +450,8 @@ void storage_rochk_record_disk_wp_status(const struct scsi_device *sdp,
 		PRINT_ERR("%s: disk %s not found\n", __func__, name);
 }
 
-void storage_rochk_record_disk_capacity(const struct scsi_device *sdp,
-	const char *name, unsigned long long capacity)
+void storage_rochk_record_disk_capacity(const char *name,
+	unsigned long long capacity)
 {
 	struct bootdevice_disk_info *dinfo = NULL;
 	struct bootdevice_disk_info *next = NULL;
@@ -494,7 +553,7 @@ int storage_rochk_is_monitor_enabled(void)
 /*
  * externally ensure sense_valid && !sense_deferred.
  * MUST called with filtered scsi_disk.
- * So, secondly guard it with internal storage_rochk_filter_sd.
+ * So, secondly guard it internaly with storage_rochk_filter_sd.
  */
 void storage_rochk_monitor_sd_readonly(const struct scsi_device *sdp,
 	const struct request *req, int result,
@@ -510,9 +569,9 @@ void storage_rochk_monitor_sd_readonly(const struct scsi_device *sdp,
 	if (atomic_read(&g_monitor_enabled) == 0)
 		return;
 
-	if (storage_rochk_filter_sd(sdp) == 0)
+	if (storage_rochk_filter_sd(sdp) == false)
 		return;
-	if (req->cmd_type != REQ_TYPE_FS || rq_data_dir(req) != WRITE)
+	if (rq_data_dir(req) != WRITE)
 		return;
 
 	if (atomic_add_unless(&g_monitor_times, -1, 0) == 0) {
@@ -530,6 +589,97 @@ void storage_rochk_monitor_sd_readonly(const struct scsi_device *sdp,
 	} else {
 		action = STORAGE_ROCHK_ACTION_NONE;
 		method = STORAGE_ROINFO_KNL_WRMON_SUSPICIOUS;
+	}
+
+	/* action as early as possible for LLD rofault */
+	if (atomic_cmpxchg(&g_action_once, 0, 1) == 0)
+		storage_rochk_action_rofault(method, action);
+}
+
+static bool mrq_is_read_opcode(const struct mmc_request *mrq)
+{
+	return mrq->cmd->opcode == MMC_SEND_OP_COND ||
+		mrq->cmd->opcode == MMC_ALL_SEND_CID ||
+		mrq->cmd->opcode == MMC_SEND_EXT_CSD ||
+		mrq->cmd->opcode == MMC_SEND_CSD ||
+		mrq->cmd->opcode == MMC_SEND_CID ||
+		mrq->cmd->opcode == MMC_SEND_STATUS ||
+		mrq->cmd->opcode == MMC_READ_SINGLE_BLOCK ||
+		mrq->cmd->opcode == MMC_READ_MULTIPLE_BLOCK ||
+		mrq->cmd->opcode == MMC_READ_DAT_UNTIL_STOP;
+}
+
+static inline bool mrq_has_ro_type_resp(const struct mmc_request *mrq)
+{
+	return (mmc_resp_type(mrq->cmd) == MMC_RSP_R1 ||
+		mmc_resp_type(mrq->cmd) == MMC_RSP_R1B) &&
+		((mrq->cmd->resp[0] & MMC_RSP_R1_RO_ERROR_MASK) != 0);
+}
+
+static bool mrq_is_out_dir(const struct mmc_request *mrq)
+{
+	if (mrq->cmd != NULL && mrq_is_read_opcode(mrq) == false)
+		return true;
+	if (mrq->data != NULL && (mrq->data->flags & MMC_DATA_WRITE) != 0)
+		return true;
+
+	return false;
+}
+
+void storage_rochk_monitor_mmc_readonly(const struct mmc_card *card,
+	const struct mmc_request *mrq, unsigned int status, unsigned int resp)
+{
+	unsigned int eol = g_bootdev_info.pre_eol_info;
+	bool matched = false;
+	unsigned int method;
+	unsigned int action;
+	bool do_action = false;
+
+	if (atomic_read(&g_monitor_enabled) == 0)
+		return;
+
+	if (card == NULL || storage_rochk_is_mmc_card(card) == false)
+		return;
+
+	/*
+	 * some controller may report TCC interrupt with null mrq
+	 * after a busy request is done
+	 */
+	if (mrq == NULL)
+		return;
+
+	/* pass the write cmd and data request */
+	if (mrq_is_out_dir(mrq) == false)
+		return;
+
+	if (atomic_add_unless(&g_monitor_times, -1, 0) == 0) {
+		atomic_set(&g_monitor_enabled, 0);
+		return;
+	}
+
+	if (status == MMC_STATUS_OK)
+		return;
+
+	if (status == MMC_STATUS_CQIS_RED) {
+		matched = match_mmc_rofault(eol, resp);
+		do_action = true;
+	} else if (mrq->data != NULL && mrq->data->error != 0) {
+		do_action = true;
+	} else if (mrq->cmd != NULL && mrq_is_read_opcode(mrq) == false &&
+		   mrq_has_ro_type_resp(mrq)) {
+		matched = match_mmc_rofault(eol, mrq->cmd->resp[0]);
+		do_action = true;
+	}
+
+	if (do_action == false)
+		return;
+
+	if (matched) {
+		method = STORAGE_ROINFO_KNL_WRMON_DRIVER;
+		action = STORAGE_ROCHK_ACTION_REBOOT;
+	} else {
+		method = STORAGE_ROINFO_KNL_WRMON_SUSPICIOUS;
+		action = STORAGE_ROCHK_ACTION_NONE;
 	}
 
 	/* action as early as possible for LLD rofault */
@@ -752,20 +902,20 @@ int storage_rofa_ioctl_get_rofa_info(struct bfmr_storage_rofa_info_iocb *arg_u)
 	struct bfmr_storage_rofa_info_iocb ioc;
 	int res;
 
-	memset(&ioc, 0, sizeof(ioc));
-
 	ioc.mode = get_storage_rofa_bootopt();
+	ioc.method = STORAGE_ROINFO_UNKNOWN_OR_UNCARE;
+	ioc.round = 0;
 
 	if (ioc.mode != STORAGE_ROFA_BOOTOPT_NOP) {
 		res = get_storage_crbroi_func()->get_crbroi_method(
 			&ioc.method);
 		if (res == -1)
-			return -EINVAL;
+			ioc.method = STORAGE_ROINFO_UNKNOWN_OR_UNCARE;
 
 		res = get_storage_crbroi_func()->get_crbroi_round(
 			&ioc.round);
 		if (res == -1)
-			return -EINVAL;
+			ioc.round = 0;
 	}
 
 	if (copy_to_user(arg_u, &ioc, sizeof(ioc)))
@@ -890,9 +1040,14 @@ MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
  * Storage Read Only Fault Injection module
  */
 #include <linux/hisi/rdr_hisi_platform.h>
+#include <linux/scatterlist.h>
+#include <linux/sched.h>
+#include <linux/crc7.h>
 
 #define STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR  \
 	(HISI_SUB_RESERVED_UNUSED_PHYMEM_BASE + 16)
+
+#define EMMC_CSD_CMD_BLKSZ_LEN        16
 
 #define FASTBOOT_STORAGE_ROCHK_ROFAULT_SAMSUNG_UFS      0x46490001
 #define FASTBOOT_STORAGE_ROCHK_ROFAULT_HYNIX_UFS        0x46490002
@@ -914,6 +1069,10 @@ MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
 #define KERNEL_STORAGE_ROCHK_ROFAULT_MEDIUM_ERROR       0x46490027
 #define KERNEL_STORAGE_ROCHK_ROFAULT_RECOVER_ERROR      0x46490028
 #define KERNEL_STORAGE_ROCHK_ROFAULT_WRITE_PROT         0x4649002A
+
+#define STORAGE_ROFI_FASTBOOT_EMMC_WP_VIOLATION         0x46490031
+#define STORAGE_ROFI_KERNEL_EMMC_PWRON_WP_SET           0x46490038
+#define STORAGE_ROFI_KERNEL_EMMC_PWRON_WP_CLR           0x46490039
 
 static unsigned int g_rofi_value;
 
@@ -1010,7 +1169,7 @@ void storage_rofi_inject_fault_check_condition_sense(int *result,
 	unsigned int sense_data_injected = 0;
 	unsigned int rofi = g_rofi_value;
 
-	if (req->cmd_type == REQ_TYPE_FS && rq_data_dir(req) == WRITE) {
+	if (rq_data_dir(req) == WRITE) {
 		if (rofi == KERNEL_STORAGE_ROCHK_ROFAULT_SAMSUNG_UFS) {
 			storage_rofi_inject_fault_ccs_samsung(sshdr);
 			sense_data_injected = 1;
@@ -1074,6 +1233,111 @@ unsigned int storage_rofi_should_inject_write_prot_status(void)
 		return 1;
 	else
 		return 0;
+}
+
+static int mmc_program_csd(const struct mmc_card *card,
+	const unsigned char *csd_128be, unsigned int len)
+{
+	struct mmc_request mrq = { NULL };
+	struct mmc_command cmd = {0};
+	struct mmc_data data = {0};
+	struct scatterlist sg;
+
+	if (len != EMMC_CSD_CMD_BLKSZ_LEN)
+		return -EINVAL;
+
+	mrq.cmd = &cmd;
+	mrq.data = &data;
+
+	cmd.opcode = MMC_PROGRAM_CSD;
+	cmd.arg = 0;
+	cmd.flags = MMC_RSP_R1 | MMC_CMD_ADTC;
+
+	data.blksz = len;
+	data.blocks = 1;	/* only one block */
+	data.flags = MMC_DATA_WRITE;
+	data.sg = &sg;
+	data.sg_len = 1;	/* only one sg */
+	mmc_set_data_timeout(&data, card);
+
+	sg_init_one(&sg, csd_128be, len);
+
+	mmc_wait_for_req(card->host, &mrq);
+
+	if (cmd.error) {
+		PRINT_ERR("%s: program csd cmd error %d\n",
+			__func__, cmd.error);
+		return cmd.error;
+	}
+	if (data.error) {
+		PRINT_ERR("%s: program csd data error %d\n",
+			__func__, data.error);
+		return data.error;
+	}
+
+	return 0;
+}
+
+int storage_rofi_switch_mmc_card_pwronwp(const struct mmc_card *card)
+{
+	unsigned char *la = NULL;
+	unsigned int wp;
+	unsigned char *csd_be128 = NULL;
+	unsigned int i;
+	unsigned char crc7_val;
+	int ret;
+
+	if (card == NULL)
+		return -EINVAL;
+
+	la = ioremap_nocache(STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR,
+		sizeof(unsigned int));
+	if (la == NULL) {
+		PRINT_ERR("%s: ioremap failed\n", __func__);
+		return -EINVAL;
+	}
+
+	wp = readl(la);
+	if (wp != STORAGE_ROFI_KERNEL_EMMC_PWRON_WP_SET &&
+	    wp != STORAGE_ROFI_KERNEL_EMMC_PWRON_WP_CLR) {
+		iounmap(la);
+		return 0;
+	}
+	PRINT_ERR("%s: zero the emmc pwron-wp rofi\n", __func__);
+	writel(0, la);
+	iounmap(la);
+	la = NULL;
+
+	csd_be128 = kmalloc(EMMC_CSD_CMD_BLKSZ_LEN, GFP_KERNEL);
+	if (csd_be128 == NULL) {
+		PRINT_ERR("%s: alloc buffer failed\n", __func__);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < (EMMC_CSD_CMD_BLKSZ_LEN / sizeof(unsigned int)); i++)
+		((unsigned int *)csd_be128)[i] = cpu_to_be32(card->raw_csd[i]);
+
+	/* update bit 12 with new temp_wp value */
+	if (wp == STORAGE_ROFI_KERNEL_EMMC_PWRON_WP_SET)
+		csd_be128[EMMC_CSD_WP_BYTE] |= EMMC_CSD_PWRON_WP_MASK;
+	else if (wp == STORAGE_ROFI_KERNEL_EMMC_PWRON_WP_CLR)
+		csd_be128[EMMC_CSD_WP_BYTE] &= ~EMMC_CSD_PWRON_WP_MASK;
+
+	/* cal CRC7 of 15 bytes, set CRC7 into bits 7:1, and 1 into bit 0 */
+	crc7_val = crc7_be(0, csd_be128, 15);
+	csd_be128[EMMC_CSD_CRC_BYTE] = (crc7_val << 1) | 0x1;
+
+	ret = mmc_program_csd(card, csd_be128, EMMC_CSD_CMD_BLKSZ_LEN);
+	kfree(csd_be128);
+	csd_be128 = NULL;
+	if (ret == 0) {
+		PRINT_INFO("%s: restart for emmc pwron-wp change\n", __func__);
+		machine_restart(NULL);
+	} else {
+		PRINT_ERR("%s: program csd failed\n", __func__);
+	}
+
+	return ret;
 }
 
 static int __init storage_rofi_init(void)

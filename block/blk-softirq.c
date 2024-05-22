@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Functions related to softirq rq completions
  */
@@ -9,16 +10,16 @@
 #include <linux/interrupt.h>
 #include <linux/cpu.h>
 #include <linux/sched.h>
+#include <linux/sched/topology.h>
 
 #include "blk.h"
-#ifdef CONFIG_HISI_BLK
-#include <linux/blk_types.h>
-void hisi_blk_latency_req_check(struct request *req, enum req_process_stage_enum req_stage);
-#endif
 
+#ifdef CONFIG_HISI_BLK
 DEFINE_PER_CPU(struct list_head, blk_cpu_done);
 EXPORT_PER_CPU_SYMBOL(blk_cpu_done);
-
+#else
+static EXPORT_PER_CPU_SYMBOL(blk_cpu_done);
+#endif
 /*
  * Softirq action handler - move entries to local list and loop over them
  * while passing them to the queue registered handler.
@@ -37,9 +38,6 @@ static __latent_entropy void blk_done_softirq(struct softirq_action *h)
 
 		rq = list_entry(local_list.next, struct request, ipi_list);
 		list_del_init(&rq->ipi_list);
-#ifdef CONFIG_HISI_BLK
-		hisi_blk_latency_req_check(rq, REQ_PROC_STAGE_DONE_SFTIRQ);
-#endif
 		rq->q->softirq_done_fn(rq);
 	}
 }
@@ -67,7 +65,7 @@ static void trigger_softirq(void *data)
 static int raise_blk_irq(int cpu, struct request *rq)
 {
 	if (cpu_online(cpu)) {
-		struct call_single_data *data = &rq->csd;
+		call_single_data_t *data = &rq->csd;
 
 		data->func = trigger_softirq;
 		data->info = rq;

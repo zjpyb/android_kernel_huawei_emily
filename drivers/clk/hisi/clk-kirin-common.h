@@ -11,6 +11,8 @@ enum {
 	HS_MMC1CRG,
 	HS_HSDTCRG,
 	HS_MMC0CRG,
+	HS_HSDT1CRG,
+	HS_MAX_BASECRG,
 };
 enum {
 	HS_UNBLOCK_MODE,
@@ -32,6 +34,7 @@ struct hs_clk {
 	void __iomem	*mmc1crg;
 	void __iomem	*hsdtcrg;
 	void __iomem	*mmc0crg;
+	void __iomem	*hsdt1crg;
 	spinlock_t	lock;
 };
 extern struct hs_clk hs_clk;
@@ -79,3 +82,40 @@ enum {
 /***********DEFINE END*****************/
 void __iomem *hs_clk_base(u32 ctrl);
 void __iomem __init *hs_clk_get_base(struct device_node *np);
+
+static inline struct clk_init_data *hisi_clk_init_data_alloc(const char *clk_name)
+{
+	struct clk_init_data *init;
+
+	init = kzalloc(sizeof(struct clk_init_data), GFP_KERNEL);
+	if (init == NULL) {
+		pr_err("[%s] fail to alloc init!\n", __func__);
+		return NULL;
+	}
+
+	init->name = kstrdup(clk_name, GFP_KERNEL);
+	if (init->name == NULL) {
+		pr_err("[%s] fail to kstrdup init->name!\n", __func__);
+		kfree(init);
+		return NULL;
+	}
+
+	return init;
+}
+
+static inline u32 hisi_clk_crg_type_get(struct device_node *np,
+		const u32 default_crg_type)
+{
+	u32 crg_type = default_crg_type;
+
+	/*if dts tree has "clk-crg-type" property, then overwrite crg_type*/
+	if (of_property_read_bool(np, "clk-crg-type")) {
+		if (of_property_read_u32(np, "clk-crg-type", &crg_type)) {
+			pr_err("[%s] %s clk-crg-type property is null!\n",
+				 __func__, np->name);
+			return default_crg_type;
+		}
+	}
+
+	return crg_type;
+}

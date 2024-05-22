@@ -76,6 +76,11 @@
 #define FALSE           0
 #endif
 
+#define LCDKIT_FAIL (-1)
+#define LCDKIT_OK 0
+#define LCDKIT_BACKLIGHT_BETA 60
+#define LCDKIT_PRINT_COUNT 5
+
 //#define HW_LCD_DEBUG	1
 
 #define VCC_LCDKIT_BIAS_NAME                "vcc_lcdbias"

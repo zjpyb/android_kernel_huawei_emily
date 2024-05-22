@@ -14,7 +14,8 @@
     2014/10/09  add dual current set and debug fs by zhoujie
 */
 #include "hw_flash.h"
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 
 /* LM3646 Registers define */
 #define REG_CHIPID                  0x00
@@ -76,7 +77,7 @@ struct hw_lm3646_private_data_t {
     unsigned char torch_led[TORCH_LED_MAX];
     unsigned int flash_led_num;
     unsigned int torch_led_num;
-    struct wake_lock  lm3646_wakelock;
+    struct wakeup_source  lm3646_wakelock;
     int	need_wakelock;
     /* flash control pin */
     unsigned int pin[MAX_PIN];
@@ -268,7 +269,7 @@ static int hw_lm3646_init(struct hw_flash_ctrl_t *flash_ctrl)
     hw_lm3646_set_pin_reset(flash_ctrl,LOW);
     msleep(LM3646_RESET_HOLD_TIME);
     if(pdata->need_wakelock == 1)
-        wake_lock_init(&pdata->lm3646_wakelock,WAKE_LOCK_SUSPEND,"lm3646");
+        wakeup_source_init(&pdata->lm3646_wakelock,"lm3646");
     return rc;
 err3:
     if(pdata->pin[TORCH] != INVALID_GPIO) {
@@ -318,7 +319,7 @@ static int hw_lm3646_flash_mode(struct hw_flash_ctrl_t *flash_ctrl, int data)
     unsigned char val = 0;
 
     cam_info("%s data=%d.\n", __func__, data);
-    if (NULL == flash_ctrl) {
+    if (!flash_ctrl || (data < 0)) {
         cam_err("%s flash_ctrl is NULL.", __func__);
         return -1;
     }
@@ -527,7 +528,7 @@ static int hw_lm3646_on(struct hw_flash_ctrl_t *flash_ctrl, void *data)
 
     mutex_lock(flash_ctrl->hw_flash_mutex);
     if(pdata->need_wakelock ==1)
-        wake_lock(&pdata->lm3646_wakelock);
+        __pm_stay_awake(&pdata->lm3646_wakelock);
     //Enable lm3646 switch to standby current is 10ua
     hw_lm3646_set_pin_reset(flash_ctrl,HIGH);
     hw_lm3646_set_pin_strobe(flash_ctrl,LOW);
@@ -633,7 +634,7 @@ static int hw_lm3646_off(struct hw_flash_ctrl_t *flash_ctrl)
     //Enable lm3646 switch to shutdown current is 1.3ua
     hw_lm3646_set_pin_reset(flash_ctrl,LOW);
     if(pdata->need_wakelock == 1)
-        wake_unlock(&pdata->lm3646_wakelock);
+        __pm_relax(&pdata->lm3646_wakelock);
     cam_info("%s end", __func__);
     mutex_unlock(flash_ctrl->hw_flash_mutex);
 

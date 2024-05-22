@@ -28,7 +28,9 @@
 
 #include <linux/types.h>
 
+#ifdef CONFIG_PM_FAIL_DEBUG
 #define APP_NAME_LEN_MAX (20)
+#endif
 
 struct wake_irq;
 
@@ -115,8 +117,8 @@ extern void __pm_stay_awake(struct wakeup_source *ws);
 extern void pm_stay_awake(struct device *dev);
 extern void __pm_relax(struct wakeup_source *ws);
 extern void pm_relax(struct device *dev);
-extern void __pm_wakeup_event(struct wakeup_source *ws, unsigned int msec);
-extern void pm_wakeup_event(struct device *dev, unsigned int msec);
+extern void pm_wakeup_ws_event(struct wakeup_source *ws, unsigned int msec, bool hard);
+extern void pm_wakeup_dev_event(struct device *dev, unsigned int msec, bool hard);
 
 #else /* !CONFIG_PM_SLEEP */
 
@@ -191,9 +193,11 @@ static inline void __pm_relax(struct wakeup_source *ws) {}
 
 static inline void pm_relax(struct device *dev) {}
 
-static inline void __pm_wakeup_event(struct wakeup_source *ws, unsigned int msec) {}
+static inline void pm_wakeup_ws_event(struct wakeup_source *ws,
+				      unsigned int msec, bool hard) {}
 
-static inline void pm_wakeup_event(struct device *dev, unsigned int msec) {}
+static inline void pm_wakeup_dev_event(struct device *dev, unsigned int msec,
+				       bool hard) {}
 
 #endif /* !CONFIG_PM_SLEEP */
 
@@ -217,5 +221,20 @@ extern int wake_unlockAll(unsigned int msec);
 #ifdef CONFIG_HUAWEI_DUBAI
 extern int wakeup_source_getlastingname(char *ws_namelist, int size, int count);
 #endif
+
+static inline void __pm_wakeup_event(struct wakeup_source *ws, unsigned int msec)
+{
+	return pm_wakeup_ws_event(ws, msec, false);
+}
+
+static inline void pm_wakeup_event(struct device *dev, unsigned int msec)
+{
+	return pm_wakeup_dev_event(dev, msec, false);
+}
+
+static inline void pm_wakeup_hard_event(struct device *dev)
+{
+	return pm_wakeup_dev_event(dev, 0, true);
+}
 
 #endif /* _LINUX_PM_WAKEUP_H */

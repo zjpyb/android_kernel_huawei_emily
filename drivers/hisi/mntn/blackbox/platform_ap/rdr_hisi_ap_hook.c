@@ -26,7 +26,8 @@
 #include <asm/compiler.h>
 #include "../rdr_print.h"
 #include <linux/hisi/hisi_log.h>
-#include <libhwsecurec/securec.h>
+#include <securec.h>
+
 #define HISI_LOG_TAG HISI_BLACKBOX_TAG
 
 
@@ -37,7 +38,7 @@ static const char *g_hook_trace_pattern[HK_MAX] = {
 	"irq_switch::ktime,slice,vec,dir", /*IRQ*/
 	"task_switch::ktime,stack,pid,comm", /*TASK*/
 	"cpuidle::ktime,dir", /*CPUIDLE*/
-	"worker::ktime,action,dir", /*WORKER*/
+	"worker::ktime,action,dir,cpu,resv,pid", /*WORKER*/
 	"mem_alloc::ktime,pid/vec,comm/irq_name,caller,operation,vaddr,paddr,size", /*MEM ALLOCATOR*/
 	"ion_alloc::ktime,pid/vec,comm/irq_name,operation,vaddr,paddr,size", /*ION ALLOCATOR*/
 	"time::ktime,action,dir", /*TIME*/
@@ -576,14 +577,16 @@ asmlinkage void worker_hook(u64 address, u32 dir)
 	}
 	info.clock = hisi_getcurtime();
 	info.action = (u64) address;
-	preempt_disable();
-	cpu = (u8) smp_processor_id();
-	preempt_enable();
+	info.pid = (u32)(current->pid);
 	info.dir = (u8) dir;
 
+	preempt_disable();
+	cpu = (u8)smp_processor_id();
+	info.cpu = cpu;
 	hisiap_ringbuffer_write((struct hisiap_ringbuffer_s *)
 				g_hook_percpu_buffer[HK_WORKER]->percpu_addr[cpu],
 				(u8 *)&info);
+	preempt_enable();
 }
 EXPORT_SYMBOL(worker_hook);
 
@@ -676,7 +679,20 @@ static struct notifier_block cpuidle_notifier_block = {
 	.notifier_call = cpuidle_notifier,
 };
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+static int cpu_online_hook(unsigned int cpu)
+{
+	cpu_on_off_hook(cpu, 1);
+	return 0;
+}
+
+static int cpu_offline_hook(unsigned int cpu)
+{
+	cpu_on_off_hook(cpu, 0);
+	return 0;
+}
+
+#else
 /*******************************************************************************
 Function:       hot_cpu_callback
 Description:    when cpu on/off, the func will be exec.
@@ -723,10 +739,24 @@ static struct notifier_block __refdata hot_cpu_notifier = {
 
 static int __init hisi_ap_hook_init(void)
 {
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	int ret;
+#endif
+
 	mutex_init(&hook_switch_mutex);
 
 	cpu_pm_register_notifier(&cpuidle_notifier_block);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
+                                    "cpuonoff:online",
+                                    cpu_online_hook, cpu_offline_hook);
+	if (ret < 0) {
+		BB_PRINT_ERR("cpu_on_off cpuhp_setup_state_nocalls failed...\n");
+	}
+
+#else
 	register_hotcpu_notifier(&hot_cpu_notifier);
 #endif
 

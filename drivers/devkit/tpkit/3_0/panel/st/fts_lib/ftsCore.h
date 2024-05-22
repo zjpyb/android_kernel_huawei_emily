@@ -113,6 +113,7 @@ typedef struct {
 	u8 u8_forceLen;	/* /< Force Len */
 
 	u16 u16_dbgInfoAddr;	/* /< Offset of debug Info structure */
+	u16 st_matrix_info_addr;
 
 	u16 u16_msTchRawAddr;	/* /< Offset of MS touch raw frame */
 	u16 u16_msTchFilterAddr;	/* /< Offset of MS touch filter frame */

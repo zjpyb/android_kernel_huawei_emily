@@ -24,8 +24,8 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/debugfs.h>
-#include <linux/wakelock.h>
 #include <linux/platform_device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/completion.h>
 
 /* define macro */
@@ -100,6 +100,9 @@
 #define SW_HID_TYPE                 (0x0001)
 #define SW_DEV_TYPE                 (0x0002)
 
+#define SW_KB_EVENT_LED_INVALID     0xff
+#define SW_REPORT_DATA_SIZE         16
+
 /* struct define */
 struct sw_device;
 
@@ -108,6 +111,19 @@ enum sw_hid_dev_num {
 	KB_CUSTOM_KEY_DEV,
 	KB_MOUSE_DEV,
 	KB_HID_DEV_END,
+};
+
+enum sw_connect_dev_num {
+	SW_DEV_BEGIN = 0,
+	SW_DEV_CHARGER = SW_DEV_BEGIN,
+	SW_DEV_KB,
+	SW_DEV_END,
+};
+
+enum sw_kb_event_type {
+	SW_KB_EVENT_TYPE_BEGIN = 0,
+	SW_KB_EVENT_TYPE_CONNECT_DEV = SW_KB_EVENT_TYPE_BEGIN,
+	SW_KB_EVENT_TYPE_END,
 };
 
 struct sw_device_id {

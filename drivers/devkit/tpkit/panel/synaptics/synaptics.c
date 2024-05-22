@@ -6923,7 +6923,7 @@ static int synaptics_rmi4_key_gesture_report(struct synaptics_rmi4_data
 
 	if (0 != reprot_gesture_key_value) {
 		/*increase wake_lock time to avoid system suspend.*/
-		wake_lock_timeout(&rmi4_data->synaptics_chip_data->ts_platform_data->ts_wake_lock, 5 * HZ);
+		__pm_wakeup_event(&rmi4_data->synaptics_chip_data->ts_platform_data->ts_wake_lock, jiffies_to_msecs(5 * HZ));
 		mutex_lock(&wrong_touch_lock);
 		if (true ==
 		    rmi4_data->synaptics_chip_data->easy_wakeup_info.

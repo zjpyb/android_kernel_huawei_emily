@@ -32,10 +32,10 @@
 #define POLAR_ERR_A_MAX   (3000)
 #define POLAR_ERR_B_MIN   (-50000)
 #define POLAR_ERR_B_MAX   (50000)
-#define VPERT_PAST_LOW_B  (-20000)
-#define VPERT_PAST_HIGH_B (20000)
-#define VPERT_NOW_LOW_B   (-10000)
-#define VPERT_NOW_HIGH_B  (10000)
+#define VPERT_PAST_LOW_B  (-10000)
+#define VPERT_PAST_HIGH_B (10000)
+#define VPERT_NOW_LOW_B   (-5000)
+#define VPERT_NOW_HIGH_B  (5000)
 #define VPERT_NOW_LOW_A   (-20000)
 #define VPERT_NOW_HIGH_A  (20000)
 #define POLAR_A_COE_MUL   (100)
@@ -56,15 +56,16 @@
 #define POLAR_TEMP_OCV_UPDATE (10)
 #define COUL_DEFAULT_SAMPLE_INTERVAL (250)
 #define VBAT_LEARN_GAP_MV (100)
-#define VBAT_LEARN_COE_HIGH (8)
-#define VBAT_LEARN_COE_LOW (6)
-#define VBAT_LEARN_AVGCURR_HIGH (-1500)
+#define VBAT_LEARN_COE_HIGH (7)
+#define VBAT_LEARN_COE_LOW (4)
+#define VBAT_LEARN_AVGCURR_HIGH (-1000)
 #define VBAT_LEARN_AVGCURR_LOW (-500)
 #define POLAR_LEARN_TEMP_COLS (48)
 #define POLAR_LEARN_TEMP_RANGE (4)
 #define TENTH                 (10)
 #define TEMP_25_DEGREE        (25)
-#define SELF_LEARN_GAP        (30*60UL)//30min
+#define SELF_LEARN_GAP        4
+#define BATTCELL_NAME_SIZE_MAX 25
 #ifndef TRUE
 #define TRUE (1)
 #endif
@@ -105,6 +106,7 @@ struct hisi_polar_device {
     u32 fifo_depth;
     u32 r_pcb;
     u32 v_cutoff;
+	char batt_cell_name[BATTCELL_NAME_SIZE_MAX];
 };
 
 struct polar_curr_info {

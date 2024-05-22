@@ -75,3 +75,9 @@ ENTRY_NOTAG(memcpy)
 	ret
 ENDPIPROC(memcpy)
 ENDPROC(__memcpy)
+
+	.globl memcpy_reg
+ENTRY_NOTAG(memcpy_reg)
+#include "copy_reg.S"
+	ret
+ENDPIPROC(memcpy_reg)

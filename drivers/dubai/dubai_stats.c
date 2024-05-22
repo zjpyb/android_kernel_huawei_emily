@@ -24,30 +24,35 @@
 #include <linux/kobject.h>
 #include <linux/profile.h>
 #include <linux/pm_wakeup.h>
-
+#include <net/ip.h>
+#include <uapi/linux/udp.h>
+#ifdef CONFIG_LOG_EXCEPTION
+#include <log/log_usertype.h>
+#endif
+#ifdef CONFIG_INPUTHUB_20
+#include <huawei_platform/inputhub/sensorhub.h>
+#endif
 #include <huawei_platform/log/hwlog_kernel.h>
 #include <chipset_common/dubai/dubai.h>
 #include <chipset_common/dubai/dubai_common.h>
-#include <log/log_usertype.h>
 
-#define KWORKER_HASH_BITS			(10)
-#define MAX_SYMBOL_LEN				(48)
-#define MAX_DEVPATH_LEN				(128)
-#define PRINT_MAX_LEN				(40)
-#define MAX_BRIGHTNESS				(10000)
-#define BINDER_STATS_HASH_BITS		(10)
-#define DUBAI_AOD_DURATION_ENENT	(6)
-#define MAX_WS_NAME_LEN				(64)
-#define MAX_WS_NAME_COUNT			(128)
-#define WAKEUP_TAG_SIZE				(48)
-#define WAKEUP_MSG_SIZE				(128)
+#define KWORKER_HASH_BITS				(10)
+#define MAX_SYMBOL_LEN					(48)
+#define MAX_DEVPATH_LEN					(128)
+#define PRINT_MAX_LEN					(40)
+#define MAX_BRIGHTNESS					(10000)
+#define BINDER_STATS_HASH_BITS			(10)
+#define SENSOR_TIME_BUFF_LEN			(128)
+#define PHYSICAL_SENSOR_TYPE_MAX		(40)
+#define MAX_WS_NAME_LEN					(64)
+#define MAX_WS_NAME_COUNT				(128)
+#define WAKEUP_TAG_SIZE					(48)
+#define WAKEUP_MSG_SIZE					(128)
+#define WAKEUP_SOURCE_SIZE				(32)
+#define KERNEL_WAKEUP_TAG				"DUBAI_TAG_KERNEL_WAKEUP"
 
 #ifdef SENSORHUB_DUBAI_INTERFACE
-extern uint64_t iomcu_dubai_log_fetch(uint8_t event_type);
-#endif
-
-#ifdef CONFIG_HISI_COUL
-extern int hisi_battery_rm(void);
+extern int iomcu_dubai_log_fetch(uint32_t event_type, void* data, uint32_t length);
 #endif
 
 #define LOG_ENTRY_SIZE(head, info, count) \
@@ -55,6 +60,31 @@ extern int hisi_battery_rm(void);
 		+ (long long)(count) * sizeof(info)
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
+enum {
+	DUBAI_EVENT_NULL = 0,
+	DUBAI_EVENT_AOD_PICKUP = 3,
+	DUBAI_EVENT_AOD_PICKUP_NO_FINGERDOWN =4,
+	DUBAI_EVENT_AOD_TIME_STATISTICS = 6,
+	DUBAI_EVENT_FINGERPRINT_ICON_COUNT = 7,
+	DUBAI_EVENT_ALL_SENSOR_STATISTICS = 8,
+	DUBAI_EVENT_ALL_SENSOR_TIME = 9,
+	DUBAI_EVENT_SWING = 10,
+	DUBAI_EVENT_END
+};
+
+enum {
+	TINY_CORE_MODEL_FD = 0,
+	TINY_CORE_MODEL_SD,
+	TINY_CORE_MODEL_FR,
+	TINY_CORE_MODEL_AD,
+	TINY_CORE_MODEL_FP,
+	TINY_CORE_MODEL_HD,
+	TINY_CORE_MODEL_WD,
+	TINY_CORE_MODEL_WE,
+	TINY_CORE_MODEL_WC,
+	TINY_CORE_MODEL_MAX,
+};
+
 struct dubai_brightness_info {
 	atomic_t enable;
 	uint64_t last_time;
@@ -62,6 +92,21 @@ struct dubai_brightness_info {
 	uint64_t sum_time;
 	uint64_t sum_brightness_time;
 };
+
+struct sensor_time {
+	uint32_t type;
+	uint32_t time;
+} __packed;
+
+struct swing_data {
+	uint64_t active_time;
+	uint64_t software_standby_time;
+	uint64_t als_time;
+	uint64_t fill_light_time;
+	uint32_t capture_cnt;
+	uint32_t fill_light_cnt;
+	uint32_t tiny_core_model_cnt[TINY_CORE_MODEL_MAX];
+} __packed;
 
 struct dubai_kworker_info {
 	long long count;
@@ -96,11 +141,6 @@ struct dubai_uevent_transmit {
 struct dubai_uevent_entry {
 	struct list_head list;
 	struct dubai_uevent_info uevent;
-};
-
-struct dubai_binder_list_entry {
-	char name[NAME_LEN];
-	struct list_head node;
 };
 
 struct dubai_binder_proc {
@@ -145,6 +185,25 @@ struct dubai_ws_lasting_transmit {
 	char data[0];
 } __packed;
 
+struct dubai_rtc_timer_info {
+	char name[TASK_COMM_LEN];
+	pid_t pid;
+} __packed;
+
+#ifdef CONFIG_INPUTHUB_20
+struct dubai_sensorhub_type_info {
+	int sensorhub_type;
+	int data[SENSORHUB_TAG_NUM_MAX];
+} __packed;
+
+struct dubai_sensorhub_type_list {
+	long long timestamp;
+	int size;
+	int tag_count;
+	struct dubai_sensorhub_type_info data[0];
+} __packed;
+#endif
+
 struct dubai_wakeup_entry {
 	char tag[WAKEUP_TAG_SIZE];
 	char msg[WAKEUP_MSG_SIZE];
@@ -156,8 +215,13 @@ static atomic_t uevent_count;
 static atomic_t log_stats_enable;
 static struct dubai_brightness_info dubai_backlight;
 static atomic_t binder_stats_enable;
-static atomic_t binder_stats_count;
 static atomic_t binder_client_count;
+static struct dubai_rtc_timer_info dubai_rtc_timer;
+
+static unsigned char last_wakeup_source[WAKEUP_SOURCE_SIZE];
+static unsigned long last_app_wakeup_time;
+static unsigned long last_wakeup_time;
+static int last_wakeup_gpio;
 
 static DECLARE_HASHTABLE(kworker_hash_table, KWORKER_HASH_BITS);
 static DEFINE_MUTEX(kworker_lock);
@@ -168,32 +232,24 @@ static DEFINE_MUTEX(brightness_lock);
 static DECLARE_HASHTABLE(binder_stats_hash_table, BINDER_STATS_HASH_BITS);
 static LIST_HEAD(binder_stats_died_list);
 static DEFINE_MUTEX(binder_stats_hash_lock);
-static LIST_HEAD(binder_stats_list);
-static DEFINE_MUTEX(binder_stats_list_lock);
 static LIST_HEAD(wakeup_list);
 
-int dubai_get_battery_rm(void __user *argp) {
-#ifdef CONFIG_HISI_COUL
-	int rm;
-
-	rm = hisi_battery_rm();
-	if (copy_to_user(argp, &rm, sizeof(int)))
-		return -EFAULT;
-
-	return 0;
+static inline bool dubai_is_beta_user()
+{
+#ifdef CONFIG_LOG_EXCEPTION
+	return (get_logusertype_flag() == BETA_USER || get_logusertype_flag() == OVERSEA_USER);
 #else
-	return -EINVAL;
+	return false;
 #endif
 }
 
 void dubai_log_packet_wakeup_stats(const char *tag, const char *key, int value)
 {
-	if (tag == NULL || key == NULL) {
+	if (!dubai_is_beta_user() || !tag || !key) {
 		return;
 	}
-	if (BETA_USER == get_logusertype_flag()) {
-		HWDUBAI_LOGE(tag, "%s=%d", key, value);
-	}
+
+	HWDUBAI_LOGE(tag, "%s=%d", key, value);
 }
 EXPORT_SYMBOL(dubai_log_packet_wakeup_stats);
 
@@ -251,8 +307,8 @@ int dubai_get_kworker_info(void __user *argp)
 	long long timestamp, size = 0;
 	unsigned char *data = NULL;
 	unsigned long bkt;
-	struct dubai_kworker_entry *entry;
-	struct hlist_node *tmp;
+	struct dubai_kworker_entry *entry = NULL;
+	struct hlist_node *tmp = NULL;
 	struct buffered_log_entry *log_entry = NULL;
 	struct dubai_kworker_transmit *transmit = NULL;
 
@@ -364,7 +420,7 @@ int dubai_get_uevent_info(void __user *argp)
 	int ret = 0, count = 0;
 	long long timestamp, size = 0;
 	unsigned char *data = NULL;
-	struct dubai_uevent_entry *entry, *tmp;
+	struct dubai_uevent_entry *entry = NULL, *tmp = NULL;
 	struct buffered_log_entry *log_entry = NULL;
 	struct dubai_uevent_transmit *transmit = NULL;
 
@@ -429,7 +485,7 @@ int dubai_get_uevent_info(void __user *argp)
 int dubai_log_stats_enable(void __user *argp)
 {
 	int ret;
-	bool enable;
+	bool enable = false;
 
 	ret = get_enable_value(argp, &enable);
 	if (ret == 0) {
@@ -440,6 +496,77 @@ int dubai_log_stats_enable(void __user *argp)
 	return ret;
 }
 
+static void dubai_parse_skb(const struct sk_buff *skb, int *protocol, int *port)
+{
+	const struct iphdr *iph = NULL;
+	struct udphdr hdr;
+	struct udphdr *hp = NULL;
+
+	if (!skb || !protocol || !port) {
+		return;
+	}
+
+	iph = ip_hdr(skb);
+	if (!iph) {
+		return;
+	}
+
+	*protocol = iph->protocol;
+	if (iph->protocol == IPPROTO_TCP || iph->protocol == IPPROTO_UDP) {
+		hp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(hdr), &hdr);
+		if (!hp) {
+			return;
+		}
+		*port = (int)ntohs(hp->dest);
+	}
+}
+
+void dubai_send_app_wakeup(const struct sk_buff *skb, unsigned int hook, unsigned int pf, int uid, int pid)
+{
+	int protocol = -1;
+	int port = -1;
+	const struct iphdr *iph = NULL;
+	struct udphdr hdr;
+	struct udphdr *hp = NULL;
+
+	if (!dubai_is_beta_user()) {
+		return;
+	}
+
+	if (!skb || pf != NFPROTO_IPV4 || uid < 0 || pid < 0) {
+		return;
+	}
+
+	if (last_wakeup_time <= 0
+		|| last_wakeup_time == last_app_wakeup_time
+		|| (hisi_getcurtime() / NSEC_PER_MSEC - last_wakeup_time) > 500) {
+		/* time limit is 500ms */
+		return;
+	}
+	last_app_wakeup_time = last_wakeup_time;
+
+	dubai_parse_skb(skb, &protocol, &port);
+	if (protocol < 0 || port < 0) {
+		return;
+	}
+
+	HWDUBAI_LOGE("DUBAI_TAG_APP_WAKEUP", "uid=%d pid=%d protocol=%d port=%d source=%s gpio=%d",
+		uid, pid, protocol, port, last_wakeup_source, last_wakeup_gpio);
+}
+EXPORT_SYMBOL(dubai_send_app_wakeup);
+
+static void dubai_set_wakeup_time(const char *source, int gpio)
+{
+	if (!dubai_is_beta_user() || !source) {
+		return;
+	}
+
+	memset(last_wakeup_source, 0, sizeof(unsigned char)); /* unsafe_function_ignore: memset */
+	strncpy(last_wakeup_source, source, WAKEUP_SOURCE_SIZE - 1); /* unsafe_function_ignore: strncpy */
+	last_wakeup_gpio = gpio;
+	last_wakeup_time = hisi_getcurtime() / NSEC_PER_MSEC;
+}
+
 /*
  * Caution: It's dangerous to use HWDUBAI_LOG in this function,
  * because it's in the SR process, and the HWDUBAI_LOG will wake up the kworker thread that will open irq
@@ -447,7 +574,9 @@ int dubai_log_stats_enable(void __user *argp)
 void dubai_update_wakeup_info(const char *tag, const char *fmt, ...)
 {
 	va_list args;
-	struct dubai_wakeup_entry *entry;
+	struct dubai_wakeup_entry *entry = NULL;
+	const char *source = NULL;
+	int gpio = -1;
 
 	if (tag == NULL || strlen(tag) >= WAKEUP_TAG_SIZE) {
 		DUBAI_LOGE("Invalid parameter");
@@ -463,15 +592,32 @@ void dubai_update_wakeup_info(const char *tag, const char *fmt, ...)
 	strncpy(entry->tag, tag, WAKEUP_TAG_SIZE - 1); /* unsafe_function_ignore: strncpy */
 	va_start(args, fmt);
 	vscnprintf(entry->msg, WAKEUP_MSG_SIZE, fmt, args);
-	va_end(args);
 	list_add_tail(&entry->list, &wakeup_list);
+	if (!strcmp(entry->tag, KERNEL_WAKEUP_TAG)) {
+		source = va_arg(args, const char *);
+		gpio = va_arg(args, int);
+		dubai_set_wakeup_time(source, gpio);
+	}
+	va_end(args);
 }
 EXPORT_SYMBOL(dubai_update_wakeup_info);
+
+void dubai_set_rtc_timer(const char *name, int pid)
+{
+	if (name == NULL || pid <= 0) {
+		DUBAI_LOGE("Invalid parameter, pid is %d", pid);
+		return;
+	}
+
+	memcpy(dubai_rtc_timer.name, name, TASK_COMM_LEN - 1);/* unsafe_function_ignore: memcpy */
+	dubai_rtc_timer.pid = pid;
+}
+EXPORT_SYMBOL(dubai_set_rtc_timer);
 
 int dubai_set_brightness_enable(void __user *argp)
 {
 	int ret;
-	bool enable;
+	bool enable = false;
 
 	ret = get_enable_value(argp, &enable);
 	if (ret == 0) {
@@ -543,21 +689,149 @@ int dubai_get_brightness_info(void __user *argp)
 
 int dubai_get_aod_duration(void __user *argp)
 {
+#ifdef SENSORHUB_DUBAI_INTERFACE
+	int ret;
 	uint64_t duration = 0;
 
-#ifdef SENSORHUB_DUBAI_INTERFACE
-	duration = iomcu_dubai_log_fetch(DUBAI_AOD_DURATION_ENENT);
-#endif
+	ret = iomcu_dubai_log_fetch(DUBAI_EVENT_AOD_TIME_STATISTICS, &duration, sizeof(duration));
+	if (ret < 0) {
+		DUBAI_LOGE("Read sensorhub aod data fail!");
+		return -EFAULT;
+	}
 
 	if (copy_to_user(argp, &duration, sizeof(uint64_t)))
 		return -EFAULT;
 
 	return 0;
+#else
+	return -EOPNOTSUPP;
+#endif
+}
+
+int dubai_get_fp_icon_stats(void __user *argp)
+{
+#ifdef SENSORHUB_DUBAI_INTERFACE
+	int ret;
+	uint32_t fp_icon_stats = 0;
+
+	ret = iomcu_dubai_log_fetch(DUBAI_EVENT_FINGERPRINT_ICON_COUNT, &fp_icon_stats, sizeof(fp_icon_stats));
+	if (ret < 0) {
+		DUBAI_LOGE("Read sensorhub fp data fail!");
+		return -EFAULT;
+	}
+
+	if (copy_to_user(argp, &fp_icon_stats, sizeof(fp_icon_stats)))
+		return -EFAULT;
+
+	return 0;
+#else
+	return -EOPNOTSUPP;
+#endif
+}
+
+#ifdef SENSORHUB_DUBAI_INTERFACE
+static int dubai_get_all_sensor_time(void __user *argp, size_t count, size_t packets)
+{
+	int rc, ret, length;
+	size_t i, size;
+	uint8_t *sensor_data = NULL;
+	int32_t read_len, remain_len;
+	struct dev_transmit_t *stat = NULL;
+
+	if (copy_from_user(&length, argp, sizeof(int)))
+		return -EFAULT;
+
+	size = sizeof(struct dev_transmit_t) + count * sizeof(struct sensor_time);
+	if (length < size)
+		return -EINVAL;
+	stat = kzalloc(size, GFP_KERNEL);
+	if (stat == NULL) {
+		return -ENOMEM;
+	}
+
+	remain_len = count * sizeof(struct sensor_time);
+	sensor_data = (uint8_t *)(stat->data);
+	for (i = 0; i < packets && remain_len > 0; i++) {
+		read_len = (remain_len < SENSOR_TIME_BUFF_LEN) ? remain_len : SENSOR_TIME_BUFF_LEN;
+		ret = iomcu_dubai_log_fetch(DUBAI_EVENT_ALL_SENSOR_TIME, sensor_data, read_len);
+		if (ret < 0) {
+			DUBAI_LOGE("Read sensorhub sensor time fail!");
+			kfree(stat);
+			return -EFAULT;
+		}
+		sensor_data += read_len;
+		remain_len -= read_len;
+	}
+	stat->length = (int)count;
+
+	rc = copy_to_user(argp, stat, size);
+	kfree(stat);
+
+	return rc;
+}
+#endif
+
+int dubai_get_all_sensor_stats(void __user *argp)
+{
+#ifdef SENSORHUB_DUBAI_INTERFACE
+	int ret;
+	size_t count, packets;
+	uint32_t stats = 0;
+
+	ret = iomcu_dubai_log_fetch(DUBAI_EVENT_ALL_SENSOR_STATISTICS, &stats, sizeof(stats));
+	if (ret < 0) {
+		DUBAI_LOGE("Read sensorhub sensor statistics fail!");
+		return -EFAULT;
+	}
+	count = (size_t)(stats & 0xFF);
+	count = (count <= PHYSICAL_SENSOR_TYPE_MAX) ? count : PHYSICAL_SENSOR_TYPE_MAX;
+	packets = (count * sizeof(struct sensor_time) + SENSOR_TIME_BUFF_LEN - 1) / SENSOR_TIME_BUFF_LEN;
+
+	return dubai_get_all_sensor_time(argp, count, packets);
+#else
+	return -EOPNOTSUPP;
+#endif
+}
+
+int dubai_get_swing_data(void __user *argp)
+{
+#ifdef SENSORHUB_DUBAI_INTERFACE
+	int rc, ret, length;
+	size_t size;
+	struct swing_data *swing = NULL;
+	struct dev_transmit_t *stat = NULL;
+
+	if (copy_from_user(&length, argp, sizeof(int)))
+		return -EFAULT;
+
+	size = sizeof(struct dev_transmit_t) + sizeof(struct swing_data);
+	if (length != size)
+		return -EINVAL;
+	stat = kzalloc(size, GFP_KERNEL);
+	if (stat == NULL) {
+		return -ENOMEM;
+	}
+
+	swing = (struct swing_data *)stat->data;
+	ret = iomcu_dubai_log_fetch(DUBAI_EVENT_SWING, swing, sizeof(struct swing_data));
+	if (ret < 0) {
+		DUBAI_LOGE("Read swing camera data fail!");
+		kfree(stat);
+		return -EFAULT;
+	}
+
+	rc = copy_to_user(argp, stat, size);
+	kfree(stat);
+
+	return rc;
+#else
+	return -EOPNOTSUPP;
+#endif
 }
 
 static void dubai_init_binder_client(struct list_head *head)
 {
-	struct dubai_binder_client_entry *client, *tmp;
+	struct dubai_binder_client_entry *client = NULL, *tmp = NULL;
 
 	if (head != NULL) {
 		list_for_each_entry_safe(client, tmp, head, node) {
@@ -569,9 +843,9 @@ static void dubai_init_binder_client(struct list_head *head)
 
 static void dubai_init_binder_stats(void)
 {
-	struct hlist_node *tmp;
+	struct hlist_node *tmp = NULL;
 	unsigned long bkt;
-	struct dubai_binder_stats_entry *stats, *temp;
+	struct dubai_binder_stats_entry *stats = NULL, *temp = NULL;
 
 	mutex_lock(&binder_stats_hash_lock);
 	hash_for_each_safe(binder_stats_hash_table, bkt, tmp, stats, hash) {
@@ -586,46 +860,6 @@ static void dubai_init_binder_stats(void)
 	}
 	mutex_unlock(&binder_stats_hash_lock);
 	atomic_set(&binder_client_count, 0);
-}
-
-static void dubai_init_binder_stats_list(void)
-{
-	struct dubai_binder_list_entry *entry, *tmp;
-
-	mutex_lock(&binder_stats_list_lock);
-	list_for_each_entry_safe(entry, tmp, &binder_stats_list, node) {
-		list_del_init(&entry->node);
-		kfree(entry);
-	}
-	mutex_unlock(&binder_stats_list_lock);
-	atomic_set(&binder_stats_count, 0);
-}
-
-static bool dubai_check_binder_stats_enable(char *name)
-{
-	struct dubai_binder_list_entry *entry = NULL;
-	bool rc = false;
-
-	if (name == NULL) {
-		DUBAI_LOGE("Invalid param");
-		return false;
-	}
-
-	if (atomic_read(&binder_stats_count) == 0)
-		return true;
-
-	if (!mutex_trylock(&binder_stats_list_lock))
-		return false;
-
-	list_for_each_entry(entry, &binder_stats_list, node) {
-		if (strncmp(entry->name, name, NAME_LEN - 1) == 0) {
-			rc = true;
-			goto out;
-		}
-	}
-out:
-	mutex_unlock(&binder_stats_list_lock);//lint !e455
-	return rc;
 }
 
 static struct dubai_binder_client_entry *dubai_check_binder_client_entry(
@@ -811,7 +1045,7 @@ out:
 static void dubai_get_binder_client(
 	struct dubai_binder_stats_entry *stats, struct dubai_binder_stats_transmit *transmit, int count)
 {
-	struct dubai_binder_client_entry *client, *temp;
+	struct dubai_binder_client_entry *client = NULL, *temp = NULL;
 	struct dubai_binder_stats_info info;
 	unsigned char *data = NULL;
 
@@ -843,8 +1077,8 @@ static void dubai_get_binder_client(
 static void dubai_get_binder_stats_info(struct dubai_binder_stats_transmit *transmit, int count)
 {
 	unsigned long bkt;
-	struct dubai_binder_stats_entry *stats;
-	struct hlist_node *tmp;
+	struct dubai_binder_stats_entry *stats = NULL;
+	struct hlist_node *tmp = NULL;
 
 	if (transmit == NULL) {
 		DUBAI_LOGE("Invalid param");
@@ -867,7 +1101,7 @@ static void dubai_get_binder_stats_info(struct dubai_binder_stats_transmit *tran
 
 static void dubai_get_binder_stats_died(struct dubai_binder_stats_transmit *transmit, int count)
 {
-	struct dubai_binder_stats_entry *tmp, *stats;
+	struct dubai_binder_stats_entry *tmp = NULL, *stats = NULL;
 
 	if (transmit == NULL) {
 		DUBAI_LOGE("Invalid param");
@@ -929,7 +1163,6 @@ int dubai_get_binder_stats(void __user *argp)
 void dubai_log_binder_stats(int reply, uid_t c_uid, int c_pid, uid_t s_uid, int s_pid)
 {
 	struct dubai_binder_proc client, service;
-	bool enable = false;
 
 	if (reply || !atomic_read(&binder_stats_enable))
 		return;
@@ -945,96 +1178,23 @@ void dubai_log_binder_stats(int reply, uid_t c_uid, int c_pid, uid_t s_uid, int 
 	client.pid = c_pid;
 
 	if (dubai_get_binder_proc_name(&service, &client) == 0) {
-		enable = dubai_check_binder_stats_enable(service.name);
-		if (!enable)
-			enable = dubai_check_binder_stats_enable(client.name);
-	}
-	if (enable)
 		dubai_add_binder_stats(&service, &client);
-	DUBAI_LOGD("ENABLE: %d, SNAME: %s, SUID: %d, SPID: %d, CNAME: %s, CUID: %d, CPID: %d",
-		enable ? 1 : 0, service.name, s_uid, s_pid, client.name, c_uid, c_pid);
+	}
+	DUBAI_LOGD("SNAME: %s, SUID: %d, SPID: %d, CNAME: %s, CUID: %d, CPID: %d",
+		service.name, s_uid, s_pid, client.name, c_uid, c_pid);
 }
 EXPORT_SYMBOL(dubai_log_binder_stats);
-
-/*lint -esym(429,*)*/
-static void dubai_set_binder_stats_list(char *name)
-{
-	struct dubai_binder_list_entry *entry = NULL;
-	int size;
-
-	if (name == NULL) {
-		DUBAI_LOGE("Invalid param");
-		return;
-	}
-	DUBAI_LOGI("Set binder stats name: %s", name);
-
-	size = sizeof(struct dubai_binder_list_entry);
-	entry = kzalloc(size, GFP_KERNEL);
-	if (entry == NULL) {
-		DUBAI_LOGE("Failed to allocate memory");
-		return;
-	}
-	entry->name[NAME_LEN - 1] = '\0';
-	strncpy(entry->name, name, NAME_LEN - 1);/* unsafe_function_ignore: strncpy */
-
-	mutex_lock(&binder_stats_list_lock);
-	list_add_tail(&entry->node, &binder_stats_list);
-	mutex_unlock(&binder_stats_list_lock);
-	atomic_inc(&binder_stats_count);
-}
-/*lint +esym(429,*)*/
-
-int dubai_set_binder_list(void __user *argp)
-{
-	int ret = 0, size, i, count, length, remain;
-	struct dev_transmit_t *transmit = NULL;
-	char *p = NULL;
-
-	if (copy_from_user(&length, argp, sizeof(int)))
-		return -EFAULT;
-
-	count = length / NAME_LEN;
-	remain = length % NAME_LEN;
-	if ((count <= 0) || (count > BINDER_STATS_LIST_LEN) || (remain != 0)) {
-		DUBAI_LOGE("Invalid params, length: %d, count: %d, remain: %d", length, count, remain);
-		return -EINVAL;
-	}
-
-	size = length + sizeof(struct dev_transmit_t);
-	transmit = kzalloc(size, GFP_KERNEL);
-	if (transmit == NULL) {
-		DUBAI_LOGE("Failed to allocate memory for binder stats list");
-		return -ENOMEM;
-	}
-	if (copy_from_user(transmit, argp, size)) {
-		ret = -EFAULT;
-		goto exit;
-	}
-
-	dubai_init_binder_stats_list();
-	p = (char *)transmit->data;
-	for (i = 0; i < count; i++) {
-		dubai_set_binder_stats_list(p);
-		p += NAME_LEN;
-	}
-
-exit:
-	kfree(transmit);
-
-	return ret;
-}
 
 int dubai_binder_stats_enable(void __user *argp)
 {
 	int ret;
-	bool enable;
+	bool enable = false;
 
 	ret = get_enable_value(argp, &enable);
 	if (ret == 0) {
 		DUBAI_LOGI("Set binder stats enable: %d", enable ? 1 : 0);
 		atomic_set(&binder_stats_enable, enable ? 1 : 0);
 		if (!enable) {
-			dubai_init_binder_stats_list();
 			dubai_init_binder_stats();
 		}
 	}
@@ -1045,8 +1205,8 @@ int dubai_binder_stats_enable(void __user *argp)
 static void dubai_process_binder_died(pid_t pid)
 {
 	unsigned long bkt;
-	struct hlist_node *tmp;
-	struct dubai_binder_stats_entry *stats;
+	struct hlist_node *tmp = NULL;
+	struct dubai_binder_stats_entry *stats = NULL;
 
 	if (!atomic_read(&binder_stats_enable))
 		return;
@@ -1065,13 +1225,72 @@ static void dubai_process_binder_died(pid_t pid)
 	mutex_unlock(&binder_stats_hash_lock);
 }
 
+int dubai_get_sensorhub_type_list(void __user * argp)
+{
+#ifdef CONFIG_INPUTHUB_20
+	int i, j, ret = 0, count = 0;
+	long long timestamp, size = 0;
+	struct dubai_sensorhub_type_list *transmit = NULL;
+	struct buffered_log_entry *log_entry = NULL;
+	const struct app_link_info *info = NULL;
+
+	ret = get_timestamp_value(argp, &timestamp);
+	if (ret < 0) {
+		DUBAI_LOGE("Failed to get timestamp");
+		return ret;
+	}
+
+	size = LOG_ENTRY_SIZE(struct dubai_sensorhub_type_list, struct dubai_sensorhub_type_info,
+		SENSORHUB_TYPE_END - SENSORHUB_TYPE_BEGIN);
+	log_entry = create_buffered_log_entry(size, BUFFERED_LOG_MAGIC_SENSORHUB_TYPE_LIST);
+	if (log_entry == NULL) {
+		DUBAI_LOGE("Failed to create buffered log entry");
+		ret = -ENOMEM;
+		return ret;
+	}
+
+	transmit = (struct dubai_sensorhub_type_list *)log_entry->data;
+	transmit->timestamp = timestamp;
+	transmit->tag_count = SENSORHUB_TAG_NUM_MAX;
+	for (i = SENSORHUB_TYPE_BEGIN; i < SENSORHUB_TYPE_END; i++) {
+		info = get_app_link_info(i);
+		if (info && info->used_sensor_cnt > 0 && info->used_sensor_cnt <= SENSORHUB_TAG_NUM_MAX) {
+			transmit->data[count].sensorhub_type = info->hal_sensor_type;
+			for (j = 0; j < info->used_sensor_cnt; j++) {
+				transmit->data[count].data[j] = info->used_sensor[j];
+			}
+			count++;
+		}
+	}
+	if (count == 0) {
+		DUBAI_LOGE("No data");
+		ret = -EINVAL;
+		goto exit;
+	}
+	transmit->size = count;
+	log_entry->length = LOG_ENTRY_SIZE(struct dubai_sensorhub_type_list,
+				struct dubai_sensorhub_type_info, transmit->size);
+	ret = send_buffered_log(log_entry);
+	if (ret < 0) {
+		DUBAI_LOGE("Failed to send sensorhub type list entry");
+	}
+
+exit:
+	free_buffered_log_entry(log_entry);
+
+	return ret;
+#else
+	return -EOPNOTSUPP;
+#endif
+}
+
 int dubai_get_ws_lasting_name(void __user * argp)
 {
 	int ret = 0;
 	size_t i;
 	long long timestamp, size = 0;
 	char *data = NULL;
-	struct dubai_ws_lasting_transmit *transmit;
+	struct dubai_ws_lasting_transmit *transmit = NULL;
 	struct buffered_log_entry *log_entry = NULL;
 
 	ret = get_timestamp_value(argp, &timestamp);
@@ -1113,6 +1332,19 @@ exit:
 	return ret;
 }
 
+int dubai_get_rss(void __user *argp)
+{
+	unsigned long rss = get_mm_rss(current->mm);
+	long long size = rss * PAGE_SIZE;
+
+	if (copy_to_user(argp, &size, sizeof(long long))) {
+		DUBAI_LOGE("Failed to copy_to_user %lld.", size);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int dubai_stats_process_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 {
 	struct task_struct *task = v;
@@ -1129,13 +1361,20 @@ exit:
 
 static void dubai_send_wakeup_info(void)
 {
-	struct dubai_wakeup_entry *entry, *tmp;
+	struct dubai_wakeup_entry *entry = NULL, *tmp = NULL;
 
 	list_for_each_entry_safe(entry, tmp, &wakeup_list, list) {
-		HWDUBAI_LOGE(entry->tag, "%s", entry->msg);
+		if (!strcmp(entry->tag, KERNEL_WAKEUP_TAG)
+			&& strstr(entry->msg, "irq=RTC0")
+			&& dubai_rtc_timer.pid > 0) {
+			HWDUBAI_LOGE("DUBAI_TAG_RTC_WAKEUP", "name=%s pid=%d", dubai_rtc_timer.name, dubai_rtc_timer.pid);
+		} else {
+			HWDUBAI_LOGE(entry->tag, "%s", entry->msg);
+		}
 		list_del_init(&entry->list);
 		kfree(entry);
 	}
+	memset(&dubai_rtc_timer, 0, sizeof(struct dubai_rtc_timer_info)); /* unsafe_function_ignore: memset */
 }
 
 static int dubai_pm_notify(struct notifier_block *nb,
@@ -1167,7 +1406,6 @@ static struct notifier_block process_notifier_block = {
 void dubai_stats_init(void)
 {
 	atomic_set(&binder_stats_enable, 0);
-	atomic_set(&binder_stats_count, 0);
 	atomic_set(&binder_client_count, 0);
 	hash_init(binder_stats_hash_table);
 	atomic_set(&log_stats_enable, 0);
@@ -1179,6 +1417,7 @@ void dubai_stats_init(void)
 	dubai_backlight.last_brightness = 0;
 	dubai_backlight.sum_time = 0;
 	dubai_backlight.sum_brightness_time = 0;
+	memset(&dubai_rtc_timer, 0, sizeof(struct dubai_rtc_timer_info));/* unsafe_function_ignore: memset */
 	register_pm_notifier(&dubai_pm_nb);
 	profile_event_register(PROFILE_TASK_EXIT, &process_notifier_block);
 	DUBAI_LOGI("DUBAI stats initialize success");
@@ -1187,13 +1426,12 @@ void dubai_stats_init(void)
 void dubai_stats_exit(void)
 {
 	struct dubai_kworker_entry *kworker = NULL;
-	struct hlist_node *tmp;
-	struct dubai_uevent_entry *uevent, *temp;
-	struct dubai_wakeup_entry *wakeup, *wakeup_temp;
+	struct hlist_node *tmp = NULL;
+	struct dubai_uevent_entry *uevent = NULL, *temp = NULL;
+	struct dubai_wakeup_entry *wakeup = NULL, *wakeup_temp = NULL;
 	unsigned long bkt;
 
 	profile_event_unregister(PROFILE_TASK_EXIT, &process_notifier_block);
-	dubai_init_binder_stats_list();
 	dubai_init_binder_stats();
 
 	mutex_lock(&kworker_lock);

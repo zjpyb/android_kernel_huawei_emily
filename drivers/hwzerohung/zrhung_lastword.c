@@ -1,13 +1,21 @@
-/**********************************************************
- * Filename:    zrhung_lastword.c
+/*
+ * zrhung_lastword.c
  *
- * Discription: kernel process of the hung lastword
+ * kernel process of the hung lastword
  *
- * Copyright: (C) 2017 huawei.
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
  *
- * Author: fanghua(00396017) zhangliang(00175161)
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
-**********************************************************/
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/poll.h>
@@ -20,13 +28,12 @@
 #include <chipset_common/hwzrhung/zrhung.h>
 #include "zrhung_common.h"
 
-int hlastword_write(void* buf, uint32_t len)
+int hlastword_write(void *buf, uint32_t len)
 {
-	if (!buf || len > HTRANS_TOTAL_BUF_SIZE) {
+	if (!buf || (len > HTRANS_TOTAL_BUF_SIZE)) {
 		HTRANS_ERROR("param not right\n");
 		return -1;
 	}
-
 #ifdef CONFIG_HISI_DFX_CORE
 	dfx_write(DFX_ZEROHUNG, buf, len);
 #endif
@@ -34,13 +41,12 @@ int hlastword_write(void* buf, uint32_t len)
 	return 0;
 }
 
-int hlastword_read(void* buf, uint32_t len)
+int hlastword_read(void *buf, uint32_t len)
 {
-	if (!buf || len > HTRANS_TOTAL_BUF_SIZE) {
+	if (!buf || (len > HTRANS_TOTAL_BUF_SIZE)) {
 		HTRANS_ERROR("param not right\n");
 		return -1;
 	}
-
 #ifdef CONFIG_HISI_DFX_CORE
 	dfx_read(DFX_ZEROHUNG, buf, len);
 #endif
@@ -52,4 +58,3 @@ int hlastword_init(void)
 {
 	return 0;
 }
-

@@ -130,8 +130,6 @@ void mdss_dsi_panel_bklt_dcs(void *pdata, int bl_level)
 		g_backlight_count = (g_backlight_count > 0) ? (g_backlight_count - 1) : 0;
 	}
 
-	//LCDKIT_INFO("bl_level=%d,cmd_cnt=%d\n",bl_level,bl_cmds->cmd_cnt);
-
 	if ((0 != bl_level)
 		&& (DIMMING_DISABLE == lcdkit_pan_dimming_state)
 		&& (NULL !=lcdkit_info.panel_infos.dis_pandimming_bf_sleepin_flag))
@@ -247,16 +245,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	    }
 
 		if (!pinfo->cont_splash_enabled) {
-#if 0
-			if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
-				rc = gpio_direction_output(
-					ctrl_pdata->disp_en_gpio, 1);
-				if (rc) {
-					LCDKIT_ERR(": unable to set dir for en gpio\n");
-					goto exit;
-				}
-			}
-#endif
 			if (pdata->panel_info.rst_seq_len) {
 				rc = gpio_direction_output(ctrl_pdata->rst_gpio,
 					pdata->panel_info.rst_seq[0]);
@@ -288,24 +276,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 				if (pdata->panel_info.rst_seq[++i])
 					usleep_range(pinfo->rst_seq[i] * 1000, pinfo->rst_seq[i] * 1000);
 			}
-#if 0
-			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
-				rc = gpio_direction_output(
-					ctrl_pdata->bklt_en_gpio, 1);
-				if (rc) {
-					LCDKIT_ERR(": unable to set dir for bklt gpio\n");
-					goto exit;
-				}
-			}
-
-			if (gpio_is_valid(ctrl_pdata->disp_bl_gpio)) {
-				rc = gpio_direction_output(
-					ctrl_pdata->disp_bl_gpio, 1);
-				if (rc) {
-					LCDKIT_ERR(": unable to set dir for bl en gpio\n");
-				}
-			}
-#endif
 		}
 
 #ifdef CONFIG_ARCH_SDM660
@@ -349,20 +319,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
     else
     {
 		is_first_reset = true;
-#if 0
-		if (gpio_is_valid(ctrl_pdata->disp_bl_gpio)) {
-			gpio_set_value((ctrl_pdata->disp_bl_gpio), 0);
-			gpio_free(ctrl_pdata->disp_bl_gpio);
-		}
-		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
-			gpio_set_value((ctrl_pdata->bklt_en_gpio), 0);
-			gpio_free(ctrl_pdata->bklt_en_gpio);
-		}
-		if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
-			gpio_set_value((ctrl_pdata->disp_en_gpio), 0);
-			gpio_free(ctrl_pdata->disp_en_gpio);
-		}
-#endif
 		if(!lcdkit_info.panel_infos.panel_down_reset)
 		{
 			gpio_set_value((ctrl_pdata->rst_gpio), 0);
@@ -504,7 +460,6 @@ int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
     if (is_lcdkit_mipiclk_enable())
     {
         ctrl->pclk_rate = get_lcdkit_mipiclk_dbg();
-        //ctrl->byte_clk_rate = get_lcdkit_mipibclk_dbg();
     }
 
 #ifdef CONFIG_HUAWEI_DSM
@@ -531,7 +486,6 @@ int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 #endif
 
 end:
-//	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
 /*set mipi status*/
 #if defined(CONFIG_HUAWEI_KERNEL) && defined(CONFIG_DEBUG_FS)
 	atomic_set(&mipi_path_status, LCDKIT_MIPI_PATH_OPEN);
@@ -551,7 +505,6 @@ end:
 int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 {
     int ret = 0;
-	//struct msm_fb_data_type mfd;
     struct mdss_panel_info *pinfo;
     struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 
@@ -576,7 +529,6 @@ int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	}
 
     //!hisifd->fb_shutdown !mfd->shutdown_pending)
-    //mfd = container_of(pinfo, struct msm_fb_data_type, panel_info);
 #ifdef CONFIG_HUAWEI_TS_KIT
 
     if (g_tskit_ic_type)
@@ -736,7 +688,6 @@ int lcdkit_app_info_set(struct mdss_panel_info *pinfo)
     static const char *info_node = "lcd type";
 
 	pinfo->panel_name[0] = '\0';
-	//panel_name = of_get_property(node, LCKDIT_PANEL_PARSE_STRING, NULL);
 	panel_name = lcdkit_info.panel_infos.panel_name;
 	if (!panel_name) {
 		LCDKIT_INFO("%d, Panel name not specified\n", __LINE__);
@@ -1008,14 +959,7 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
     OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-dsi-bpp", &pinfo->bpp, 24);
 
-    #if 0
-	pinfo->mipi.mode = DSI_VIDEO_MODE;
-	data = of_get_property(np, "hw,lcdkit-panel-cmd-type", NULL);
-	if (data && !strncmp(data, "dsi_cmd_mode", 12))
-		pinfo->mipi.mode = DSI_CMD_MODE;
-    #else
     pinfo->mipi.mode = lcdkit_info.panel_infos.lcd_disp_type;;
-    #endif
 	pinfo->mipi.boot_mode = pinfo->mipi.mode;
 
 	data = of_get_property(np, "hw,lcdkit-pixel-packing", NULL);
@@ -1070,11 +1014,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	lcdkit_info.panel_infos.rst_set_low_before_resume
 		= of_property_read_bool(np, "hw,lcdkit-lcd-reset-low-before-resume");
-    #if 0
-	global_tp_pre_lcd_flag
-                = of_property_read_bool(np, "hw,lcdkit-tp-pre-lcd-enable");
-	set_tp_pre_lcd_status(global_tp_pre_lcd_flag);
-    #endif
 
 	if (pinfo->sim_panel_mode == SIM_SW_TE_MODE)
 		pinfo->mipi.hw_vsync_mode = false;
@@ -1177,14 +1116,7 @@ static int mdss_panel_parse_dt(struct device_node *np,
                 &pinfo->mdp_transfer_time_us, DEFAULT_MDP_TRANSFER_TIME);
 
 	pinfo->mipi.lp11_init = of_property_read_bool(np, "hw,lcdkit-lp11-init");
-
-    #if 0
-	OF_PROPERTY_READ_U32_DEFAULT(np,
-                "hw,lcdkit-init-delay-us", &pinfo->mipi.init_delay, 0);
-    #else
     pinfo->mipi.init_delay = lcdkit_info.panel_infos.delay_af_LP11;
-    #endif
-
 	OF_PROPERTY_READ_U32_DEFAULT(np,
                 "hw,lcdkit-post-init-delay", &pinfo->mipi.post_init_delay, 0);
 

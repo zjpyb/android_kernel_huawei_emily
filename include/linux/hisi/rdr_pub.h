@@ -90,11 +90,16 @@ enum UPLOAD_FLAG {
     RDR_UPLOAD_NO
 };
 
-
 enum RDR_RETURN {
     RDR_SUCCESSED                   = 0x9f000000,
     RDR_FAILD                       = 0x9f000001,
     RDR_NULLPOINTER                 = 0x9f0000ff
+};
+
+enum RDR_SAVE_LOG_FLAG {
+	RDR_SAVE_DMESG = (0x1 << 0),
+	RDR_SAVE_CONSOLE_MSG = (0x1 << 1),
+	RDR_SAVE_BL31_LOG = (0x1 << 2),
 };
 
 typedef void (*rdr_e_callback)( u32, void* );
@@ -118,6 +123,7 @@ typedef void (*rdr_e_callback)( u32, void* );
  *   char* from_module,		    the module of happen excption
  *   char* desc,		        the desc of happen excption
  *   rdr_e_callback callback,	will be called when excption has processed.
+ *   u32 save_log_flags,		set bit 1 to save the log(dmsg, console, bl31log)
  *   u32 reserve_u32;		reserve u32
  *   void* reserve_p		    reserve void *
  */
@@ -136,6 +142,7 @@ struct rdr_exception_info_s {
 	u32	e_upload_flag;
 	u8	e_from_module[MODULE_NAME_LEN];
 	u8	e_desc[STR_EXCEPTIONDESC_MAXLEN];
+	u32	e_save_log_flags;
 	u32	e_reserve_u32;
 	void*	e_reserve_p;
 	rdr_e_callback e_callback;
@@ -382,7 +389,7 @@ u32 rdr_get_diaginfo_size(void);
 u32 rdr_get_lognum(void);
 char *rdr_get_timestamp(void);
 void *bbox_vmap(phys_addr_t paddr, size_t size);
-int rdr_dir_size(char *path, bool recursion);
+int rdr_dir_size(char *path, u32 pathLen, bool recursion);
 #else
 static inline void *hisi_bbox_map(phys_addr_t paddr, size_t size){ return NULL; }
 static inline u32 rdr_register_exception(struct rdr_exception_info_s* e){ return 0;}
@@ -409,7 +416,7 @@ static inline u32 rdr_get_diaginfo_size(void){return 0;}
 static inline u32 rdr_get_lognum(void){return 0;}
 static inline char *rdr_get_timestamp(void){return NULL;}
 static inline void *bbox_vmap(phys_addr_t paddr, size_t size){return NULL;}
-static inline int rdr_dir_size(char *path, bool recursion){return 0;}
+static inline int rdr_dir_size(char *path, u32 pathLen, bool recursion){return 0;}
 #endif
 
 void get_exception_info(unsigned long *buf, unsigned long *buf_len);

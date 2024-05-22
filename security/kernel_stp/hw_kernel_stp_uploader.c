@@ -13,23 +13,25 @@ static struct kobject *g_kernel_stp_kobj;
 static struct kset *g_kernel_stp_kset;
 static DEFINE_MUTEX(upload_mutex);
 
-struct stp_item_info item_info[] = {
+const struct stp_item_info item_info[] = {
 	[KCODE]        = { STP_ID_KCODE, STP_NAME_KCODE },
 	[SYSCALL]      = { STP_ID_KCODE_SYSCALL, STP_NAME_KCODE_SYSCALL },
 	[SE_ENFROCING] = { STP_ID_SE_ENFROCING, STP_NAME_SE_ENFROCING },
 	[SE_HOOK]      = { STP_ID_SE_HOOK, STP_NAME_SE_HOOK },
 	[ROOT_PROCS]   = { STP_ID_ROOT_PROCS, STP_NAME_ROOT_PROCS },
 	[SETIDS]       = { STP_ID_SETIDS, STP_NAME_SETIDS },
+	[KEY_FILES]    = { STP_ID_KEY_FILES, STP_NAME_KEY_FILES },
 	[EIMA]         = { STP_ID_EIMA, STP_NAME_EIMA },
+	[USERCOPY]     = { STP_ID_USERCOPY, STP_NAME_USERCOPY },
+	[CFI]          = { STP_ID_CFI, STP_NAME_CFI },
 	[MOD_SIGN]     = { STP_ID_MOD_SIGN, STP_NAME_MOD_SIGN },
 	[PTRACE]       = { STP_ID_PTRACE, STP_NAME_PTRACE },
 	[HKIP]         = { STP_ID_HKIP, STP_NAME_HKIP },
-	[CFI]          = { STP_ID_CFI, STP_NAME_CFI },
 	[ITRUSTEE]     = { STP_ID_ITRUSTEE, STP_NAME_ITRUSTEE },
 	[DOUBLE_FREE]  = { STP_ID_DOUBLE_FREE, STP_NAME_DOUBLE_FREE },
 };
 
-struct stp_item_info *get_item_info_by_idx(int idx)
+const struct stp_item_info *get_item_info_by_idx(int idx)
 {
 	if (idx < STP_ITEM_MAX) {
 		return &item_info[idx];
@@ -95,7 +97,7 @@ void kernel_stp_uploader_exit(void)
 	KSTPLogTrace(TAG, "kernel_stp_kobj_deinit ok!");
 }
 
-int kernel_stp_upload_parse(struct stp_item result, char *addition_info,
+int kernel_stp_upload_parse(struct stp_item result, const char *addition_info,
 			char *upload_info)
 {
 	if (upload_info == NULL) {
@@ -133,10 +135,10 @@ static int kernel_stp_data_adapter(char **uevent_envp, char *result)
 	return 0;
 }
 
-int kernel_stp_upload(struct stp_item result, char *addition_info)
+int kernel_stp_upload(struct stp_item result, const char *addition_info)
 {
 	int ret;
-	char *upload_info;
+	char *upload_info = NULL;
 	char *uevent_envp[KERNEL_STP_UEVENT_LEN] = { NULL };
 
 	if (g_kernel_stp_kobj == NULL) {
@@ -173,9 +175,8 @@ int kernel_stp_upload(struct stp_item result, char *addition_info)
 		KSTPLogTrace(TAG, "event upload finished. result: %d", ret);
 	} while (0);
 
-	if (upload_info != NULL) {
+	if (upload_info != NULL)
 		kfree(upload_info);
-	}
 
 	return ret;
 }

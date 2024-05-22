@@ -58,15 +58,21 @@
 #include "AtInputProc.h"
 #include "AtTestParaCmd.h"
 
+#if(FEATURE_ON == FEATURE_LTE)
 #include "at_lte_common.h"
 #include "nv_stru_lps.h"
+#endif
 
 #include "nv_stru_cas.h"
 
 #include "AtCmdMiscProc.h"
 
 
+#if (VOS_OS_VER == VOS_LINUX)
 #include <linux/random.h>
+#else
+#include "Linuxstub.h"
+#endif
 
 
 /*****************************************************************************
@@ -150,11 +156,13 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^BSN",      VOS_NULL_PTR},
 
+#if ( FEATURE_ON == FEATURE_LTE )
     {AT_CMD_SFM,
     At_SetSfm,          AT_SET_PARA_TIME,   At_QrySfm,            AT_NOT_SET_TIME,    VOS_NULL_PTR , AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^SFM",     (VOS_UINT8*)"(0,1)"},
+#endif
 
     {AT_CMD_TMODE,
     At_SetTModePara,     AT_SET_PARA_TIME,   At_QryTModePara,       AT_QRY_PARA_TIME ,  At_TestTmodePara , AT_TEST_PARA_TIME,
@@ -231,6 +239,7 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^GPIOPL",   (VOS_UINT8*)"(@GPIOPL)"},
 
+#if ( FEATURE_ON == FEATURE_LTE )
 
     /* 生产NV恢复 */
     {AT_CMD_INFORRS,
@@ -238,12 +247,21 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^INFORRS",  VOS_NULL_PTR},
+#endif
 
+#ifdef FEATURE_UPGRADE_TL
     {AT_CMD_INFORBU,
     atSetNVFactoryBack,  AT_SET_PARA_TIME,    VOS_NULL_PTR,          AT_NOT_SET_TIME,   VOS_NULL_PTR ,    AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^INFORBU",  VOS_NULL_PTR},
+#else
+    {AT_CMD_INFORBU,
+    At_SetInfoRBU,       AT_SET_PARA_TIME,    VOS_NULL_PTR,          AT_NOT_SET_TIME,   VOS_NULL_PTR ,    AT_NOT_SET_TIME,
+    VOS_NULL_PTR,        AT_NOT_SET_TIME,
+    AT_CME_INCORRECT_PARAMETERS,    CMD_TBL_PIN_IS_LOCKED,
+    (VOS_UINT8*)"^INFORBU",  VOS_NULL_PTR},
+#endif
 
     {AT_CMD_DATALOCK,
     At_SetDataLock,      AT_SET_PARA_TIME,   At_QryDataLock,        AT_NOT_SET_TIME,   VOS_NULL_PTR ,    AT_NOT_SET_TIME,
@@ -516,11 +534,19 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^HUK",         (VOS_UINT8 *)"(@huk)"},
 
+#if (FEATURE_ON == FEATURE_SC_SEC_UPDATE)
     {AT_CMD_FACAUTHPUBKEYEX,
     VOS_NULL_PTR,               AT_NOT_SET_TIME,    VOS_NULL_PTR,   AT_NOT_SET_TIME,  AT_TestHsicCmdPara,  AT_NOT_SET_TIME,
     VOS_NULL_PTR,        AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^FACAUTHPUBKEYEX",       (VOS_UINT8 *)"(1-20),(1-20),(@Pubkey)"},
+#else
+    {AT_CMD_FACAUTHPUBKEY,
+    VOS_NULL_PTR,               AT_NOT_SET_TIME,    VOS_NULL_PTR,   AT_NOT_SET_TIME,  AT_TestHsicCmdPara,  AT_NOT_SET_TIME,
+    VOS_NULL_PTR,        AT_NOT_SET_TIME,
+    AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
+    (VOS_UINT8*)"^FACAUTHPUBKEY",       (VOS_UINT8 *)"(@Pubkey)"},
+#endif
 
     {AT_CMD_IDENTIFYSTART,
     AT_SetIdentifyStartPara,    AT_SET_PARA_TIME,   VOS_NULL_PTR,   AT_NOT_SET_TIME,  AT_TestHsicCmdPara,  AT_NOT_SET_TIME,
@@ -535,6 +561,13 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     (VOS_UINT8*)"^IDENTIFYEND",       VOS_NULL_PTR},
 
 
+#if (FEATURE_ON == FEATURE_SC_NETWORK_UPDATE)
+    {AT_CMD_SIMLOCKNWDATAWRITE,
+    VOS_NULL_PTR,               AT_NOT_SET_TIME,    VOS_NULL_PTR,   AT_NOT_SET_TIME,  AT_TestHsicCmdPara,  AT_NOT_SET_TIME,
+    VOS_NULL_PTR,        AT_NOT_SET_TIME,
+    AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
+    (VOS_UINT8*)"^SIMLOCKNWDATAWRITE",    (VOS_UINT8 *)SIMLOCKDATAWRITEEX_CMD_PARA_STRING},
+#endif
 
     {AT_CMD_SIMLOCKDATAWRITEEX,
     VOS_NULL_PTR,               AT_NOT_SET_TIME,    VOS_NULL_PTR,   AT_NOT_SET_TIME,  AT_TestHsicCmdPara,  AT_NOT_SET_TIME,
@@ -603,6 +636,7 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     (VOS_UINT8*)"^FPOWDET",     VOS_NULL_PTR},
 
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     {AT_CMD_MEID,
     AT_SetMeidPara,    AT_SET_PARA_TIME,    AT_QryMeidPara,    AT_SET_PARA_TIME,    VOS_NULL_PTR,    AT_NOT_SET_TIME,
     VOS_NULL_PTR,    AT_NOT_SET_TIME,
@@ -622,6 +656,7 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     (VOS_UINT8 *)"^DOSIGMASK",   (VOS_UINT8*)"(0-4294967295)"},
 
 
+#endif
 
     {AT_CMD_MIPIWR,
     AT_SetMipiWrPara,  AT_SET_PARA_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME, VOS_NULL_PTR, AT_NOT_SET_TIME,
@@ -678,11 +713,13 @@ AT_PAR_CMD_ELEMENT_STRU g_astAtDeviceCmdTbl[] = {
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^SOCID", (VOS_UINT8*)"(@SocidString)"},
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     {AT_CMD_DIVERSITYSWITCH,
     AT_SetCdmaAttDiversitySwitch,   AT_SET_PARA_TIME,   VOS_NULL_PTR,   AT_NOT_SET_TIME,   VOS_NULL_PTR, AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
     AT_CME_INCORRECT_PARAMETERS, CMD_TBL_PIN_IS_LOCKED,
     (VOS_UINT8*)"^DIVERSITYSWITCH", (VOS_UINT8*)"(0,1)"},
+#endif
     {AT_CMD_SETSLAVE,
     AT_SetSlavePara,  AT_SET_PARA_TIME,   VOS_NULL_PTR,  AT_NOT_SET_TIME,   VOS_NULL_PTR,   AT_NOT_SET_TIME,
     VOS_NULL_PTR,   AT_NOT_SET_TIME,
@@ -751,6 +788,16 @@ VOS_UINT32 At_QrySecuBootFeaturePara( VOS_UINT8 ucIndex )
         return AT_ERROR;
     }
 
+#if(FEATURE_ON == FEATURE_DX_SECBOOT)
+    if(0 == usSecBootSupportedFlag)
+    {
+        usSecBootSupportedFlag = AT_DX_RMA_STATE;
+    }
+    else
+    {
+        usSecBootSupportedFlag = AT_DX_SECURE_STATE;
+    }
+#endif
 
     /* 打印输出 */
     gstAtSendData.usBufLen = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
@@ -879,6 +926,9 @@ VOS_UINT32 At_SetSecuBootPara(VOS_UINT8 ucIndex)
 VOS_UINT32 At_QrySecuBootPara(VOS_UINT8 ucIndex)
 {
     VOS_UINT8                           usSecBootStartedFlag = 0;
+#if(FEATURE_ON == FEATURE_DX_SECBOOT)
+    VOS_INT32                           DXSecBootFlag;
+#endif
 
     if(MDRV_OK != mdrv_crypto_sec_started(&usSecBootStartedFlag))
     {
@@ -887,6 +937,27 @@ VOS_UINT32 At_QrySecuBootPara(VOS_UINT8 ucIndex)
     }
 
 /*对于支持DX安全引擎的，需要查询芯片状态*/
+#if(FEATURE_ON == FEATURE_DX_SECBOOT)
+    DXSecBootFlag = mdrv_efuse_ioctl(MDRV_EFUSE_IOCTL_CMD_GET_SECURESTATE,
+                                     0, NULL, 0);
+    if(0 > DXSecBootFlag)
+    {
+        AT_WARN_LOG("At_QrySecuBootPara: MDRV_EFUSE_IOCTL_CMD_GET_SECURESTATE failed");
+        return AT_ERROR;
+    }
+    if( AT_DRV_STATE_RMA == DXSecBootFlag)
+    {
+        usSecBootStartedFlag = AT_DX_RMA_STATE;
+    }
+    else if (AT_DRV_STATE_SECURE == DXSecBootFlag)
+    {
+        usSecBootStartedFlag = AT_DX_SECURE_STATE;
+    }
+    else
+    {
+        usSecBootStartedFlag = AT_NOT_SET_STATE;
+    }
+#endif
 
     /* 打印输出 */
     gstAtSendData.usBufLen = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
@@ -928,7 +999,9 @@ VOS_UINT32 At_SetKeyPara(VOS_UINT8 ucIndex)
             break;
         case AT_KEY_TYPE_AUTHKEY:
         {
+            #if (VOS_OS_VER == VOS_LINUX)
             get_random_bytes(aulKeyBuf, AT_AUTHKEY_LEN);
+            #endif
 
             usRet = mdrv_efuse_ioctl(MDRV_EFUSE_IOCTL_CMD_SET_AUTHKEY,
                                      0,
@@ -1161,8 +1234,89 @@ VOS_UINT32 AT_TestWikeyPara(VOS_UINT8 ucIndex)
 
 VOS_UINT32 AT_SetTbatPara(VOS_UINT8 ucIndex)
 {
+#if (FEATURE_ON == FEATURE_LTE)
     return atSetTBATPara(ucIndex);
 
+#else
+    AT_TBAT_OPERATION_DIRECTION_ENUM_UINT32 enTbatOperdirection;
+    VBAT_CALIBART_TYPE                      stAdcInfo;
+    VOS_UINT32                              ulRet;
+
+    /* 参数有效性检查 */
+    /* ^TBAT命令设置命令至少带2个参数: 操作类型和方向 */
+    if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    if ((0 == gastAtParaList[0].usParaLen)
+     || (0 == gastAtParaList[1].usParaLen))
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    /* ^TBAT命令设置命令参数检查:
+       数字电池电压设置操作必须有3.7V对应的HKADC值和4.2V对应的HKADC值
+       数字电池电压查询操作无<value1>和<value2>参数
+      */
+
+    /* V3R2-不支持电池模拟电压 */
+    if (AT_TBAT_BATTERY_ANALOG_VOLTAGE == gastAtParaList[0].ulParaValue)
+    {
+        return AT_CME_INCORRECT_PARAMETERS;
+    }
+
+    enTbatOperdirection = gastAtParaList[1].ulParaValue;
+    if (AT_TBAT_READ_FROM_UUT == enTbatOperdirection)
+    {
+        if (2 != gucAtParaIndex)
+        {
+            return AT_CME_INCORRECT_PARAMETERS;
+        }
+    }
+    else
+    {
+        if ((4 != gucAtParaIndex)
+         || (0 == gastAtParaList[2].usParaLen)
+         || (0 == gastAtParaList[3].usParaLen))
+        {
+            return AT_CME_INCORRECT_PARAMETERS;
+        }
+    }
+
+    if (AT_TBAT_READ_FROM_UUT == enTbatOperdirection)
+    {
+        /* 调用底软接口获取电池数字电压 */
+        if (TAF_SUCCESS == AT_FillAndSndAppReqMsg(gastAtClientTab[ucIndex].usClientId,
+                                                 gastAtClientTab[ucIndex].opId,
+                                                 DRV_AGENT_HKADC_GET_REQ,
+                                                 VOS_NULL_PTR,
+                                                 0,
+                                                 I0_WUEPS_PID_DRV_AGENT))
+        {
+            gastAtClientTab[ucIndex].CmdCurrentOpt = AT_CMD_TBAT_SET;     /*设置当前操作模式 */
+            return AT_WAIT_ASYNC_RETURN;                                                       /* 等待异步事件返回 */
+        }
+        else
+        {
+            return AT_ERROR;
+        }
+    }
+    else
+    {
+        /* 写参数到电池校准用的NV项90 en_NV_Item_BATTERY_ADC */
+        stAdcInfo.min_value = (VOS_UINT16)gastAtParaList[2].ulParaValue;
+        stAdcInfo.max_value = (VOS_UINT16)gastAtParaList[3].ulParaValue;
+        ulRet = TAF_ACORE_NV_WRITE(MODEM_ID_0, en_NV_Item_BATTERY_ADC, &stAdcInfo, sizeof(stAdcInfo));
+        if (NV_OK != ulRet)
+        {
+             AT_WARN_LOG("AT_SetTbatPara: Fail to write NV en_NV_Item_BATTERY_ADC.");
+             return AT_ERROR;
+        }
+
+        return AT_OK;
+    }
+#endif
     /*
     根据参数不同进行下述操作:
     1.  支持用户输入AT^TBAT=1,0获取电池电压数字值；
@@ -1217,9 +1371,11 @@ VOS_UINT32 AT_SetPstandbyPara(VOS_UINT8 ucIndex)
 {
     DRV_AGENT_PSTANDBY_REQ_STRU         stPstandbyInfo;
 
+#ifdef FEATURE_UPGRADE_TL
 
     TAF_MMA_PHONE_MODE_PARA_STRU        stPhoneModePara;
 
+#endif
 
     /* ^PSTANDBY设置命令有且仅有2个参数: 进入待机状态的时间长度和单板进入待机状态的切换时间 */
     if(AT_CMD_OPT_SET_PARA_CMD != g_stATParseCmd.ucCmdOptType)
@@ -1269,6 +1425,7 @@ VOS_UINT32 AT_SetPstandbyPara(VOS_UINT8 ucIndex)
     }
 
     /* V7R2采用关机进入低功耗流程流程 */
+#ifdef FEATURE_UPGRADE_TL
 
     stPhoneModePara.PhMode = TAF_PH_MODE_MINI;
 
@@ -1279,6 +1436,7 @@ VOS_UINT32 AT_SetPstandbyPara(VOS_UINT8 ucIndex)
 
         return AT_WAIT_ASYNC_RETURN;    /* 返回命令处理挂起状态 */
     }
+#endif
 
     return AT_SUCCESS;
 }
@@ -1723,18 +1881,22 @@ VOS_UINT32 AT_SetTseLrfPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 
+#if (FEATURE_ON == FEATURE_LTE)
     if ((AT_TSELRF_PATH_WCDMA_PRI!=gastAtParaList[0].ulParaValue)
      && (AT_TSELRF_PATH_WCDMA_DIV!=gastAtParaList[0].ulParaValue)
      && (AT_TSELRF_PATH_GSM !=gastAtParaList[0].ulParaValue))
     {
         return atSetTselrfPara(ucIndex);
     }
+#endif
 
+#if(FEATURE_UE_MODE_TDS == FEATURE_ON)
     if(AT_TSELRF_PATH_TD == gastAtParaList[0].ulParaValue)
     {
         return atSetTselrfPara(ucIndex);
     }
 
+#endif
     /* 参数不符合要求 */
     if ((1 != gucAtParaIndex)
      || (0 == gastAtParaList[0].usParaLen))
@@ -1839,7 +2001,54 @@ VOS_UINT32 AT_SetTseLrfPara(VOS_UINT8 ucIndex)
 VOS_UINT32 AT_QryTseLrfPara(VOS_UINT8 ucIndex)
 {
 
+#if(FEATURE_LTE == FEATURE_ON)
     return atQryTselrfPara(ucIndex);
+#else
+    VOS_UINT16                          usLength;
+
+    usLength = (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      "%s:%d%s",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      AT_TSELRF_PATH_TOTAL,
+                                      gaucAtCrLf);
+
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr + usLength,
+                                      "%s:%d%s",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      AT_TSELRF_PATH_GSM,
+                                      gaucAtCrLf);
+
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr + usLength,
+                                      "%s:%d%s",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      AT_TSELRF_PATH_WCDMA_PRI,
+                                      gaucAtCrLf);
+
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr + usLength,
+                                      "%s:%d%s",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      AT_TSELRF_PATH_WCDMA_DIV,
+                                      gaucAtCrLf);
+
+    usLength += (VOS_UINT16)At_sprintf(AT_CMD_MAX_LEN,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr,
+                                      (VOS_CHAR *)pgucAtSndCodeAddr + usLength,
+                                      "%s:%d",
+                                      g_stParseContext[ucIndex].pstCmdElement->pszCmdName,
+                                      AT_TSELRF_PATH_WIFI);
+
+    gstAtSendData.usBufLen = usLength;
+
+    return AT_OK;
+#endif
 
 }
 
@@ -2360,6 +2569,7 @@ VOS_UINT32 AT_TestHsicCmdPara(VOS_UINT8 ucIndex)
     return AT_OK;
 }
 
+#if(FEATURE_ON == FEATURE_UE_MODE_TDS)
 
 VOS_UINT32 At_TestTdsScalibPara(VOS_UINT8 ucIndex)
 {
@@ -2373,6 +2583,7 @@ VOS_UINT32 At_TestTdsScalibPara(VOS_UINT8 ucIndex)
     gstAtSendData.usBufLen = usLength;
     return AT_OK;
 }
+#endif
 
 
 VOS_UINT32 AT_TestSimlockUnlockPara( VOS_UINT8 ucIndex )
@@ -2649,11 +2860,13 @@ VOS_UINT32 AT_QryFPllStatusPara(VOS_UINT8 ucIndex)
     AT_PHY_RF_PLL_STATUS_REQ_STRU      *pstMsg;
     VOS_UINT32                          ulLength;
     VOS_UINT16                          usMsgId;
+#if (FEATURE_ON==FEATURE_LTE)
     if ((AT_RAT_MODE_FDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode)
             ||(AT_RAT_MODE_TDD_LTE == g_stAtDevCmdCtrl.ucDeviceRatMode))
     {
         return atQryFPllStatusPara(ucIndex);
     }
+#endif
     /*判断当前接入模式，只支持G/W*/
     if (AT_RAT_MODE_WCDMA == g_stAtDevCmdCtrl.ucDeviceRatMode)
     {
@@ -2750,7 +2963,9 @@ VOS_UINT32 AT_QryFpowdetTPara(VOS_UINT8 ucIndex)
 
     /*判断当前接入模式，只支持W*/
     if ( (AT_RAT_MODE_WCDMA != g_stAtDevCmdCtrl.ucDeviceRatMode)
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
       && (AT_RAT_MODE_CDMA != g_stAtDevCmdCtrl.ucDeviceRatMode)
+#endif
       && (AT_RAT_MODE_GSM != g_stAtDevCmdCtrl.ucDeviceRatMode)
       && (AT_RAT_MODE_FDD_LTE != g_stAtDevCmdCtrl.ucDeviceRatMode)
       && (AT_RAT_MODE_TDD_LTE != g_stAtDevCmdCtrl.ucDeviceRatMode) )
@@ -2769,12 +2984,14 @@ VOS_UINT32 AT_QryFpowdetTPara(VOS_UINT8 ucIndex)
         return AT_ERROR;
     }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
     /* CDMA的话，发送给UPHY_PID_CSDR_1X_CM */
     if (AT_RAT_MODE_CDMA == g_stAtDevCmdCtrl.ucDeviceRatMode)
     {
         pstMsg->ulReceiverPid = UPHY_PID_CSDR_1X_CM;
     }
     else
+#endif
     if (AT_RAT_MODE_GSM == g_stAtDevCmdCtrl.ucDeviceRatMode)
     {
         pstMsg->ulReceiverPid = AT_GetDestPid(ucIndex, I0_DSP_PID_GPHY);
@@ -3052,6 +3269,7 @@ VOS_UINT32 AT_Hex2Ascii_Revers(
     return VOS_OK;
 }
 
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_SetMeidPara(VOS_UINT8 ucIndex)
 {
@@ -3288,6 +3506,7 @@ VOS_UINT32 AT_RcvMtaMeidQryCnf(
     return VOS_OK;
 }
 
+#endif
 
 
 VOS_UINT32 AT_SetSlavePara(VOS_UINT8 ucIndex)
@@ -3886,6 +4105,7 @@ VOS_UINT16 AT_TasTestOut(
     }
     return usLength;
 }
+#if (FEATURE_ON == FEATURE_UE_MODE_CDMA)
 
 VOS_UINT32 AT_SetCdmaAttDiversitySwitch(VOS_UINT8 ucIndex)
 {
@@ -3914,6 +4134,7 @@ VOS_UINT32 AT_SetCdmaAttDiversitySwitch(VOS_UINT8 ucIndex)
 
     return AT_OK;
 }
+#endif
 
 VOS_UINT32 AT_SetMipiReadPara(VOS_UINT8 ucIndex)
 {

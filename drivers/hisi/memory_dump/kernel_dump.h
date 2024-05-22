@@ -7,6 +7,14 @@
 #define KERNELDUMP_CB_MAGIC 0xDEADBEEFDEADBEEF
 #define MAX_EXTRA_MEM 64
 #define MAX_DTB_SIZE 0x80000
+#define RESIZE_RESULT_NAME "resize_cb"
+#define SKP_DUMP_RESIZE_SUCCESS_FLAG       (0x55AA)
+#define SKP_DUMP_RESIZE_FAIL               (0x00)
+#define SKP_DUMP_SKP_FAIL                  (0x00)
+#define RESIZE_PROC_RIGHT                  (0660)
+#define RESIZE_FLAG_MAX                    (2)
+#define KDUMP_RESERVED_MAX                 (10)
+#define KDUMP_PAGE_SIZE                    (4096)
 
 struct kernel_dump_cb
 {
@@ -37,7 +45,8 @@ struct kernel_dump_cb
     u64 linear_kaslr_offset;/*linear mem offset for kaslr*/
 
 	u32 crc;
-	u32 resv;
+	u16 resize_flag;
+	u16 skp_flag;
 };
 #ifdef CONFIG_KERNELDUMP_KO_DBG
 extern int ko_dump(void);

@@ -46,7 +46,7 @@
 static inline bool dp_update_dp_connected_one(
 	pd_port_t *pd_port, uint32_t dp_connected, uint32_t dp_local_connected)
 {
-	bool valid_connected;
+	bool valid_connected = false;
 
 	if (dp_local_connected != DPSTS_BOTH_CONNECTED) {
 		valid_connected = DP_CHECK_DP_CONNECTED_MATCH(
@@ -626,7 +626,7 @@ bool dp_dfp_u_notify_dp_status_update(
 {
 	uint32_t svid;
 	bool oper_mode = false;
-	bool valid_connected;
+	bool valid_connected = false;
 	uint32_t dp_status;
 	pd_msg_t *pd_msg = pd_event->pd_msg;
 
@@ -701,7 +701,7 @@ bool dp_dfp_u_notify_dp_configuration(
 bool dp_dfp_u_notify_attention(pd_port_t *pd_port,
 	svdm_svid_data_t *svid_data, pd_event_t *pd_event)
 {
-	bool valid_connected;
+	bool valid_connected = false;
 	uint32_t dp_status = pd_event->pd_msg->payload[1];
 
 	DPM_DBG("dp_status: 0x%x\r\n", dp_status);
@@ -770,7 +770,7 @@ void dp_ufp_u_request_exit_mode(
 static inline bool dp_ufp_u_update_dp_connected(
 	pd_port_t *pd_port, uint32_t dp_status)
 {
-	bool valid_connected;
+	bool valid_connected = false;
 	uint32_t dp_connected, dp_local_connected;
 
 	dp_connected = PD_VDO_DPSTS_CONNECT(dp_status);
@@ -909,7 +909,7 @@ int dp_ufp_u_request_dp_config(pd_port_t *pd_port, pd_event_t *pd_event)
 
 void dp_ufp_u_send_dp_attention(pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	svdm_svid_data_t *svid_data;
+	svdm_svid_data_t *svid_data = NULL;
 
 	switch (pd_port->dp_ufp_u_state) {
 	case DP_UFP_U_STARTUP:

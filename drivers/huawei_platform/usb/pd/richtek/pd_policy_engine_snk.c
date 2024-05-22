@@ -35,6 +35,7 @@ void pe_snk_startup_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 	pd_port->request_v = TCPC_VBUS_SINK_5V;
 	pd_port->state_machine = PE_STATE_MACHINE_SINK;
 	pd_reset_protocol_layer(pd_port);
+	pd_port->dpm_flags &= ~DPM_FLAGS_CHECK_CABLE_ID_DFP;
 
 #ifdef CONFIG_USB_PD_RESET_CABLE
 	pd_port->reset_cable = false;

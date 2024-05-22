@@ -32,9 +32,10 @@
 #include <linux/proc_fs.h>
 #include <linux/sysctl.h>
 #include <linux/uaccess.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/of_irq.h>
 #include <linux/version.h>
+#include <asm/tlbflush.h>
 #include "rdr_print.h"
 #include "rdr_inner.h"
 #include "rdr_field.h"
@@ -46,7 +47,10 @@
 #include "hifi_om.h"
 #include "usbaudio_ioctl.h"
 #include <linux/hisi/usb/hisi_hifi_usb.h>
+#ifdef CONFIG_HUAWEI_DSM
 #include <dsm_audio/dsm_audio.h>
+#endif
+#ifdef SECOS_RELOAD_HIFI
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-contiguous.h>
@@ -62,6 +66,7 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 #include "teek_client_id.h"
+#endif
 
 /*lint -e750 -e838 -e730 -e715*/
 #define RDR_HIFI_DUMP_ADDR				(HIFI_DUMP_BIN_ADDR)
@@ -106,12 +111,13 @@ struct rdr_soc_des_s {
 
 	struct semaphore dump_sem;
 	struct semaphore handler_sem;
-	struct wake_lock rdr_wl;
+	struct wakeup_source rdr_wl;
 	struct task_struct *kdump_task;
 	struct task_struct *khandler_task;
 };
 static struct rdr_soc_des_s soc_des;
 
+#ifdef SECOS_RELOAD_HIFI
 #define DTS_COMP_HIFICMA_NAME    "hisilicon,hifi-cma"
 #define HIFI_CMA_IMAGE_SIZE    (0x600000UL)
 struct hisi_hifi_cma_struct {
@@ -119,6 +125,7 @@ struct hisi_hifi_cma_struct {
 };
 
 struct hisi_hifi_cma_struct hificma_dev;
+#endif
 
 /*mem_dyn*/
 char *mem_dyn_type[] =
@@ -267,7 +274,7 @@ static int parse_sochifi_innerlog(char *original_data, unsigned int original_dat
 	int i;
 	int ret = 0;
 	unsigned int index;
-	struct innerlog_obj *innerlog;
+	struct innerlog_obj *innerlog = NULL;
 
 	if (NULL == original_data || NULL == parsed_data) {
 		BB_PRINT_ERR("input data buffer is null\n");
@@ -312,9 +319,9 @@ static int parse_sochifi_dynmem(char *original_data, unsigned int original_data_
 	char *parsed_data, unsigned int parsed_data_size, unsigned int core_type)
 {
 	int i;
-	struct mem_dyn_ctrl *dynmem;
-	struct mem_dyn_status *status;
-	struct mem_dyn_node *nodes;
+	struct mem_dyn_ctrl *dynmem = NULL;
+	struct mem_dyn_status *status = NULL;
+	struct mem_dyn_node *nodes = NULL;
 
 	if (NULL == original_data || NULL == parsed_data) {
 		BB_PRINT_ERR("input data buffer is null\n");
@@ -394,8 +401,8 @@ static int parse_sochifi_iccdebug(char *original_data, unsigned int original_dat
 	char *parsed_data, unsigned int parsed_data_size, unsigned int core_type)
 {
 	unsigned int i = 0;
-	struct icc_dbg *dbg;
-	struct icc_uni_msg_info *msg;
+	struct icc_dbg *dbg = NULL;
+	struct icc_uni_msg_info *msg = NULL;
 
 	if (NULL == original_data || NULL == parsed_data) {
 		BB_PRINT_ERR("input data buffer is null\n");
@@ -630,7 +637,7 @@ static void dump_hifi(const char *filepath)
 
 static int reset_hifi_sec(void)
 {
-	struct drv_hifi_sec_ddr_head *head;
+	struct drv_hifi_sec_ddr_head *head = NULL;
 	char *sec_head = NULL;
 	char *sec_addr = NULL;
 	unsigned int i;
@@ -650,8 +657,8 @@ static int reset_hifi_sec(void)
 			BB_PRINT_PN("sec_id = %d, type = 0x%x, src_addr = 0x%pK, des_addr = 0x%pK, size = %d\n",
 					i,
 					head->sections[i].type,
-					(void *)(unsigned long)(head->sections[i].src_addr),
-					(void *)(unsigned long)(head->sections[i].des_addr),
+					(void *)(uintptr_t)(head->sections[i].src_addr),
+					(void *)(uintptr_t)(head->sections[i].des_addr),
 					head->sections[i].size);
 			sec_addr = (char *)ioremap_wc((phys_addr_t)head->sections[i].des_addr,
 							(unsigned long)head->sections[i].size);
@@ -716,15 +723,14 @@ static int irq_handler_thread(void *arg)
 		BB_PRINT_PN("%s():[sochifi timestamp: %u]sochifi watchdog coming\n", __func__, HIFI_STAMP);
 		usbaudio_ctrl_hifi_reset_inform();
 		hifi_usb_hifi_reset_inform();
+		hifi_reset_release_syscache();
 		if (is_dsp_power_on()) {
 			hisi_rdr_nmi_notify_hifi();
 			hisi_rdr_remap_init();
 		} else {
 			BB_PRINT_ERR("hifi is power off, do not send nmi & remap\n");
 		}
-
 		hifireset_runcbfun(DRV_RESET_CALLCBFUN_RESET_BEFORE);
-
 		BB_PRINT_PN("enter rdr process for sochifi watchdog\n");
 		rdr_system_error((unsigned int)RDR_AUDIO_SOC_WD_TIMEOUT_MODID, 0, 0);
 		BB_PRINT_PN("exit rdr process for sochifi watchdog\n");
@@ -768,10 +774,11 @@ static int hisi_rdr_ipc_notify_lpm3(u32 *msg, int len)
 	return ret;
 }
 
+#ifdef SECOS_RELOAD_HIFI
 static bool is_config_cma_secure_by_atf(void)
 {
 	struct hisi_hifi_cma_struct *dev = &hificma_dev;
-	const char *cma_sec_config;
+	const char *cma_sec_config = NULL;
 
 	if (!of_property_read_string(dev->device->of_node, "cma-sec-config", &cma_sec_config)) {
 		if (!strncmp(cma_sec_config, "atf", strlen("atf"))) {
@@ -790,7 +797,7 @@ static int rdr_hifi_cma_alloc(phys_addr_t *hifi_addr)
 {
 	struct hisi_hifi_cma_struct *dev = &hificma_dev;
 	phys_addr_t phys;
-	struct page *page;
+	struct page *page = NULL;
 	unsigned int align_val = 0;
 
 	if (of_property_read_u32(dev->device->of_node, "hisi-align", &align_val)) {
@@ -814,25 +821,26 @@ static int rdr_hifi_cma_alloc(phys_addr_t *hifi_addr)
 
 	__dma_unmap_area(phys_to_virt(phys), HIFI_CMA_IMAGE_SIZE, DMA_BIDIRECTIONAL);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
-	change_secpage_range(phys, (unsigned long)phys_to_virt(phys),
+	change_secpage_range(phys, (uintptr_t)phys_to_virt(phys),
 		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_DEVICE_nGnRE));
 #else
-	create_mapping_late(phys, (unsigned long)phys_to_virt(phys),
+	create_mapping_late(phys, (uintptr_t)phys_to_virt(phys),
 		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_DEVICE_nGnRE));
 #endif
-
+	flush_tlb_all();
 	if (is_config_cma_secure_by_atf()) {
 		if (-1 == atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
 								phys, HIFI_CMA_IMAGE_SIZE,
 								ACCESS_REGISTER_FN_SUB_ID_DDR_HIFI_SEC_OPEN)) {
 			BB_PRINT_ERR("atfd_hisi_service_access_register_smc (hifi) set err!\n");
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
-			change_secpage_range(phys, (unsigned long)phys_to_virt(phys),
+			change_secpage_range(phys, (uintptr_t)phys_to_virt(phys),
 				HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
 #else
-			create_mapping_late(phys, (unsigned long)phys_to_virt(phys),
+			create_mapping_late(phys, (uintptr_t)phys_to_virt(phys),
 				HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
 #endif
+			flush_tlb_all();
 			(void)dma_release_from_contiguous(dev->device,
 				phys_to_page(phys),
 				(int)HIFI_CMA_IMAGE_SIZE >> PAGE_SHIFT);
@@ -841,7 +849,7 @@ static int rdr_hifi_cma_alloc(phys_addr_t *hifi_addr)
 	}
 
 	*hifi_addr = phys;
-	BB_PRINT_PN("rdr:%s(): address 0x%pK\n", __func__, (void *)phys);
+	BB_PRINT_PN("rdr:%s(): address 0x%pK\n", __func__, (void *)(uintptr_t)phys);
 	return 0;
 }
 
@@ -863,12 +871,13 @@ static int rdr_hifi_cma_free(phys_addr_t addr)
 		}
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
-	change_secpage_range(addr, (unsigned long)phys_to_virt(addr),
+	change_secpage_range(addr, (uintptr_t)phys_to_virt(addr),
 		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
 #else
 	create_mapping_late(addr, (unsigned long)phys_to_virt(addr),
 		HIFI_CMA_IMAGE_SIZE, __pgprot(PROT_NORMAL));
 #endif
+	flush_tlb_all();
 	(void)dma_release_from_contiguous(dev->device,
 		phys_to_page(addr),
 		(int)HIFI_CMA_IMAGE_SIZE >> PAGE_SHIFT);
@@ -885,7 +894,7 @@ static int get_hifi_image_size(unsigned int *size)
 	struct drv_hifi_image_head hifi_head = {{0}};
 	mm_segment_t old_fs;
 
-	if (flash_find_ptn(PART_FW_HIFI, path) < 0) {
+	if (flash_find_ptn_s(PART_FW_HIFI, path, sizeof(path)) < 0) {
 		BB_PRINT_ERR("partion_name(hifi) is not in partion table!\n");
 		return -EINVAL;
 	}
@@ -917,7 +926,7 @@ static int get_hifi_image_size(unsigned int *size)
 static bool is_reload_hifi_by_secos(void)
 {
 	struct hisi_hifi_cma_struct *dev = &hificma_dev;
-	const char * enable_status;
+	const char * enable_status = NULL;
 
 	if (!of_property_read_string(dev->device->of_node, "enable-status", &enable_status)) {
 		if (!strncmp(enable_status, "true", strlen("true")))
@@ -970,6 +979,7 @@ end:
 
 	return ret;
 }
+#endif
 
 static int reset_hifi(void)
 {
@@ -979,6 +989,7 @@ static int reset_hifi(void)
 
 	BB_PRINT_START();
 
+#ifdef SECOS_RELOAD_HIFI
 	if (is_reload_hifi_by_secos()) {
 		BB_PRINT_PN("rdr:%s(): reload hifi by secos\n", __func__);
 		ret = reload_hifi_by_secos();
@@ -987,6 +998,7 @@ static int reset_hifi(void)
 			BUG_ON(1);
 		}
 	}
+#endif
 
 	hifi_power_status_addr = ioremap_wc(DRV_DSP_POWER_STATUS_ADDR, (unsigned long)0x4);
 	if (NULL == hifi_power_status_addr) {
@@ -1056,13 +1068,13 @@ struct sreset_mgr_lli *reset_link_insert(struct sreset_mgr_lli *plink, struct sr
  输入参数  :
 			struct sreset_mgr_lli *plink,管理链表，注意，允许为空.
 			const char *pname, 组件注册的名字
-			pdrv_reset_cbfun cbfun,    组件注册的回调函数
+			hifi_reset_cbfunc cbfun,    组件注册的回调函数
 			int userdata,组件的私有数据
 			Int Priolevel, 回调函数调用优先级 0-49，其中0-9 保留。
  输出参数  : 无
  返 回 值  : int
 *****************************************************************************/
-struct sreset_mgr_lli *reset_do_regcbfunc(struct sreset_mgr_lli *plink, const char *pname, pdrv_reset_cbfun pcbfun, int userdata, int priolevel)
+struct sreset_mgr_lli *reset_do_regcbfunc(struct sreset_mgr_lli *plink, const char *pname, hifi_reset_cbfunc pcbfun, int userdata, int priolevel)
 {
 	struct sreset_mgr_lli  *phead = plink;
 	struct sreset_mgr_lli  *pmgr_unit = NULL;
@@ -1100,24 +1112,26 @@ struct sreset_mgr_lli *reset_do_regcbfunc(struct sreset_mgr_lli *plink, const ch
 	return phead;
 }
 
+#ifdef CONFIG_HISI_HIFI_BB
 /*****************************************************************************
  函 数 名  : hifireset_regcbfunc
  功能描述  : 用于其它组件注册回调函数，处理HIFI复位前后相关数据。
  输入参数  :
 			const char *pname, 组件注册的名字
-			pdrv_reset_cbfun cbfun,    组件注册的回调函数
+			hifi_reset_cbfunc cbfun,    组件注册的回调函数
 			int userdata,组件的私有数据
 			Int Priolevel, 回调函数调用优先级 0-49，其中0-9 保留。
  输出参数  : 无
  返 回 值  : int
 *****************************************************************************/
-int hifireset_regcbfunc(const char *pname, pdrv_reset_cbfun pcbfun, int userdata, int priolevel)
+int hifireset_regcbfunc(const char *pname, hifi_reset_cbfunc pcbfun, int userdata, int priolevel)
 {
 	g_pmgr_hifireset_data = reset_do_regcbfunc(g_pmgr_hifireset_data, pname, pcbfun, userdata, priolevel);
 	BB_PRINT_PN("%s registered a cbfun for hifi reset\n", pname);
 
 	return 0;
 }
+#endif /* end of CONFIG_HISI_HIFI_BB */
 
 /*****************************************************************************
  函 数 名  :  hifireset_doruncbfun
@@ -1132,7 +1146,10 @@ int hifireset_doruncbfun(const char *pname, enum DRV_RESET_CALLCBFUN_MOMENT epar
 	int  iresult = BSP_RESET_OK;
 	struct sreset_mgr_lli  *phead = g_pmgr_hifireset_data;
 
-	WARN_ON(NULL == pname);
+	if (pname == NULL) {
+		BB_PRINT_ERR("pname is null\n");
+		return -EINVAL;
+	}
 
 	/*不判断模块名字,按顺序执行*/
 	if (strncmp(pname, RESET_CBFUN_IGNORE_NAME, strlen(RESET_CBFUN_IGNORE_NAME)) == 0) {
@@ -1215,16 +1232,19 @@ void rdr_audio_soc_reset(u32 modid, u32 etype, u64 coreid)
 
 	ret = reset_hifi();
 	if (ret) {
-		wake_unlock(&soc_des.rdr_wl);/*lint !e455*/
+		__pm_relax(&soc_des.rdr_wl);/*lint !e455*/
 		BB_PRINT_ERR("rdr:%s():reset hifi error\n", __func__);
 		return;
 	}
 
 /* todo :sochifi_watchdog_send_event undefined in dallas */
+#ifdef CONFIG_HIFI_DSP_ONE_TRACK
 	sochifi_watchdog_send_event();
+#endif
+
 	hifireset_runcbfun(DRV_RESET_CALLCBFUN_RESET_AFTER);
 
-	wake_unlock(&soc_des.rdr_wl);/*lint !e455*/
+	__pm_relax(&soc_des.rdr_wl);/*lint !e455*/
 
 	BB_PRINT_END();
 
@@ -1238,7 +1258,7 @@ static irqreturn_t soc_wtd_irq_handler(int irq, void *data)
 	writel(DRV_WATCHDOG_CONTROL_DISABLE, soc_des.control_addr);
 	writel(DRV_WATCHDOG_LOCK_NUM, soc_des.lock_addr);
 
-	wake_lock(&soc_des.rdr_wl);
+	__pm_stay_awake(&soc_des.rdr_wl);
 
 	up(&soc_des.handler_sem);
 
@@ -1269,7 +1289,6 @@ static unsigned int rdr_get_hifi_watchdog_irq_num(void)
 	return irq_num;
 }
 
-
 int rdr_audio_soc_init(void)
 {
 	int ret = 0;
@@ -1286,7 +1305,7 @@ int rdr_audio_soc_init(void)
 
 	sema_init(&soc_des.dump_sem, 0);
 	sema_init(&soc_des.handler_sem, 0);
-	wake_lock_init(&soc_des.rdr_wl, WAKE_LOCK_SUSPEND, "rdr_sochifi");
+	wakeup_source_init(&soc_des.rdr_wl, "rdr_sochifi");
 	soc_des.kdump_task = NULL;
 	soc_des.khandler_task = NULL;
 
@@ -1337,9 +1356,11 @@ int rdr_audio_soc_init(void)
 		goto error;
 	}
 
+
 	BB_PRINT_END();
 
 	return ret;
+
 
 error:
 	if (soc_des.kdump_task != NULL) {
@@ -1354,7 +1375,7 @@ error:
 		soc_des.khandler_task = NULL;
 	}
 
-	wake_lock_destroy(&soc_des.rdr_wl);
+	wakeup_source_trash(&soc_des.rdr_wl);
 
 	if (NULL != soc_des.lock_addr) {
 		iounmap(soc_des.lock_addr);
@@ -1380,6 +1401,7 @@ void rdr_audio_soc_exit(void)
 {
 	BB_PRINT_START();
 
+
 	if (soc_des.wdt_irq_num > 0)
 		free_irq(soc_des.wdt_irq_num, NULL);
 
@@ -1395,7 +1417,7 @@ void rdr_audio_soc_exit(void)
 		soc_des.khandler_task = NULL;
 	}
 
-	wake_lock_destroy(&soc_des.rdr_wl);
+	wakeup_source_trash(&soc_des.rdr_wl);
 
 	if (NULL != soc_des.lock_addr) {
 		iounmap(soc_des.lock_addr);
@@ -1417,6 +1439,7 @@ void rdr_audio_soc_exit(void)
 	return;
 }
 
+#ifdef SECOS_RELOAD_HIFI
 static int hisi_hifi_cma_probe(struct platform_device *pdev)
 {
 	struct hisi_hifi_cma_struct *dev = (struct hisi_hifi_cma_struct *)&hificma_dev;
@@ -1479,4 +1502,5 @@ module_exit(hisi_hifi_cma_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Hisilicon hifi reset cma module");
+#endif
 

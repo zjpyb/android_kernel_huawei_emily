@@ -1,3 +1,20 @@
+/*
+ * drivers/inputhub/contexthub_ext_log.c
+ *
+ * functions for sensorhub ext log
+ *
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #include <linux/err.h>
 #include "linux/spinlock_types.h"
 #include <linux/types.h>
@@ -14,11 +31,12 @@
 
 
 static struct inputhub_ext_log_notifier inputhub_ext_log_mag;
-static bool inited = false;
+static bool inited;
 
-int inputhub_ext_log_register_handler(int tag, int (*notify)(const pkt_header_t* head))
+int inputhub_ext_log_register_handler(int tag,
+		int (*notify)(const pkt_header_t *head))
 {
-	struct inputhub_ext_notifier_node* pnode, *n;
+	struct inputhub_ext_notifier_node *pnode, *n;
 	int ret = 0;
 	unsigned long flags = 0;
 
@@ -27,24 +45,23 @@ int inputhub_ext_log_register_handler(int tag, int (*notify)(const pkt_header_t*
 		return -EINVAL;
 	}
 
-	if ((!(TAG_BEGIN <= tag && tag < TAG_END)) || (NULL == notify))
-	{ return -EINVAL; }
+	if ((!(tag >= TAG_BEGIN && tag < TAG_END)) || (!notify))
+		return -EINVAL;
 
 	spin_lock_irqsave(&inputhub_ext_log_mag.lock, flags);
-	/*avoid regist more than once*/
+	/* avoid regist more than once */
 	list_for_each_entry_safe(pnode, n, &inputhub_ext_log_mag.head, entry) {
 		if (tag == pnode->tag) {
-			hwlog_warn
-			("inputhub_ext_log tag = %d, notify = %pK has already registed in %s\n!",
-			 tag, notify, __func__);
-			goto out;   /*return when already registed*/
+			hwlog_warn("inputhub_ext_log tag = %d, notify = %pK has already registed in %s\n",
+				tag, notify, __func__);
+			goto out; /* return when already registed */
 		}
 	}
 
-	/*make mcu_notifier_node*/
+	/* make mcu_notifier_node */
 	pnode = kzalloc(sizeof(struct inputhub_ext_notifier_node), GFP_ATOMIC);
 
-	if (NULL == pnode) {
+	if (!pnode) {
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -52,7 +69,7 @@ int inputhub_ext_log_register_handler(int tag, int (*notify)(const pkt_header_t*
 	pnode->tag = tag;
 	pnode->notify = notify;
 	hwlog_info("%s tag %d registered\n", __func__, tag);
-	/*add to list*/
+	/* add to list */
 	list_add(&pnode->entry, &inputhub_ext_log_mag.head);
 out:
 	spin_unlock_irqrestore(&inputhub_ext_log_mag.lock, flags);
@@ -60,19 +77,19 @@ out:
 	return ret;
 }
 
-int is_inputhub_ext_log_notify(const pkt_header_t* head)
+int is_inputhub_ext_log_notify(const pkt_header_t *head)
 {
-	return (head->tag == TAG_LOG_BUFF)
-		   && (CMD_EXT_LOG_FLUSH == head->cmd);
+	return (head->tag == TAG_LOG_BUFF) &&
+			(head->cmd == CMD_EXT_LOG_FLUSH);
 }
 
-static int inputhub_ext_log_process(const pkt_header_t* head)
+static int inputhub_ext_log_process(const pkt_header_t *head)
 {
 	int found = 0;
-	ext_logger_req_t* pkt_ext = (ext_logger_req_t*)head;
+	ext_logger_req_t *pkt_ext = (ext_logger_req_t *)head;
+	/* search mcu_notifier, call all call_backs */
+	struct inputhub_ext_notifier_node *pos, *n;
 
-	/*search mcu_notifier, call all call_backs*/
-	struct inputhub_ext_notifier_node* pos, *n;
 	list_for_each_entry_safe(pos, n, &inputhub_ext_log_mag.head, entry) {
 		if (pos->tag == pkt_ext->tag && pos->notify) {
 			hwlog_info("%s tag %d handled\n", __func__, head->tag);
@@ -81,9 +98,8 @@ static int inputhub_ext_log_process(const pkt_header_t* head)
 		}
 	}
 
-	if (!found) {
+	if (!found)
 		hwlog_err("inputhub_ext_log_process tag %d not found\n", head->tag);
-	}
 
 	return 0;
 }
@@ -92,9 +108,10 @@ int inputhub_ext_log_init(void)
 {
 	INIT_LIST_HEAD(&inputhub_ext_log_mag.head);
 	spin_lock_init(&inputhub_ext_log_mag.lock);
-	register_mcu_event_notifier(TAG_LOG_BUFF, CMD_EXT_LOG_FLUSH, inputhub_ext_log_process);
+	register_mcu_event_notifier(TAG_LOG_BUFF, CMD_EXT_LOG_FLUSH,
+		inputhub_ext_log_process);
 	inited = true;
-	hwlog_info("inputhub_ext_log_init success !\n");
+	hwlog_info("inputhub_ext_log_init success\n");
 	return 0;
 }
 

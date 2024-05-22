@@ -3,7 +3,7 @@
  *
  * vsys switch driver
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,109 +19,98 @@
 #ifndef _VSYS_SWITCH_H_
 #define _VSYS_SWITCH_H_
 
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 
-#define BUCK_CHNL_ENABLE                (1)
-#define BUCK_CHNL_DISABLE               (0)
-#define BUCK_VOUT_LOW                   (0)
-#define BUCK_VOUT_HIGH                  (1)
+#define BUCK_CHNL_ENABLE                1
+#define BUCK_CHNL_DISABLE               0
+#define BUCK_VOUT_LOW                   0
+#define BUCK_VOUT_HIGH                  1
 
-#define SC_CHNL_ENABLE                  (1)
-#define SC_CHNL_DISABLE                 (0)
+#define SC_CHNL_ENABLE                  1
+#define SC_CHNL_DISABLE                 0
 
-#define VSYS_BUCK_OPEN                  (0)
-#define VSYS_SC_OPEN                    (1)
+#define VSYS_BUCK_OPEN                  0
+#define VSYS_SC_OPEN                    1
 
-#define CONTROL_INTERVAL                (2000) /* ms */
+#define CONTROL_INTERVAL                2000 /* ms */
 
 /* unit: mV */
-#define VBATT_TH_DEFAULT                (7500)
-#define VBATT_TH_MAX                    (8800)
-#define VBATT_TH_MIN                    (6400)
-#define VBATT_BASE_DEFAULT              (7000)
-#define VBATT_GAP_DEFAULT               (200)
+#define VBATT_TH_DEFAULT                7500
+#define VBATT_TH_MAX                    8800
+#define VBATT_TH_MIN                    6400
+#define VBATT_BASE_DEFAULT              7000
+#define VBATT_GAP_DEFAULT               200
 
-#define DISCHG_CURR_MAX                 (2000) /* mA */
-#define COMP_RES_DEFAULT                (140) /* mohm */
+#define DISCHG_CURR_MAX                 2000 /* mA */
+#define COMP_RES_DEFAULT                140  /* mohm */
 
 /* length of moving average filter */
-#define MAF_BUFFER_LEN                  (10)
+#define MAF_BUFFER_LEN                  10
 
 /* mA positive: discharging  negative: charging */
 #define IBATT_VAL_MAX                   (-6000) /* mA */
-#define RBATT_VAL_MAX                   (10000) /* mohm * 10 * 2 */
-#define VBATT_VAL_MIN                   (6400) /* mV */
+#define RBATT_VAL_MAX                   10000   /* mohm * 10 * 2 */
+#define VBATT_VAL_MIN                   6400    /* mV */
 
-#define SWITCH_VSYS_BUCK                (0)
-#define SWITCH_VSYS_SC                  (1)
-#define SWITCH_VSYS_AUTO                (2)
+#define SWITCH_VSYS_BUCK                0
+#define SWITCH_VSYS_SC                  1
+#define SWITCH_VSYS_AUTO                2
 
-#define RBATT_SF_ROWS_MAX               (20)
-#define RBATT_SF_COLS_MAX               (20)
-#define RBATT_AGING_PARA_LEVEL          (8)
+#define RBATT_SF_ROWS_MAX               20
+#define RBATT_SF_COLS_MAX               20
+#define RBATT_AGING_PARA_LEVEL          8
 
-#define TEN                             (10)
-#define HUNDRED                         (100)
-#define THOUSAND                        (1000)
+#define TEN                             10
+#define HUNDRED                         100
+#define THOUSAND                        1000
 
-#define SWITCH_SC_RETRY_MAX             (8)
+#define SWITCH_SC_RETRY_MAX             8
 
 enum vsys_sc_id {
 	VSYS_SC_BEGIN = 0,
-
 	VSYS_SC_DA9313 = VSYS_SC_BEGIN,
-
 	VSYS_SC_END,
 };
 
 enum vsys_ovp_switch_id {
 	VSYS_OVP_SWITCH_BEGIN = 0,
-
 	VSYS_OVP_SWITCH_FPF2283 = VSYS_OVP_SWITCH_BEGIN,
-
 	VSYS_OVP_SWITCH_END,
 };
 
 enum vsys_sc_int_type {
 	VSYS_SC_INT_BEGIN = 0,
-
 	VSYS_SC_INT_NOT_PG = VSYS_SC_INT_BEGIN,
-
 	VSYS_SC_INT_END,
 };
 
 enum vsys_sc_set_state_result {
 	VSYS_SC_SET_STATE_BEGIN = 0,
-
 	VSYS_SC_SET_STATE_SUCC = VSYS_SC_SET_STATE_BEGIN,
 	VSYS_SC_SET_GPIO_NONKEY_FAIL,
 	VSYS_SC_SET_GPIO_EN_FAIL,
 	VSYS_SC_SET_TEST_REGS_FAIL,
 	VSYS_SC_SET_MODE_CTRL_REG_FAIL,
 	VSYS_SC_NOT_PG,
-
 	VSYS_SC_SET_STATE_END,
 };
 
 enum vsys_switch_sysfs_type {
 	VSYS_SWITCH_SYSFS_BEGIN = 0,
-
 	VSYS_SWITCH_SYSFS_SWITCH_VSYS = VSYS_SWITCH_SYSFS_BEGIN,
 	VSYS_SWITCH_SYSFS_ENABLE_SC,
 	VSYS_SWITCH_SYSFS_ENABLE_BUCK,
 	VSYS_SWITCH_SYSFS_VBATT_TH,
 	VSYS_SWITCH_SYSFS_VSYS_VOLT,
 	VSYS_SWITCH_SYSFS_VSYS_CHNL,
-
 	VSYS_SWITCH_SYSFS_END,
 };
 
 enum vsys_switch_rbatt_aging_para_info {
 	RBATT_AGING_PARA_INFO_BEGIN = 0,
-
 	RBATT_AGING_PARA_INFO_CYCLE = RBATT_AGING_PARA_INFO_BEGIN,
 	RBATT_AGING_PARA_INFO_COEFFICIENT,
-
 	RBATT_AGING_PARA_INFO_TOTAL,
 };
 
@@ -156,7 +145,6 @@ struct vsys_switch_state_info {
 
 struct vsys_buck_device_ops {
 	const char *chip_name;
-
 	int (*get_state)(void);
 	int (*set_state)(int enable);
 	int (*get_vout)(void);
@@ -165,15 +153,14 @@ struct vsys_buck_device_ops {
 
 struct vsys_sc_device_ops {
 	const char *chip_name;
-
 	int (*get_state)(void);
 	int (*set_state)(int enable);
 	int (*get_id)(int *id);
+	int (*set_frequency_mode)(u8 mode);
 };
 
 struct vsys_ovp_switch_device_ops {
 	const char *chip_name;
-
 	int (*set_state)(int enable);
 	int (*get_state)(void);
 	int (*get_id)(int *id);
@@ -210,7 +197,7 @@ struct vsys_switch_device_info {
 	struct notifier_block sc_event_nb;
 	struct work_struct sc_event_work;
 	struct delayed_work ctrl_work;
-	struct wake_lock wakelock;
+	struct wakeup_source wakelock;
 	struct vsys_buck_device_ops *buck_ops;
 	struct vsys_sc_device_ops *sc_ops;
 	struct vsys_ovp_switch_device_ops *ovp_ops;
@@ -223,13 +210,38 @@ struct vsys_switch_device_info {
 	int sc_event_type;
 	int switch_sc_retry_num;
 	bool cancel_ctrl_work_flag;
+	bool support_sc_chnl;
 };
 
 extern struct atomic_notifier_head vsys_sc_event_nh;
 extern struct device *vsys_switch_dev;
 
+#ifdef CONFIG_HUAWEI_VSYS_SWITCH
 int vsys_buck_ops_register(struct vsys_buck_device_ops *ops);
 int vsys_sc_ops_register(struct vsys_sc_device_ops *ops);
 int vsys_ovp_switch_ops_register(struct vsys_ovp_switch_device_ops *ops);
+int vsys_switch_set_sc_frequency_mode(u8 mode);
+#else
+static inline int vsys_buck_ops_register(struct vsys_buck_device_ops *ops)
+{
+	return -1;
+}
+
+static inline int vsys_sc_ops_register(struct vsys_sc_device_ops *ops)
+{
+	return -1;
+}
+
+static inline int vsys_ovp_switch_ops_register(
+	struct vsys_ovp_switch_device_ops *ops)
+{
+	return -1;
+}
+
+static inline int vsys_switch_set_sc_frequency_mode(u8 mode)
+{
+	return 0;
+}
+#endif /* CONFIG_HUAWEI_VSYS_SWITCH */
 
 #endif /* _VSYS_SWITCH_H_ */

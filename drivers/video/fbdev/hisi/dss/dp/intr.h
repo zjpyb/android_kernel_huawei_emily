@@ -29,8 +29,8 @@
  */
 
 /*
- * Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
- */
+* Copyright (c) 2017 Hisilicon Tech. Co., Ltd. Integrated into the Hisilicon display system.
+*/
 
 #ifndef __DPTX_INTR_H__
 #define __DPTX_INTR_H__
@@ -39,12 +39,18 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 
-#define MAX_AUX_RETRY_COUNT 6
+#define MAX_AUX_RETRY_COUNT 11
 #define MAX_EXT_BLOCKS 3
 #define AUX_RETRY_DELAY_TIME 100
 #define DP_DMD_REPORT_SIZE 900
+#define MST_DOWN_REP_MAX_LENGTH 1024
 
 extern uint32_t g_bit_hpd_status;
+
+struct mst_msg_info {
+	uint8_t msg[MST_DOWN_REP_MAX_LENGTH];
+	uint8_t msg_len;
+};
 
 enum dptx_hot_plug_type{
 	Hot_Plug_OUT = 0,
@@ -71,4 +77,5 @@ int handle_hotplug(struct hisi_fb_data_type *hisifd);
 void dptx_hpd_handler(struct dp_ctrl *dptx, bool plugin, uint8_t dp_lanes);
 void dptx_hpd_irq_handler(struct dp_ctrl *dptx);
 int dptx_triger_media_transfer(struct dp_ctrl *dptx, bool benable);
+int drm_dp_calc_pbn_mode(int clock, int bpp);
 #endif

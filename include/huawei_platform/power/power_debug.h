@@ -3,7 +3,7 @@
  *
  * debug for power module
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,28 +19,26 @@
 #ifndef _POWER_DEBUG_H_
 #define _POWER_DEBUG_H_
 
-#define POWER_DBG_NODE_NAME_LEN      (16)
+#define POWER_DBG_ITEM_NAME_MAX    256
 
 /* power debugfs interface template file operations */
-typedef ssize_t (*power_dgb_show)(void *, char *, ssize_t);
-typedef ssize_t (*power_dgb_store)(void *, const char *, ssize_t);
+typedef ssize_t (*power_dbg_show)(void *, char *, size_t);
+typedef ssize_t (*power_dbg_store)(void *, const char *, size_t);
 
 struct power_dbg_attr {
-	char name[POWER_DBG_NODE_NAME_LEN];
+	char name[POWER_DBG_ITEM_NAME_MAX];
 	void *dev_data;
-	power_dgb_show show;
-	power_dgb_store store;
+	power_dbg_show show;
+	power_dbg_store store;
 	struct list_head list;
 };
 
 #ifdef CONFIG_HUAWEI_POWER_DEBUG
 void power_dbg_ops_register(char *name, void *dev_data,
-	power_dgb_show show, power_dgb_store store);
-
+	power_dbg_show show, power_dbg_store store);
 #else
-
 static inline void power_dbg_ops_register(char *name, void *dev_data,
-	power_dgb_show show, power_dgb_store store)
+	power_dbg_show show, power_dbg_store store)
 {
 }
 #endif /* CONFIG_HUAWEI_POWER_DEBUG */

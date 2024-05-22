@@ -43,7 +43,7 @@
 #define USE_WAKE_LOCK
 
 #ifdef USE_WAKE_LOCK
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #endif
 
 #define TRUE		1
@@ -82,7 +82,7 @@ struct bcm2079x_dev {
 	unsigned int count_irq;
 	int original_address;
 #ifdef USE_WAKE_LOCK
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 #endif
 
 };
@@ -199,10 +199,10 @@ static irqreturn_t bcm2079x_dev_irq_handler(int irq, void *dev_id)
 
 #ifdef USE_WAKE_LOCK
 	int wakelockcnt = 0;
-	wakelockcnt = wake_lock_active(&bcm2079x_dev->wake_lock);
+	wakelockcnt = bcm2079x_dev->wake_lock.active;
 	if (!wakelockcnt) {
 		printk("irq aquire wake lock\n");
-		wake_lock(&bcm2079x_dev->wake_lock);
+		__pm_stay_awake(&bcm2079x_dev->wake_lock);
 	} else {
 /* printk("irq wake lock count = %d\n", wakelockcnt); */
 	}
@@ -481,12 +481,12 @@ static long bcm2079x_dev_unlocked_ioctl(struct file *filp,
 			 arg);
 #ifdef USE_WAKE_LOCK
 		if (arg != 0) {
-			while (wake_lock_active(&bcm2079x_dev->wake_lock)) {
+			while (bcm2079x_dev->wake_lock.active) {
 				printk("release wake lock!!!\n");
-				wake_unlock(&bcm2079x_dev->wake_lock);
+				__pm_relax(&bcm2079x_dev->wake_lock);
 			}
 
-			wake_lock_timeout(&bcm2079x_dev->wake_lock, HZ*2);
+			__pm_wakeup_event(&bcm2079x_dev->wake_lock, jiffies_to_msecs(HZ*2));
 		}
 #endif
 		gpio_set_value(bcm2079x_dev->wake_gpio, arg);
@@ -633,7 +633,7 @@ static int bcm2079x_probe(struct i2c_client *client,
 	mutex_init(&bcm2079x_dev->read_mutex);
 	spin_lock_init(&bcm2079x_dev->irq_enabled_lock);
 #ifdef USE_WAKE_LOCK
-	wake_lock_init(&bcm2079x_dev->wake_lock, WAKE_LOCK_SUSPEND, "nfcwakelock");
+	wakeup_source_init(&bcm2079x_dev->wake_lock, "nfcwakelock");
 #endif
 
 	bcm2079x_dev->bcm2079x_device.minor = MISC_DYNAMIC_MINOR;
@@ -674,7 +674,7 @@ err_request_irq_failed:
 	misc_deregister(&bcm2079x_dev->bcm2079x_device);
 err_misc_register:
 #ifdef USE_WAKE_LOCK
-	wake_lock_destroy(&bcm2079x_dev->wake_lock);
+	wakeup_source_trash(&bcm2079x_dev->wake_lock);
 #endif
 	mutex_destroy(&bcm2079x_dev->read_mutex);
 err_exit:
@@ -691,7 +691,7 @@ static int bcm2079x_remove(struct i2c_client *client)
 	free_irq(client->irq, bcm2079x_dev);
 	misc_deregister(&bcm2079x_dev->bcm2079x_device);
 	mutex_destroy(&bcm2079x_dev->read_mutex);
-	wake_lock_destroy(&bcm2079x_dev->wake_lock);
+	wakeup_source_trash(&bcm2079x_dev->wake_lock);
 	gpio_free(bcm2079x_dev->irq_gpio);
 	gpio_free(bcm2079x_dev->en_gpio);
 	gpio_free(bcm2079x_dev->wake_gpio);

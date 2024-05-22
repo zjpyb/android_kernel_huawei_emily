@@ -1,5 +1,6 @@
 #include <linux/errno.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/clk-provider.h>
 #include "ipu_clock.h"
 #include "ipu_mntn.h"
@@ -8,7 +9,7 @@
 int ipu_clock_init(struct device *dev, struct ics_clock *clk, bool lpm3_set_vcodecbus)
 {
 	unsigned int property_rd;
-	struct device_node *node;
+	struct device_node *node = NULL;
 
 	mutex_lock(&clk->clk_mutex);
 	clk->lpm3_set_vcodecbus = lpm3_set_vcodecbus;

@@ -1,7 +1,7 @@
 #ifndef	__HISI_HISEE_H__
 #define	__HISI_HISEE_H__
 #include <linux/device.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/hisi/hisi_rproc.h>
 #include "hisi_hisee_fs.h"
 #ifdef CONFIG_HISI_HISEE_SUPPORT_CASDKEY
@@ -9,11 +9,13 @@
 #endif
 
 /* Hisee module general error code*/
+#define HISEE_SECLIB_ERROR   -1
 #define HISEE_TRUE           (1)
 #define HISEE_FALSE          (0)
 #define HISEE_OK             (0)
 #define HISEE_ERROR          (-10002)
 #define HISEE_NO_RESOURCES   (-10003)
+#define HISEE_SECUREC_ERR    (-10030)
 #define HISEE_INVALID_PARAMS (-6)
 #define HISEE_IS_UPGRADING   (-7)
 #define HISEE_CMA_DEVICE_INIT_ERROR (-10005)
@@ -97,7 +99,7 @@
 
 #define HISEE_ATF_MESSAGE_HEADER_LEN   (16)
 #define HISEE_ATF_COS_APPDATA_TIMEOUT  (15000)
-#define HISEE_ATF_WRITE_RPMBKEY_TIMEOUT (1000)
+#define HISEE_ATF_WRITE_RPMBKEY_TIMEOUT (10000)
 #define HISEE_ATF_OTP_TIMEOUT        (10000)
 #define HISEE_ATF_COS_TIMEOUT        (30000)
 #define HISEE_ATF_SLOADER_TIMEOUT    (30000)
@@ -153,8 +155,6 @@
 
 #define SMX_PROCESS_0    (0x5A5AA5A5)
 #define SMX_PROCESS_1    (0xA5A55A5A)
-#define SMX_ENABLE        HISEE_OK
-#define SMX_DISABLE       HISEE_ERROR
 
 /* check ret is ok or otherwise goto err_process*/
 #define check_result_and_goto(ret, lable) \
@@ -183,9 +183,11 @@ do {\
 
 // cppcheck-suppress *
 #define set_errno_and_return(err) \
-	ret = err;\
+do{\
+	ret = (err);\
 	/*lint -save -e1058 */atomic_set(&g_hisee_errno, ret);/*lint -restore */\
-	return ret
+	return ret;\
+} while (0)
 
 #define hisee_mdelay(n)  msleep(n)
 #define hisee_delay(n)   msleep((n) * 1000)
@@ -210,7 +212,7 @@ typedef struct _HISEE_ERRCODE_ITEM_DES {
 
 typedef struct _HISEE_DRIVER_FUNCTION {
 	char *function_name;	/* function cmd string */
-	int (*function_ptr)(void *buf, int para); /* function cmd process */
+	int (*function_ptr)(const void *buf, int para); /* function cmd process */
 } hisee_driver_function;
 
 #define SE_HISEE_MISC_NO_UPRGADE (0xCCAAAACC)
@@ -224,6 +226,9 @@ typedef enum _HISEE_STATE {
 	HISEE_STATE_POWER_UP_DOING   = 5,
 #ifdef CONFIG_HISEE_SUPPORT_OVERSEA
 	HISEE_STATE_MISC_UPGRADE_DONE = 6,
+#endif
+#ifdef CONFIG_HISEE_SUPPORT_DCS
+	HISEE_STATE_DCS_UPGRADE_DONE = 7,
 #endif
 	HISEE_STATE_MAX,
 } hisee_state;
@@ -254,17 +259,13 @@ typedef enum  _HISEE_COS_PROCESS_TYPE {
 /* TODO: modify the factory flow */
 #define COS_PROCESS_UPGRADE COS_PROCESS_CHIP_TEST
 
-typedef enum  _HISEE_PLATFORM_TYPE {
-	HISEE_PLATFORM_3660 = 0,
-	HISEE_PLATFORM_3670_ES,
-	HISEE_PLATFORM_3670_CS,
-	HISEE_PLATFORM_MAX_ID = 0xFFFF,
-} hisee_platform_type;
-
 typedef enum {
 	CMD_UPGRADE_SLOADER = 0,
 	CMD_UPGRADE_OTP,
 	CMD_UPGRADE_COS,
+#ifdef CONFIG_HISEE_SUPPORT_ULOADER
+	CMD_UPGRADE_ULOADER,
+#endif
 	CMD_UPGRADE_MISC,
 #ifdef CONFIG_HICOS_MISCIMG_PATCH
 	CMD_UPGRADE_COS_PATCH,
@@ -296,6 +297,9 @@ typedef enum {
 #endif
 	CMD_HISEE_GET_EFUSE_VALUE = 0x40,
 	CMD_FORMAT_RPMB = 0x51,
+#ifdef CONFIG_HISEE_SUPPORT_DCS
+	CMD_UPGRADE_DCS = 0x52,
+#endif
 #ifdef CONFIG_HISEE_SUPPORT_OVERSEA
 	CMD_WRITE_COS_CFG = 0x60,
 	CMD_WRITE_SMX_CFG,
@@ -350,7 +354,7 @@ typedef struct _HISEE_MODULE_DATA {
 	unsigned int smc_cmd_running; /*indicate the smc is running */
 	int power_on_count;  /*indicate the number of hisee poweron*/
 	hisee_factory_test_status factory_test_state; /*indicate the factory test status */
-	struct wake_lock wake_lock;
+	struct wakeup_source wake_lock;
 #ifdef CONFIG_HISI_HISEE_SUPPORT_CASDKEY
 	hisee_casd_at_data casd_data;
 #endif

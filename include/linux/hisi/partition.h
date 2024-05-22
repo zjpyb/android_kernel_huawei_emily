@@ -22,8 +22,18 @@
 #endif
 #elif defined(CONFIG_HISI_PARTITION_CAPRICORN)
 #include "capricorn_partition.h"
+#elif defined(CONFIG_HISI_PARTITION_PISCES)
+#include "pisces_partition.h"
+#elif defined(CONFIG_HISI_PARTITION_LEO)
+#include "leo_partition.h"
 #elif defined(CONFIG_HISI_PARTITION_TAURUS)
+#ifdef HISI_EXTERNAL_MODEM
+#include "taurus_a_plus_b_partition.h"
+#elif defined CONFIG_HISI_PARTITION_CS2
+#include "taurus_cs2_partition.h"
+#else
 #include "taurus_partition.h"
+#endif
 #endif
 
 #endif

@@ -14,6 +14,8 @@
 #include <linux/spinlock.h>
 #include <linux/atomic.h>
 #include <linux/binfmts.h>
+#include <linux/sched/coredump.h>
+#include <linux/sched/task.h>
 #ifdef CONFIG_HISI_SWAP_ZDATA
 #include <linux/mm.h>
 #endif
@@ -41,7 +43,7 @@ struct proc_dir_entry {
 	const struct inode_operations *proc_iops;
 	const struct file_operations *proc_fops;
 	struct proc_dir_entry *parent;
-	struct rb_root subdir;
+	struct rb_root_cached subdir;
 	struct rb_node subdir_node;
 	void *data;
 	atomic_t count;		/* use count */
@@ -101,20 +103,8 @@ static inline struct task_struct *get_proc_task(struct inode *inode)
 	return get_pid_task(proc_pid(inode), PIDTYPE_PID);
 }
 
-static inline int task_dumpable(struct task_struct *task)
-{
-	int dumpable = 0;
-	struct mm_struct *mm;
-
-	task_lock(task);
-	mm = task->mm;
-	if (mm)
-		dumpable = get_dumpable(mm);
-	task_unlock(task);
-	if (dumpable == SUID_DUMP_USER)
-		return 1;
-	return 0;
-}
+void task_dump_owner(struct task_struct *task, mode_t mode,
+		     kuid_t *ruid, kgid_t *rgid);
 
 static inline unsigned name_to_int(const struct qstr *qstr)
 {
@@ -164,9 +154,9 @@ extern int proc_pid_statm(struct seq_file *, struct pid_namespace *,
  * base.c
  */
 extern const struct dentry_operations pid_dentry_operations;
-extern int pid_getattr(struct vfsmount *, struct dentry *, struct kstat *);
+extern int pid_getattr(const struct path *, struct kstat *, u32, unsigned int);
 extern int proc_setattr(struct dentry *, struct iattr *);
-extern struct inode *proc_pid_make_inode(struct super_block *, struct task_struct *);
+extern struct inode *proc_pid_make_inode(struct super_block *, struct task_struct *, umode_t);
 extern int pid_revalidate(struct dentry *, unsigned int);
 extern int pid_delete_dentry(const struct dentry *);
 extern int proc_pid_readdir(struct file *, struct dir_context *);
@@ -199,7 +189,6 @@ static inline bool is_empty_pde(const struct proc_dir_entry *pde)
 {
 	return S_ISDIR(pde->mode) && !pde->proc_iops;
 }
-struct proc_dir_entry *proc_create_mount_point(const char *name);
 
 /*
  * inode.c
@@ -207,7 +196,7 @@ struct proc_dir_entry *proc_create_mount_point(const char *name);
 struct pde_opener {
 	struct file *file;
 	struct list_head lh;
-	int closing;
+	bool closing;
 	struct completion *c;
 };
 extern const struct inode_operations proc_link_inode_operations;
@@ -222,6 +211,7 @@ static inline void smart_soft_shrink(void) { }
 #endif
 
 extern void proc_init_inodecache(void);
+void set_proc_pid_nlink(void);
 extern struct inode *proc_get_inode(struct super_block *, struct proc_dir_entry *);
 extern int proc_fill_super(struct super_block *);
 extern void proc_entry_rundown(struct proc_dir_entry *);
@@ -297,10 +287,12 @@ extern int proc_remount(struct super_block *, int *, char *);
 /*
  * task_[no]mmu.c
  */
+struct mem_size_stats;
 struct proc_maps_private {
 	struct inode *inode;
 	struct task_struct *task;
 	struct mm_struct *mm;
+	struct mem_size_stats *rollup;
 #ifdef CONFIG_MMU
 	struct vm_area_struct *tail_vma;
 #endif
@@ -316,6 +308,7 @@ extern const struct file_operations proc_tid_maps_operations;
 extern const struct file_operations proc_pid_numa_maps_operations;
 extern const struct file_operations proc_tid_numa_maps_operations;
 extern const struct file_operations proc_pid_smaps_operations;
+extern const struct file_operations proc_pid_smaps_rollup_operations;
 extern const struct file_operations proc_pid_smaps_simple_operations;
 extern const struct file_operations proc_tid_smaps_operations;
 extern const struct file_operations proc_clear_refs_operations;
@@ -331,11 +324,11 @@ extern bool process_reclaim_need_abort(struct mm_walk *walk);
 extern struct reclaim_result *process_reclaim_result_cache_alloc(gfp_t gfp);
 extern void process_reclaim_result_cache_free(struct reclaim_result *result);
 extern int process_reclaim_result_read(struct seq_file *m,
-										struct pid_namespace *ns,
-										struct pid *pid,
-										struct task_struct *tsk);
+				struct pid_namespace *ns,
+				struct pid *pid,
+				struct task_struct *tsk);
 extern void process_reclaim_result_write(struct task_struct *task,
-										unsigned nr_reclaimed,
-										unsigned nr_writedblock,
-										s64 elapsed_centisecs64);
+				unsigned nr_reclaimed,
+				unsigned nr_writedblock,
+				s64 elapsed_centisecs64);
 #endif

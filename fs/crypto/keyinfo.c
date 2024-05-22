@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * key management facility for FS encryption support.
  *
@@ -13,12 +14,13 @@
 #include <linux/ratelimit.h>
 #include <crypto/aes.h>
 #include <crypto/sha.h>
+#include <crypto/skcipher.h>
 #include "fscrypt_private.h"
 #ifdef CONFIG_HWAA
 #include <linux/security.h>
+#include <securec.h>
 #include <huawei_platform/hwaa/hwaa_limits.h>
 #include <huawei_platform/hwaa/hwaa_fs_hooks.h>
-#include <securec.h>
 #define HWAA_KEY_DESC_STANDARD_FLAG 0x42
 #endif
 
@@ -26,17 +28,17 @@ static struct crypto_shash *essiv_hash_tfm;
 
 static void derive_crypt_complete(struct crypto_async_request *req, int rc)
 {
-	struct fscrypt_completion_result *ecr = req->data;
+        struct fscrypt_completion_result *ecr = req->data;
 
-	if (rc == -EINPROGRESS)
-		return;
+        if (rc == -EINPROGRESS)
+                return;
 
-	ecr->res = rc;
-	complete(&ecr->completion);
+        ecr->res = rc;
+        complete(&ecr->completion);
 }
 
 int fscrypt_set_gcm_key(struct crypto_aead *tfm,
-			u8 deriving_key[FS_AES_256_GCM_KEY_SIZE])
+                       const u8 deriving_key[FS_AES_256_GCM_KEY_SIZE])
 {
 	int res = 0;
 	unsigned int iv_len;
@@ -59,16 +61,16 @@ int fscrypt_set_gcm_key(struct crypto_aead *tfm,
 	res = crypto_aead_setkey(tfm, deriving_key,
 					FS_AES_256_GCM_KEY_SIZE);
 	if (res < 0)
-		pr_err("fscrypt %s : Failed to set deriving key\n", __func__);
-out:
-	return res;
+	        pr_err("fscrypt %s : Failed to set deriving key\n", __func__);
+	out:
+      return res;
 }
 
 int fscrypt_derive_gcm_key(struct crypto_aead *tfm,
-				u8 source_key[FS_KEY_DERIVATION_CIPHER_SIZE],
-				u8 derived_key[FS_KEY_DERIVATION_CIPHER_SIZE],
-				u8 iv[FS_KEY_DERIVATION_IV_SIZE],
-				int enc)
+			 const u8 source_key[FS_KEY_DERIVATION_CIPHER_SIZE],
+			       u8 derived_key[FS_KEY_DERIVATION_CIPHER_SIZE],
+			       u8 iv[FS_KEY_DERIVATION_IV_SIZE],
+			       int enc)
 {
 	int res = 0;
 	struct aead_request *req = NULL;
@@ -96,6 +98,7 @@ int fscrypt_derive_gcm_key(struct crypto_aead *tfm,
 			CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
 			derive_crypt_complete, &ecr);
 
+
 	ilen = enc ? FS_KEY_DERIVATION_NONCE_SIZE :
 			FS_KEY_DERIVATION_CIPHER_SIZE;
 
@@ -105,24 +108,22 @@ int fscrypt_derive_gcm_key(struct crypto_aead *tfm,
 	aead_request_set_ad(req, 0);
 
 	aead_request_set_crypt(req, &src_sg, &dst_sg, ilen, iv);
-
 	res = enc ? crypto_aead_encrypt(req) : crypto_aead_decrypt(req);
 	if (res == -EINPROGRESS || res == -EBUSY) {
 		wait_for_completion(&ecr.completion);
 		res = ecr.res;
 	}
-
 out:
 	if (req)
 		aead_request_free(req);
 	return res;
 }
 
-struct key *fscrypt_request_key(u8 *descriptor, const u8 *prefix,
-				int prefix_size)
+struct key *fscrypt_request_key(const u8 *descriptor, const u8 *prefix,
+			       int prefix_size)
 {
-	u8 *full_key_descriptor;
-	struct key *keyring_key;
+	u8 *full_key_descriptor = NULL;
+	struct key *keyring_key = NULL;
 	int full_key_len = prefix_size + (FS_KEY_DESCRIPTOR_SIZE * 2) + 1;
 
 	full_key_descriptor = kmalloc(full_key_len, GFP_NOFS);
@@ -140,103 +141,170 @@ struct key *fscrypt_request_key(u8 *descriptor, const u8 *prefix,
 	return keyring_key;
 }
 
-static int validate_user_key(struct fscrypt_info *crypt_info,
-			struct fscrypt_context *ctx, u8 *raw_key,
-			const char *prefix, int min_keysize)
+/*
+ * Search the current task's subscribed keyrings for a "logon" key with
+ * description prefix:descriptor, and if found acquire a read lock on it and
+ * return a pointer to its validated payload in *payload_ret.
+ */
+static struct key *
+find_and_lock_process_key(const struct fscrypt_context *ctx,
+			  const char *prefix,
+			  const u8 descriptor[FS_KEY_DESCRIPTOR_SIZE],
+			  unsigned int min_keysize,
+			  const struct fscrypt_key **payload_ret)
 {
-	struct key *keyring_key;
-	struct fscrypt_key *master_key;
+	struct key *key;
 	const struct user_key_payload *ukp;
 	int prefix_size = strlen(prefix);
-	int res;
-	u8 plain_text[FS_KEY_DERIVATION_CIPHER_SIZE] = {0};
-	struct crypto_aead *tfm = NULL;
+	struct fscrypt_key *payload;
 
-	keyring_key = fscrypt_request_key(ctx->master_key_descriptor,
+	key = fscrypt_request_key(ctx->master_key_descriptor,
 				prefix, prefix_size);
-	if (IS_ERR(keyring_key))
-		return PTR_ERR(keyring_key);
-	down_read(&keyring_key->sem);
+	if (IS_ERR(key))
+		return key;
 
-	ukp = user_key_payload_locked(keyring_key);
-	if (!ukp) {
-		/* key was revoked before we acquired its semaphore */
-		res = -EKEYREVOKED;
-		goto out;
+	down_read(&key->sem);
+	ukp = user_key_payload_locked(key);
+
+	if (!ukp) /* was the key revoked before we acquired its semaphore? */
+		goto invalid;
+
+	payload = (struct fscrypt_key *)ukp->data;
+
+	if (ukp->datalen != sizeof(struct fscrypt_key) ||
+	    payload->size < 1 || payload->size > FS_MAX_KEY_SIZE) {
+		fscrypt_warn(NULL,
+			     "key with description '%s' has invalid payload",
+			     key->description);
+		goto invalid;
 	}
-	if (ukp->datalen != sizeof(struct fscrypt_key)) {
-		res = -EINVAL;
-		goto out;
-	}
-	master_key = (struct fscrypt_key *)ukp->data;
-	BUILD_BUG_ON(FS_AES_256_XTS_KEY_SIZE != FS_KEY_DERIVATION_NONCE_SIZE);
-
-	crypt_info->ci_key_index = (int) *(master_key->raw + 63) & 0xff;
-
 	//force the size equal to FS_AES_256_GCM_KEY_SIZE since user space might pass FS_AES_256_XTS_KEY_SIZE
-	master_key->size = FS_AES_256_GCM_KEY_SIZE;
-	if (master_key->size != FS_AES_256_GCM_KEY_SIZE ||
-	    master_key->size > FS_MAX_KEY_SIZE
-	    || master_key->size % AES_BLOCK_SIZE != 0) {
-		printk_once(KERN_WARNING
-				"%s: key size incorrect: %d\n",
-				__func__, master_key->size);
-		res = -ENOKEY;
-		goto out;
+	payload->size = FS_AES_256_GCM_KEY_SIZE;
+	if (payload->size != FS_AES_256_GCM_KEY_SIZE) {
+		fscrypt_warn(NULL,
+			     "key with description '%s' is too short (got %u bytes, need %u+ bytes)",
+			     key->description, payload->size, min_keysize);
+		goto invalid;
 	}
+
+	*payload_ret = payload;
+	return key;
+
+invalid:
+	up_read(&key->sem);
+	key_put(key);
+	return ERR_PTR(-ENOKEY);
+}
+
+/* Find the master key, then derive the inode's actual encryption key */
+static int find_and_derive_key(const struct inode *inode,
+			       struct fscrypt_info *crypt_info,
+			       const struct fscrypt_context *ctx,
+			       u8 *derived_key, unsigned int derived_keysize)
+{
+	struct key *key;
+	const struct fscrypt_key *payload;
+	struct crypto_aead *tfm = NULL;
+	u8 plain_text[FS_KEY_DERIVATION_CIPHER_SIZE] = {0};
+	int err;
+
+	key = find_and_lock_process_key(ctx, FS_KEY_DESC_PREFIX,
+					ctx->master_key_descriptor,
+					derived_keysize, &payload);
+	if (key == ERR_PTR(-ENOKEY) && inode->i_sb->s_cop->key_prefix) {
+		key = find_and_lock_process_key(ctx, inode->i_sb->s_cop->key_prefix,
+						ctx->master_key_descriptor,
+						derived_keysize, &payload);
+	}
+	if (IS_ERR(key))
+		return PTR_ERR(key);
+
+	crypt_info->ci_key_index = (int) *(payload->raw + 63) & 0xff;
 
 	tfm = (struct crypto_aead *)crypto_alloc_aead("gcm(aes)", 0, 0);
 	if (IS_ERR(tfm)) {
-		up_read(&keyring_key->sem);
-		res = (int)PTR_ERR(tfm);
+		up_read(&key->sem);
+		err = (int)PTR_ERR(tfm);
 		tfm = NULL;
 		pr_err("fscrypt %s : tfm allocation failed!\n", __func__);
 		goto out;
 	}
-
-	res = fscrypt_set_gcm_key(tfm, master_key->raw);
-	if (res)
+	err = fscrypt_set_gcm_key(tfm, payload->raw);
+	if (err)
 		goto out;
-	res = fscrypt_derive_gcm_key(tfm, ctx->nonce, plain_text, ctx->iv, 0);
-	if (res)
+	err = fscrypt_derive_gcm_key(tfm, ctx->nonce, plain_text, (u8 *)ctx->iv, 0);
+	if (err)
 		goto out;
-
-	memcpy(raw_key, plain_text, FS_KEY_DERIVATION_NONCE_SIZE);
-
+	memcpy(derived_key, plain_text, derived_keysize);
 	crypt_info->ci_gtfm = tfm;
-	up_read(&keyring_key->sem);
-	key_put(keyring_key);
+	up_read(&key->sem);
+	key_put(key);
 	return 0;
 
 out:
 	if (tfm)
 		crypto_free_aead(tfm);
-	up_read(&keyring_key->sem);
-	key_put(keyring_key);
-	return res;
+	up_read(&key->sem);
+	key_put(key);
+	return err;
 }
 
-static const struct {
+static struct fscrypt_mode {
+	const char *friendly_name;
 	const char *cipher_str;
 	int keysize;
+	bool logged_impl_name;
 } available_modes[] = {
-	[FS_ENCRYPTION_MODE_AES_256_XTS] = { "xts(aes)",
-					     FS_AES_256_XTS_KEY_SIZE },
-	[FS_ENCRYPTION_MODE_AES_256_CTS] = { "cts(cbc(aes))",
-					     FS_AES_256_CTS_KEY_SIZE },
-	[FS_ENCRYPTION_MODE_AES_128_CBC] = { "cbc(aes)",
-					     FS_AES_128_CBC_KEY_SIZE },
-	[FS_ENCRYPTION_MODE_AES_128_CTS] = { "cts(cbc(aes))",
-					     FS_AES_128_CTS_KEY_SIZE },
+	[FS_ENCRYPTION_MODE_AES_256_XTS] = {
+		.friendly_name = "AES-256-XTS",
+		.cipher_str = "xts(aes)",
+		.keysize = 64,
+	},
+	[FS_ENCRYPTION_MODE_AES_256_CTS] = {
+		.friendly_name = "AES-256-CTS-CBC",
+		.cipher_str = "cts(cbc(aes))",
+		.keysize = 32,
+	},
+	[FS_ENCRYPTION_MODE_AES_128_CBC] = {
+		.friendly_name = "AES-128-CBC",
+		.cipher_str = "cbc(aes)",
+		.keysize = 16,
+	},
+	[FS_ENCRYPTION_MODE_AES_128_CTS] = {
+		.friendly_name = "AES-128-CTS-CBC",
+		.cipher_str = "cts(cbc(aes))",
+		.keysize = 16,
+	},
 };
+
+static struct fscrypt_mode *
+select_encryption_mode(const struct fscrypt_info *ci, const struct inode *inode)
+{
+	if (!fscrypt_valid_enc_modes(ci->ci_data_mode, ci->ci_filename_mode)) {
+		fscrypt_warn(inode->i_sb,
+			     "inode %lu uses unsupported encryption modes(contents mode %d, filenames mode %d)",
+			     inode->i_ino, ci->ci_data_mode,
+			     ci->ci_filename_mode);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (S_ISREG(inode->i_mode))
+		return &available_modes[ci->ci_data_mode];
+
+	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode))
+		return &available_modes[ci->ci_filename_mode];
+
+	WARN_ONCE(1, "fscrypt: filesystem tried to load encryption info for inode %lu, which is not encryptable (file type %d)\n",
+		  inode->i_ino, (inode->i_mode & S_IFMT));
+	return ERR_PTR(-EINVAL);
+}
 
 static int determine_cipher_type(struct fscrypt_info *ci, struct inode *inode,
 				 const char **cipher_str_ret, int *keysize_ret)
 {
 	u32 mode;
-
 	if (!fscrypt_valid_enc_modes(ci->ci_data_mode, ci->ci_filename_mode)) {
-		pr_warn_ratelimited("fscrypt: inode %lu uses unsupported encryption modes (contents mode %d, filenames mode %d)\n",
+		pr_warn_ratelimited("inode %lu err enc mode (contents %d,%d)\n",
 				    inode->i_ino,
 				    ci->ci_data_mode, ci->ci_filename_mode);
 		return -EINVAL;
@@ -247,7 +315,7 @@ static int determine_cipher_type(struct fscrypt_info *ci, struct inode *inode,
 	} else if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode)) {
 		mode = ci->ci_filename_mode;
 	} else {
-		WARN_ONCE(1, "fscrypt: filesystem tried to load encryption info for inode %lu, which is not encryptable (file type %d)\n",
+		WARN_ONCE(1, "inode %lu not encryptable, file type %d\n",
 			  inode->i_ino, (inode->i_mode & S_IFMT));
 		return -EINVAL;
 	}
@@ -259,9 +327,8 @@ static int determine_cipher_type(struct fscrypt_info *ci, struct inode *inode,
 
 static void put_crypt_info(struct fscrypt_info *ci)
 {
-	void *prev;
-	void *key;
-
+	void *prev = NULL;
+	void *key = NULL;
 	if (!ci)
 		return;
 
@@ -277,48 +344,11 @@ static void put_crypt_info(struct fscrypt_info *ci)
 		ci->ci_key_len = 0;
 		ci->ci_key_index = -1;
 	}
-	crypto_free_skcipher(ci->ci_ctfm);
 	if (ci->ci_gtfm)
 		crypto_free_aead(ci->ci_gtfm);
+	crypto_free_skcipher(ci->ci_ctfm);
 	crypto_free_cipher(ci->ci_essiv_tfm);
 	kmem_cache_free(fscrypt_info_cachep, ci);
-}
-
-static int fscrypt_verify_ctx(struct fscrypt_context *ctx)
-{
-	if ((u32)(ctx->format) != FS_ENCRYPTION_CONTEXT_FORMAT_V2)
-		return -EINVAL;
-
-	if (!fscrypt_valid_enc_modes((u32)(ctx->contents_encryption_mode),
-			(u32)(ctx->filenames_encryption_mode)))
-		return -EINVAL;
-
-	if ((u32)(ctx->flags) & ~FS_POLICY_FLAGS_VALID)
-		return -EINVAL;
-
-	return 0;
-}
-
-/*
- * When we cannot determine if original or backup ctx is valid,
- * trust original if @verify is 0, or backup if it is 1.
- */
-int fscrypt_get_verify_context(struct inode *inode, void *ctx, size_t len)
-{
-	if (!inode->i_sb->s_cop->get_verify_context)
-		return 0;
-
-	return inode->i_sb->s_cop->get_verify_context(inode, ctx, len);
-}
-
-int fscrypt_set_verify_context(struct inode *inode, const void *ctx,
-			size_t len, void *fs_data, int create_crc)
-{
-	if (!inode->i_sb->s_cop->set_verify_context)
-		return 0;
-
-	return inode->i_sb->s_cop->set_verify_context(inode,
-				ctx, len, fs_data, create_crc);
 }
 
 static int derive_essiv_salt(const u8 *key, int keysize, u8 *salt)
@@ -331,8 +361,9 @@ static int derive_essiv_salt(const u8 *key, int keysize, u8 *salt)
 
 		tfm = crypto_alloc_shash("sha256", 0, 0);
 		if (IS_ERR(tfm)) {
-			pr_warn_ratelimited("fscrypt: error allocating SHA-256 transform: %ld\n",
-					    PTR_ERR(tfm));
+			fscrypt_warn(NULL,
+				     "error allocating SHA-256 transform: %ld",
+				     PTR_ERR(tfm));
 			return PTR_ERR(tfm);
 		}
 		prev_tfm = cmpxchg(&essiv_hash_tfm, NULL, tfm);
@@ -392,12 +423,9 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	struct fscrypt_info *crypt_info;
 	struct fscrypt_context ctx;
 	struct crypto_skcipher *ctfm;
-	const char *cipher_str;
-	int keysize;
+	struct fscrypt_mode *mode;
 	u8 *raw_key = NULL;
 	int res;
-	int has_crc = 0;
-	int verify = 0;
 	int flag = 0;
 
 	/* TicketNo:AR000B5MB3 -- HWAA file needs to check access control */
@@ -415,22 +443,19 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	/* TicketNo:AR0009DF3P -- For SDP protection */
 	if (inode->i_sb->s_cop && inode->i_sb->s_cop->get_keyinfo) {
 		res = inode->i_sb->s_cop->get_keyinfo(inode, NULL, &flag);
-		if (flag)
+		if (res) /* err case */
 			return res;
+		if (flag) /* get sdp crypt info success */
+			return 0;
 	}
 	/* TicketNo:AR0009DF3P END */
 	/* TicketNo:AR000B5MB3 END */
 
-	res = inode->i_sb->s_cop->get_context(inode, &ctx, sizeof(ctx), &has_crc);
+	res = inode->i_sb->s_cop->get_context(inode, &ctx, sizeof(ctx));
 	if (res < 0) {
 		if (!fscrypt_dummy_context_enabled(inode) ||
-		    inode->i_sb->s_cop->is_encrypted(inode)) {
-			verify = fscrypt_get_verify_context(inode, &ctx,
-								    sizeof(ctx));
-			if (verify < 0)
-				inode->i_sb->s_cop->set_encrypted_corrupt(inode);
+		    IS_ENCRYPTED(inode))
 			return res;
-		}
 		/* Fake up a context for an unencrypted directory */
 		memset(&ctx, 0, sizeof(ctx));
 		ctx.format = FS_ENCRYPTION_CONTEXT_FORMAT_V2;
@@ -440,17 +465,14 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	} else if (res != sizeof(ctx)) {
 		pr_err("%s: inode %lu incorrect ctx size [%u : %lu]\n",
 			inode->i_sb->s_type->name, inode->i_ino, res, sizeof(ctx));
-		inode->i_sb->s_cop->set_encrypted_corrupt(inode);
 		return -EINVAL;
 	}
 
-
-	if (fscrypt_verify_ctx(&ctx)) {
-		pr_err("%s: inode %lu verify ctx failed\n",
-			inode->i_sb->s_type->name, inode->i_ino);
-		inode->i_sb->s_cop->set_encrypted_corrupt(inode);
+	if (ctx.format != FS_ENCRYPTION_CONTEXT_FORMAT_V2)
 		return -EINVAL;
-	}
+
+	if (ctx.flags & ~FS_POLICY_FLAGS_VALID)
+		return -EINVAL;
 
 	crypt_info = kmem_cache_alloc(fscrypt_info_cachep, GFP_NOFS);
 	if (!crypt_info)
@@ -469,58 +491,53 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	memcpy(crypt_info->ci_master_key, ctx.master_key_descriptor,
 				sizeof(crypt_info->ci_master_key));
 
-	res = determine_cipher_type(crypt_info, inode, &cipher_str, &keysize);
-	if (res)
+	mode = select_encryption_mode(crypt_info, inode);
+	if (IS_ERR(mode)) {
+		res = PTR_ERR(mode);
 		goto out;
+	}
 
 	/*
 	 * This cannot be a stack buffer because it is passed to the scatterlist
 	 * crypto API as part of key derivation.
 	 */
 	res = -ENOMEM;
-	raw_key = kmalloc(FS_MAX_KEY_SIZE, GFP_NOFS);
+	raw_key = kmalloc(mode->keysize, GFP_NOFS);
 	if (!raw_key)
 		goto out;
 
-	res = validate_user_key(crypt_info, &ctx, raw_key, FS_KEY_DESC_PREFIX,
-				keysize);
-	if (res && inode->i_sb->s_cop->key_prefix) {
-		int res2 = validate_user_key(crypt_info, &ctx, raw_key,
-					     inode->i_sb->s_cop->key_prefix,
-					     keysize);
-		if (res2) {
-			verify = fscrypt_get_verify_context(inode, &ctx,
-							    sizeof(ctx));
-			if (verify < 0 || res2 == -EBADMSG || res == -EBADMSG)
-				inode->i_sb->s_cop->set_encrypted_corrupt(inode);
-			if (res2 == -ENOKEY)
-				res = -ENOKEY;
-			goto out;
-		}
-	} else if (res) {
-		verify = fscrypt_get_verify_context(inode, &ctx, sizeof(ctx));
-		if (verify < 0 || res == -EBADMSG)
-			inode->i_sb->s_cop->set_encrypted_corrupt(inode);
-		goto out;
-	}
-	ctfm = crypto_alloc_skcipher(cipher_str, 0, 0);
-	if (IS_ERR(ctfm)) {
-		res = PTR_ERR(ctfm);
-		pr_debug("%s: error %d (inode %lu) allocating crypto tfm\n",
-			 __func__, res, inode->i_ino);
-		goto out;
-	}
-	crypt_info->ci_ctfm = ctfm;
-	crypto_skcipher_set_flags(ctfm, CRYPTO_TFM_REQ_WEAK_KEY);
-	/*
-	 * if the provided key is longer than keysize, we use the first
-	 * keysize bytes of the derived key only
-	 */
-	res = crypto_skcipher_setkey(ctfm, raw_key, keysize);
+	res = find_and_derive_key(inode, crypt_info, &ctx, raw_key, mode->keysize);
 	if (res)
 		goto out;
 
-	if (S_ISREG(inode->i_mode) &&
+	ctfm = crypto_alloc_skcipher(mode->cipher_str, 0, 0);
+	if (IS_ERR(ctfm)) {
+		res = PTR_ERR(ctfm);
+		fscrypt_warn(inode->i_sb,
+			     "error allocating '%s' transform for inode %lu: %d",
+			     mode->cipher_str, inode->i_ino, res);
+		goto out;
+	}
+	if (unlikely(!mode->logged_impl_name)) {
+		/*
+		 * fscrypt performance can vary greatly depending on which
+		 * crypto algorithm implementation is used.  Help people debug
+		 * performance problems by logging the ->cra_driver_name the
+		 * first time a mode is used.  Note that multiple threads can
+		 * race here, but it doesn't really matter.
+		 */
+		mode->logged_impl_name = true;
+		pr_info("fscrypt: %s using implementation \"%s\"\n",
+			mode->friendly_name,
+			crypto_skcipher_alg(ctfm)->base.cra_driver_name);
+	}
+	crypt_info->ci_ctfm = ctfm;
+	crypto_skcipher_set_flags(ctfm, CRYPTO_TFM_REQ_WEAK_KEY);
+	res = crypto_skcipher_setkey(ctfm, raw_key, mode->keysize);
+	if (res)
+		goto out;
+
+       if (S_ISREG(inode->i_mode) &&
 			inode->i_sb->s_cop->is_inline_encrypted &&
 			inode->i_sb->s_cop->is_inline_encrypted(inode)) {
 		crypt_info->ci_key = kzalloc((size_t)FS_MAX_KEY_SIZE, GFP_NOFS);
@@ -528,7 +545,7 @@ int fscrypt_get_encryption_info(struct inode *inode)
 			res = -ENOMEM;
 			goto out;
 		}
-		crypt_info->ci_key_len = keysize;
+		crypt_info->ci_key_len = mode->keysize;
 		/*lint -save -e732 -e747*/
 		memcpy(crypt_info->ci_key, raw_key, crypt_info->ci_key_len);
 		/*lint -restore*/
@@ -536,17 +553,16 @@ int fscrypt_get_encryption_info(struct inode *inode)
 
 	if (S_ISREG(inode->i_mode) &&
 	    crypt_info->ci_data_mode == FS_ENCRYPTION_MODE_AES_128_CBC) {
-		res = init_essiv_generator(crypt_info, raw_key, keysize);
+		res = init_essiv_generator(crypt_info, raw_key, mode->keysize);
 		if (res) {
-			pr_debug("%s: error %d (inode %lu) allocating essiv tfm\n",
-				 __func__, res, inode->i_ino);
+			fscrypt_warn(inode->i_sb,
+				     "error initializing ESSIV generator for inode %lu: %d",
+				     inode->i_ino, res);
 			goto out;
 		}
 	}
 	if (cmpxchg(&inode->i_crypt_info, NULL, crypt_info) == NULL)
 		crypt_info = NULL;
-	fscrypt_set_verify_context(inode, &ctx, sizeof(ctx), NULL, has_crc);
-
 out:
 	if (res == -ENOKEY)
 		res = 0;
@@ -556,20 +572,10 @@ out:
 }
 EXPORT_SYMBOL(fscrypt_get_encryption_info);
 
-void fscrypt_put_encryption_info(struct inode *inode, struct fscrypt_info *ci)
+void fscrypt_put_encryption_info(struct inode *inode)
 {
-	struct fscrypt_info *prev;
-
-	if (ci == NULL)
-		ci = ACCESS_ONCE(inode->i_crypt_info);
-	if (ci == NULL)
-		return;
-
-	prev = cmpxchg(&inode->i_crypt_info, ci, NULL);
-	if (prev != ci)
-		return;
-
-	put_crypt_info(ci);
+	put_crypt_info(inode->i_crypt_info);
+	inode->i_crypt_info = NULL;
 }
 EXPORT_SYMBOL(fscrypt_put_encryption_info);
 
@@ -627,7 +633,7 @@ out:
 static int hwaa_check_support(struct inode *inode)
 {
 	int err = 0;
-	int flags;
+	u32 flags;
 
 	if (!inode->i_sb->s_cop->get_hwaa_flags ||
 		!inode->i_sb->s_cop->get_hwaa_attr)
@@ -685,7 +691,7 @@ static int hwaa_do_get_context(struct inode *inode, struct fscrypt_context *ctx)
 		pr_err("hwaa ino %lu init fscrypt fail\n", inode->i_ino);
 		return err;
 	}
-	err = inode->i_sb->s_cop->get_context(inode, ctx, sizeof(*ctx), NULL);
+	err = inode->i_sb->s_cop->get_context(inode, ctx, sizeof(*ctx));
 	if (err < 0) {
 		if (!fscrypt_dummy_context_enabled(inode) ||
 			inode->i_sb->s_cop->is_encrypted(inode))
@@ -726,7 +732,7 @@ static struct fscrypt_info *hwaa_get_fscrypt_info(struct fscrypt_context *ctx,
 	ci->ci_essiv_tfm = NULL;
 	ci->ci_key = NULL;
 	ci->ci_key_len = 0;
-	ci->ci_key_index = -1;
+	ci->ci_key_index = -1; // inited as invalid
 	if (memcpy_s(ci->ci_master_key, sizeof(ci->ci_master_key),
 		ctx->master_key_descriptor,
 		sizeof(ctx->master_key_descriptor)) != EOK) {
@@ -766,7 +772,7 @@ static int hwaa_do_set_cipher(struct inode *inode, const char *cipher_str,
 	struct crypto_skcipher *ctfm;
 	int err;
 
-	ctfm = crypto_alloc_skcipher(cipher_str, 0, 0);
+	ctfm = crypto_alloc_skcipher(cipher_str, 0, 0); // 0 as default value
 	if (!ctfm || IS_ERR(ctfm)) {
 		err = ctfm ? PTR_ERR(ctfm) : -ENOMEM;
 		pr_err("hwaa ino %lu alloc ctfm err %d\n", inode->i_ino, err);
@@ -828,7 +834,7 @@ int hwaa_get_context(struct inode *inode)
 {
 	struct fscrypt_info *ci = NULL;
 	struct fscrypt_context ctx;
-	const char *cipher_str;
+	const char *cipher_str = NULL;
 	int keysize;
 	uint8_t *encoded_wfek = NULL;
 	uint8_t *fek = NULL;
@@ -874,4 +880,3 @@ free_encoded_wfek:
 }
 EXPORT_SYMBOL(hwaa_get_context);
 #endif
-

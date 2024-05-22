@@ -40,8 +40,8 @@ HWLOG_REGIST();
 #define GPIO_OUT     0
 #define GPIO_IN      1
 
-#define ID_SN_SIZE 6
-#define TEST_TIMES 10
+#define ID_SN_SIZE   6
+#define TEST_TIMES   10
 
 struct gpio_state {
 	int direction;
@@ -103,7 +103,6 @@ void apply_batt_type_mode(enum batt_type_identify_mode mode)
 			g_mode_cfgs->ops->close_ic)
 			g_mode_cfgs->ops->close_ic();
 		break;
-
 	case BAT_ID_SN:
 		/* open mos */
 		ret = set_gpio(g_mode_cfgs->gpio,
@@ -114,7 +113,6 @@ void apply_batt_type_mode(enum batt_type_identify_mode mode)
 			g_mode_cfgs->ops->open_ic)
 			g_mode_cfgs->ops->open_ic();
 		break;
-
 	default:
 		break;
 	}
@@ -164,7 +162,7 @@ static ssize_t id_sn_show(struct device *dev,
 	if (!g_mode_cfgs)
 		return snprintf(buf, PAGE_SIZE, "driver init error");
 
-	if (get_battery_type(id_sn))
+	if (get_battery_type(id_sn, ID_SN_SIZE))
 		return snprintf(buf, PAGE_SIZE, "get id sn error");
 
 	return snprintf(buf, PAGE_SIZE, "read battery type is %s", id_sn);
@@ -183,7 +181,7 @@ static ssize_t id_sn_voltage_show(struct device *dev,
 
 	for (i = 0; i < TEST_TIMES; i++) {
 		len += snprintf(buf + len, PAGE_SIZE, "%d--", i);
-		if (get_battery_type(id_sn)) {
+		if (get_battery_type(id_sn, ID_SN_SIZE)) {
 			len += snprintf(buf + len, PAGE_SIZE, "read error.");
 			return len;
 		}
@@ -273,7 +271,7 @@ static const struct attribute *g_debug_attrs[] = {
 static void create_debug_node(struct platform_device *pdev)
 {
 	if (sysfs_create_files(&pdev->dev.kobj, g_debug_attrs))
-		hwlog_err("create debug device node Error\n");
+		hwlog_err("create debug device node error\n");
 }
 #endif /* BATTERY_IDENTIFY_DEBUG */
 
@@ -287,18 +285,18 @@ static int parse_dts_gpios(struct device_node *np)
 		hwlog_err("gpios dts read failed\n");
 		return -1;
 	}
+	hwlog_info("gpios=%d\n", gpio);
 
 	if (!gpio_is_valid(gpio)) {
-		hwlog_err("gpio(%d) is not valid\n", gpio);
+		hwlog_err("gpio is not valid\n");
 		return -1;
 	}
 
 	ret = gpio_request(gpio, "battery_type_gpio");
 	if (ret) {
-		hwlog_err("gpio(%d) request fail\n", gpio);
+		hwlog_err("gpio request fail\n");
 		return -1;
 	}
-	hwlog_info("gpio(%d) request success\n", gpio);
 
 	return gpio;
 }
@@ -307,12 +305,12 @@ static int parse_dts_channel(struct device_node *np,
 	const char *property, struct gpio_state *states)
 {
 	if (of_property_read_u32_index(np, property, 0, &states->direction)) {
-		hwlog_err("parse %s-first property in dts fail\n", property);
+		hwlog_err("%s-first dts read failed\n", property);
 		return -1;
 	}
 
 	if (of_property_read_u32_index(np, property, 1, &states->value)) {
-		hwlog_err("parse %s-second property in dts fail\n", property);
+		hwlog_err("%s-second dts read failed\n", property);
 		return -1;
 	}
 
@@ -326,7 +324,7 @@ static int parse_dts(struct device_node *np, struct mode_channel_cfg *cfgs)
 		return -1;
 
 	if (parse_dts_channel(np, "id_voltage_gpiov", &cfgs->id_voltage) ||
-	    parse_dts_channel(np, "id_sn_gpiov", &cfgs->id_sn))
+		parse_dts_channel(np, "id_sn_gpiov", &cfgs->id_sn))
 		return -1;
 
 	return 0;
@@ -337,19 +335,18 @@ static int batt_type_identify_probe(struct platform_device *pdev)
 	struct device_node *np = NULL;
 	struct mode_channel_cfg *cfgs = NULL;
 
-	hwlog_info("probe start\n");
-	if (!pdev || !pdev->dev.of_node) {
-		hwlog_err("device_node is null\n");
-		return -1;
-	}
+	hwlog_info("probe begin\n");
 
-	cfgs = devm_kzalloc(&pdev->dev, sizeof(*cfgs),
-		GFP_KERNEL);
+	if (!pdev || !pdev->dev.of_node)
+		return -ENODEV;
+
+	cfgs = devm_kzalloc(&pdev->dev, sizeof(*cfgs), GFP_KERNEL);
 	if (!cfgs)
-		return -1;
+		return -ENOMEM;
 
 	np = pdev->dev.of_node;
 	cfgs->cur_mode = BAT_INVALID_MODE;
+
 	if (parse_dts(np, cfgs))
 		goto free_mem;
 
@@ -359,6 +356,7 @@ static int batt_type_identify_probe(struct platform_device *pdev)
 #ifdef BATTERY_IDENTIFY_DEBUG
 	create_debug_node(pdev);
 #endif /* BATTERY_IDENTIFY_DEBUG */
+
 	hwlog_info("probe end\n");
 	return 0;
 

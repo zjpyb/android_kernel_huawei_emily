@@ -128,7 +128,6 @@ static bool lcdkit_resolve_dtsi_config_file(int fd, void** para_table, uint32_t*
 
 debug_init_read_fail:
     kfree(lcd_config_table);
-    //lcd_config_table = NULL;
 
 kalloc_err:
     *para_table = NULL;
@@ -192,13 +191,10 @@ void lcdkit_dump_buf(const char* buf, int cnt)
         LCDKIT_ERR("buf is NULL\n");
         return;
     }
-    //LCDKIT_DEBUG("================= dump buf start ===============\n");
     for (i = 0; i < cnt; i++)
     {
         LCDKIT_DEBUG("buf[%d]         = 0x%02x\n", i, buf[i]);
     }
-
-    //LCDKIT_DEBUG("================= dump buf end   ===============\n");
 }
 
 void lcdkit_dump_buf_32(const u32* buf, int cnt)
@@ -240,7 +236,6 @@ void lcdkit_dump_cmds(struct lcdkit_dsi_panel_cmds* cmds)
 {
     int i;
 
-    //LCDKIT_DEBUG("============= lcdkit cmds dump start ============\n");
     if( NULL == cmds)
     {
         LCDKIT_INFO("NULL point!\n");
@@ -258,13 +253,10 @@ void lcdkit_dump_cmds(struct lcdkit_dsi_panel_cmds* cmds)
     {
         lcdkit_dump_cmds_desc(&cmds->cmds[i]);
     }
-
-    //LCDKIT_DEBUG("============= lcdkit cmds dump end   ============\n");
 }
 
 void lcdkit_dump_array_data(struct lcdkit_array_data* array)
 {
-    //LCDKIT_DEBUG("============= array data dump start =============\n");
     if( NULL == array)
     {
         LCDKIT_INFO("NULL point!\n");
@@ -272,7 +264,6 @@ void lcdkit_dump_array_data(struct lcdkit_array_data* array)
     }
     LCDKIT_DEBUG("cnt        = 0x%x\n", array->cnt);
     lcdkit_dump_buf(array->buf, array->cnt);
-    //LCDKIT_DEBUG("============= array data dump end   =============\n");
 }
 
 void lcdkit_dump_arrays_data(struct lcdkit_arrays_data* arrays)
@@ -285,13 +276,10 @@ void lcdkit_dump_arrays_data(struct lcdkit_arrays_data* arrays)
         return ;
     }
 
-    //LCDKIT_DEBUG("============= arrays data dump start ============\n");
     LCDKIT_DEBUG("cnt        = 0x%x\n", arrays->cnt);
 
     for (i = 0; i < arrays->cnt; i++)
     { lcdkit_dump_array_data(&arrays->arry_data[i]); }
-
-    //LCDKIT_DEBUG("============= arrays data dump end   ============\n");
 }
 
 int lcdkit_parse_dsi_cmds(struct lcdkit_dsi_panel_cmds* pcmds)
@@ -523,7 +511,7 @@ static int lcdkit_str_to_lower(char* str)
 
 /* check if string start with sub string */
 /* return: 0 - success, negative - fail */
-static int lcdkit_str_start_with(char* str, char* sub)
+static int lcdkit_str_start_with(const char *str, const char *sub)
 {
     /* check param */
     if (NULL == str || NULL == sub)

@@ -17,6 +17,7 @@
 #include <linux/workqueue.h>
 #include <linux/miscdevice.h>
 #include <linux/platform_device.h>
+#include <linux/pm_wakeup.h>
 
 #ifdef CONFIG_OF
 #include <linux/regulator/consumer.h>
@@ -35,6 +36,8 @@
 
 #define GTX8_OF_NAME				"gtx8"
 #define GTX8_9886_CHIP_ID			"9886"
+#define GTX8_6861_CHIP_ID			"6861"
+#define GTX8_7382_CHIP_ID "7382"
 #define GTX8_FW_SD_NAME				"ts/touch_screen_firmware.img"
 #define GTX8_CONFIG_FW_SD_NAME 			"ts/gtx8_cfg.bin"
 #define GTX8_DEFAULT_CFG_NAME			"goodix_config.cfg"
@@ -53,8 +56,10 @@
 #define GTX8_RETRY_NUM_3			3
 #define GTX8_RETRY_NUM_10			10
 #define GTX8_RETRY_NUM_20			20
+#define GTX8_RETRY_NUM_50 50
 #define GTX8_CFG_HEAD_LEN			4
 #define GTX8_CFG_MAX_LEN			1024
+#define GTX8_REG_LEN 4
 
 #define GTX8_POWER_BY_LDO 			1
 #define GTX8_SMALL_OR_LARGE_CFG_LEN 		32
@@ -62,18 +67,24 @@
 #define GTX8_CFG_BAG_START_INDEX		4
 #define GTX8_FW_NAME_LEN			64
 #define GT_RAWDATA_CSV_VERTICAL_SCREEN		1
+#define GT_RAWDATA_CSV_RXTX_ROTATE 2
 
 
 #define GTX8_EXIST				1
 #define GTX8_NOT_EXIST				0
-
+#define PEN_FLAG 0x20
 #define GTX8_ABS_MAX_VALUE 			255
 #define GTX8_MAX_PEN_PRESSURE			4096
+#define GTX8_MAX_PEN_TILT 90
 #define GTP_MAX_TOUCH   			TS_MAX_FINGER
 #define BYTES_PER_COORD 			8
 #define TOUCH_DATA_LEN_4 			4
 #define DMNNY_BYTE_LEN_2 			2
+#define TOUCH_DATA_LEN_1 1
+#define BYTES_PEN_COORD 12
 #define GTX8_EDGE_DATA_SIZE			20
+#define HEAD_LEN 1
+#define TAIL_LEN 2
 
 #define GTX8_RESET_SLEEP_TIME			80
 #define GTX8_RESET_PIN_D_U_TIME			150
@@ -92,6 +103,7 @@
 
 #define SLEEP_MODE				0x01
 #define GESTURE_MODE				0x02
+#define GESTURE_EXIT_MODE 0x03
 
 /*GTX8 CMD*/
 #define GTX8_CMD_NORMAL				0x00
@@ -105,6 +117,7 @@
 #define GTP_CMD_STYLUS_SWITCH_OFF	0x14
 #define GTX8_CMD_STYLUS_RESPONSE_MODE 0x16
 #define GTX8_CMD_GESTURE			0x08
+#define GTX8_CMD_GESTURE_EXIT 0x0A
 #define GTX8_CMD_START_SEND_CFG			0x80
 #define GTX8_CMD_END_SEND_CFG			0x83
 #define GTX8_CMD_SEND_SMALL_CFG			0x81
@@ -115,8 +128,11 @@
 /* Register define */
 #define GTP_REG_DOZE_CTRL			0x30F0
 #define GTP_REG_ESD_TICK_W			0x30F3
+#define GTP_REG_ESD_TICK_W_GT7382 0x8040
 #define GTP_REG_DOZE_STAT			0x3100
 #define GTP_REG_ESD_TICK_R			0x3103
+#define GTP_REG_ESD_TICK_R_GT7382 0x8043
+
 #define GTP_REG_SENSOR_NUM			0x5473
 #define GTP_REG_DRIVER_GROUP_A_NUM		0x5477
 #define GTP_REG_DRIVER_GROUP_B_NUM		0x5478
@@ -132,10 +148,21 @@
 #define GTP_REG_VERSION_BASE			0x452C
 #define GTP_REG_FW_REQUEST			0x6F6D
 #define GTP_REG_STATUS			0x4B64
+#define GTP_GRE_STATUS_GT7382 0xFF00
+#define GTP_REG_CFG_ADDR_GT7382 0x8050
+#define GTP_REG_CMD_GT7382 0x8040
+#define GTP_REG_COOR_GT7382 0x824E
+#define GTP_REG_GESTURE_GT7382 0x824D
+#define GTP_REG_PID_GT7382 0x8240
+#define GTP_REG_VID_GT7382 0x8244
+#define GTP_REG_SENSOR_ID_GT7382 0xFF80
+#define GTP_I2C_DETECT_ADDR_GT7382 0x8000
 
 #define WD_TRI_TIMES_5				5
 #define GTP_REG_LEN_6			6
 #define GTP_REG_LEN_30			30
+#define GTP_REG_LEN_9 9
+#define GTP_REG_LEN_45 45
 #define GTP_PID_LEN				4
 #define GTP_VID_LEN				4
 #define GTP_VERSION_LEN				72
@@ -155,6 +182,32 @@
 #define HW_REG_SUBSYS_TYPE			0x6020
 #define HW_REG_FLASH_FLAG			0x6022
 
+/* gt7382 update */
+#define HW_REG_ILM_ACCESS 0x50C0
+#define HW_REG_ILM_ACCESS1 0x434C
+#define HW_REG_WATCH_DOG 0x437C
+#define HW_REG_BANK_SELECT_GT7382 0x50C4
+#define HW_REG_RAM_ADDR 0x8000
+#define HW_REG_DOWNL_STATE 0x4195
+#define HW_REG_DOWNL_COMMAND 0x4196
+#define HW_REG_DOWNL_RESULT 0x4197
+#define HW_REG_HOLD_CPU 0x4180
+#define HW_REG_PACKET_SIZE 0xFFF0
+#define HW_REG_PACKET_ADDR 0xFFF4
+#define HW_REG_PACKET_CHECKSUM 0xFFF8
+#define HW_REG_GREEN_CHN1 0xF7CC
+#define HW_REG_GREEN_CHN2 0xF7EC
+#define HW_REG_SPI_ACCESS 0x4319
+#define HW_REG_SPI_STATE 0x431C
+#define HW_REG_G1_ACCESS1 0x4255
+#define HW_REG_G1_ACCESS2 0x4299
+#define GT738X_SEND_CFG_DELAY 210
+
+#define ISP_READY_FLAG 0x55
+#define START_WRITE_FLASH 0xaa
+#define WRITE_OVER2_FLAG 0xff
+#define WRITE_TO_FLASH_FLAG 0xdd
+#define SPI_STATUS_FLAG 0x02
 
 /* cfg parse from bin */
 #define CFG_BIN_SIZE_MIN 			279
@@ -188,6 +241,12 @@
 #define GTX8_NEED_SLEEP				1
 #define GTX8_NOT_NEED_SLEEP			0
 
+#define GTX8_USE_IN_RECOVERY_MODE 1
+#define GTX8_USE_NOT_IN_RECOVERY_MODE 0
+
+#define GTX8_USE_IC_RESOLUTION 1
+#define GTX8_USE_LCD_RESOLUTION 0
+
 /* send config delay time /ms */
 #define SEND_CFG_FLASH					150
 #define SEND_CFG_RAM					60
@@ -218,7 +277,9 @@
 
 /* Regiter for short  test*/
 #define SHORT_STATUS_REG			0x5095
+#define SHORT_STATUS_REG_GT7382 0x804A
 #define WATCH_DOG_TIMER_REG			0x20B0
+#define WATCH_DOG_TIMER_REG_GT7382 0x437C
 
 #define TXRX_THRESHOLD_REG			0x8408
 #define GNDVDD_THRESHOLD_REG			0x840A
@@ -236,10 +297,18 @@
 #define DRVSEN_CHECKSUM_REG			0x884E
 #define CONFIG_REFRESH_REG			0x813E
 #define	ADC_RDAD_VALUE				0x96
+#define MODE_SEN_LINE 0
 #define GNDAVDD_SHORT_VALUE			16
+#define GNDAVDD_SHORT_VALUE_GT7382 20
 #define ADC_DUMP_NUM				200
+#define TX_TX_FACTOR 68
+#define TX_RX_FACTOR 89
+#define RX_RX_FACTOR 75
+#define VDD_CHN 0xf1
+#define GND_CHN 0xf0
 #define	DIFFCODE_SHORT_VALUE			0x14
 #define SHORT_CAL_SIZE(a)			(4 + (a) * 2 + 2)
+#define CFG_LEN_GT7382 444
 
 /* Regiter for rawdata test*/
 #define GTP_RAWDATA_ADDR_9886			0x8FA0
@@ -248,46 +317,82 @@
 #define GTP_SELF_RAWDATA_ADDR_9886		0x4C0C
 #define GTP_SELF_NOISEDATA_ADDR_9886		0x4CA4
 
-#define GTP_RAWDATA_ADDR_6861			0x9078
-#define GTP_NOISEDATA_ADDR_6861			0x9B92
-#define GTP_BASEDATA_ADDR_6861			0xB0DE
+#define GTP_RAWDATA_ADDR_6861			0x8FA0
+#define GTP_NOISEDATA_ADDR_6861			0x9EA0
+#define GTP_BASEDATA_ADDR_6861			0xAC60
 
 #define GTP_RAWDATA_ADDR_6862			0x9078
 #define GTP_NOISEDATA_ADDR_6862			0x9B92
 #define GTP_BASEDATA_ADDR_6862			0xB0DE
 
+#define GTP_RAWDATA_ADDR_7382 0xBFF0
+#define GTP_NOISEDATA_ADDR_7382 0x8AC0
+#define GTP_BASEDATA_ADDR_7382 0x8A58
+#define GTP_SELF_RAWDATA_ADDR_7382 0xDC68
+#define GTP_SELF_NOISEDATA_ADDR_7382 0xDA88
 /* may used only in test.c */
 #define SHORT_TESTEND_REG			0x8400
+#define SHORT_TESTEND_REG_GT7382 0x804A
+
 #define TEST_RESULT_REG				0x8401
+#define TEST_RESULT_REG_GT7382 0x8AC0
 #define TX_SHORT_NUM				0x8402
+#define SHORT_NUM_REG 0x8AC2
+#define SHORT_CHN_REG 0x8AC4
 
 #define DIFF_CODE_REG				0xA97A
 #define DRV_SELF_CODE_REG			0xA8E0
 #define TX_SHORT_NUM_REG			0x8802
+#define PARAM_START_ADDR 0x8118
+#define PARAM_END_ADDR 0x81FE
 
-#define MAX_DRV_NUM				40
-#define MAX_SEN_NUM				36
+#define MAX_DRV_NUM 40
+#define MAX_SEN_NUM 58
 
 #define MAX_DRV_NUM_9886			40
 #define MAX_SEN_NUM_9886			36
 
-#define MAX_DRV_NUM_6861			47
-#define MAX_SEN_NUM_6861			36
+#define MAX_DRV_NUM_6861 47
+#define MAX_SEN_NUM_6861 29
+#define ACTUAL_RX_NUM_6861 40
+#define ACTUAL_TX_NUM_6861 22
 
 #define MAX_DRV_NUM_6862			47
 #define MAX_SEN_NUM_6862			29
+#define MAX_DRV_NUM_7382 38
+#define MAX_SEN_NUM_7382 58
 
 /*  end  */
 
 /* easy wakeup */
 #define GTX8_PEN_WAKEUP_ENTER_MEMO_EVENT_TYPE 	  0x80
 #define GTX8_PEN_WAKEUP_ONLI_SCREEN_ON_EVENT_TYPE 	  0x81
+#define GTX8_PEN_CLICK_EVENT_TYPE 0xCC
 #define GTX8_GESTURE_EVENT_FLAG_BIT     (1<<5)
 
 #define PID_DATA_MAX_LEN		8
 #define VID_DATA_MAX_LEN		8
 #define GTX8_POWER_CONTRL_BY_SELF				1
 
+#define TP_COLOR_SIZE    15
+#define GT8X_PROJECTID_ADDR 0xBDB4
+#define GT8X_PROJECTID_ADDR_GT7382 0xFF81
+#define GT8X_PROJECTID_LEN 10
+#define GT8X_PROJECTID_BUF_LEN 11
+#define GT8X_COLOR_INDEX 9
+#define GT8X_PROJECTID_INDEX 0
+#define GT8X_ACTUAL_PROJECTID_LEN 9
+
+#define GT8X_9886_SEN_OFFSET 10
+#define GT8X_6861_SEN_OFFSET 20
+#define GT8X_PEN_SUPPORT 1
+#define GT8X_READ_PROJECTID_SUPPORT 1
+#define GT8X_READ_TPCOLOR_SUPPORT 1
+#define GT8X_FILENAME_CONAIN_PROJECTID_SUPPORT 1
+#define GT8X_TPCOLOR_LEN 2
+#define GT8X_WAKE_LOCK_SUSPEND_SUPPORT 1
+#define GT8X_7382_DRV_ADDR 0x81CD
+#define GT8X_7382_SEN_ADDR 0x81CC
 
 /* errno define */
 #define EBUS					1000
@@ -300,6 +405,7 @@
 #define IC_TYPE_9886				2
 #define IC_TYPE_6861				3
 #define IC_TYPE_6862				4
+#define IC_TYPE_7382 5
 
 #define TS_PEN_BUTTON_NONE      0
 #define TS_PEN_BUTTON_RELEASE   (1 << 5)
@@ -314,6 +420,9 @@
 
 
 #define  GTX8_AFTER_REST_DELAY  100
+#define GT73X_AFTER_REST_DELAY 250
+#define GT73X_AFTER_REST_DELAY_440 440
+
 
 #define getU32(a) ((u32)getUint((u8 *)(a), 4))
 #define getU16(a) ((u16)getUint((u8 *)(a), 2))
@@ -570,6 +679,18 @@ struct gtx8_ts_data {
 	int fw_only_depend_on_lcd;/* 0 : fw depend on TP and others ,1 : fw only depend on lcd. */
 	int gtx8_roi_fw_supported;
 	int support_get_tp_color;
+	int support_read_projectid;
+	int support_wake_lock_suspend;
+	int support_priority_read_sensorid;
+	int support_doze_failed_not_send_cfg;
+	int support_read_more_debug_msg;
+	int support_filename_contain_lcd_module;
+	int support_ic_use_max_resolution;
+	int support_read_gesture_without_checksum;
+	int support_filename_contain_projectid;
+	int support_checked_esd_reset_chip;
+	int delete_insignificant_chip_info;
+	u32 in_recovery_mode;
 	int ic_type;
 	u32 power_self_ctrl;/*0-LCD control, 1-tp controlled*/
 	u32 vci_power_type;/*0 - gpio control  1 - ldo  2 - not used*/
@@ -580,10 +701,19 @@ struct gtx8_ts_data {
 	u32 game_switch;/*1-enter game mode, 0-out of  game mode*/
 	u32 easy_wakeup_supported;
 	u32 config_flag;/* 0 - normal config; 1 - extern config*/
+	u32 poweron_flag; /* true, delay 290ms, false delay 440ms */
 	char project_id[MAX_STR_LEN + 1];
 	char chip_name[GTX8_PRODUCT_ID_LEN + 1];
 	char lcd_panel_info[LCD_PANEL_INFO_MAX_LEN];
 	char lcd_module_name[MAX_STR_LEN];
+	char color_id[GT8X_TPCOLOR_LEN];
+	struct wakeup_source wake_lock;
+	u8 pen_supported;
+	u32 max_drv_num;
+	u32 max_sen_num;
+	int use_ic_res;
+	int x_max_rc;
+	int y_max_rc;
 };
 
 /*
@@ -619,7 +749,9 @@ extern struct fw_update_ctrl update_ctrl;
 int gtx8_chip_reset(void);
 int gtx8_update_firmware(void);
 int gtx8_set_i2c_doze_mode(int enable);
- int gtx8_get_channel_num(u32 *sen_num, u32 *drv_num, u8 *cfg_data);
+int gtx8_get_channel_num(u32 *sen_num, u32 *drv_num, u8 *cfg_data);
+int gtx8_get_channel_num_gt7382(u32 *sen_num,
+	u32 *drv_num, u8 *cfg_data);
 
 int gtx8_init_tool_node(void);
 int gtx8_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd);

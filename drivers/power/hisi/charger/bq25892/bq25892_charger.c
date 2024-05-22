@@ -19,7 +19,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #include <linux/usb/otg.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
@@ -559,7 +559,7 @@ static int bq25892_chip_init(void)
     struct bq25892_device_info *di = g_bq25892_dev;
 
     /*reg init*/
-    //bq25892_write_mask(REG0x14,BQ25892_REG_RST_MASK,BQ25892_REG_RST_SHIFT,0x01);
+
     /* do not init input current 500 ma(REG00) to support lpt without battery  */
     /*02 enable Start 1s Continuous Conversion ,others as default*/
     ret |= bq25892_write_byte(BQ25892_REG_02,0x1D);//adc off
@@ -581,7 +581,6 @@ static int bq25892_chip_init(void)
     /*boost mode current limit = 500mA,boostv 4.998v*/
     ret |= bq25892_write_byte(BQ25892_REG_0A,0x70);
     /*VINDPM Threshold Setting Method 1,Absolute VINDPM Threshold 4.4v*/
-    //ret = bq25892_write_byte(BQ25892_REG_0D,0x92);
 
     gpio_set_value(di->gpio_cd, 0);//enable charging
 
@@ -921,13 +920,13 @@ static int bq25892_get_ilim(void)
 *  Parameters:   reg_value:string for save register value
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int bq25892_dump_register(char *reg_value)
+static int bq25892_dump_register(char *reg_value, int size)
 {
     u8 reg[BQ25892_REG_TOTAL_NUM] = {0};
     char buff[26] = {0};
     int i = 0;
 
-    memset(reg_value, 0, CHARGELOG_SIZE);
+    memset(reg_value, 0, size);
     snprintf(buff, 26, "%-8.2d", bq25892_get_ilim());
     strncat(reg_value, buff, strlen(buff));
     for(i = 0;i<BQ25892_REG_TOTAL_NUM;i++)
@@ -949,12 +948,12 @@ static int bq25892_dump_register(char *reg_value)
 *  Parameters:   reg_head:string for save register head
 *  return value:  0-sucess or others-fail
 **********************************************************/
-static int bq25892_get_register_head(char *reg_head)
+static int bq25892_get_register_head(char *reg_head, int size)
 {
     char buff[26] = {0};
     int i = 0;
 
-    memset(reg_head, 0, CHARGELOG_SIZE);
+    memset(reg_head, 0, size);
     snprintf(buff, 26, "Ibus ");
     strncat(reg_head, buff, strlen(buff));
     for(i = 0;i<BQ25892_REG_TOTAL_NUM;i++)
@@ -1035,7 +1034,7 @@ static int bq25892_fcp_chip_init(void)
     struct bq25892_device_info *di = g_bq25892_dev;
 
     /*reg init*/
-    //bq25892_write_mask(REG0x14,BQ25892_REG_RST_MASK,BQ25892_REG_RST_SHIFT,0x01);
+
     /* do not init input current 500 ma(REG00) to support lpt without battery  */
     /*02 enable Start 1s Continuous Conversion ,others as default*/
     ret |= bq25892_write_byte(BQ25892_REG_02,0x1D);//adc off
@@ -1057,7 +1056,7 @@ static int bq25892_fcp_chip_init(void)
     /*boost mode current limit = 500mA,boostv 4.998v*/
     ret |= bq25892_write_byte(BQ25892_REG_0A,0x70);
     /*VINDPM Threshold Setting Method 1,Absolute VINDPM Threshold 4.4v*/
-    //ret = bq25892_write_byte(BQ25892_REG_0D,0x92);
+
     /* set dpm voltage as 7600mv */
     ret = bq25892_set_dpm_voltage(7600);
 
